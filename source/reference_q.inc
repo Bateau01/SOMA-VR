@@ -82,7 +82,10 @@ static i32 __attribute__((ms_abi)) s26q_ref_locate(Handle session,const S26QLoca
         for(u32 i=0;i<g_s26qRefCount;++i)g_s26qRefQueue[i]=g_s26qRefQueue[i+1u];
         S26QRefInfo ci;zero_bytes(&ci,sizeof(ci));ci.type=37;ci.referenceSpaceType=2;
         if(!event.poseValid||!s26q_ref_compose(&event.poseInPreviousSpace,&g_s26qRefOffset,&ci.poseInReferenceSpace)){
-            s26q_ref_log("runtime supplied no usable transform; existing space retained");continue;
+            /* Continuity is unknowable: keep the existing tracking-space policy,
+               but do not retain a menu pose expressed in the obsolete origin. */
+            g_h5754dPanelAnchorValid=0;h5754d_release_menu_inputs();
+            s26q_ref_log("runtime supplied no usable transform; menu re-anchor requested, existing space retained");continue;
         }
         Handle next=0;i32 result=g_s26qRefCreate(session,&ci,&next);
         if(result<0||!next){s26q_ref_log("reference-space creation failed; existing space retained");continue;}

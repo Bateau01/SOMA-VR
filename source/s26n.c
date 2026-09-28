@@ -305,6 +305,9 @@ static float h5755ea_world_units_per_meter(void){
     if(!(s>=H5755EU_WORLD_SCALE_MIN&&s<=H5755EU_WORLD_SCALE_MAX))s=1.0f;
     return s;
 }
+/* S26CC: retain authored camera height; world scale adds no stance-height offset. */
+
+
 /* S26BB: compensate only rendered geometry, never rigid tracking frames. */
 static void s26bb_scale_visual_basis(float* m){
     float metric=h5755ea_world_units_per_meter();
@@ -1732,7 +1735,29 @@ static u32 g_h5755mFullEyeMenuFrames;
    H57.55bi retires AS's MENU->GAME 24-frame classifier entirely.  The AS UI
    island itself remains frozen, but exact authored VRLIFE Resume/Title/Load/Game
    events now decide when its gameplay drawable is restored or retained. */
+static volatile i32* p2_native_w_ptr(void);
+static volatile i32* p2_native_h_ptr(void);
 static volatile u32 g_h5755asNativeUiScope;
+/* S26CA: ApplyUserConfig must rebuild GUI resources in the same native
+   dimensions in TITLE and PAUSE. This is an authored, nested call scope. */
+static u32 g_s26caMenuApplyDepth,g_s26caMenuSavedScope,g_s26caMenuApplyLogs;
+static i32 g_s26caMenuSavedW,g_s26caMenuSavedH;
+static void s26ca_menu_apply_scope(i32 begin){
+    if(begin){
+        if(g_s26caMenuApplyDepth++){return;}
+        g_s26caMenuSavedScope=__atomic_load_n(&g_h5755asNativeUiScope,__ATOMIC_ACQUIRE);
+        g_s26caMenuSavedW=*p2_native_w_ptr();g_s26caMenuSavedH=*p2_native_h_ptr();
+        __atomic_store_n(&g_h5755asNativeUiScope,1u,__ATOMIC_RELEASE);
+        /* SetScreenSize publishes the exact authored request in the inner
+           call. Keep runtime physical globals scoped for its continuation. */
+        if(g_s26caMenuApplyLogs<12u){g_s26caMenuApplyLogs++;ext_Log(">>> S26CA MENU SETTINGS BEGIN: native GUI rebuild scope; prior scope %u",g_s26caMenuSavedScope);}
+    }else{
+        if(!g_s26caMenuApplyDepth||--g_s26caMenuApplyDepth)return;
+        __atomic_store_n(p2_native_w_ptr(),g_s26caMenuSavedW,__ATOMIC_RELEASE);
+        __atomic_store_n(p2_native_h_ptr(),g_s26caMenuSavedH,__ATOMIC_RELEASE);
+        __atomic_store_n(&g_h5755asNativeUiScope,g_s26caMenuSavedScope,__ATOMIC_RELEASE);
+    }
+}
 static volatile u32 g_h5755asUiIslandActive;
 static volatile u32 g_h5755asUiEnterArmed;
 static volatile u32 g_h5755asResumeClassifyActive;
@@ -1768,6 +1793,7 @@ static void h576bf_detach_world_bound_refs(const char* why);
 static void h576bh_quarantine_local_hand_transactions(void);
 static void h5755bi_resume_post_endframe(void);
 static void h5755bi_game_handoff_step(void);
+static void* s26cb_menu_render_window(void);
 static void h5755ak_cache_window_from_hdc(void* hdc);
 static i32 h5755ak_apply_exact_gameplay_drawable(void);
 /* H57.55bk source cleanup: retired compiler-dead declaration h5755al_enter_pause_windowed_carrier. */
@@ -2265,6 +2291,10 @@ static volatile u8 g_s26CutsceneHandsHidden;
 static volatile u32 g_s26vDeathActive,g_s26vDeathReady,g_s26vDeathRetry,g_s26vDeathLoading;
 static u8 g_s26vDeathNeutral;
 static volatile u32 g_s26wIntroActive;
+/* Intro OnLeave precedes destination map construction. Never promote the old
+   intro world just because its player pointer is still readable. */
+static u32 g_s26cbIntroHandoffPending,g_s26cbIntroEndMapEnters;
+
 static i32 s26v_terminal_present(void);
 static volatile u8 g_s26ManualHeal;
 static i32 g_s26HealHand=-1;
@@ -3626,7 +3656,8 @@ static i32 h5755as_enter_native_ui_island(void){
     h5755as_trace_state("UI_ISLAND_ENTER",H5754H_UI_MENU);return 1;
 }
 static i32 h5755as_commit_gameplay_resume(void){
-    if(!__atomic_load_n(&g_h5755asUiIslandActive,__ATOMIC_ACQUIRE))return 1;
+    /* New-game handoff can arrive without ever entering a pause UI island.
+       It still needs the same physical drawable + SDL/resource promotion. */
     __atomic_store_n(&g_h5755asNativeUiScope,0u,__ATOMIC_RELEASE);
     if(!h5755ak_apply_exact_gameplay_drawable()){
         __atomic_store_n(&g_h5755asNativeUiScope,1u,__ATOMIC_RELEASE);ext_Log(">>> S6-HANDS5755AS RESUME COMMIT REJECT: AK exact gameplay drawable could not be restored; native UI island retained fail-closed");return 0;
@@ -4294,7 +4325,11 @@ void __attribute__((ms_abi,noinline,used)) h5750x_set_screen_size_detour(void* s
     if(__atomic_load_n(&g_h5755asNativeUiScope,__ATOMIC_ACQUIRE)){
         __atomic_store_n(p2_native_w_ptr(),(i32)w,__ATOMIC_RELEASE);__atomic_store_n(p2_native_h_ptr(),(i32)h,__ATOMIC_RELEASE);
         p(self,w,h);
-        if(bw>0&&bh>0){__atomic_store_n(p2_native_w_ptr(),bw,__ATOMIC_RELEASE);__atomic_store_n(p2_native_h_ptr(),bh,__ATOMIC_RELEASE);g_h5750xr2NativeGlobalRestores++;}
+        if(!g_s26caMenuApplyDepth&&bw>0&&bh>0){__atomic_store_n(p2_native_w_ptr(),bw,__ATOMIC_RELEASE);__atomic_store_n(p2_native_h_ptr(),bh,__ATOMIC_RELEASE);g_h5750xr2NativeGlobalRestores++;}
+        if(g_s26caMenuApplyDepth&&w>=320u&&h>=200u&&w<=8192u&&h<=8192u){
+            g_h5754eMenuW=(i32)w;g_h5754eMenuH=(i32)h;
+            if(g_h5754dPanelAnchorValid)g_h5754dPanelH=g_h5754dPanelW*(float)h/(float)w;
+        }
         g_h5755asNativeOwnerCalls++;
         if(g_h5755asNativeOwnerCalls<=12u)ext_Log(">>> S6-HANDS5755AS NATIVE-UI SETSIZE #%u: incoming %ux%u delegated with matching native physical globals | p2_full now %dx%d | VR envelope injection suspended only inside authored UI island",g_h5755asNativeOwnerCalls,w,h,p2_full_w(),p2_full_h());
         return;
@@ -4665,7 +4700,12 @@ static void h5710_update_controller_buttons(i64 displayTime){
         if(menu){g_h5754dMenuBackEdges++;ext_Log(">>> S6-HANDS5755DJ MENU X TOGGLE: X/click closes the active authored menu through the existing SDL Escape path");}
         else if(g_h5753cAuthorityEnabled&&(exactNormal||g_s26nPhiRemote||h5730_exact_terminal_state(0,0,0,0))){
             i32 ui=h5754h_query_ui_state();
-            if(ui==H5754H_UI_GAME){if(h5754h_open_pause_authored()){__atomic_store_n(&g_h5755anHaveLast,0u,__ATOMIC_RELEASE);g_h5754iPauseOpenBReleaseGate=1;g_h5754hPauseRequested=1;g_h5754hLastUiPollEndFrame=0;g_h5754dPanelAnchorValid=0;i32 now=h5754h_query_ui_state();if(now==H5754H_UI_MENU){g_h5754hPauseActive=1;g_h5754hPauseRequested=0;(void)h5754h_ensure_pause_swapchain();h5754at_enter_startup_eye_route();ext_Log(">>> S6-HANDS5754AU SYNCHRONOUS PAUSE ROUTE ACTIVATED: immediate post-open UI query returned MENU; startup-eye route entered before the first Pause xrEndFrame");}ext_Log(">>> S6-HANDS5755DJ PAUSE OPEN X: exact LoadScreen FALSE + MenuHandler inactive | X invoked PlayerHandsHandler.HPL3VR_OpenPause() -> MenuHandler.SetMenuActive(true); B remains gameplay Run");}else ext_Log(">>> S6-HANDS5755DJ PAUSE OPEN X REJECT: exact script UI authority unavailable; no SDL Escape fallback emitted");}
+            if(ui==H5754H_UI_GAME){
+                if(h5754h_open_pause_authored()){
+                    g_h5754iPauseOpenBReleaseGate=1;
+                    ext_Log(">>> S26BZ PAUSE OPEN X: shared authored Pause event owns the same render route as keyboard ESC");
+                }else ext_Log(">>> S26BZ PAUSE OPEN X REJECT: authored UI dispatcher unavailable");
+            }
             else {g_h5754hPauseOpenRejects++;ext_Log(">>> S6-HANDS5755DJ PAUSE X FAIL-CLOSED: UI-state bridge is not ordinary GAME; no LoadScreen dismissal and no guessed Pause input emitted");}
         }
     }
@@ -6691,7 +6731,7 @@ static void h5754d_release_back_key(void){if(g_h5754dBackKeyDown){(void)h5754d_p
 static void h5754d_release_menu_inputs(void){h5754d_release_click();h5754d_release_back_key();}
 static i32 h5754d_menu_source_dims(i32* outW,i32* outH){
     i32 w=p2_full_w(),h=p2_full_h();if((h5754d_menu_wanted()||h5754h_pause_active())&&g_h5754eMenuW>0&&g_h5754eMenuH>0){w=g_h5754eMenuW;h=g_h5754eMenuH;}h5754d_resolve_platform();
-    if(p_h5754dGetForegroundWindow&&p_h5754dGetClientRect){void* wnd=p_h5754dGetForegroundWindow();H5754DRect rc;if(wnd&&p_h5754dGetClientRect(wnd,&rc)&&rc.right>rc.left&&rc.bottom>rc.top){g_h5754dLastClientW=rc.right-rc.left;g_h5754dLastClientH=rc.bottom-rc.top;}}
+    {i32 cw=0,ch=0;h5755ag_default_client(&cw,&ch);if(cw>0&&ch>0){g_h5754dLastClientW=cw;g_h5754dLastClientH=ch;}}
     if(w<320||h<200||w>8192||h>8192){g_h5754dWindowSourceRejects++;return 0;}if(outW)*outW=w;if(outH)*outH=h;return 1;
 }
 /* H57.55n: H57.55m proved the full XR imageRect is not the remaining crop.
@@ -6702,8 +6742,29 @@ static i32 h5754d_menu_source_dims(i32* outW,i32* outH){
    GL_BACK.  H57.55n therefore copies the COMPLETE physical GL_BACK into
    EYE-L, then lets the unchanged 16:9 XR quad resize that complete image. */
 
+/* Exact S5/P2 CurrentHeadPose checks valid bytes +0x78/+0xA8 before
+   reading poses +0x8C/+0xBC. A normalized stale quaternion is not validity. */
+static i32 s26ca_menu_eye_poses(const u8* xr,XrPosef* left,XrPosef* right){
+    if(!xr||!xr[0x78]||!xr[0xA8])return 0;
+    *left=*(const XrPosef*)(xr+0x8C);*right=*(const XrPosef*)(xr+0xBC);
+    for(i32 eye=0;eye<2;++eye){
+        const float* v=(const float*)(eye?right:left);
+        for(i32 i=0;i<7;++i)if(!(v[i]>-10000.0f&&v[i]<10000.0f))return 0;
+        float n=v[0]*v[0]+v[1]*v[1]+v[2]*v[2]+v[3]*v[3];
+        if(!(n>0.5f&&n<1.5f))return 0;
+    }
+    return 1;
+}
+static i32 s26ca_panel_behind_viewer(const XrPosef* panel,const XrPosef* left,const XrPosef* right){
+    XrVector3f n=h5754d_q_rotate_vec(panel->orientation,(XrVector3f){0,0,1});
+    float dx=(left->position.x+right->position.x)*0.5f-panel->position.x;
+    float dy=(left->position.y+right->position.y)*0.5f-panel->position.y;
+    float dz=(left->position.z+right->position.z)*0.5f-panel->position.z;
+    /* Only recover a crossed panel plane, never follow ordinary head turning. */
+    return dx*n.x+dy*n.y+dz*n.z < -0.10f;
+}
 static i32 h5754d_anchor_panel(void){
-    u8* xr=(u8*)p2_xr_obj();if(!xr)return 0;XrPosef L=*(volatile XrPosef*)(xr+0x8C),R=*(volatile XrPosef*)(xr+0xBC);
+    u8* xr=(u8*)p2_xr_obj();XrPosef L,R;if(!s26ca_menu_eye_poses(xr,&L,&R))return 0;
     float qm=L.orientation.x*L.orientation.x+L.orientation.y*L.orientation.y+L.orientation.z*L.orientation.z+L.orientation.w*L.orientation.w;
     if(!(qm>0.5f&&qm<1.5f)||!h5754d_finitef(L.position.x)||!h5754d_finitef(L.position.y)||!h5754d_finitef(L.position.z)||!h5754d_finitef(R.position.x)||!h5754d_finitef(R.position.y)||!h5754d_finitef(R.position.z))return 0;
     float inv=1.0f/ext_Sqrtf(qm);XrQuaternionf rawQ={L.orientation.x*inv,L.orientation.y*inv,L.orientation.z*inv,L.orientation.w*inv};XrVector3f f=h5754d_q_rotate_vec(rawQ,(XrVector3f){0.0f,0.0f,-1.0f});
@@ -6721,6 +6782,8 @@ static i32 h5754d_anchor_panel(void){
     g_h5754dPanelPose.orientation=q;g_h5754dPanelPose.position.x=h.x+f.x*distance;g_h5754dPanelPose.position.y=h.y;g_h5754dPanelPose.position.z=h.z+f.z*distance;
     i32 w=0,hh=0;if(!h5754d_menu_source_dims(&w,&hh))return 0;g_h5754dPanelW=width;g_h5754dPanelH=width*((float)hh/(float)w);
     g_h5754dPanelAnchorValid=1;g_h5754dAnchors++;
+    static u32 anchorLogs;
+    if(anchorLogs++<12u)ext_Log(">>> S26CA MENU ANCHOR: head q %.4f %.4f %.4f %.4f | panel q %.4f %.4f %.4f %.4f | space %p",rawQ.x,rawQ.y,rawQ.z,rawQ.w,q.x,q.y,q.z,q.w,*(Handle*)(xr+0x28));
     if(pause){ext_Log(">>> S6-HANDS5754L PAUSE FLAT-QUAD ANCHOR: LOCAL yaw-only center(%+.3f %+.3f %+.3f) size %.3fx%.3f m at %.2f m | pose frozen until Pause exit or explicit Y re-anchor | source %dx%d aspect %.5f",g_h5754dPanelPose.position.x,g_h5754dPanelPose.position.y,g_h5754dPanelPose.position.z,g_h5754dPanelW,g_h5754dPanelH,(double)distance,w,hh,(double)((float)w/(float)hh));}
     else {ext_Log(">>> S6-HANDS5755A UPRIGHT FLAT PANEL ANCHOR: LOCAL yaw-only/horizon-locked center(%+.3f %+.3f %+.3f) size %.3fx%.3f m at %.2f m | LIVE menu render %dx%d aspect %.5f | client %dx%d",g_h5754dPanelPose.position.x,g_h5754dPanelPose.position.y,g_h5754dPanelPose.position.z,g_h5754dPanelW,g_h5754dPanelH,(double)distance,w,hh,(double)((float)w/(float)hh),g_h5754dLastClientW,g_h5754dLastClientH);if(g_h5755ayTitleConsumes>g_h5755ayTitleReanchors){g_h5755ayTitleReanchors++;h5755ay_title_trace("STARTUP_QUAD_REANCHOR",0,0,w,hh);ext_Log(">>> S6-HANDS5755AY EXIT TITLE PANEL REANCHORED #%u: exact startup 1.50m/2.00m LOCAL horizon-locked quad now owns returned main menu",g_h5755ayTitleReanchors);}if(g_h5755azTitleSettles>g_h5755azTitleReanchors){g_h5755azTitleReanchors++;h5755ay_title_trace("BD_STARTUP_QUAD_REANCHOR",0,0,w,hh);ext_Log(">>> S6-HANDS5755BD EXIT TITLE PANEL REANCHORED #%u: exact startup 1.50m/2.00m LOCAL horizon-locked quad owns returned main menu | presentation/AV remain armed; Exit's first Newton-world replacement will be REBASED as this title's fresh startup baseline rather than mistaken for gameplay",g_h5755azTitleReanchors);}}return 1;
 }
@@ -6784,6 +6847,14 @@ static i32 __attribute__((ms_abi)) h5754d_xr_end_frame(Handle session,const XrFr
         h5755as_post_endframe_transition();
         if(g_h5755adRefreshArmed&&!__atomic_load_n(&g_h5755asUiIslandActive,__ATOMIC_ACQUIRE)){(void)h5755an_revalidate_gameplay_drawable();h5755ad_apply_native_owner_refresh();}
         return r;
+    }
+    if(g_h5754dPanelAnchorValid){
+        XrPosef left,right;
+        if(s26ca_menu_eye_poses((const u8*)p2_xr_obj(),&left,&right)&&
+           s26ca_panel_behind_viewer(&g_h5754dPanelPose,&left,&right)){
+            g_h5754dPanelAnchorValid=0;h5754d_release_menu_inputs();
+            static u32 recoveryLogs;if(recoveryLogs++<8u)ext_Log(">>> S26CA MENU ANCHOR RECOVERY: viewer crossed behind the frozen panel; re-anchor to a valid current pose");
+        }
     }
     if(!g_h5754dPanelAnchorValid&&!h5754d_anchor_panel()){
         g_h5754dQuadRejects++;i32 r=orig(session,in);if(r<0)g_h5754dEndErrors++;return r;
@@ -6875,7 +6946,7 @@ static void h5754d_menu_pointer_tick(void){
         XrPosef ap=g_h5754dAimPose[1];XrVector3f d=h5754d_q_rotate_vec(ap.orientation,(XrVector3f){0.0f,0.0f,-1.0f});XrQuaternionf qi={-g_h5754dPanelPose.orientation.x,-g_h5754dPanelPose.orientation.y,-g_h5754dPanelPose.orientation.z,g_h5754dPanelPose.orientation.w};
         XrVector3f rel={ap.position.x-g_h5754dPanelPose.position.x,ap.position.y-g_h5754dPanelPose.position.y,ap.position.z-g_h5754dPanelPose.position.z};XrVector3f ro=h5754d_q_rotate_vec(qi,rel),rd=h5754d_q_rotate_vec(qi,d);
         if(rd.z>0.00001f||rd.z<-0.00001f){float t=-ro.z/rd.z;if(t>0.0f){float hitX=ro.x+rd.x*t,hitY=ro.y+rd.y*t;u=hitX/g_h5754dPanelW+0.5f;v=0.5f-hitY/g_h5754dPanelH;if(u>=0.0f&&u<=1.0f&&v>=0.0f&&v<=1.0f)hit=1;}}
-        if(hit){g_h5754dPointerHits++;g_h5754dLastU=u;g_h5754dLastV=v;if(h5754h_pause_active()){if(h5755an_push_motion(u,v))g_h5754dCursorMoves++;}else if(p_h5754dGetForegroundWindow&&p_h5754dGetClientRect&&p_h5754dClientToScreen&&p_h5754dSetCursorPos){void* w=p_h5754dGetForegroundWindow();H5754DRect rc;H5754DPoint pt={0,0};if(w&&p_h5754dGetClientRect(w,&rc)&&rc.right>rc.left&&rc.bottom>rc.top&&p_h5754dClientToScreen(w,&pt)){i32 cw=rc.right-rc.left,ch=rc.bottom-rc.top;pt.x+=(i32)(u*(float)(cw-1)+0.5f);pt.y+=(i32)(v*(float)(ch-1)+0.5f);if(p_h5754dSetCursorPos(pt.x,pt.y))g_h5754dCursorMoves++;}}}
+        if(hit){g_h5754dPointerHits++;g_h5754dLastU=u;g_h5754dLastV=v;if(h5754h_pause_active()){if(h5755an_push_motion(u,v))g_h5754dCursorMoves++;}else if(p_h5754dGetForegroundWindow&&p_h5754dGetClientRect&&p_h5754dClientToScreen&&p_h5754dSetCursorPos){void* w=s26cb_menu_render_window();H5754DRect rc;H5754DPoint pt={0,0};if(w&&p_h5754dGetClientRect(w,&rc)&&rc.right>rc.left&&rc.bottom>rc.top&&p_h5754dClientToScreen(w,&pt)){i32 cw=rc.right-rc.left,ch=rc.bottom-rc.top;pt.x+=(i32)(u*(float)(cw-1)+0.5f);pt.y+=(i32)(v*(float)(ch-1)+0.5f);if(p_h5754dSetCursorPos(pt.x,pt.y))g_h5754dCursorMoves++;}}}
         else g_h5754dPointerMisses++;
     }
     // Trigger remains ray-authoritative. A is the menu Accept button and clicks
@@ -9162,6 +9233,14 @@ static i32 h5750v_is_main_view(void* ctx,i32 flags){
 static i32 h22_rtti_name(const void* obj,char* out,u32 cap);
 /* GQ/GR/GS/GT renderer-private, capture, projection-parity and GPU-matrix diagnostics retired after hardware isolation. */
 
+static i32 s26cb_flat_drawable_extent(i32* w,i32* h){
+    h5755as_resolve_sdl_window_api();
+    void* win=p_h5755asSDLGLGetCurrentWindow?p_h5755asSDLGLGetCurrentWindow():0;
+    i32 dw=0,dh=0;
+    if(win&&p_h5755asSDLGLGetDrawableSize)p_h5755asSDLGLGetDrawableSize(win,&dw,&dh);
+    if(dw<1||dh<1)return 0;
+    *w=dw;*h=dh;return 1;
+}
 static i32 h5750v_capture_finished_eye(i32 eye){
     /* H57.55EQ: EP final-frustum stereo probe retired; shared frustum is restored by capture time. */
     if(eye<0||eye>1||!h5750v_targets_ready()){g_h5750vCaptureRejects++;return 0;}
@@ -9192,6 +9271,13 @@ static i32 h5750v_capture_finished_eye(i32 eye){
     // A gameplay FOV crop here magnifies/stretches that UI before submission;
     // the historical release-time replacement mentioned below was retired.
     if(eye==0&&(h5754d_menu_wanted()||h5754h_pause_active())){
+        i32 actualW=0,actualH=0;
+        if(s26cb_flat_drawable_extent(&actualW,&actualH)){
+            if(actualW!=sw||actualH!=sh){
+                static u32 logs;if(logs++<8u)ext_Log(">>> S26CB FLAT SOURCE: logical %dx%d -> current SDL drawable %dx%d; bounded GL_BACK copy, independent of foreground monitor",sw,sh,actualW,actualH);
+            }
+            sw=actualW;sh=actualH;
+        }
         if(sw>=320&&sh>=200){
             g_h5750xCrop[eye][0]=0;g_h5750xCrop[eye][1]=0;g_h5750xCrop[eye][2]=sw;g_h5750xCrop[eye][3]=sh;
             blit(0,0,sw,sh,0,0,dw,dh,0x4000u,0x2601u);
@@ -10964,23 +11050,32 @@ static i32 h5755bi_decode_lifecycle_token(const H5730TString* objectName,const H
     if(c=='N')return H5755BI_LIFE_NEW_GAME;
     return -1;
 }
-static void h5755bi_on_lifecycle_token(i32 ev){
-    if((ev==H5755BI_LIFE_PAUSE||ev==H5755BI_LIFE_RESUME)&&(g_s26vDeathActive||g_s26vDeathLoading)){__atomic_store_n(&g_h5755biResumePending,0u,__ATOMIC_RELEASE);return;}
-
-    if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME||ev==H5755BI_LIFE_LOAD_BEGIN)s26y_reset();
-    if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME||ev==H5755BI_LIFE_LOAD_BEGIN)g_s26wIntroActive=0;
-    if(ev==H5755BI_LIFE_LOAD_BEGIN||ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME){g_s26vDeathActive=0;g_s26vDeathReady=0;g_s26vDeathRetry=0;}
-    if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME)g_s26vDeathLoading=0;
-    g_h5755biLifeTokens++;
-    if(ev==H5755BI_LIFE_GAMMA_DIRECT){g_h5755biGammaTokens++;if(g_h5755biGammaTokens<=4u||(g_h5755biGammaTokens%30u)==0u)ext_Log(">>> S6-HANDS5755BI GAMMA DIRECT #%u: MenuHandler used cGraphics_GetLowLevel().SetBrightness only; ApplyUserConfig/SetScreenSize/deferred-renderer rebuild path bypassed",g_h5755biGammaTokens);return;}
-    if(ev==H5755BI_LIFE_PAUSE){
+static void s26bz_begin_pause(void){
         g_h5755biPauseTokens++;
+        if(__atomic_load_n(&g_h5755bhPresentationState,__ATOMIC_ACQUIRE)==H5755BH_PAUSE_QUAD){
+            __atomic_store_n(&g_h5755biResumePending,0u,__ATOMIC_RELEASE);return;
+        }
         if(__atomic_load_n(&g_h5755bhPresentationState,__ATOMIC_ACQUIRE)!=H5755BH_GAMEPLAY_VR){g_h5755biLifeRejects++;return;}
+        g_h5755aoPauseOwnerStart=g_h5755adOwnerCaptures;g_h5755aoPauseOwnerDelta=0;
+        __atomic_store_n(&g_h5755biResumePending,0u,__ATOMIC_RELEASE);
+        __atomic_store_n(&g_h5755anHaveLast,0u,__ATOMIC_RELEASE);
+        g_h5754hLastUiPollEndFrame=0;
         g_h5754hPauseActive=1;g_h5754hPauseRequested=0;g_h5754hPauseImageReady=0;g_h5754dPanelAnchorValid=0;
+        h5754at_enter_startup_eye_route(); // Shared by ESC, controller X, and authored pause.
         if(!__atomic_load_n(&g_h5755asUiIslandActive,__ATOMIC_ACQUIRE))__atomic_store_n(&g_h5755asUiEnterArmed,1u,__ATOMIC_RELEASE);
         h5755bh_set_presentation(H5755BH_PAUSE_QUAD,"authored MenuHandler SetMenuActive(true)");
         ext_Log(">>> S6-HANDS5755BI AUTHORED PAUSE #%u: exact SetMenuActive(true) marker -> PAUSE_QUAD; UI island enter armed post-xrEndFrame",g_h5755biPauseTokens);return;
     }
+static void h5755bi_on_lifecycle_token(i32 ev){
+    if((ev==H5755BI_LIFE_PAUSE||ev==H5755BI_LIFE_RESUME)&&(g_s26vDeathActive||g_s26vDeathLoading)){__atomic_store_n(&g_h5755biResumePending,0u,__ATOMIC_RELEASE);return;}
+
+    if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME||ev==H5755BI_LIFE_LOAD_BEGIN)s26y_reset();
+    if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME||ev==H5755BI_LIFE_LOAD_BEGIN){g_s26wIntroActive=0;g_s26cbIntroHandoffPending=0;}
+    if(ev==H5755BI_LIFE_LOAD_BEGIN||ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME){g_s26vDeathActive=0;g_s26vDeathReady=0;g_s26vDeathRetry=0;}
+    if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME)g_s26vDeathLoading=0;
+    g_h5755biLifeTokens++;
+    if(ev==H5755BI_LIFE_GAMMA_DIRECT){g_h5755biGammaTokens++;if(g_h5755biGammaTokens<=4u||(g_h5755biGammaTokens%30u)==0u)ext_Log(">>> S6-HANDS5755BI GAMMA DIRECT #%u: MenuHandler used cGraphics_GetLowLevel().SetBrightness only; ApplyUserConfig/SetScreenSize/deferred-renderer rebuild path bypassed",g_h5755biGammaTokens);return;}
+    if(ev==H5755BI_LIFE_PAUSE){s26bz_begin_pause();return;}
     if(ev==H5755BI_LIFE_RESUME){
         g_h5755biResumeTokens++;__atomic_store_n(&g_h5755biResumePending,1u,__ATOMIC_RELEASE);
         ext_Log(">>> S6-HANDS5755BI AUTHORED RESUME #%u: exact Pause Cancel/ReturnToGame marker; no MENU->GAME polling and no 24-frame classifier",g_h5755biResumeTokens);return;
@@ -12116,6 +12211,15 @@ static u64 s26_native_hand_token(const H5730TString* cls,const H5730TString* fn)
 }
 
 static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TString* objectName,H5730TString* className,H5730TString* functionName){
+    if(h5748t_sso_eq(objectName,"VRMENUC",7u)){
+        if(g_h576mScriptRuntimePublished!=1)return 0;
+        if(h5748t_sso_eq(functionName,"B",1u)){s26ca_menu_apply_scope(1);return 1;}
+        if(h5748t_sso_eq(functionName,"E",1u)){s26ca_menu_apply_scope(0);return 1;}
+        return 0;
+    }
+    // Accept the retired height message from older installed scripts without
+    // changing camera, hand or holster positions. Current scripts no longer send it.
+    if(h5748t_sso_eq(objectName,"VRHEIGHT",8u))return 1;
     if(h5748t_sso_eq(objectName,"VRINTRO",7u)){
         if(h5748t_sso_eq(functionName,"B",1u)){
             if(!p2_xr_on()||!p2_xr_running())return 0;
@@ -12129,6 +12233,7 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
         if(h5748t_sso_eq(functionName,"E",1u)){
             if(g_s26wIntroActive){
                 g_s26wIntroActive=0;
+                g_s26cbIntroHandoffPending=1;g_s26cbIntroEndMapEnters=g_h576bfMapEnters;
                 __atomic_store_n(&g_h5755biNewGameAwaitFreshWorld,0u,__ATOMIC_RELEASE);
                 h5755bi_on_lifecycle_token(H5755BI_LIFE_GAME_HANDOFF);
             }
@@ -12468,11 +12573,7 @@ static i32 h5754h_query_ui_state(void){
 }
 static i32 h5754h_open_pause_authored(void){
     g_h5754hPauseOpenRequests++;
-    /* Snapshot natural owner activity for this authored Pause lifetime.  This is
-       read-only and lets AO distinguish a settings-owned rebuild from a repair
-       the VR transition actually needs. */
-    g_h5755aoPauseOwnerStart=g_h5755adOwnerCaptures;g_h5755aoPauseOwnerDelta=0;
-    if(g_h5755kGameplaySeen&&!__atomic_load_n(&g_h5755asUiIslandActive,__ATOMIC_ACQUIRE))__atomic_store_n(&g_h5755asUiEnterArmed,1u,__ATOMIC_RELEASE);
+    /* The common lifecycle event owns render setup for every input source. */
     if(!h5754h_script_method("HPL3VR_OpenPause")){g_h5754hPauseOpenRejects++;__atomic_store_n(&g_h5755asUiEnterArmed,0u,__ATOMIC_RELEASE);return 0;}
     g_h5754hPauseOpenOK++;return 1;
 }
@@ -14761,11 +14862,22 @@ static void h5755bi_detach_vr_world_refs(const char* why){g_s26bvGuiCount=0;g_s2
 static void h5755bi_resume_post_endframe(void){
     if(!__atomic_exchange_n(&g_h5755biResumePending,0u,__ATOMIC_ACQ_REL))return;
     if(g_s26vDeathActive||g_s26vDeathLoading)return; // Also reject a queued pre-death Resume.
+    __atomic_store_n(&g_h5755asUiEnterArmed,0u,__ATOMIC_RELEASE); // Pause+resume in one frame must not re-enter the UI island.
 
     if(g_h5754wCaptureActive)h5754w_release_capture(0);if(g_h5754zCaptureActive)h5754z_release_capture(0);
     h5754at_exit_startup_eye_route();__atomic_store_n(&g_h5755anHaveLast,0u,__ATOMIC_RELEASE);
     g_h5754hPauseActive=0;g_h5754hPauseRequested=0;g_h5754hPauseImageReady=0;g_h5754tLastTargetEnd=0xffffffffu;g_h5754hPauseResumes++;
     __atomic_store_n(&g_h5755asResumeClassifyActive,0u,__ATOMIC_RELEASE);g_h5755asResumeStableCount=0;
+    if(g_s26wIntroActive||g_s26cbIntroHandoffPending){
+        /* Pause is an overlay. Only the authored VRINTRO E event may end the
+           opening slideshow's flat presentation, never the Resume button. */
+        g_h5755adRefreshArmed=0;
+        __atomic_store_n(&g_h5755atExactGameplayOwnerRefresh,0u,__ATOMIC_RELEASE);
+        h5755bh_set_presentation(H5755BH_TITLE_FLAT,"Pause closed over authored flat intro");
+        h5753c_gate_menu_camera("flat intro resumed",0);
+        ext_Log(">>> S26CA INTRO RESUME: retained flat presentation; awaiting authored intro end");
+        return;
+    }
     if(!h5755as_commit_gameplay_resume()){
         h5755bh_set_presentation(H5755BH_TITLE_FLAT,"authored Resume graphics promotion failed");h5753c_gate_menu_camera("authored Resume promotion failed",0);
         ext_Log(">>> S6-HANDS5755BI AUTHORED RESUME REJECT: exact event arrived but AK gameplay drawable restoration failed; fail-closed TITLE_FLAT");return;
@@ -14774,8 +14886,24 @@ static void h5755bi_resume_post_endframe(void){
     __atomic_store_n(&g_h5754pResumeStickNeutralGate,1u,__ATOMIC_RELEASE);g_h5754pResumeNeutralArms++;g_h5735MoveWasNonzero=1;g_h5747LookWasNonzero=1;
     ext_Log(">>> S6-HANDS5755BI AUTHORED RESUME COMMIT #%u: exact Resume token consumed post-xrEndFrame; AK+AT gameplay drawable restored immediately, no 24-frame UI classifier",g_h5755biResumeCommits);
 }
+static i32 s26cb_intro_destination_ready(void){
+    if(!g_s26cbIntroHandoffPending)return 1;
+    return g_h576bfMapEnters!=g_s26cbIntroEndMapEnters&&
+        g_h576bhMapReadySeen&&g_h14PhysicsSteps-g_h576bhMapReadyStep>=3u;
+}
+static void* s26cb_menu_render_window(void){
+    h5755ag_resolve_query_apis();
+    void* dc=p_h5755agWglGetCurrentDC?p_h5755agWglGetCurrentDC():0;
+    if(dc&&p_h5755sWindowFromDC){void* w=p_h5755sWindowFromDC(dc);if(w)return w;}
+    return g_h5755akWindow;
+}
 static void h5755bi_game_handoff_step(void){
-    if(g_s26wIntroActive)return;
+    if(g_s26wIntroActive||!s26cb_intro_destination_ready())return;
+    if(g_s26cbIntroHandoffPending){
+        g_s26cbIntroHandoffPending=0;
+        __atomic_store_n(&g_h5755biGameplayGraphicsCommitted,0u,__ATOMIC_RELEASE);
+        ext_Log(">>> S26CB INTRO DESTINATION READY: destination enter + MAP-READY + three native steps; graphics promotion now belongs to the destination world");
+    }
     if(!__atomic_load_n(&g_h5755biGameplayHandoffPending,__ATOMIC_ACQUIRE))return;
     const void* world=g_h34RawWorldSeen;void* player=h5755ax_current_player();
     if(!world||!player){g_h5755biGameplayCandidateWaits++;return;}
@@ -14791,6 +14919,9 @@ static void h5755bi_game_handoff_step(void){
     if(!__atomic_load_n(&g_h5755biGameplayGraphicsCommitted,__ATOMIC_ACQUIRE)){
         if(!h5755as_commit_gameplay_resume())return;
         __atomic_store_n(&g_h5755biGameplayGraphicsCommitted,1u,__ATOMIC_RELEASE);
+        /* The exact owner rebuild above replaces the old second, native-size
+           startup rebuild on first panel exit. Do not downgrade it afterward. */
+        g_h5755kGameplaySeen=1;
     }
     g_h5753eLoadedRawWorld=world;g_h5753eLoadedWorldStep=g_h14PhysicsSteps;g_h5753eLoadedBoundarySeen++;
     g_h5755beSemanticGameWorld=(u64)world;g_h5755beSemanticGameStep=g_h14PhysicsSteps;g_h5755beSemanticGameArms++;g_h5755bhNativeGameCandidates++;g_h5755biGameplayCandidates++;
@@ -20282,7 +20413,8 @@ static void s26bb_apply_world_scale(void){
     g_h5755euWorldScale=metric;
     *p2_eye_offset_scale_ptr()=metric;
     g_h5755ebSubtitleAnchorValid=0;g_h5755fmSubtitleLatePoseValid=0;
-    if(g_h5753cAuthorityEnabled)h5735_request_recenter("world-scale-change");
+    /* Scale changes preserve the existing tracking origin: recentering here
+       erased physical crouch/lean and changed apparent eye height. */
     ext_Log(">>> S26BB WORLD SCALE: %u percent -> %.4f world-units/physical-m; hand visual and collision geometry compensated together; applied after physics with neither hand holding an item",percent,metric);
 }
 

@@ -1,8 +1,33 @@
-param([string]$GameArguments = '', [switch]$CheckOnly)
+param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly)
 $ErrorActionPreference = 'Stop'
 # Use the Windows PowerShell modules even when a parent shell supplied a PowerShell 7 module path.
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility')
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Management')
+function Stop-SomaInstances {
+    # Limit cleanup to the two game executable names; never stop Steam or the VR runtime.
+    $instances = @(Get-Process -Name Soma,Soma_NoSteam -ErrorAction SilentlyContinue)
+    foreach ($instance in $instances) {
+        try {
+            if ($instance.HasExited) { continue }
+            Write-Output ('Closing existing SOMA process ' + $instance.Id + '...')
+            # Give the game a short opportunity to shut down normally before clearing an orphan.
+            if ($instance.MainWindowHandle -ne [IntPtr]::Zero) {
+                [void]$instance.CloseMainWindow()
+                [void]$instance.WaitForExit(3000)
+            }
+            if (!$instance.HasExited) {
+                $instance.Kill()
+                if (!$instance.WaitForExit(5000)) { throw 'The process did not exit within five seconds.' }
+            }
+        } catch {
+            if (!$instance.HasExited) {
+                throw ('Could not close SOMA process ' + $instance.Id + ': ' + $_.Exception.Message + ' Close it in Task Manager, or run the launcher with the same permissions as that process.')
+            }
+        } finally { $instance.Dispose() }
+    }
+}
+if ($CheckOnly -and $StopOnly) { throw 'Choose either -CheckOnly or -StopOnly.' }
+if ($StopOnly) { Stop-SomaInstances; Write-Output 'SOMA process cleanup completed.'; exit 0 }
 $gameDir = $PSScriptRoot
 $exe = Join-Path $gameDir 'Soma.exe'
 $dll = Join-Path $gameDir 'hpl3vr.dll'
@@ -12,9 +37,8 @@ foreach ($p in @($exe,$dll,$injector,(Join-Path $gameDir 'openxr_loader.dll'))) 
 }
 $expectedExe = '7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113'
 if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedExe) {
-    throw 'This Soma.exe does not match the executable validated for S26BY. See SOMA_VR_README.txt; other executable builds need compatibility testing.'
+    throw 'This Soma.exe does not match the executable validated for S26CC. See SOMA_VR_INSTALLATION.md; other executable builds need compatibility testing.'
 }
-if (Get-Process -Name Soma -ErrorAction SilentlyContinue) { throw 'SOMA is already running. Close it before using this launcher.' }
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -33,6 +57,7 @@ public static class SomaVrLaunch {
 }
 '@
 if ($CheckOnly) { Write-Output 'Executable and launcher checks passed. No game was started.'; exit 0 }
+Stop-SomaInstances
 $calibration = Join-Path $gameDir 'hpl3vr_hand_calibration.ini'
 if (!(Test-Path -LiteralPath $calibration)) {
     Copy-Item -LiteralPath (Join-Path $gameDir 'defaults\hpl3vr_hand_calibration.ini') -Destination $calibration

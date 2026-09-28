@@ -8564,7 +8564,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 
 		/////////////
 		// Applies the changes to the engine and displays a message box if restart is needed
-		mbRestartWarning = cLux_ApplyUserConfig();
+        bool bVRMenuScope = _HPL3VR_RuntimeActive_Menu();
+        if(bVRMenuScope) cScript_RunGlobalFunc("VRMENUC", "", "B");
+        mbRestartWarning = cLux_ApplyUserConfig();
+        if(bVRMenuScope) cScript_RunGlobalFunc("VRMENUC", "", "E");
 	}
 
 	void DiscardSettings()

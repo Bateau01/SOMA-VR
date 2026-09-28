@@ -663,6 +663,8 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 	// real SOMA load-screen/menu handlers rather than inferring Pause from
 	// PlayerState_Normal or Newton timing. L=loading/continue modal, M=menu
 	// handler active, G=ordinary gameplay.
+
+
 	void HPL3VR_PublishUIState()
 	{
 		if (!_HPL3VR_RuntimeActive_PlayerHands()) return;

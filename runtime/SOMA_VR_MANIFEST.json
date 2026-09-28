@@ -1,5 +1,5 @@
 {
-  "version": "S26BY",
+  "version": "S26CC",
   "game_exe_sha256": "7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113",
   "files": {
     "defaults/hpl3vr_hand_calibration.ini": {
@@ -339,8 +339,8 @@
       "sha256": "3ab3c6a5e78c518a8c751cf037a9ce47d11a02361e727fea0912ed393d351fb0"
     },
     "hpl3vr.dll": {
-      "bytes": 1670144,
-      "sha256": "80a31c06d48a5b979a04f4e9b3c6242a48f3145d49e2fd319c97f42f703eb761"
+      "bytes": 1671168,
+      "sha256": "dde3b2839a3953f3a713ed86a617b5f5d425710d5e9dc7c17db0f0f3a10a6415"
     },
     "hpl3vr_inject.exe": {
       "bytes": 267851,
@@ -351,8 +351,8 @@
       "sha256": "59e04dc83aa98cb1f4fa7c27e8c7b1c7065bb13b5ae770e565d6bb04067d59c5"
     },
     "Launch-SOMA-VR.ps1": {
-      "bytes": 4399,
-      "sha256": "e05b6179b87964605b15e94979332c92ca7268a618a9968f5f936f2788d525f8"
+      "bytes": 5766,
+      "sha256": "b8c37c26558ab39e7dc8de1fd6f68b2d4728da9dea0dffc97fe4bc00e5daec03"
     },
     "licenses/MinHook-LICENSE.txt": {
       "bytes": 4365,
@@ -454,6 +454,10 @@
       "bytes": 422552,
       "sha256": "9248b6ddd93ddd1c722313d8a24a4c2e9dd996f9dfa8087118037e5ac42c255e"
     },
+    "PACKAGE_VERIFICATION.json": {
+      "bytes": 619,
+      "sha256": "b5ff106dd26a3a779e789d45c920d70b362813edd827c98ab65dc05b032609b4"
+    },
     "script/areas/Area_InteractAux.hps": {
       "bytes": 6754,
       "sha256": "4642a496e00bee5b068ae972f37a433622b90a6b337c1e6ef0dc675b3f0b5baf"
@@ -547,16 +551,16 @@
       "sha256": "a3cc5952e176d7f31d37cdb1de405356df52bda7208d50dfcd10ca36a8009072"
     },
     "script/modules/MenuHandler.hps": {
-      "bytes": 283326,
-      "sha256": "664132624e37d110516b13d1927c172fe465fa40455af0e0aa2d85b8984258c0"
+      "bytes": 283533,
+      "sha256": "aec5ff8f474e8aa3be813182d9895aa18917e7adb43d4a4e3c3518e43f03e7db"
     },
     "script/modules/PlayerEnergyHandler.hps": {
       "bytes": 22577,
       "sha256": "42fe650394f5ed450dfc817ec345ca9c8d7678007af973d84e9b41eaefdcf39b"
     },
     "script/modules/PlayerHandsHandler.hps": {
-      "bytes": 41217,
-      "sha256": "761e41f903775987d716182e7febec37634535514f3fc8a4962bf590ecb232de"
+      "bytes": 41230,
+      "sha256": "f54c93da3fef2df6c6b9642a002cfe84e8923ce5ba13240c120d4f170e13e522"
     },
     "script/modules/PlayerToolHandler.hps": {
       "bytes": 126656,
@@ -655,20 +659,28 @@
       "sha256": "d84eab74f7b65870d7d35b3b07a73058a32d9a4c49937d7e2b4decc4396a1332"
     },
     "SOMA_VR_FEATURES.md": {
-      "bytes": 4017,
-      "sha256": "9ddddf195d0cfb27cd9d0be34f8b89e8b4154ecadc4325f2d593c2e268b929a8"
+      "bytes": 4267,
+      "sha256": "eace69a3ddaf9d3541864692f6715c294aac26bcfe33ab38ef011aab3fc4ff85"
     },
     "SOMA_VR_INSTALLATION.md": {
-      "bytes": 3923,
-      "sha256": "4f18810fe8cc5acba34dc068eb245c1dbde2b954ff059a3e98e4028f6a1585bf"
+      "bytes": 4780,
+      "sha256": "55709d89edbf3fb31984d7640f22a2f9dc32ef8fcb4f546d7ce644d777de88e6"
     },
-    "SOMA_VR_README.txt": {
-      "bytes": 1605,
-      "sha256": "02d31248c10ac00ae218a664d4f937c18464e5e2a970ccf3979906d57a1e5a78"
+    "SOMA_VR_LICENSE.txt": {
+      "bytes": 35823,
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
+    },
+    "SOMA_VR_RELEASE_NOTES.md": {
+      "bytes": 1770,
+      "sha256": "7cc242b61066dc16eccf84452e725c893593d3b32486e5d07bd11539a7d4803d"
     },
     "SOMA_VR_THIRD_PARTY_NOTICES.md": {
-      "bytes": 1934,
-      "sha256": "a988efc6d0034f1966a4ed740150d46347a5fac501bc7ce9a07845170d541cd9"
+      "bytes": 1353,
+      "sha256": "859b6bc35f1d51fe51f846d2adac081ee047c2aaf32746fbd41311cff42c47ce"
+    },
+    "Stop-SOMA-VR.cmd": {
+      "bytes": 124,
+      "sha256": "4530974bc9f81e9199870db1fdece8af77a8b15dd3d9904dd82a8ddf973f7dc1"
     },
     "vr_audio_s/ATTRIBUTION.txt": {
       "bytes": 470,

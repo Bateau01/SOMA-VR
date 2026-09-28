@@ -11,10 +11,10 @@ python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
 Output: `build/hpl3vr.dll`. The checked release hash is:
 
 ```text
-80a31c06d48a5b979a04f4e9b3c6242a48f3145d49e2fd319c97f42f703eb761
+dde3b2839a3953f3a713ed86a617b5f5d425710d5e9dc7c17db0f0f3a10a6415
 ```
 
-The GitHub package was rebuilt using this portable script and matched that hash. The extracted native-rendering regression test reproduces the pre-fix failure and passes after the fix. It mocks engine calls and a small rig; it is not a test of all live controller interactions.
+The S26CC test package was rebuilt using this portable script and matched that hash. The extracted native-rendering regression test reproduces the pre-fix failure and passes after the fix. It mocks engine calls and a small rig; it is not a test of all live controller interactions.
 
 ## How this code is built
 
@@ -41,3 +41,28 @@ Current ready-to-use meshes and collision/skin data are included under `runtime`
 ## Scope
 
 Production source and scripts are the current snapshot. The repository does not manufacture old Git commits or bundle every obsolete diagnostic build. It omits private test-machine logs and save files. The source filenames retain their development names to avoid breaking includes or patch symbols.
+
+Additional regression checks:
+
+```powershell
+python -X utf8 tests/test_transition_height.py "C:\Tools\zig\zig.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/test_launcher_cleanup.ps1
+```
+
+Menu-state regression checks (mocked engine state):
+
+```powershell
+python -X utf8 tests/test_menu_recovery.py "C:\Tools\zig\zig.exe"
+```
+
+Menu-state regression checks (mocked engine state):
+
+```powershell
+python -X utf8 tests/test_menu_recovery.py "C:\Tools\zig\zig.exe"
+```
+
+Menu-state regression checks (mocked engine state):
+
+```powershell
+python -X utf8 tests/test_menu_recovery.py "C:\Tools\zig\zig.exe"
+```

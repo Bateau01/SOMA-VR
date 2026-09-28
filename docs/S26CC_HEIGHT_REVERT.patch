@@ -1,0 +1,204 @@
+--- S26CB/source/s26n.c
++++ S26CC/source/s26n.c
+@@ -305,18 +305,9 @@
+     if(!(s>=H5755EU_WORLD_SCALE_MIN&&s<=H5755EU_WORLD_SCALE_MAX))s=1.0f;
+     return s;
+ }
+-/* S26BZ: a single, authored stance height scales the complete VR rig about
+-   Simon's feet. No player-body/camera field or tracked velocity is modified. */
+-static volatile u32 g_s26bzStanceMillimetres;
+-static float s26bz_rig_height_offset(void){
+-    return (h5755ea_world_units_per_meter()-1.0f)*
+-        (0.001f*(float)__atomic_load_n(&g_s26bzStanceMillimetres,__ATOMIC_ACQUIRE));
+-}
+-static void s26bz_apply_view_height(float* v,float offset){
+-    /* HPL view matrices are row-major. Translate along WORLD up, using the
+-       already-composed view basis, including authored/HMD pitch and roll. */
+-    v[3]-=v[1]*offset;v[7]-=v[5]*offset;v[11]-=v[9]*offset;
+-}
++/* S26CC: retain authored camera height; world scale adds no stance-height offset. */
++
++
+ /* S26BB: compensate only rendered geometry, never rigid tracking frames. */
+ static void s26bb_scale_visual_basis(float* m){
+     float metric=h5755ea_world_units_per_meter();
+@@ -2053,7 +2044,6 @@
+     float ty=(R[1]*dx+R[4]*dy+R[7]*dz)*metric;
+     float tz=(R[2]*dx+R[5]*dy+R[8]*dz)*metric;
+     float* V=(float*)(C+0x74);V[3]-=tx;V[7]-=ty;V[11]-=tz;
+-    s26bz_apply_view_height(V,s26bz_rig_height_offset());
+     g_h5755ghLastRawHeadDelta[0]=dx;g_h5755ghLastRawHeadDelta[1]=dy;g_h5755ghLastRawHeadDelta[2]=dz;
+     g_h5755ghLastCameraDelta[0]=tx;g_h5755ghLastCameraDelta[1]=ty;g_h5755ghLastCameraDelta[2]=tz;
+     g_h5755ghRigid6DofTranslations++;
+@@ -7286,7 +7276,7 @@
+     float dz=g_lastPose[hand].position.z-origin[2];
+     float wx,wy,wz; tracking_delta_to_game(dx,dy,dz,&wx,&wy,&wz);
+     float* body=(float*)((u8*)p2_camera_obj()+0x10);
+-    outPos[0]=body[0]+wx; outPos[1]=body[1]+wy+s26bz_rig_height_offset(); outPos[2]=body[2]+wz;
++    outPos[0]=body[0]+wx; outPos[1]=body[1]+wy; outPos[2]=body[2]+wz;
+     // Reuse the legacy hand placement controls as REAL tracked-hand offsets.
+     // Their authored defaults are neutral here; only the delta from those
+     // defaults is applied to the controller grip pose. All three persist in H9.
+@@ -9078,7 +9068,6 @@
+     mid[0]=origin[0]+ax*metric;mid[1]=origin[1]+dy*metric;mid[2]=origin[2]+az*metric;
+     g_h5749dTranslationFrameApplies++;
+     o_h5749dApplyHeadTranslation(camera);
+-    if(camera==p2_camera_obj()&&p2_head_mode()!=6){s26bz_apply_view_height((float*)((u8*)camera+0x74),s26bz_rig_height_offset());h5753h_sync_camera_inverse((u8*)camera);}
+     mid[0]=raw[0];mid[1]=raw[1];mid[2]=raw[2];
+ }
+ 
+@@ -11654,7 +11643,6 @@
+         float bm[16];p_h14GetMatrix(it->raw,bm);
+         volatile float* mid=p2_eye_mid();volatile float* origin=p2_xr_origin();
+         float wx,wy,wz;tracking_delta_to_game(mid[0]-origin[0],mid[1]-origin[1],mid[2]-origin[2],&wx,&wy,&wz);
+-        wy+=s26bz_rig_height_offset();
+         float* base=(float*)((u8*)p2_camera_obj()+0x10);
+         float neck=0.123452800f;
+         float x=bm[12]+bm[4]*neck-base[0]-wx,y=bm[13]+bm[5]*neck-base[1]-wy,z=bm[14]+bm[6]*neck-base[2]-wz;
+@@ -11820,7 +11808,7 @@
+     if(!out)return 0;float yaw=p2_player_yaw(),cy=ext_Cosf(yaw),sy=ext_Sinf(yaw),metric=h5755ea_world_units_per_meter();
+     if(g_h576dPlayerBodyPosValid){
+         out[0]=g_h576dPlayerBodyPos[0]+metric*(g_h576cHolsterX*cy+g_h576cHolsterZ*sy);
+-        out[1]=g_h576dPlayerBodyPos[1]+(g_h576iBodyToCameraYValid?g_h576iBodyToCameraY:0.0f)+s26bz_rig_height_offset()+metric*g_h576cHolsterY;
++        out[1]=g_h576dPlayerBodyPos[1]+(g_h576iBodyToCameraYValid?g_h576iBodyToCameraY:0.0f)+metric*g_h576cHolsterY;
+         out[2]=g_h576dPlayerBodyPos[2]+metric*(-g_h576cHolsterX*sy+g_h576cHolsterZ*cy);return 1;
+     }
+     /* Fail-visible startup fallback only until the exact script body-position publisher arrives. */
+@@ -12229,12 +12217,9 @@
+         if(h5748t_sso_eq(functionName,"E",1u)){s26ca_menu_apply_scope(0);return 1;}
+         return 0;
+     }
+-    if(h5748t_sso_eq(objectName,"VRHEIGHT",8u)){
+-        if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running())return 0;
+-        char b[32];float mm=0;
+-        if(!h5748n_copy_tstring((void*)functionName,b,sizeof(b))||!h11_parse_float(b,&mm)||!(mm>=200.0f&&mm<=3000.0f))return 0;
+-        __atomic_store_n(&g_s26bzStanceMillimetres,(u32)mm,__ATOMIC_RELEASE);return 1;
+-    }
++    // Accept the retired height message from older installed scripts without
++    // changing camera, hand or holster positions. Current scripts no longer send it.
++    if(h5748t_sso_eq(objectName,"VRHEIGHT",8u))return 1;
+     if(h5748t_sso_eq(objectName,"VRINTRO",7u)){
+         if(h5748t_sso_eq(functionName,"B",1u)){
+             if(!p2_xr_on()||!p2_xr_running())return 0;
+@@ -13572,15 +13557,7 @@
+     s26_texture_budget_policy(g_h576mScriptRuntimePublished==1&&p2_xr_on()&&p2_xr_running(),g_s26TextureBudget,&g_s26TextureOwned);
+ }
+ 
+-static void s26bz_refresh_stance_height(void){
+-    if(!g_h5753cAuthorityEnabled||g_h576bfMapTransitionActive||g_s26vDeathLoading)return;
+-    if(h5755ea_world_units_per_meter()==1.0f&&!__atomic_load_n(&g_s26bbWorldScalePercent,__ATOMIC_ACQUIRE))return;
+-    /* One direct authored query per physics step only when scale compensation
+-       is needed; no entity scan, ray cast, or per-eye script execution. */
+-    (void)h5754h_script_method("HPL3VR_PublishScaleHeight");
+-}
+ static void h25_dispatch_pending(void){
+-    s26bz_refresh_stance_height();
+     s26_texture_streaming_step();
+     h5755ch_dispatch_native_grab_semantics();
+     h5735_dispatch_native_move();
+@@ -13721,7 +13698,7 @@
+ static i32 h14_hand_pose_raw(i32 hand,float* pos,float* M){
+     if(!visual_pose_valid(hand)||!p2_xr_origin_set()||!p2_camera_obj())return 0;
+     volatile float* origin=p2_xr_origin();float dx=g_lastPose[hand].position.x-origin[0],dy=g_lastPose[hand].position.y-origin[1],dz=g_lastPose[hand].position.z-origin[2],wx,wy,wz;tracking_delta_to_game(dx,dy,dz,&wx,&wy,&wz);
+-    float* body=(float*)((u8*)p2_camera_obj()+0x10);pos[0]=body[0]+wx;pos[1]=body[1]+wy+s26bz_rig_height_offset();pos[2]=body[2]+wz;
++    float* body=(float*)((u8*)p2_camera_obj()+0x10);pos[0]=body[0]+wx;pos[1]=body[1]+wy;pos[2]=body[2]+wz;
+     float spread=*p2_hand_spread()-0.18f,reach=*p2_hand_reach()-0.40f,height=*p2_hand_drop()+0.18f,side=(hand==0)?-spread:spread,offx=0.0f,offz=0.0f;
+     h5748o_tracking_horizontal_to_game(side,reach,&offx,&offz);if(h5748o_yaw_zero_active())g_h5748oFrameSyncOffsetCalls++;
+     pos[0]+=offx;pos[1]+=height;pos[2]+=offz;h10_make_model(hand,pos,1.0f,M);
+@@ -14853,7 +14830,7 @@
+     }
+ }
+ 
+-static void h5755bi_detach_vr_world_refs(const char* why){__atomic_store_n(&g_s26bzStanceMillimetres,0u,__ATOMIC_RELEASE);g_s26bvGuiCount=0;g_s26bvReadableWrapper=0;s26ay_aux_clear();s26y_reset();__atomic_store_n(&g_s26nBindCommand,-1,__ATOMIC_RELEASE);s26n_mechanism_clear();s26_clear_heal_contact();g_h5755gjControlNearBody[0]=g_h5755gjControlNearBody[1]=0;g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;g_h576avThetaPendingHand=-1;g_h576avThetaPendingLogical[0]=0;g_h576avThetaPendingStartStep=g_h576avThetaPendingLastStep=0;h576ah_reset_subtitle_world_refs(why);h576b_forget_body("VR world detach");g_h576bHolsterLocalBasis[0]=1;g_h576bHolsterLocalBasis[1]=0;g_h576bHolsterLocalBasis[2]=0;g_h576bHolsterLocalBasis[3]=0;g_h576bHolsterLocalBasis[4]=0;g_h576bHolsterLocalBasis[5]=1;g_h576bHolsterLocalBasis[6]=0;g_h576bHolsterLocalBasis[7]=-1;g_h576bHolsterLocalBasis[8]=0;g_h576bHolsterBasisValid=1;g_h576bHolsterBasisYaw=0;g_h576bOmniState=H576B_OMNI_UNKNOWN;g_h576eBindPending=0;g_h576eBindNotBeforeStep=0;g_h576eBindWantedName[0]=0;g_h576fCaptureScope=0;g_h576fCaptureScopeName[0]=0;g_h576fCapturedWrapper=0;g_h576fCapturedRaw=0;g_h576fCapturedOwner=0;g_h576fCapturedName[0]=0;g_h576dPlayerBodyPosValid=0;g_h576dPlayerBodyPosLastStep=0;g_h576anBodySlotFreshnessFallbackLogged=0;g_h576anOmniShoulderInside[0]=g_h576anOmniShoulderInside[1]=0;g_h576anOmniShoulderRetrieveArmed[0]=g_h576anOmniShoulderRetrieveArmed[1]=0;g_h576aoOmniStowArmedBody[0]=g_h576aoOmniStowArmedBody[1]=0;g_h576aoOmniStowLastInsideStep[0]=g_h576aoOmniStowLastInsideStep[1]=0;g_h576aoOmniHidePending=0;g_h576iBodyToCameraYValid=0;g_h576iBodyToCameraY=0;g_h576kChipCaptureScope=0;g_h576kChipCaptureScopeName[0]=0;g_h576kChipCapturedName[0]=0;g_h576kChipCapturedWrapper=0;g_h576kChipCapturedRaw=0;g_h576kChipCapturedOwner=0;g_h576kChipPickupPending=0;g_h576kChipPickupRaw=0;g_h576kChipPickupOwner=0;g_h576kChipPickupName[0]=0;g_h576kChipCooldownUntilStep=0;g_h576oPhysicalChipRaw=0;g_h576oPhysicalChipOwner=0;g_h576oPhysicalChipName[0]=0;h576aa_inv_reset();g_h576qUpgradeOmniCaptureScope=0;g_h576qUpgradeOmniCaptureScopeName[0]=0;g_h576qUpgradeOmniCapturedName[0]=0;g_h576qUpgradeOmniCapturedWrapper=0;g_h576qUpgradeOmniCapturedRaw=0;g_h576qUpgradeOmniCapturedOwner=0;g_h576sInsertedBodyCaptures=0;g_h576sUpgradeContactMissDiag=0;g_h576jPanelCaptureScope=0;g_h576jPanelCaptureScopeName[0]=0;g_h576jPanelCapturedName[0]=0;g_h576jPanelCapturedWrapper=0;g_h576jPanelCapturedRaw=0;g_h576jPanelCapturedOwner=0;g_h576jPanelCooldownUntilStep=0;g_h576dDockReleasePending=0;g_h576dDockReleaseActive=0;g_h576dDockReleaseBody=0;h576c_reset_created_catherine_candidates(why);
++static void h5755bi_detach_vr_world_refs(const char* why){g_s26bvGuiCount=0;g_s26bvReadableWrapper=0;s26ay_aux_clear();s26y_reset();__atomic_store_n(&g_s26nBindCommand,-1,__ATOMIC_RELEASE);s26n_mechanism_clear();s26_clear_heal_contact();g_h5755gjControlNearBody[0]=g_h5755gjControlNearBody[1]=0;g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;g_h576avThetaPendingHand=-1;g_h576avThetaPendingLogical[0]=0;g_h576avThetaPendingStartStep=g_h576avThetaPendingLastStep=0;h576ah_reset_subtitle_world_refs(why);h576b_forget_body("VR world detach");g_h576bHolsterLocalBasis[0]=1;g_h576bHolsterLocalBasis[1]=0;g_h576bHolsterLocalBasis[2]=0;g_h576bHolsterLocalBasis[3]=0;g_h576bHolsterLocalBasis[4]=0;g_h576bHolsterLocalBasis[5]=1;g_h576bHolsterLocalBasis[6]=0;g_h576bHolsterLocalBasis[7]=-1;g_h576bHolsterLocalBasis[8]=0;g_h576bHolsterBasisValid=1;g_h576bHolsterBasisYaw=0;g_h576bOmniState=H576B_OMNI_UNKNOWN;g_h576eBindPending=0;g_h576eBindNotBeforeStep=0;g_h576eBindWantedName[0]=0;g_h576fCaptureScope=0;g_h576fCaptureScopeName[0]=0;g_h576fCapturedWrapper=0;g_h576fCapturedRaw=0;g_h576fCapturedOwner=0;g_h576fCapturedName[0]=0;g_h576dPlayerBodyPosValid=0;g_h576dPlayerBodyPosLastStep=0;g_h576anBodySlotFreshnessFallbackLogged=0;g_h576anOmniShoulderInside[0]=g_h576anOmniShoulderInside[1]=0;g_h576anOmniShoulderRetrieveArmed[0]=g_h576anOmniShoulderRetrieveArmed[1]=0;g_h576aoOmniStowArmedBody[0]=g_h576aoOmniStowArmedBody[1]=0;g_h576aoOmniStowLastInsideStep[0]=g_h576aoOmniStowLastInsideStep[1]=0;g_h576aoOmniHidePending=0;g_h576iBodyToCameraYValid=0;g_h576iBodyToCameraY=0;g_h576kChipCaptureScope=0;g_h576kChipCaptureScopeName[0]=0;g_h576kChipCapturedName[0]=0;g_h576kChipCapturedWrapper=0;g_h576kChipCapturedRaw=0;g_h576kChipCapturedOwner=0;g_h576kChipPickupPending=0;g_h576kChipPickupRaw=0;g_h576kChipPickupOwner=0;g_h576kChipPickupName[0]=0;g_h576kChipCooldownUntilStep=0;g_h576oPhysicalChipRaw=0;g_h576oPhysicalChipOwner=0;g_h576oPhysicalChipName[0]=0;h576aa_inv_reset();g_h576qUpgradeOmniCaptureScope=0;g_h576qUpgradeOmniCaptureScopeName[0]=0;g_h576qUpgradeOmniCapturedName[0]=0;g_h576qUpgradeOmniCapturedWrapper=0;g_h576qUpgradeOmniCapturedRaw=0;g_h576qUpgradeOmniCapturedOwner=0;g_h576sInsertedBodyCaptures=0;g_h576sUpgradeContactMissDiag=0;g_h576jPanelCaptureScope=0;g_h576jPanelCaptureScopeName[0]=0;g_h576jPanelCapturedName[0]=0;g_h576jPanelCapturedWrapper=0;g_h576jPanelCapturedRaw=0;g_h576jPanelCapturedOwner=0;g_h576jPanelCooldownUntilStep=0;g_h576dDockReleasePending=0;g_h576dDockReleaseActive=0;g_h576dDockReleaseBody=0;h576c_reset_created_catherine_candidates(why);
+     /* Local invalidation ONLY.  Native HPL/Newton world teardown owns every body,
+        joint, collision and shape.  No Newton setter/query/DestroyBody is legal
+        from this semantic teardown boundary. */
+@@ -20434,7 +20411,6 @@
+     if(h9_abs(metric-g_h5755euWorldScale)<0.00001f)return;
+     s26bb_retire_scaled_geometry(0);s26bb_retire_scaled_geometry(1);
+     g_h5755euWorldScale=metric;
+-    s26bz_refresh_stance_height();
+     *p2_eye_offset_scale_ptr()=metric;
+     g_h5755ebSubtitleAnchorValid=0;g_h5755fmSubtitleLatePoseValid=0;
+     /* Scale changes preserve the existing tracking origin: recentering here
+--- S26CB/source/shoulders_r.inc
++++ S26CC/source/shoulders_r.inc
+@@ -111,5 +111,5 @@
+     float dx=hp[0]-origin[0],dy=hp[1]-origin[1],dz=hp[2]-origin[2],x,y,z;
+     if(!(dx>-100&&dx<100&&dy>-100&&dy<100&&dz>-100&&dz<100))return 0;
+     tracking_delta_to_game(dx,dy,dz,&x,&y,&z);
+-    out[0]+=x;out[1]+=y+s26bz_rig_height_offset();out[2]+=z;return 1;
++    out[0]+=x;out[1]+=y;out[2]+=z;return 1;
+ }
+--- S26CB/runtime/script/modules/PlayerHandsHandler.hps
++++ S26CC/runtime/script/modules/PlayerHandsHandler.hps
+@@ -663,16 +663,7 @@
+ 	// real SOMA load-screen/menu handlers rather than inferring Pause from
+ 	// PlayerState_Normal or Newton timing. L=loading/continue modal, M=menu
+ 	// handler active, G=ordinary gameplay.
+-    // S26BZ: query the native stance, including camera additions used by crouch.
+-    // This is read-only. The native VR rig applies compensation, not Simon's body.
+-    void HPL3VR_PublishScaleHeight()
+-    {
+-        if (!_HPL3VR_RuntimeActive_PlayerHands()) return;
+-        if (!cLux_MapIsLoaded() || cLux_IsChangingMap()) return;
+-        float height = Player_GetCameraPosition().y - Player_GetFeetPosition().y;
+-        if (height < 0.2f || height > 3.0f) return;
+-        cScript_RunGlobalFunc("VRHEIGHT", "", ""+int(height*1000.0f+0.5f));
+-    }
++
+ 
+ 	void HPL3VR_PublishUIState()
+ 	{
+--- S26CB/tests/test_transition_height.py
++++ S26CC/tests/test_transition_height.py
+@@ -54,27 +54,7 @@
+   h5754at_exit_startup_eye_route();CHECK(hook==1&&head==0);
+  }
+  g_h5755bhPresentationState=0;s26bz_begin_pause();CHECK(hook==1&&head==0);
+- // Every slider value; floor elevations, crouching, standing, seated and head movement.
+- for(int pc=50;pc<=200;pc+=5)for(int mm=400;mm<=2200;mm+=100){
+-  metric=100.f/pc;g_s26bzStanceMillimetres=mm;float h=mm*.001f;
+-  float off=s26bz_rig_height_offset();CHECK(near((h+off)/metric,h));
+-  for(int floor=-50;floor<=50;floor+=10)for(int d=-4;d<=4;d++){
+-   float dy=d*.1f,eye=floor+h+off+metric*dy;
+-   CHECK(near((eye-floor)/metric,h+dy));
+-   // Relative grip/holster placements stay fixed in physical metres.
+-   float hand=eye+metric*(-.35f),slot=eye+metric*(-.12f);
+-   CHECK(near((hand-eye)/metric,-.35f));CHECK(near((slot-eye)/metric,-.12f));
+-  }
+-  for(int deg=-180;deg<=180;deg+=15){
+-   float a=deg*.0174532925f,c=cosf(a),sn=sinf(a);
+-   float v[16]={1,0,0,3,0,c,-sn,4,0,sn,c,5,0,0,0,1},before[16];memcpy(before,v,sizeof(v));
+-   s26bz_apply_view_height(v,off);
+-   CHECK(near(v[3],before[3]));CHECK(near(v[7],before[7]-c*off));CHECK(near(v[11],before[11]-sn*off));
+-   for(int j=0;j<16;j++)if(j!=3&&j!=7&&j!=11)CHECK(v[j]==before[j]);
+-  }
+- }
+- metric=1;g_s26bzStanceMillimetres=1700;CHECK(s26bz_rig_height_offset()==0);
+- printf("PASS %u checks: shared pause lifecycle, repeated resume, 31 world scales, stance/floor/lean and rotated view compensation\n",checks);
++ printf("PASS %u checks: shared pause lifecycle and repeated resume; height-offset wiring removed\n",checks);
+ }
+ '''
+ # Check wiring, not just helper math. Vector/throw conversions must stay translation-free.
+@@ -83,12 +63,16 @@
+ assert 'g_h5755asUiEnterArmed,0u' in fn('h5755bi_resume_post_endframe')
+ assert 's26bz_rig_height_offset' not in fn('tracking_delta_to_game')
+ assert 'world-scale-change' not in fn('s26bb_apply_world_scale')
+-assert 's26bz_rig_height_offset' in (R/'source/shoulders_r.inc').read_text()
++assert 's26bz_rig_height_offset' not in (R/'source/shoulders_r.inc').read_text()
+ for name in ['h5755gh_apply_raw_head_translation','h5749d_apply_head_translation_detour']:
+- assert 's26bz_apply_view_height' in fn(name)
++ assert 's26bz_apply_view_height' not in fn(name)
++assert 's26bz_rig_height_offset' not in s
++assert 'g_s26bzStanceMillimetres' not in s
++assert 'HPL3VR_PublishScaleHeight' not in s
++assert 'HPL3VR_PublishScaleHeight' not in (R/'runtime/script/modules/PlayerHandsHandler.hps').read_text()
+ B=R/'build';B.mkdir(exist_ok=True)
+ c=B/'transition_height_test.c';exe=B/'transition_height_test.exe'
+-c.write_text(header+'\n'.join(fn(n) for n in ['s26bz_rig_height_offset','s26bz_apply_view_height','h5754at_enter_startup_eye_route','h5754at_exit_startup_eye_route','s26bz_begin_pause'])+body)
++c.write_text(header+'\n'.join(fn(n) for n in ['h5754at_enter_startup_eye_route','h5754at_exit_startup_eye_route','s26bz_begin_pause'])+body)
+ subprocess.run([sys.argv[1],'cc','-O2',str(c),'-o',str(exe)],check=True)
+ res=subprocess.run([str(exe)],capture_output=True,text=True);print(res.stdout+res.stderr)
+ (R/'audit').mkdir(exist_ok=True)

@@ -37,11 +37,11 @@ Do not copy another player's saves or runtime FOV cache. Let the runtime create 
 ## If something goes wrong
 
 - **Unsupported executable:** the launcher detected a different `Soma.exe` hash. Report the game edition/version and hash. Do not assume fixed native addresses are compatible with another executable.
-- **SOMA is already running:** close the existing process before starting VR.
+- **SOMA remains running after quitting:** relaunch with Launch-SOMA-VR.cmd, or run Stop-SOMA-VR.cmd to close it without restarting. Both commands close all Soma.exe / Soma_NoSteam.exe instances, including active games; save progress first.
 - **VR initialization fails:** confirm the headset connection and active OpenXR runtime, then examine `hpl3vr.log` in the game directory.
 - **Missing hand family/material:** check that all `hand_*.skin`, `hands_*.dds` and `entities/soma_vr` files were copied, not only the DLL.
 - **Script load error:** preserve the exact error and identify the build. Mixing DLL-only updates with old scripts can leave incompatible components.
-- **World-scale hand-size check:** set scale to 0.70 with empty hands, grab and release a prop, then return to 1.00. Apparent hand size should remain constant. S26BY still needs physical confirmation of this change.
+- **World-scale hand-size check:** set scale to 0.70 with empty hands, grab and release a prop, then return to 1.00. Apparent hand size should remain constant. S26CC reverts the extra apparent-eye-height offset; fixed apparent hand size remains. Headset confirmation remains necessary.
 
 ## Flatscreen and uninstall
 

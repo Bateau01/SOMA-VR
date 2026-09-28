@@ -1,12 +1,13 @@
 {
-  "version": "S26BY",
+  "version": "S26CC",
   "soma_exe_sha256": "7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113",
   "base_payload_sha256": "f17f2048c7625705e3867c7ca9e106c3c343053deefc716e67f210ca647f74ed",
-  "runtime_dll_sha256": "80a31c06d48a5b979a04f4e9b3c6242a48f3145d49e2fd319c97f42f703eb761",
-  "runtime_origin": "Current S26BY installation, session-26 cumulative overlay plus session-25 runtime file inventory",
+  "runtime_dll_sha256": "dde3b2839a3953f3a713ed86a617b5f5d425710d5e9dc7c17db0f0f3a10a6415",
+  "runtime_origin": "v1.0.0 plus cumulative S26BZ/S26CA/S26CB changes, with S26CC reverting height compensation",
   "personal_settings_included": false,
   "reference_rig_calibration_included": true,
   "save_files_included": false,
   "base_rebuild_status": "Exact frozen binary supplied; legacy source snapshots are reference material, not a proven byte-identical base rebuild",
-  "injector_source_status": "Existing injector binary supplied; matching source has not been located"
+  "injector_source_status": "Existing injector binary supplied; matching source has not been located",
+  "upstream_commit": "01c99209bbbb33a97ea46a8e4abe029ae69e46d1"
 }

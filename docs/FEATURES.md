@@ -7,7 +7,7 @@ This inventory describes included implementation, not a claim that every interac
 - OpenXR stereoscopic rendering with runtime-provided per-eye FOV and recommended image sizes; asymmetric eye crops and submission.
 - Tracked head rotation and translation, world-scale control and recentering.
 - Native lighting, shadows and materials for story-dependent human, diving, deep-sea and amputated hand variants, including wrist closures.
-- World-scale compensation for apparent hand size; S26BY adds the missing native mesh-update compensation.
+- World-scale compensation for apparent hand size; S26BY adds the missing native mesh-update compensation; S26CC retains authored eye height without additional world-scale height compensation.
 - Spatial subtitles and hints, subtitle distance settings, and adjustable flat-panel presentation distance.
 - Presentation routes for menus, loading, startup sequences, pause and death/retry. These have received fixes but remain part of regression testing.
 - Comfort controls for selected post effects, distortion, vignette and camera shake.
