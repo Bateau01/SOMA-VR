@@ -1,0 +1,64 @@
+<Entity>
+    <ModelData>
+        <Entities />
+        <Mesh Filename="entities/station/tech/audio_logger_flesher_mem_chip/audio_logger_flesher_mem_chip.DAE">
+            <SubMesh ID="0" Name="chipn_" CreStamp="0" ModStamp="1425631937" WorldPos="0 0 0" Rotation="2.98023e-008 -0 0" Scale="1 1 1" TriCount="154" Material="" />
+        </Mesh>
+        <Bones />
+        <Shapes>
+            <Shape ID="1" Name="ShapeBox_1" CreStamp="1425631945" ModStamp="1425631997" WorldPos="0 0.0220837 -0.0083912" Rotation="0 0 0" Scale="0.175841 0.262422 0.0231621" RelativeTranslation="0 0 0" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+        </Shapes>
+        <Bodies>
+            <Body ID="2" Name="Body_1" CreStamp="0" ModStamp="1439489977" WorldPos="0 0.0220837 -0.0083912" Rotation="0 0 0" Scale="1 1 1" Material="Plastic Computer Chip" Mass="0.2" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="false" CollideNonCharacter="true" Volatile="false" UseSurfaceEffects="false" HasGravity="true" BlocksLight="true">
+                <Shape ID="1" />
+            <Children><Child ID="0" /></Children></Body>
+        </Bodies>
+        <Joints />
+        <Animations />
+        <ProcAnimations />
+    </ModelData>
+    <UserDefinedVariables EntityType="Prop_Tool">
+        <Var Name="Health" Value="100" />
+        <Var Name="Toughness" Value="0" />
+        <Var Name="MaxInteractDistance" Value="0" />
+        <Var Name="EventTag" Value="" />
+        <Var Name="ShowHints" Value="true" />
+        <Var Name="LifeLength" Value="0" />
+        <Var Name="DissolveDuringLifeDecrease" Value="true" />
+        <Var Name="BlocksLineOfSight" Value="true" />
+        <Var Name="MainPhysicsBody" Value="" />
+        <Var Name="NoGravityWhenUnderwater" Value="" />
+        <Var Name="CustomScriptFile" Value="" />
+        <Var Name="CustomScriptClass" Value="" />
+        <Var Name="ShowMesh" Value="true" />
+        <Var Name="DissolveOnDestruction" Value="false" />
+        <Var Name="DissolveTime" Value="1.0" />
+        <Var Name="RandomizeAnimationStart" Value="true" />
+        <Var Name="EffectsOnSound" Value="" />
+        <Var Name="EffectsOffSound" Value="" />
+        <Var Name="EffectsOnTime" Value="1" />
+        <Var Name="EffectsOffTime" Value="1" />
+        <Var Name="StaticMoveCheckCollision" Value="false" />
+        <Var Name="StaticMoveStartSound" Value="" />
+        <Var Name="StaticMoveStopSound" Value="" />
+        <Var Name="StaticMoveLoopSound" Value="" />
+        <Var Name="StaticMoveLoopSoundFade" Value="true" />
+        <Var Name="BreakActive" Value="false" />
+        <Var Name="BreakOnlyOnMainBody" Value="false" />
+        <Var Name="BreakDestroyJoints" Value="false" />
+        <Var Name="BreakMinEnergy" Value="100" />
+        <Var Name="BreakEntity" Value="" />
+        <Var Name="BreakEntityAlignBody" Value="" />
+        <Var Name="BreakSound" Value="" />
+        <Var Name="BreakParticleSystem" Value="" />
+        <Var Name="BreakImpulse" Value="4" />
+        <Var Name="HudObjectEntity" Value="PanelChip_HUD" />
+        <Var Name="InventoryTextEntry" Value="" />
+        <Var Name="InventoryIcon" Value="C:/_BUSINESS/_FRICTIONAL GAMES/SOMA/redist/graphics/inventory/inv_controlchip.tga" />
+        <Var Name="HandAnimationSuffix" Value="elevator_chip" />
+        <Var Name="IsHeavy" Value="false" />
+        <Var Name="CustomUseIcon" Value="UseToolAction" />
+        <Var Name="UseCallback" Value="door_panel_chip_OnUse" />
+        <Var Name="CanBeUsedCallback" Value="door_panel_chip_CanBeUsed" />
+    </UserDefinedVariables>
+</Entity>

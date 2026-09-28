@@ -1,0 +1,454 @@
+
+bool _HPL3VR_HideComfortEffect(const tString&in key)
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    if(!cScript_GetGlobalReturnBool()) return false;
+    return cScript_RunGlobalFunc("VRFX",key,"Q");
+}
+#include "effect/Effects.hps"
+
+/////////////////////////////////////////
+// SETTINGS - VIDEO DISTORTION
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+tString gsDistortionSound = "Player/UI/glitch"; //Is sent parame between 0 and 1 base on the intensity
+
+//------------------------------------------------------------
+
+class cLuxEffect_VideoDistInstance
+{
+	float mfAmount;
+	float mfMaxAmount;
+	float mfTime;
+	float mfFadeInTime;
+	float mfMaxFadeInTime;
+	float mfFadeOutTime;
+	float mfMaxFadeOutTime;
+	bool mbNeverFadeOut;
+	int mlID;
+}
+
+//------------------------------------------------------------
+
+class cScrEffect_VideoDistortion : iScrEffect, iScrEffect_Interface, iScrEffect_VideoDistortion
+{
+
+	//----------------------------------
+	
+	void Init()
+	{
+		mfDirectAmount = 0;
+	}
+	
+	//----------------------------------
+	
+	void OnDestroy()
+	{
+		if(mpEffect is null) return;
+		
+		cLux_GetViewport().GetPostEffectComposite().RemovePostEffect(mpEffect);
+		cGraphics_DestroyPostEffect(mpEffect);
+		@mpEffect = null;
+	}
+	
+	//---------------------------------
+
+	void CreatePostEffect()
+	{
+		if(mbEffectLoaded == false)
+		{
+			//////////////////
+			// Create the post effect if null
+			@mpEffect = cast<cPostEffect_VideoDistortion@>(cLux_GetViewport().GetPostEffectComposite().GetPostEffectFromType("VideoDistortion"));
+
+			if(mpEffect is null)
+			{
+				@mpEffect = cGraphics_CreatePostEffect_VideoDistortion();
+				cLux_GetViewport().GetPostEffectComposite().AddPostEffect(mpEffect, 100);
+			}
+
+			mbEffectLoaded = true;
+		}
+	}
+
+	//----------------------------------
+	
+	void LoadUserConfig()
+	{
+		cConfigFile@ pConfig = cLux_GetUserConfig();
+		mbScreenDistortionsActive = pConfig.GetBool("Gameplay", "ScreenDisortion", true);	
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PUBLIC METHODS
+	/////////////////////////////////////////
+	
+	//---------------------------------
+	
+	void SetSoundEffectsDisabled(bool abX)
+	{
+		mbSoundEffectsDisabled = abX;
+	}
+	
+	//---------------------------------
+	
+	void SetDirectAmount(float afAmount)
+	{
+		mfDirectAmount = afAmount;
+		
+		mBaseObj.SetActive(true);
+	}
+	
+	//----------------------------------
+	
+	int Start(float afAmount, float afTime, float afFadeInTime, float afFadeOutTime, float afVolume)
+	{			
+		cLuxEffect_VideoDistInstance instance;
+		instance.mfAmount = 0;
+		instance.mfMaxAmount = afAmount;
+		instance.mfTime = afTime<0 ? 1.0f: afTime;
+		instance.mbNeverFadeOut = afTime<0;
+		instance.mfFadeInTime = afFadeInTime;
+		instance.mfFadeOutTime = cMath_Max(afFadeOutTime, 0.001f);
+		instance.mfMaxFadeInTime = instance.mfFadeInTime;
+		instance.mfMaxFadeOutTime = instance.mfFadeOutTime;
+		
+		instance.mlID = mlIdCounter++;
+
+		mvInstances.push_back(instance);
+		
+		mfAudio_Volume=afVolume;
+		
+		mBaseObj.SetActive(true);
+		
+		return instance.mlID;
+	}
+	
+	//----------------------------------
+
+	void FadeOut(int alID, float afFadeOutTime)
+	{
+		for(uint i = 0; i < mvInstances.size(); ++i)
+		{
+			if(alID==-1 || mvInstances[i].mlID  == alID)
+			{
+				mvInstances[i].mfTime = 0;
+				mvInstances[i].mfFadeInTime = 0;
+				mvInstances[i].mfFadeOutTime = afFadeOutTime;
+				mvInstances[i].mfMaxFadeOutTime = afFadeOutTime;
+				mvInstances[i].mbNeverFadeOut = false;
+			}
+		}
+	}
+	
+	//----------------------------------
+	
+	void SetMaxAmount(int alID, float afMaxAmount)
+	{
+		for(uint i = 0; i < mvInstances.size(); ++i)
+		{
+			if(mvInstances[i].mlID  == alID)
+			{
+				mvInstances[i].mfMaxAmount = afMaxAmount;
+				
+				break; 
+			}
+		}
+	}
+	
+	//----------------------------------
+	
+	float GetAmount()
+	{
+		return mfCurrentAmount;
+	}
+	
+	float GetEffectAmount()
+	{
+		return mfEffect_Amount;
+	}
+		
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL CALLBACKS
+	/////////////////////////////////////////
+	
+	
+	//----------------------------------
+	
+	void OnStart()
+	{
+	}
+
+	//----------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mbSoundEffectsDisabled=false;
+	}
+	
+	//----------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		Reset();
+	}
+
+	//----------------------------------
+	
+	void Reset()
+	{
+		mfDirectAmount =0;
+		mfIdleTimeCount =0.05;
+		mfDistortionTime =0;
+		mfDistortionTimeCount=0;
+		
+		mfCurrentAmount =0;
+		
+		mfEffect_Amount=0;
+		
+		mvInstances.resize(0);
+		
+		if(mbEffectLoaded)
+		{
+			mpEffect.SetParams(0.0f,0,0,1,cVector2f(0), cVector2f(0));
+		}	
+	}
+
+	//----------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		bool bDistortionEnabled = cScript_GetGlobalVarBool("DistortionEnabled") ;
+		
+		//////////////////////////////
+		// Make sure effect is created
+		CreatePostEffect();
+		
+		//////////////////////////////
+		// Update distortion
+		{
+			///////////////////////////
+			// Idle
+			if(mfIdleTimeCount>0)
+			{
+				mfIdleTimeCount-= afTimeStep;
+				
+				///////////////////////////
+				// Create new distortion
+				if(mfIdleTimeCount<=0)
+				{
+					/////////////////////////
+					// Set time this burst will last.
+					mfDistortionTime = cMath_RandRectf(0.3, 0.8);
+					mfDistortionTime *= (1 - mfCurrentAmount*0.3);
+					mfDistortionTimeCount = mfDistortionTime;
+					
+					/////////////////////////
+					// Set up params
+					mfEffect_RandSeed = cMath_RandRectf(0, 10000);
+					mfEffect_LineDensity = mfCurrentAmount;
+					
+					float fOffsetMin = cMath_Easing(eEasing_QuartIn, mfCurrentAmount, 0.3f, 1.0f);
+					float fOffsetMax = cMath_Easing(eEasing_QuartIn, mfCurrentAmount, 0.5f, 3.0f);
+					mfEffect_OffsetMul = cMath_RandRectf(fOffsetMin, fOffsetMax);
+					
+					/////////////////////////
+					// Play Sound
+					if(mbSoundEffectsDisabled==false && mfAudio_Volume>0)
+					{
+						cLuxSoundExtraData data;
+						if(cLux_PlayGuiSoundDataEx(gsDistortionSound, eSoundEntryType_GuiWorld, mfAudio_Volume, true,data))
+						{
+							data.mpSoundEntry.SetParam(0, mfCurrentAmount);
+						}
+					}
+					
+					/////////////////////////
+					// Extra screen effects
+					if(cMath_RandRectf(0,3.0f-mfCurrentAmount*2.0f)< 1.0f)
+					{
+						mbShakeScreen = true;
+						mfShakeScreenAmount = cMath_RandRectf(0,1);
+					}
+					
+					mfScreenBendSize = cMath_RandRectf(0.05, 0.2);
+				}
+			}
+			//////////////////////
+			// Distortion
+			else if(mfDistortionTimeCount>0)
+			{
+				mfDistortionTimeCount -= afTimeStep;
+				
+				///////////////////////////
+				// Go to Idle period
+				if(mfDistortionTimeCount<=0)
+				{
+					mfDistortionTimeCount=0;
+					
+					mfIdleTimeCount = cMath_RandRectf(0.1f, 0.4);
+					mfIdleTimeCount *= (1 - mfCurrentAmount*0.8);
+					
+					mbShakeScreen = false;
+					mvEffect_ScreenOffset = cVector2f(0);
+				}
+				
+				///////////////////////////
+				// Update params
+				float fT = mfDistortionTimeCount/ mfDistortionTime;
+				float fSin = (cMath_Sin(mfDistortionTimeCount*30)*0.5+0.5f);
+				mfEffect_Amount = (1.0f - cMath_Abs(fT*2.0f-1.0f)) * (0.5 + fSin*0.5);
+				mfEffect_Amount *= cMath_Easing(eEasing_QuintOut, mfCurrentAmount);
+				
+				///////////////////////////
+				// Shake the screen
+				if(mbShakeScreen)
+				{
+					mvEffect_ScreenOffset = cMath_RandRectVector2f(cVector2f(-1),cVector2f(1))*0.014f*mfEffect_Amount;
+					mvEffect_ScreenOffset = mvEffect_ScreenOffset * mfShakeScreenAmount * mfCurrentAmount;
+				}
+			}
+		}
+		
+		//////////////////////////////
+		// Update Instances
+		{
+			for(uint i=0;i<mvInstances.size(); ++i)
+			{
+				cLuxEffect_VideoDistInstance @instance = @mvInstances[i];
+				
+				///////////////////////////////////////
+				// Fade in
+				if(instance.mfFadeInTime >0)
+				{
+					instance.mfFadeInTime -= afTimeStep; 
+					if(instance.mfFadeInTime<0) instance.mfFadeInTime=0;
+					
+					float fT = instance.mfFadeInTime / instance.mfMaxFadeInTime;
+					instance.mfAmount = (1-fT) * instance.mfMaxAmount;
+				}
+				///////////////////////////////////////
+				// Mid point
+				else if(instance.mfTime >0 || instance.mbNeverFadeOut)
+				{
+					if(instance.mbNeverFadeOut==false)
+					{
+						instance.mfTime -= afTimeStep; 
+						if(instance.mfTime<0)instance.mfTime=0;
+					}
+					instance.mfAmount = instance.mfMaxAmount;
+				}
+				///////////////////////////////////////
+				// Fade out
+				else if(instance.mbNeverFadeOut==false)
+				{
+					instance.mfFadeOutTime -= afTimeStep; 
+					if(instance.mfFadeOutTime<0) instance.mfFadeOutTime=0;
+					float fT = instance.mfFadeOutTime / instance.mfMaxFadeOutTime;
+					instance.mfAmount =  fT * instance.mfMaxAmount;
+				}
+				
+				///////////////////////////////////////
+				// Check if over.
+				if(instance.mfTime <= 0 && instance.mfFadeOutTime <= 0 && instance.mfFadeInTime <= 0)
+				{
+					mvInstances.removeAt(i);
+					--i;
+				}
+			}
+		}
+				
+		//////////////////////////////
+		// Set up data
+		{
+			float fAmount = 0;
+			
+			/////////////////////////
+			// Get the largest instances
+			for(int i=0; i<mvInstances.size(); ++i)
+			{
+				fAmount = cMath_Max(mvInstances[i].mfAmount, fAmount);
+			}
+			
+			/////////////////////////
+			// Add direct Amount
+			mfCurrentAmount = cMath_Max(mfDirectAmount, fAmount);
+			if (!bDistortionEnabled)
+				mfCurrentAmount=0.0f;
+			
+			/////////////////////////
+			// Set up params
+			//mpEffect.SetParams(1, 30, 0.15f, cVector2f(0));
+			bool bVRHide = _HPL3VR_HideComfortEffect("HideDistortion");
+			bool bHide = (mbScreenDistortionsActive == false) || bVRHide;
+			mpEffect.SetParams(	(bHide ? 0.0f : mfEffect_Amount), mfEffect_RandSeed, mfEffect_LineDensity, 
+								mfEffect_OffsetMul, bVRHide ? cVector2f(0) : mvEffect_ScreenOffset,
+								bVRHide ? cVector2f(0) : cVector2f(mfEffect_Amount*cMath_Max( (mfCurrentAmount-0.3f)/0.7f,0.0))*mfScreenBendSize);
+			
+			/////////////////////////
+			// Update the looping sound
+			//TODO: Update the looping sound
+			
+			/////////////////////////
+			// Set if active
+			mBaseObj.SetActive(mfEffect_Amount > 0 || mfDirectAmount>0 || mvInstances.size()>0);
+		}
+	}
+
+	void OnDraw(float afTimeStep)
+	{
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//----------------------------------
+
+	[nosave] cPostEffect_VideoDistortion@ mpEffect;
+
+	float mfDirectAmount=0;
+	[nosave] bool mbEffectLoaded=false;
+	float mfCurrentAmount=0;
+
+	[nosave] bool mbScreenDistortionsActive = true;
+	
+	//----------------------------------
+	
+	float mfDistortionTimeCount=0;
+	float mfDistortionTime=0;
+	float mfIdleTimeCount=0.05;
+	bool mbShakeScreen=false;
+	float mfShakeScreenAmount=0;
+	float mfScreenBendSize=0;
+	
+	//----------------------------------
+	
+	array<cLuxEffect_VideoDistInstance> mvInstances;
+	int mlIdCounter=0;
+	
+	//----------------------------------
+	
+	float mfAudio_Volume=1.0;
+	
+	bool mbSoundEffectsDisabled=false;
+	
+	//----------------------------------
+	
+	float mfEffect_Amount=0;
+	float mfEffect_RandSeed=0;
+	float mfEffect_LineDensity=0;
+	float mfEffect_OffsetMul=1;
+	cVector2f mvEffect_ScreenOffset(0);
+		
+	//----------------------------------
+}

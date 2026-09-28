@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Material>
+    <Main BlendMode="Add" DepthTest="true" ForceFullScaleTextures="false" PhysicsMaterial="Default" Type="soliddiffuse" UVSubDivs="1 1" UseAlpha="false" />
+    <TextureUnits>
+        <Diffuse AnimFrameTime="0" AnimMode="None" AnimStartTime="0" Compress="true" File="entities/character/player/hands/hands_diving.dds" MipMaps="true" Type="2D" Wrap="Repeat" />
+        <NMap AnimFrameTime="0" AnimMode="None" AnimStartTime="0" Compress="true" File="entities/character/player/hands/hands_diving_nrm.dds" MipMaps="true" Type="2D" Wrap="Repeat" />
+        <Specular AnimFrameTime="0" AnimMode="None" AnimStartTime="0" Compress="true" File="entities/character/player/hands/hands_diving_spec.dds" MipMaps="true" Type="2D" Wrap="Repeat" />
+        <Illumination AnimFrameTime="0" AnimMode="None" AnimStartTime="0" Compress="true" File="entities/character/player/hands/hands_diving_illlum.dds" MipMaps="true" Type="2D" Wrap="Repeat" />
+    </TextureUnits>
+    <SpecificVariables>
+        <Var Name="HeightMapScale" Value="0.05" />
+        <Var Name="HeightMapBias" Value="0" />
+        <Var Name="IlluminationBrightness" Value="0.125" />
+        <Var Name="FrenselBias" Value="0.2" />
+        <Var Name="FrenselPow" Value="8" />
+        <Var Name="AlphaDissolveFilter" Value="false" />
+        <Var Name="DetailUvMul" Value="4.000000   4.000000" />
+        <Var Name="DetailWeight_Diffuse" Value="1" />
+        <Var Name="DetailWeight_Specular" Value="1" />
+        <Var Name="DetailWeight_Normal" Value="1" />
+        <Var Name="DetailFadeStart" Value="5" />
+        <Var Name="DetailFadeEnd" Value="10" />
+        <Var Name="SwayActive" Value="false" />
+        <Var Name="SwayForceFieldAffected" Value="true" />
+        <Var Name="SwayFreq" Value="1" />
+        <Var Name="SwayAmplitude" Value="0.1" />
+        <Var Name="SwaySpeed" Value="1" />
+        <Var Name="SwayOctaveMuls" Value="0.125000   0.250000   1.000000" />
+        <Var Name="SwayForceFieldMul" Value="0.3" />
+        <Var Name="SwayForceFieldMax" Value="0.6" />
+        <Var Name="SwayYFreqMul" Value="0" />
+        <Var Name="SwaySingleDir" Value="false" />
+        <Var Name="SwaySingleDirVector" Value="0.000000   0.000000   1.000000" />
+        <Var Name="SwaySingleSampleVector" Value="1.000000   0.000000   0.000000" />
+        <Var Name="LiquidTrickleColor" Value="0.000000   0.000000   0.000000   1.000000" />
+        <Var Name="LiquidTrickleSpecular" Value="0.000000   0.000000   0.000000   0.000000" />
+        <Var Name="LiquidTrickleLoopFade" Value="false" />
+        <Var Name="LiquidTrickleFadeSpeed" Value="0.500000   0.500000" />
+        <Var Name="LiquidTrickleEdgeSize" Value="0.5" />
+        <Var Name="LiquidTrickleDryness" Value="0.5" />
+        <Var Name="LiquidTrickleBlendMode" Value="Alpha" />
+    </SpecificVariables>
+</Material>

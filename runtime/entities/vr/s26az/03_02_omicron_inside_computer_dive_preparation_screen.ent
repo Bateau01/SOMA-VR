@@ -1,0 +1,77 @@
+<Entity>
+    <ModelData>
+        <Entities />
+        <Mesh Filename="entities/station/tech/computer_dive_preperation/computer_dive_preperation_screen.fbx">
+            <SubMesh ID="0" Name="monitor1" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="88" Material="" />
+        </Mesh>
+        <Bones>
+            <Bone ID="2" Name="root" />
+            <Bone ID="3" Name="screen">
+                <Sockets>
+                    <Socket ID="10" Name="screen_Socket_1" CreStamp="0" ModStamp="1422881347" WorldPos="0 0.8125 -0.09375" Rotation="0 0 0" Scale="1 1 1" SourceBoneName="" />
+                </Sockets>
+            </Bone>
+            <Bone ID="4" Name="screen (2)" />
+            <Bone ID="5" Name="monitor1" />
+            <Bone ID="6" Name="Texture Group" />
+        </Bones>
+        <Shapes>
+            <Shape ID="8" Name="ShapeBox_1" CreStamp="1422873557" ModStamp="1422873579" WorldPos="0 1.18647696 -0.0620316085" Rotation="-0.48929 -0 0" Scale="0.408889 0.365008 0.0591814871" RelativeTranslation="0 -0.00948303791 -0.0178093087" RelativeRotation="-0.489289985 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="11" Name="AZ_frame_11" CreStamp="1422873557" ModStamp="1422873579" WorldPos="-0.180674046 1.20986763 -0.0181035337" Rotation="-0.48929 -0 0" Scale="0.0475409086 0.365008 0.0403534129" RelativeTranslation="-0.180674046 0.0139076288 0.0261187665" RelativeRotation="-0.489289985 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="12" Name="AZ_frame_12" CreStamp="1422873557" ModStamp="1422873579" WorldPos="0.180700752 1.20986763 -0.0181035337" Rotation="-0.48929 -0 0" Scale="0.0474874964 0.365008 0.0403534129" RelativeTranslation="0.180700752 0.0139076288 0.0261187665" RelativeRotation="-0.489289985 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="13" Name="AZ_frame_13" CreStamp="1422873557" ModStamp="1422873579" WorldPos="2.67061063e-05 1.0576695 0.0629383942" Rotation="-0.48929 -0 0" Scale="0.313860595 0.0201482287 0.0403534129" RelativeTranslation="2.67061063e-05 -0.138290504 0.107160692" RelativeRotation="-0.489289985 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="14" Name="AZ_frame_14" CreStamp="1422873557" ModStamp="1422873579" WorldPos="2.67061063e-05 1.31858395 -0.0759924176" Rotation="-0.48929 -0 0" Scale="0.313860595 0.118671964 0.0403534129" RelativeTranslation="2.67061063e-05 0.122623948 -0.0317701158" RelativeRotation="-0.489289985 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+        </Shapes>
+        <Bodies>
+            <Body ID="9" Name="Body_1" CreStamp="0" ModStamp="1422873581" WorldPos="0 1.19596 -0.0442223" Rotation="-1.49012e-008 -0 0" Scale="1 1 1" Material="" Mass="0" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="true" CollideNonCharacter="true" Volatile="false" UseSurfaceEffects="true" HasGravity="true" BlocksLight="true">
+                <Shape ID="8" />
+                <Shape ID="11" />
+                <Shape ID="12" />
+                <Shape ID="13" />
+                <Shape ID="14" />
+            </Body>
+        </Bodies>
+        <Joints />
+        <Animations>
+            <Animation Name="activate" File="entities/station/tech/computer_dive_preperation/animation/computer_dive_preperation_screen_activate.fbx" Layer="Default" Speed="1" />
+            <Animation Name="activated" File="entities/station/tech/computer_dive_preperation/animation/computer_dive_preperation_screen_activated.fbx" Layer="Default" Speed="1" />
+            <Animation Name="inactive" File="entities/station/tech/computer_dive_preperation/animation/computer_dive_preperation_screen_inactive.fbx" Layer="Default" Speed="1" />
+        </Animations>
+        <ProcAnimations />
+    </ModelData>
+    <UserDefinedVariables EntityType="Prop_Rigid">
+        <Var Name="Health" Value="100" />
+        <Var Name="Toughness" Value="0" />
+        <Var Name="MaxInteractDistance" Value="0" />
+        <Var Name="EventTag" Value="" />
+        <Var Name="ShowHints" Value="true" />
+        <Var Name="LifeLength" Value="0" />
+        <Var Name="DissolveDuringLifeDecrease" Value="true" />
+        <Var Name="BlocksLineOfSight" Value="true" />
+        <Var Name="MainPhysicsBody" Value="" />
+        <Var Name="CustomScriptFile" Value="" />
+        <Var Name="CustomScriptClass" Value="" />
+        <Var Name="ShowMesh" Value="true" />
+        <Var Name="DissolveOnDestruction" Value="false" />
+        <Var Name="DissolveTime" Value="1.0" />
+        <Var Name="RandomizeAnimationStart" Value="true" />
+        <Var Name="EffectsOnSound" Value="" />
+        <Var Name="EffectsOffSound" Value="" />
+        <Var Name="EffectsOnTime" Value="0.2" />
+        <Var Name="EffectsOffTime" Value="0.2" />
+        <Var Name="StaticMoveCheckCollision" Value="false" />
+        <Var Name="StaticMoveStartSound" Value="" />
+        <Var Name="StaticMoveStopSound" Value="" />
+        <Var Name="StaticMoveLoopSound" Value="" />
+        <Var Name="StaticMoveLoopSoundFade" Value="true" />
+        <Var Name="BreakActive" Value="false" />
+        <Var Name="BreakOnlyOnMainBody" Value="false" />
+        <Var Name="BreakDestroyJoints" Value="false" />
+        <Var Name="BreakMinEnergy" Value="100" />
+        <Var Name="BreakEntity" Value="" />
+        <Var Name="BreakEntityAlignBody" Value="" />
+        <Var Name="BreakSound" Value="" />
+        <Var Name="BreakParticleSystem" Value="" />
+        <Var Name="BreakImpulse" Value="4" />
+    </UserDefinedVariables>
+</Entity>

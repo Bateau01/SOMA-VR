@@ -1,0 +1,1818 @@
+
+//-------------------------------------------------
+
+#include "modules/ModuleInterfaces.hps"
+#include "player/Player_Types.hps"
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// GENERAL
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * This gets the number of ticks (60/second is default) since start of map.
+ * 
+ **/
+int Map_GetTimeStamp()
+{
+	return cLux_GetCurrentMap().GetTimeStamp();
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets how long time it has elapsed since the time step was retrieved.
+ * 
+ * @param alTimeStamp value gotten from Map_GetTimeStamp
+ **/
+float Map_GetElapsedTime(int alTimeStamp)
+{
+	return cLux_GetCurrentMap().GetElapsedTime(alTimeStamp);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// PROPERTIES
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Sets the displayed name of the current map.
+ * 
+ * @param asNameEntry new name of the map.
+ **/
+void Map_SetDisplayNameEntry(const tString&in asNameEntry)
+{
+	cLuxMap@ pMap = cLux_GetCurrentMap();
+	pMap.SetDisplayNameEntry(asNameEntry);
+}
+
+//-------------------------------------------------
+
+/**
+ * Activates or deactivates the skybox of the current map
+ * 
+ * @param abX true = activate - false = deactivate.
+ **/
+void Map_SetSkyBoxActive(bool abX)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	pWorld.SetSkyBoxActive(abX);
+}
+
+/**
+ * Sets the texture of the skybox in the current map
+ * 
+ * @param asTexture file name of the texture to set.
+ **/
+void Map_SetSkyBoxTexture(const tString&in asTexture)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+    iTexture@ pTexture = null;
+	if(asTexture != "")
+		@pTexture = cResources_CreateTextureCubeMap(asTexture,  true);
+    
+	pWorld.SetSkyBox(pTexture, true);
+}
+
+/**
+ * Sets the color of the skybox in the current map
+ * 
+ * @param acColor color to set.
+ **/
+void Map_SetSkyBoxColor(const cColor&in acColor)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	pWorld.SetSkyBoxColor(acColor);
+}
+
+//-------------------------------------------------
+
+/**
+ * Activates or deactivates fog in the current map
+ * 
+ * @param abX true = activate - false = deactivate.
+ **/
+void Map_SetFogActive(bool abX)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	pWorld.SetFogActive(abX);
+}
+
+/**
+ * Sets the properties of the fog in the current map
+ * 
+ * @param afStart start distance of fog.
+ * @param afEnd distance where the fog effect is maxed out.
+ * @param afFalloffExp rate at which the fog effect will decrease over the distance between afStart and afEnd.
+ * @param acColor color of fog.
+ * @param abCulling true = objects hidden by fog are not rendered - false = fog has no effect on whether objects are rendered or not.
+ **/
+void Map_SetFogProperties(float afStart, float afEnd, float afFalloffExp, const cColor&in acColor, bool abCulling)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	pWorld.SetFogStart(afStart);
+	pWorld.SetFogEnd(afEnd);
+	pWorld.SetFogFalloffExp(afFalloffExp);
+	pWorld.SetFogColor(acColor);
+	pWorld.SetFogCulling(abCulling);
+}
+
+//-------------------------------------------------
+
+/**
+ * Activates or deactivates the secondary fog
+ * 
+ * @param abX true = activate - false = deactivate.
+ **/
+void Map_SetSecondaryFogActive(bool abX)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	pWorld.SetSecondaryFogActive(abX);
+}
+
+/**
+ * Sets the properties of the secondary fog, both the primary and secondary fog will be applied, these are order independent
+ * 
+ * @param afStart start distance of fog.
+ * @param afEnd distance where the fog effect is maxed out.
+ * @param afFalloffExp rate at which the fog effect will decrease over the distance between afStart and afEnd.
+ * @param acColor color of fog.
+ **/
+void Map_SetSecondaryFogProperties(float afStart, float afEnd, float afFalloffExp, const cColor&in acColor)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	pWorld.SetSecondaryFogStart(afStart);
+	pWorld.SetSecondaryFogEnd(afEnd);
+	pWorld.SetSecondaryFogFalloffExp(afFalloffExp);
+	pWorld.SetSecondaryFogColor(acColor);
+}
+
+//-------------------------------------------------
+
+void Map_FadeFogStart(float afTarget, float afTime)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadeFogStart(afTarget, afTime);
+}
+
+//-------------------------------------------------
+
+void Map_FadeFogEnd(float afTarget, float afTime)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadeFogEnd(afTarget, afTime);
+}
+
+//-------------------------------------------------
+
+void Map_FadeFogColor(const cColor &in aTarget, float afTime)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadeFogColor(aTarget, afTime);
+}
+
+//-------------------------------------------------
+
+void Map_FadeFogFalloffExp(float afTarget, float afTime)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadeFogFalloffExp(afTarget, afTime);
+}
+
+//-------------------------------------------------
+
+void Map_SetEnvironmentParticlesActive(bool abState)
+{
+	cLux_GetCurrentMap().GetWorld().SetEnvironmentParticlesActive(abState);
+}
+
+//-------------------------------------------------
+
+/**
+ * Get all env particles that match name
+ * @param asName Name of the env particle, wildcard accepted
+ * @param avParticles Array where the matching cEnvironmentParticles objects will be returned to.
+ */
+array<cEnvironmentParticles@> Map_GetEnvironmentParticles(tString asName, array<cEnvironmentParticles@> &inout avParticles)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	if(cString_GetFirstStringPos(asName, "*") < 0)
+	{
+		for(int i = 0; i < pWorld.GetEnvironmentParticleNum(); ++i)
+		{
+			cEnvironmentParticles@ pPart = pWorld.GetEnvironmentParticles(i);
+
+			if(pPart.GetName() == asName) avParticles.push_back(pPart); 
+		}
+	}
+	else
+	{
+		array<tString> vWantedStrings;
+		tString sSepp = "*";
+		cString_GetStringVec(asName, vWantedStrings, sSepp);
+
+		bool bFirstCharWildCard = asName[0] == '*';
+		for(int i = 0; i < pWorld.GetEnvironmentParticleNum(); ++i)
+		{
+			cEnvironmentParticles@ pPart = pWorld.GetEnvironmentParticles(i);
+			bool bContainsStrings = true;
+			int lLastPos = -1;
+
+			//Iterate wanted strings and name make sure they exist and show up in correct order.
+			for(uint j=0; j<vWantedStrings.size(); ++j)
+			{
+				int lPos = cString_GetFirstStringPos(pPart.GetName(), vWantedStrings[j]);
+		
+				//If the next string was found before the previous OR the first string is at the start of the string, skip this entity.
+				if(lPos <= lLastPos || (bFirstCharWildCard == false && lLastPos == -1 && lPos != 0)) 
+				{
+					bContainsStrings = false;
+					break;
+				}
+
+				lLastPos = lPos;
+			}
+
+			//Add entity
+			if(bContainsStrings)
+			{
+				avParticles.push_back(pPart); 
+			}
+		}
+	}
+
+	return avParticles;
+}
+
+/** 
+ * Toggle visiblity for specific layer
+ * @param asName Name of the env particle, wildcard accepted
+ * @param abVisible If visible
+ */
+void Map_SetEnvironmentParticleVisible(tString asName, bool abVisible)
+{
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name "+asName+ " in Map_SetEnvironmentParticleVisible");
+		return;
+	}
+
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		vParticles[i].SetVisible(abVisible);
+	}
+}
+
+//-------------------------------------------------
+
+/** 
+ * Sets the gravity of the env particles
+ * @param asName Name of the env particle, wildcard accepted
+ * @param avVelocity Gravity velocity 
+ */
+void Map_SetEnvironmentParticleGravityVelocity(tString asName, const cVector3f &in avVelocity)
+{
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name "+asName+ " in Map_SetEnvironmentParticleGravityVelocity");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		vParticles[i].SetGravityVelocity(avVelocity);
+	}
+}
+
+//-------------------------------------------------
+
+/** 
+ * Sets the rotation of the env particles
+ * @param asName Name of the env particle, wildcard accepted
+ * @param avVelocity Rotation velocity
+ */
+void Map_SetEnvironmentParticleRotateVelocity(tString asName, const cVector3f &in avVelocity)
+{
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name "+asName+ " in Map_SetEnvironmentParticleRotateVelocity");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		vParticles[i].SetRotateVelocity(avVelocity);
+	}
+}
+
+//-------------------------------------------------
+
+/** 
+ * Sets the wind of the env particles
+ * @param asName Name of the env particle, wildcard accepted
+ * @param avVelocity Wind velocity
+ */
+void Map_SetEnvironmentParticleWindVelocity(tString asName, const cVector3f &in avVelocity)
+{
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name "+asName+ " in Map_SetEnvironmentParticleWindVelocity");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		vParticles[i].SetWindVelocity(avVelocity);
+	}
+}
+
+//-------------------------------------------------
+
+/** 
+ * Fade the wind velocity of all env particles over time
+ * @param asName Name of the env particle, wildcard accepted
+ * @param avVelocity Gravity velocity
+ * @param afTime time to fade
+ */
+void Map_FadeEnvironmentParticleWindVelocity(tString asName, const cVector3f &in avVelocity, float afTime)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadeEnvParticlesWindVel(avVelocity, afTime, asName);
+}
+
+
+/** 
+ * Fade the color of the env particle
+ * @param asName Name of the env particle, wildcard accepted
+ * @param aColor Color
+ * @param afTime time to fade
+ */
+void Map_FadeEnvironmentParticleColor(tString asName, const cColor &in aColor, float afTime)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadeEnvParticlesColor(aColor, afTime, asName);
+}
+
+
+/** 
+ * Fade the brightness of the env particle
+ * @param asName Name of the env particle, wildcard accepted
+ * @param afBrightness Brightness
+ * @param afTime time to fade
+ */
+void Map_FadeEnvironmentParticleBrightness(tString asName, float afBrightness, float afTime)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadeEnvParticlesBrightness(afBrightness, afTime, asName);
+}
+
+//-------------------------------------------------
+
+/** 
+ * Fade the color of the env particle
+ * @param asName Name of the env particle, wildcard accepted
+ * @param aColor color to set
+ */
+void Map_SetEnvironmentParticleColor(tString asName, const cColor &in aColor)
+{
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name '"+asName+ "' in Map_SetEnvironmentParticleColor");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		vParticles[i].SetColor(aColor);
+	}
+}
+
+//-------------------------------------------------
+
+/** 
+ * Set the fade out settings for the environment particles.
+ * @param asName Name of the env particle, wildcard accepted
+ * @param afStart distance at which the particles will start to fade out.
+ * @param afEnd distance at which the particles will be completely faded out.
+ */
+void Map_SetEnvironmentParticleFadeOut(tString asName, float afStart, float afEnd)
+{
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name '"+asName+ "' in Map_SetEnvironmentParticleFadeOut");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		vParticles[i].SetFadeOutStart(afStart);
+		vParticles[i].SetFadeOutEnd(afEnd);
+	}
+}
+
+/** 
+ * Set the fade in settings for the environment particles.
+ * @param asName Name of the env particle, wildcard accepted
+ * @param afStart distance at which the particles will start to fade in.
+ * @param afEnd distance at which the particles will be completely faded in.
+ */
+void Map_SetEnvironmentParticleFadeIn(tString asName, float afStart, float afEnd)
+{
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name '"+asName+ "' in Map_SetEnvironmentParticleFadeIn");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		vParticles[i].SetFadeInStart(afStart);
+		vParticles[i].SetFadeInEnd(afEnd);
+	}
+}
+
+//-------------------------------------------------
+
+/** 
+ * Sets the wind of the env particles
+ * @param asName Name of the env particle, wildcard accepted
+ * @param asClipSourceEntity Name of the entity to use for clipping, will use main body or mesh entity bounding volume
+ * @param abAdditive If the area should be used to add or remove env particles
+ */
+void Map_AddEnvironmentParticleClipArea(tString asName, tString asClipSourceEntity, bool abAdditive=true)
+{
+	iLuxEntity@ pEnt = Map_GetEntity(asClipSourceEntity);
+
+	if(pEnt is null)
+	{
+		Error("Could not find clip entity '"+asClipSourceEntity+"' in Map_AddEnvironmentParticleClipArea");
+		return;
+	}
+
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name "+asName+ " in Map_AddEnvironmentParticleClipArea");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		if(pEnt.GetMainBody() !is null)
+		{
+			vParticles[i].AddClipArea(pEnt.GetMainBody(), abAdditive == false);
+		}
+		else
+		{
+			vParticles[i].AddClipArea(pEnt.GetMeshEntity(), abAdditive == false);
+		}
+	}
+}
+
+/** 
+ * Sets the wind of the env particles
+ * @param asName Name of the env particle, wildcard accepted
+ * @param asClipSourceEntity Name of the entity to use for clipping, will use main body or mesh entity bounding volume
+ */
+void Map_RemoveEnvironmentParticleClipArea(tString asName, tString asClipSourceEntity)
+{
+	iLuxEntity@ pEnt = Map_GetEntity(asClipSourceEntity);
+
+	if(pEnt is null)
+	{
+		Error("Could not find clip entity '"+asClipSourceEntity+"' in Map_AddEnvironmentParticleClipArea");
+		return;
+	}
+
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name '"+asName+ "' in Map_RemoveEnvironmentParticleClipArea");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		if(pEnt.GetMainBody() !is null)
+		{
+			vParticles[i].RemoveClipArea(pEnt.GetMainBody());
+		}
+		else
+		{
+			vParticles[i].RemoveClipArea(pEnt.GetMeshEntity());
+		}
+	}
+}
+
+//-------------------------------------------------
+
+/** 
+ * Set flashlight to affect particles
+ * @param asName Name of the env particle, wildcard accepted
+ * @param apLight Spotlight to affect
+ * @param afMul Multiplier for the spotlight effect
+ */
+void Map_SetEnvironmentParticlesSpotLight(tString asName, cLightSpot@ apLight, float afMul = 1.0f)
+{
+	array<cEnvironmentParticles@> vParticles;
+	Map_GetEnvironmentParticles(asName, vParticles);
+
+	if(vParticles.empty() && asName != "*")
+	{
+		Error("Could not find EnvironmentParticles with the name '"+asName+ "' in Map_RemoveEnvironmentParticleClipArea");
+		return;
+	}
+	
+	for(uint i = 0; i < vParticles.length(); ++i)
+	{
+		vParticles[i].SetSpotLight(apLight, afMul);
+	}
+}
+
+//-------------------------------------------------
+
+/** 
+ * If player should collide with the terrain or not.
+ */
+void Map_SetPlayerTerrainCollision(bool abX)
+{
+	cLux_GetCurrentMap().SetPlayerTerrainCollision(abX);
+}
+
+//-------------------------------------------------
+
+// Backward compatability
+
+void Map_SetEnvironmentParticleGravityVelocity(const cVector3f &in avVelocity) { Map_SetEnvironmentParticleGravityVelocity("*", avVelocity); }
+void Map_SetEnvironmentParticleRotateVelocity(const cVector3f &in avVelocity) { Map_SetEnvironmentParticleRotateVelocity("*", avVelocity); }
+void Map_SetEnvironmentParticleWindVelocity(const cVector3f &in avVelocity) { Map_SetEnvironmentParticleWindVelocity("*", avVelocity); }
+void Map_FadeEnvironmentParticleWindVelocity(const cVector3f &in avVelocity, float afTime) { Map_FadeEnvironmentParticleWindVelocity("*", avVelocity, afTime); }
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// PRESET
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/** 
+ * Setup fog for the specified preset
+ *
+ * @param asName Name of the preset
+ * @param abActive If fog should be active
+ * @param afStart Where fog starts showing
+ * @param afEnd Where fog has full effect
+ * @param afFalloffExp How fast the fog fades to full effect, lower is faster
+ * @param aColor Color of the fog
+ * @param afBrightness Brightness of the fog
+ * @param abUnderwater If underwater fog should be used
+ * @param abSkybox If fog color should be taken from skybox
+ */
+void Map_Preset_SetupFog(tString asName, bool abActive, float afStart = 0, float afEnd = 0, float afFalloffExp = 1, cColor aColor=1, float afBrightness=1, bool abUnderwater=false, bool abSkybox=false)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.PresetSetFog(asName, abActive, afStart, afEnd, afFalloffExp, aColor, afBrightness, abUnderwater, abSkybox);
+}
+
+/** 
+ * Setup secondary fog for the specified preset
+ *
+ * @param asName Name of the preset
+ * @param abActive If fog should be active
+ * @param afStart Where fog starts showing
+ * @param afEnd Where fog has full effect
+ * @param afFalloffExp How fast the fog fades to full effect, lower is faster
+ * @param aColor Color of the fog
+ * @param afBrightness Brightness of the fog
+ */
+void Map_Preset_SetupSecondaryFog(tString asName, bool abActive, float afStart=0, float afEnd=0, float afFalloffExp=1, cColor aColor=1, float afBrightness=1)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.PresetSetSecondaryFog(asName, abActive, afStart, afEnd, afFalloffExp, aColor, afBrightness);
+}
+
+/** 
+ * Setup depth of field for specified preset
+ *
+ * @param asName Name of the preset
+ * @param abActive If DoF should be active
+ * @param afStart Where near plane starts
+ * @param afEnd Where far plane starts
+ * @param afFalloff How fast the depth of field fades in
+ */
+void Map_Preset_SetupDepthOfField(tString asName, bool abActive, float afStart=0, float afEnd=0, float afFalloff=1)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.PresetSetDepthOfField(asName, abActive, afStart, afEnd, afFalloff);
+}
+
+/** 
+ * Setup bloom for specified preset
+ *
+ * @param asName Name of the preset
+ * @param afWidth If bloom should be active
+ * @param afBrightPass How bright 
+ * @param afFalloff Falloff of the bloom blur
+ * @param aTint Color and brightness of bloom
+ */
+void Map_Preset_SetupBloom(tString asName, float afWidth, float afBrightPass, float afFalloff, cColor aTint)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.PresetSetBloom(asName, afWidth, afBrightPass, afFalloff, aTint);
+}
+
+/** 
+ * Setup Direcitonal light for specified preset
+ *
+ * @param asName Name of the preset
+ * @param abActive If dir light should be active
+ * @param aDiffuseColor Base color of the light
+ * @param afBrightness How bright 
+ * @param avDirection Direction of the light
+ * @param aGroundColor Ground color of the ambient light
+ * @param aSkyColor Sky color of the ambient light
+ */
+void Map_Preset_SetupDirLight(tString asName, bool abActive, cColor aDiffuseColor, float afBrightness, cVector3f avDirection, cColor aGroundColor, cColor aSkyColor)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.PresetSetDirLight(asName, abActive, afBrightness, avDirection, aGroundColor, aSkyColor, aDiffuseColor);
+}
+
+/** 
+ * Setup tonemapping for specified preset
+ *
+ * @param asName Name of the preset
+ * @param afToneMappingKey Multiplier of the light
+ * @param afToneMappingExposure Brightness of the tonemapping, value is in log2
+ * @param afToneMappingWhiteCut Colors brighter than this value will be clamped to white
+ */
+void Map_Preset_SetupToneMapping(tString asName, float afToneMappingKey, float afToneMappingExposure, float afToneMappingWhiteCut)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.PresetSetToneMapping(asName, afToneMappingKey, afToneMappingExposure, afToneMappingWhiteCut);
+}
+
+/** 
+ * Setup color grading for specified preset
+ *
+ * @param asName Name of the preset
+ * @param asColorGrading Texture to use
+ */
+void Map_Preset_SetupColorGrading(tString asName, tString asColorGrading)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.PresetSetColorGrading(asName, asColorGrading);
+}
+
+/** 
+ * Setup skybox for specified preset
+ *
+ * @param asName Name of the preset
+ * @param aColor Skybox color
+ * @param afBrightness Brightness for the skybox color
+ */
+void Map_Preset_SetupSkybox(tString asName, const cColor &in aColor, float afBrightness)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.PresetSetSkybox(asName, aColor, afBrightness);
+}
+	
+/** 
+ * Fade in the preset
+ *
+ * @param asName Name of the preset
+ * @param afFadeTime How long it should take to fade in
+ */
+void Map_Preset_Fade(tString asName, float afFadeTime)
+{
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadePreset(asName, afFadeTime);
+}
+	
+/** 
+ * Copies and fades in settings of another map
+ *
+ * @param apMap Map to copy from
+ * @param afFadeTime How long it should take to fade in
+ */
+bool Map_CopyGlobalSettings(cLuxMap@ apMap, float afFadeTime)
+{
+	if(apMap is null || apMap.GetWorld() is null)
+	{
+		Error("Failed to copy global settings from the map, it might not have been created yet, try again in a while");
+
+		return false;
+	}
+
+	iScrMapEffectsHandler_Interface @pEffectsHandler = cast<iScrMapEffectsHandler_Interface>( cLux_GetUserModuleFromID(eModuleType_MapEffectsHandler) );
+	pEffectsHandler.FadeToWorldSettings(apMap.GetWorld(), afFadeTime);
+
+	return true;
+}
+
+//-------------------------------------------------
+
+/**
+ * Actives distance culling and sets the min and max range to the value. Any objects further away then that range will get culled
+ * Only use this function on maps that dont have distance culling active from the .map file
+ *
+ * @param afRange any object further away than this will get culled
+ * @param afRandomSize adds a little random distance to each object, so that not all objects are culled at exactly the same distance
+ */
+void Map_SetDistanceCullingRange(float afRange, float afRandomSize = 0)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	pWorld.SetDistanceCullActive(true);
+	pWorld.SetDistanceCullMinRange(afRange - 0.1);
+	pWorld.SetDistanceCullMaxRange(afRange + 0.1);
+	pWorld.SetDistanceCullRandomSize(afRandomSize);
+	pWorld.SetDistanceCullFadeSpeed(0.1);
+}
+
+/**
+ * Disables distance culling
+ */
+void Map_DisableDistanceCulling()
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+
+	pWorld.SetDistanceCullActive(false);
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets if the map is underwater or not, and the correct properties for the state.
+ * 
+ * @param abX if the map should be underwater or not.
+ * @param abUseStartAndEndEffects if special effect should play at start or end.
+ **/
+void Map_SetUnderwater(bool abX, bool abUseStartAndEndEffects = false)
+{
+	cScript_SetGlobalVarBool("MapUnderwater", abX);
+	
+	/////////////////////////
+	//Player
+	//NOTE: If you update this, update Player_SetUnderwater too!
+	cScript_SetGlobalVarBool("PlayerUnderwater", abX);
+	if(abX)
+	{
+		cScript_SetGlobalArgVector3f(0, cVector3f(0,-2,0));
+		cScript_RunGlobalFunc("LuxPlayer","","_Global_SetGravity");
+	}
+	else
+	{
+		cScript_SetGlobalArgVector3f(0, cVector3f(0,-12,0));
+		cScript_RunGlobalFunc("LuxPlayer","","_Global_SetGravity");
+	}
+	
+	//////////////////////////
+	//Sound effect
+	if(abX)
+		cLux_IncUnderwaterEffectUserCount();
+	else
+		cLux_DecUnderwaterEffectUserCount();
+		
+	cLux_SetUnderwaterEffectsActive(abX, abUseStartAndEndEffects);
+	
+	//////////////////////////
+	//Map properties
+	cLuxMap @pMap = cLux_GetCurrentMap();
+	pMap.SetIsUnderwater(abX);
+
+	iPhysicsWorld @pPhysicsWorld = pMap.GetPhysicsWorld();
+		
+	if(abX)
+	{
+		pPhysicsWorld.SetGravity(cVector3f(0,-1.5f,0));
+	}
+	else
+	{
+		pPhysicsWorld.SetGravity(cVector3f(0,-9.81f,0));	
+	}
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets if the map is under water or not.
+ * 
+ * @return true if the map is underwater.
+ **/
+bool Map_GetUnderwater()
+{
+	return cScript_GetGlobalVarBool("MapUnderwater");
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// TIMERS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Trigger a callback function in X seconds. The timer is added to the front of a list, so in case there are many timers with the same name, this one will be used for any funcion calls.
+ * 
+ * @param asName name of the timer that will trigger a callback function.
+ * @param afTime time in seconds for when to trigger the callback function.
+ * @param asFunction name of the callback function.
+ * 
+ * Syntax for callback function, void FunctionName(const tString &in asTimer).
+ * @abbreviation syntax for the callback function code snippet, clbTimer.
+ **/
+void Map_AddTimer(const tString&in asName, float afTime, const tString&in asFunction)
+{
+	cLux_GetCurrentMap().AddTimer(asName, afTime, asFunction);
+}
+
+//-------------------------------------------------
+
+/**
+ * Remove a created timer.
+ * 
+ * @param asName name of the timer to remove. (if called inside a timer callback, the parent timer will be chosen in case there are many with the same name)
+ **/
+void Map_RemoveTimer(const tString&in asName)
+{
+	cLux_GetCurrentMap().RemoveTimer(asName);
+}
+
+//-------------------------------------------------
+
+/**
+ * Get the current time of a created timer.
+ * 
+ * @param asName name of the timer. (if called inside a timer callback, the parent timer will be chosen in case there are many with the same name)
+ **/
+float Map_GetTimerTime(const tString&in asName)
+{
+	return cLux_GetCurrentMap().GetTimerTime(asName);
+}
+
+//-------------------------------------------------
+
+/**
+ * Get if the specified timer exists.
+ * 
+ * @param asName name of the timer. (if called inside a timer callback, the parent timer will be chosen in case there are many with the same name)
+ * 
+ * @return bool, true if the timer exists.
+ **/
+bool Map_TimerExists(const tString&in asName)
+{
+	return (cLux_GetCurrentMap().GetTimerTime(asName) > 0);
+}
+
+//-------------------------------------------------
+
+/**
+ * Pause/unpause a created timer.
+ * 
+ * @param asName name of the timer to remove. (if called inside a timer callback, the parent timer will be chosen in case there are many with the same name)
+ * @param abX true = pause - false = unpause.
+ **/
+void Map_SetTimerPaused(const tString&in asName, bool abX)
+{
+	cLux_GetCurrentMap().SetTimerPaused(asName, abX);
+}
+
+//-------------------------------------------------
+
+/**
+ * Checks if a timer with the specified name has reached 0, and if so recreates the timer with the specified time and returns true.
+ * Use in if-cases to limit how often the script within the case can run.
+ * 
+ * @param asName name of the timer to check/create. (if called inside a timer callback, the parent timer will be chosen in case there are many with the same name)
+ * @param afTime time to set the timer to if created.
+ * 
+ * @return bool, true if the time has passed and a new timer was created, otherwise false.
+ **/
+bool Map_TimeHasPassed(const tString&in asName, float afTime)
+{
+	if (cLux_GetCurrentMap().GetTimerTime(asName) <= 0)
+	{
+		cLux_GetCurrentMap().AddTimer(asName, afTime, "");
+		return true;
+	}
+	return false;
+}
+
+//-------------------------------------------------
+
+/**
+ * If used inside a timer callback it will restart that the timer that issued that callback.
+ * 
+ * @param afNewTime The time for the new timer to make a callback, if <0 then previous time is used.
+ * 
+ **/
+void Map_RestartCurrentTimer(float afNewTime=-1)
+{
+	cLux_GetCurrentMap().RestartCurrentTimer(afNewTime);
+}
+
+//-------------------------------------------------
+
+void Map_SetTimerUserVarFloat(const tString&in asName, float afX)
+{
+	cLux_GetCurrentMap().SetTimerUserVarFloat(asName, afX);
+}
+void Map_SetTimerUserVarInt(const tString&in asName, int alX)
+{
+	cLux_GetCurrentMap().SetTimerUserVarInt(asName, alX);
+}
+void Map_SetTimerUserVarString(const tString&in asName, const tString&in asX)
+{
+	cLux_GetCurrentMap().SetTimerUserVarString(asName, asX);
+}
+float Map_GetTimerUserVarFloat(const tString&in asName)
+{
+	return cLux_GetCurrentMap().GetTimerUserVarFloat(asName);
+}
+int Map_GetTimerUserVarInt(const tString&in asName)
+{
+	return cLux_GetCurrentMap().GetTimerUserVarInt(asName);
+}
+tString Map_GetTimerUserVarString(const tString&in asName)
+{
+	return cLux_GetCurrentMap().GetTimerUserVarString(asName);
+}
+float Map_IncTimerUserVarFloat(const tString&in asName, int afX)
+{
+	return cLux_GetCurrentMap().IncTimerUserVarFloat(asName, afX);
+}
+int Map_IncTimerUserVarInt(const tString&in asName, int alX)
+{
+	return cLux_GetCurrentMap().IncTimerUserVarInt(asName, alX);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// ENTITIES
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Returns the entity with the given name.
+ * 
+ * @param asName the name of the entity.
+ * @param aType (optional), the type of entity (as an enum).
+ * @param asClass (optional), the class of the entity.
+ * @return iLuxEntity@, the requested entity, or null if the entity was not found. 
+ **/
+iLuxEntity@ Map_GetEntity(const tString &in asName, eLuxEntityType aType = eLuxEntityType_LastEnum, const tString &in asClass = "")
+{
+	return cLux_GetCurrentMap().GetEntityByName(asName, aType, asClass);
+}
+
+//-------------------------------------------------
+/**
+ * Returns an array of entities with a given name.
+ * 
+ * @param asName name of entities. May contain * as wildcards.
+ * @param avOutEntities reference to array that will be filled with lights.
+ * @param aEntityType type of entity to filter by - eLuxEntityType_LastEnum for all types
+ * @return true if any entities found
+ **/
+bool Map_GetEntityArray(const tString &in asName, array<iLuxEntity@> &inout avOutEntities, eLuxEntityType aEntityType = eLuxEntityType_LastEnum)
+{
+	return cLux_GetCurrentMap().GetEntityArray(asName, aEntityType, "", avOutEntities);
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the prop with the given name.
+ * 
+ * @param asName the name of the prop.
+ * @param asClass (optional), the class of the prop.
+ * @return cLuxProp@, the requested prop, or null if the prop was not found. 
+ **/
+cLuxProp@ Map_GetProp(const tString &in asName, const tString &in asClass = "")
+{
+	iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(asName, eLuxEntityType_Prop, asClass);
+	return cLux_ToProp(pEntity);
+}
+
+//-------------------------------------------------
+/**
+ * Returns a light with the given name.
+ * 
+ * @param asName name of light
+ * @return iLight@, the requested light
+ **/
+ 
+iLight@ Map_GetLight(const tString &in asName)
+{
+	return cLux_GetCurrentMap().GetWorld().GetLight(asName);
+}
+
+//-------------------------------------------------
+
+/**
+ * Creates an array of sound entities with a given name.
+ * 
+ * @param asName name of the sound entities. May contain * as wildcards.
+ * @param avOutSoundEntities reference to array that will be filled with sounds.
+ * @return array<cSoundEntity@>, array of sound entities found.
+ **/
+array<cSoundEntity@> Map_GetSoundEntityArray(const tString &in asName, array<cSoundEntity@> &inout avOutSoundEntities)
+{
+	////////////////////////////
+	//If no asterix, just do normal search
+	if(cString_GetFirstStringPos(asName, "*") < 0)
+	{
+		avOutSoundEntities.resize(0);
+		
+		cSoundEntity@ pSoundEntity = cLux_GetCurrentMap().GetWorld().GetSoundEntity(asName);
+		
+		if(pSoundEntity !is null) avOutSoundEntities.push_back(pSoundEntity);
+		
+		return avOutSoundEntities;
+	}
+
+	////////////////////////////
+	//Get the strings that we want to search for
+	array<tString> vWantedStrings;
+	tString sSepp = "*";
+	cString_GetStringVec(asName, vWantedStrings, sSepp);
+
+	bool bFirstCharWildCard = asName[0] == '*';
+
+	////////////////////////////
+	//Iterate entities
+	cSoundEntityIterator@ it = cLux_GetCurrentMap().GetWorld().GetSoundEntityIterator();
+    while(it.HasNext())
+	{
+		cSoundEntity@ pSoundEntity = it.Next();
+		
+		bool bContainsStrings = true;
+		int lLastPos = -1;
+
+		//Iterate wanted strings and name make sure they exist and show up in correct order.
+		for(uint i=0; i<vWantedStrings.length(); ++i)
+		{
+			int lPos = cString_GetFirstStringPos(pSoundEntity.GetName(), vWantedStrings[i]);
+		
+			//If the next string was found before the previous OR the first string is at the start of the string, skip this entity.
+			if(lPos <= lLastPos || (bFirstCharWildCard == false && lLastPos == -1 && lPos != 0)) 
+			{
+				bContainsStrings = false;
+				break;
+			}
+
+			lLastPos = lPos;
+		}
+
+		//Add entity
+		if(bContainsStrings)
+		{
+			avOutSoundEntities.push_back(pSoundEntity);
+		}
+	}
+	 
+	return avOutSoundEntities;
+}
+
+//-------------------------------------------------
+
+// ID Version
+
+//-------------------------------------------------
+
+/**
+ * Returns the entity with the given name.
+ * 
+ * @param asName the name of the entity.
+ * @param aType (optional), the type of entity (as an enum).
+ * @param asClass (optional), the class of the entity.
+ * @return tID, the id to the prop, tID_Invalid returned if not found
+ **/
+tID Map_GetEntityID(const tString &in asName, eLuxEntityType aType = eLuxEntityType_LastEnum, const tString &in asClass = "")
+{
+	return cLux_GetCurrentMap().GetEntityIDByName(asName, aType, asClass);
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the prop with the given name.
+ * 
+ * @param asName the name of the prop.
+ * @param asClass (optional), the class of the prop.
+ * @return tID, the id to the prop, tID_Invalid returned if not found
+ **/
+tID Map_GetPropID(const tString &in asName, const tString &in asClass = "")
+{
+	return cLux_GetCurrentMap().GetEntityIDByName(asName, eLuxEntityType_Prop, asClass);
+}
+
+//-------------------------------------------------
+
+/**
+ * Creates an array of lens flares with a given name.
+ * 
+ * @param asName name of lens flares. May contain * as wildcards.
+ * @param avOutLensFlares reference to array that will be filled with lens flares.
+ * @return array<tID>, array of id to lens flares found.
+ **/
+array<tID> Map_GetLensFlareIDArray(const tString &in asName, array<tID> &inout avOutLensFlares)
+{
+	////////////////////////////
+	//If no asterix, just do normal search
+	if(cString_GetFirstStringPos(asName, "*")<0)
+	{
+		avOutLensFlares.resize(0);
+		
+		cLensFlare@ pLensFlare = cLux_GetCurrentMap().GetWorld().GetLensFlare(asName);
+		if(pLensFlare !is null) avOutLensFlares.push_back(pLensFlare.GetID());
+		return avOutLensFlares;
+	}
+
+	////////////////////////////
+	//Get the strings that we want to search for
+	array<tString> vWantedStrings;
+	tString sSepp = "*";
+	cString_GetStringVec(asName,vWantedStrings, sSepp);
+
+	bool bFirstCharWildCard = asName[0]=='*';
+
+	////////////////////////////
+	//Iterate lens flares
+	cLensFlareIterator@ it = cLux_GetCurrentMap().GetWorld().GetLensFlareIterator();
+    while(it.HasNext())
+	{
+		cLensFlare@ pLensFlare = it.Next();
+		
+		bool bContainsStrings = true;
+		int lLastPos = -1;
+
+		//Iterate wanted strings and name make sure they exist and show up in correct order.
+		for(uint i=0; i<vWantedStrings.length(); ++i)
+		{
+			int lPos = cString_GetFirstStringPos(pLensFlare.GetName(), vWantedStrings[i]);
+		
+			//If the next string was found before the previous OR the first string is at the start of the string, skip this entity.
+			if(lPos <= lLastPos || (bFirstCharWildCard==false && lLastPos==-1 && lPos!=0) ) 
+			{
+				bContainsStrings = false;
+				break;
+			}
+
+			lLastPos = lPos;
+		}
+
+		//Add entity
+		if(bContainsStrings)
+		{
+			avOutLensFlares.push_back(pLensFlare.GetID());
+		}
+	}
+	 
+	return avOutLensFlares;
+}
+
+//-------------------------------------------------
+
+/**
+ * Creates an array of sound entities with a given name.
+ * 
+ * @param asName name of the sound entities. May contain * as wildcards.
+ * @param avOutSoundEntities reference to array that will be filled with lights.
+ * @return array<tID>, array of id to sound entities found.
+ **/
+array<tID> Map_GetSoundEntityIDArray(const tString &in asName, array<tID> &inout avOutSoundEntities)
+{
+	////////////////////////////
+	//If no asterisk, just do normal search
+	if(cString_GetFirstStringPos(asName, "*") < 0)
+	{
+		avOutSoundEntities.resize(0);
+		
+		cSoundEntity@ pSoundEntity = cLux_GetCurrentMap().GetWorld().GetSoundEntity(asName);
+		
+		if(pSoundEntity !is null) avOutSoundEntities.push_back(pSoundEntity.GetID());
+		
+		return avOutSoundEntities;
+	}
+
+	////////////////////////////
+	//Get the strings that we want to search for
+	array<tString> vWantedStrings;
+	tString sSepp = "*";
+	cString_GetStringVec(asName, vWantedStrings, sSepp);
+
+	bool bFirstCharWildCard = asName[0] == '*';
+
+	////////////////////////////
+	//Iterate entities
+	cSoundEntityIterator@ it = cLux_GetCurrentMap().GetWorld().GetSoundEntityIterator();
+    while(it.HasNext())
+	{
+		cSoundEntity@ pSoundEntity = it.Next();
+		
+		bool bContainsStrings = true;
+		int lLastPos = -1;
+
+		//Iterate wanted strings and name make sure they exist and show up in correct order.
+		for(uint i=0; i<vWantedStrings.length(); ++i)
+		{
+			int lPos = cString_GetFirstStringPos(pSoundEntity.GetName(), vWantedStrings[i]);
+		
+			//If the next string was found before the previous OR the first string is at the start of the string, skip this entity.
+			if(lPos <= lLastPos || (bFirstCharWildCard == false && lLastPos == -1 && lPos != 0)) 
+			{
+				bContainsStrings = false;
+				break;
+			}
+
+			lLastPos = lPos;
+		}
+
+		//Add entity
+		if(bContainsStrings)
+		{
+			avOutSoundEntities.push_back(pSoundEntity.GetID());
+		}
+	}
+	 
+	return avOutSoundEntities;
+}
+
+//-------------------------------------------------
+
+/**
+ * Creates an array of particle systems with a given name.
+ * 
+ * @param asName name of particle systems. May contain * as wildcards.
+ * @param avOutParticles reference to array that will be filled with particle systems.
+ * @return array<tID>, array of id to particle systems found.
+ **/
+array<tID> Map_GetParticleSystemIDArray(const tString &in asName, array<tID> &inout avOutParticles)
+{
+	////////////////////////////
+	//If no asterix, just do normal search
+	if(cString_GetFirstStringPos(asName, "*")<0)
+	{
+		avOutParticles.resize(0);
+		
+		cParticleSystemIterator@ it = cLux_GetCurrentMap().GetWorld().GetParticleSystemIterator();
+	
+		while(it.HasNext())
+		{
+			cParticleSystem@ pPS = it.Next();
+			
+			if(pPS.GetName() == asName)
+			{
+				avOutParticles.push_back(pPS.GetID());
+			}
+		}
+		
+		return avOutParticles;
+		
+	}
+
+	////////////////////////////
+	//Get the strings that we want to search for
+	array<tString> vWantedStrings;
+	tString sSepp = "*";
+	cString_GetStringVec(asName,vWantedStrings, sSepp);
+
+	bool bFirstCharWildCard = asName[0]=='*';
+
+	////////////////////////////
+	//Iterate entities
+	cParticleSystemIterator@ it = cLux_GetCurrentMap().GetWorld().GetParticleSystemIterator();
+    while(it.HasNext())
+	{
+		cParticleSystem@ pPS = it.Next();
+		
+		bool bContainsStrings = true;
+		int lLastPos = -1;
+
+		//Iterate wanted strings and name make sure they exist and show up in correct order.
+		for(uint i=0; i<vWantedStrings.length(); ++i)
+		{
+			int lPos = cString_GetFirstStringPos(pPS.GetName(), vWantedStrings[i]);
+		
+			//If the next string was found before the previous OR the first string is at the start of the string, skip this particle system.
+			if(lPos <= lLastPos || (bFirstCharWildCard==false && lLastPos==-1 && lPos!=0) ) 
+			{
+				bContainsStrings = false;
+				break;
+			}
+
+			lLastPos = lPos;
+		}
+
+		//Add entity
+		if(bContainsStrings)
+		{
+			avOutParticles.push_back(pPS.GetID());
+		}
+	}
+	 
+	return avOutParticles;
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// GENERAL
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Changes the active map to the one specified.
+ * 
+ * @param asMapName map to change to.
+ * @param asStartPos name of the player start node that the player should begin at.
+ * @param asStartSound sound that plays before loading the map.
+ * @param asEndSound sound that plays as the new map starts.
+ **/
+// S26BT: finish VR Push while its prop still exists, before spatial deload.
+void Map_HPL3VR_EndPushForTransfer()
+{
+    if(cLux_GetPlayer().GetCurrentStateId()!=ePlayerState_Push) return;
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler", "", "HPL3VR_GetRuntimeActive");
+    if(cScript_GetGlobalReturnBool()) cLux_GetPlayer().ChangeState(ePlayerState_Normal);
+}
+
+void Map_ChangeMap(const tString &in asMapName, const tString &in asStartPos, 
+				   const tString &in asStartSound, const tString &in asEndSound)
+{
+	// Hack to stop gravity/grab issues when passing through a transition
+	if (cLux_GetPlayer().GetCurrentStateName()=="State_Interact_Grab")
+		cLux_GetPlayer().ChangeState(ePlayerState_Normal);
+	Map_HPL3VR_EndPushForTransfer();
+	cLux_ChangeMap(asMapName, asStartPos, "", asStartSound, asEndSound);
+}
+
+/**
+ * Changes the active map to the one specified.
+ * 
+ * @param asMapName map to change to.
+ * @param asStartPos name of the player start node that the player should begin at.
+ * @param asTransferArea name of the area used to transfer objects (and the player) from one map to another
+ * @param asStartSound sound that plays before loading the map.
+ * @param asEndSound sound that plays as the new map starts.
+ **/
+void Map_ChangeMap(const tString &in asMapName, const tString &in asStartPos, const tString &in asTransferArea, 
+				   const tString &in asStartSound, const tString &in asEndSound)
+{
+	// Hack to stop gravity/grab issues when passing through a transition
+	if (cLux_GetPlayer().GetCurrentStateName()=="State_Interact_Grab")
+		cLux_GetPlayer().ChangeState(ePlayerState_Normal);
+	Map_HPL3VR_EndPushForTransfer();
+	cLux_ChangeMap(asMapName, asStartPos, asTransferArea, asStartSound, asEndSound);
+}
+
+/** 
+ * Starts loading in assets for the next map
+ *
+ * @param asMapName Map to load data for
+ * @param aPrio How intrusive the preload is
+ **/
+void Map_Preload(const tString &in asMapName, eWorldStreamPriority aPrio=eWorldStreamPriority_Normal)
+{
+	cLux_PreloadMap(asMapName);
+}
+
+/** 
+ * Prioirty of background download thread
+ *
+ * @param aPrio How intrusive the preload is
+ **/
+void Map_SetPreloadPriority(eWorldStreamPriority aPrio)
+{
+	cLux_SetMapPreloadPriority(aPrio);
+}
+
+/** 
+ * Returns the map that is currently being preloaded
+ *
+ **/
+cLuxMap@ Map_GetPreloadMap()
+{
+	return cLux_GetPreloadMap();
+}
+
+/** 
+ * Deloads the objects in the current map
+ *
+ * @param asTransferArea Objects inside this area will not be deloaded
+ **/
+void Map_Deload(const tString &in asTransferArea = "")
+{
+	//cLux_GetSaveHandler().AutoSave(false, true); //Save right before deloading, since it is not possible to save during
+    // S26BG: hidden VR inventory carriers retain their last world position.
+    // Preserve the existing owned Omni carrier before native spatial deload;
+    // no per-frame scan and no replacement entity/story callback is needed.
+    if(asTransferArea != ""){
+        cScript_SetGlobalArgString(0, asTransferArea);
+        cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRPreserveOmniForDeload");
+        cScript_SetGlobalArgString(0, asTransferArea);
+        cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRPreserveKeysForDeload");
+    }
+	Map_HPL3VR_EndPushForTransfer();
+	cLux_DeloadMap(asTransferArea);
+}
+
+/**
+ * Fades out the screen and all the sounds. Should be called some second before calling change map
+ * 
+ * @param afTime time to fade out over
+ **/
+void Map_FadeOut(float afTime)
+{
+	cLux_GetEffectHandler().FadeOut(afTime);
+	cSound_FadeOutAll(eSoundEntryType_WorldAll, 1.0f / afTime, false);
+}
+
+/** 
+ * Returns if a map change is occuring 
+ *
+ **/
+bool Map_IsChanging()
+{
+	return cLux_IsChangingMap();
+}
+
+/** 
+ * Returns if a map is being streamed in
+ *
+ **/
+bool Map_IsPreloading()
+{
+	return cLux_IsStreamingMap();
+}
+
+/**
+ * Returns if the map has been fully preloaded
+ *
+ **/
+bool Map_IsPreloadCompleted()
+{
+	return cLux_IsReadyToChangeMap();
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// DAMAGE
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/*
+/**
+ * Deals damage to any object that collides with the shape and that is in view from the origin
+ * 
+ * @param aShape cached shape used as damage, size of the shapes are 1 m in diameter
+ * @param a_mtxTransform a transofmration matrix applied to the shape (position, scale, rotation)
+ * @param avOrigin origin of the damage
+ * @param afMinDamage min damage delt
+ * @param afMaxDamage max damage delt
+ * @param afForce force applied to object that gets attacked
+ * @param afMaxImpulse impulse applied to object that gets attacked
+ * @param alStrength damage is only delt to entites that have threshold lower than strength
+ * @param afHitSpeed speed of impact, used when selecting effect
+ * @param aDamageType which type of damage this is, used for effects
+ * @param abCheckEnemies do damage to enemies
+ * @param abCheckPlayer do damage to player
+ * @param abCheckProps do damage to props
+ * @param abLethalForPlayer if the damage can kill the player
+ * @param asSource name of the entity doing the damage
+ **/
+ //Removed while we try and figure out a better design for it!! Do NOT use as is!
+/*bool Map_ShapeDamage(eCollideShapeType aShape, const cMatrixf&in a_mtxTransform, const cVector3f&in avOrigin,
+					 float afMinDamage, float afMaxDamage, float afForce, float afMaxImpulse,
+					 int alStrength, float afHitSpeed, eDamageType aDamageType,
+					 bool abCheckEnemies, bool abCheckPlayer, bool abCheckProps, bool abLethalForPlayer, const tString&in asSource)
+{
+	return cLux_ShapeDamage(aShape, a_mtxTransform, avOrigin, afMinDamage, afMaxDamage, afForce, afMaxImpulse, alStrength, afHitSpeed, aDamageType, abCheckEnemies, abCheckPlayer, abCheckProps, abLethalForPlayer, asSource);
+}*/
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// INTERACTION WHITE LIST
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Disables interaction on all entities that are not on the white list
+ * 
+ * @param abActive if the white list should be used
+ * @param abClearList if the white list should be reset
+ **/
+void Map_SetInteractionWhiteListActive(bool abActive, bool abClearList)
+{
+	cLux_SetInteractionWhiteListActive(abActive, abClearList);
+}
+
+//-------------------------------------------------
+
+/**
+ * Adds an entity to the white list, meaning that is can be intereacted with
+ * 
+ * @param asName Name of the entity
+ **/
+void Map_AddEntityToInteractionWhiteList(const tString &in asName)
+{
+	if (cLux_GetCurrentMap() is null) return;
+	
+	iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(asName, eLuxEntityType_LastEnum, "");
+		
+	if(pEntity !is null) cLux_AddEntityToInteractionWhiteList(pEntity);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// DELAYED PHYSICS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Checks if the line of sight between two positions is clear
+ * 
+ * @param asCallbackFunc callback function to call the result, syntax: void func(bool abClear)
+ * @param avStart origin of the check
+ * @param avEnd end of the check
+ * @param abCheckOnlyShadowCasters if only shadow casters should be checked
+ * @param abCheckOnlyStatic if only static bodies should be checked
+ **/
+void Map_CheckLineOfSight(const tString&in asCallbackFunc, const cVector3f&in avStart, const cVector3f&in avEnd, bool abCheckOnlyShadowCasters, bool abCheckOnlyStatic)
+{
+	if (cLux_GetCurrentMap() is null) return;
+	
+	cLux_GetCurrentMap().CheckLineOfSight(asCallbackFunc, avStart, avEnd, abCheckOnlyShadowCasters,abCheckOnlyStatic);
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the closest entity in direction
+ * 
+ * @param asCallbackFunc callback function to call the result, syntax: void func(bool abSuccesful, float afDistance, iPhysicsBody@ apBody, iLuxEntity@ apEntity)
+ * @param avStart origin of the check
+ * @param avDir direction to check in
+ * @param afRayLength max distance to cast ray
+ * @param alInteractType interaction type
+ * @param abCheckLineOfSight if the entity has to be in view
+ **/
+void Map_GetClosestEntity(const tString&in asCallbackFunc, const cVector3f&in avStart,const cVector3f&in avDir, float afRayLength, int alInteractType, bool abCheckLineOfSight)
+{
+	if (cLux_GetCurrentMap() is null) return;
+	
+	cLux_GetCurrentMap().GetClosestEntity(asCallbackFunc, avStart, avDir, afRayLength, alInteractType, abCheckLineOfSight);
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the closest body in direction
+ * 
+ * @param asCallbackFunc callback function to call the result, syntax: void func(bool abSuccesful, float afDistance, const cVector3f&in avNormal, iPhysicsBody@ apBody)
+ * @param avStart origin of the check
+ * @param avDir direction to check in
+ * @param afRayLength max distance to cast ray
+ **/
+void Map_GetClosestBody(const tString&in asCallbackFunc, const cVector3f&in avStart,const cVector3f&in avDir, float afRayLength)
+{
+	if (cLux_GetCurrentMap() is null) return;
+	
+	cLux_GetCurrentMap().GetClosestBody(asCallbackFunc, avStart, avDir, afRayLength);
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the closest physics body that can collide with a character
+ * 
+ * @param asCallbackFunc callback function to call the result, syntax: void func(bool abSuccesful, float afDistance, const cVector3f&in avNormal, iPhysicsBody@ apBody)
+ * @param avStart origin of the check
+ * @param avDir direction to check in
+ * @param afRayLength max distance to cast ray
+ * @param abCheckDynamic if both dynamic and static physics should be checked against
+ **/
+void Map_GetClosestCharCollider(const tString&in asCallbackFunc, const cVector3f&in avStart,const cVector3f&in avDir, float afRayLength, bool abCheckDynamic)
+{
+	if (cLux_GetCurrentMap() is null) return;
+	
+	cLux_GetCurrentMap().GetClosestCharCollider(asCallbackFunc, avStart, avDir, afRayLength, abCheckDynamic);
+}
+
+//-------------------------------------------------
+
+/**
+ * Get how bright the position of the map is
+ * 
+ * @param asCallbackFunc callback function to call the result, syntax: void func(float afLightLevel)
+ * @param avPos position to check
+ * @param apSkipLight light not to use in the check
+ * @param afRadiusAdd additional radius to search to simulate a area instead of a point
+ **/
+void Map_GetLightLevelAtPos(const tString&in asCallbackFunc, const cVector3f&in avPos, iLight@ apSkipLight = null, float afRadiusAdd = 0.25)
+{
+	if (cLux_GetCurrentMap() is null) return;
+	
+	cLux_GetCurrentMap().GetLightLevelAtPos(asCallbackFunc, avPos, apSkipLight, afRadiusAdd);
+}
+
+//-------------------------------------------------
+
+/**
+ * Set if visibility area is active (visible) or not.
+ * 
+ * @param asName Name of the entity, Wildcard(s) * are supporeed
+ * @param abActive If true, area will become active
+ **/
+void Visibility_SetAreaActive(const tString &in asName, bool abActive)
+{
+	/////////////////////////////////////////
+	// Get all entities
+	array<iLuxEntity@> vEntities;
+	cLux_GetCurrentMap().GetEntityArray(asName, eLuxEntityType_Area, "VisibilityArea", vEntities);
+	if(vEntities.length() == 0)
+	{
+		Error("Could not find any VisibilityAreas with name '"+asName+"' for Visibility_SetAreaActive");
+		return ;
+	}
+		
+	/////////////////////////////
+	// Iterate Parents
+	for(uint i=0; i<vEntities.length(); ++i)
+	{
+		iLuxEntity@ pEntity = vEntities[i];
+		
+		pEntity.SetActive(abActive);
+	}
+	
+	return;
+}
+
+/**
+ * Set if the main visiblity area should be active
+ * 
+ **/
+void Visibility_SetMainActive(bool abActive)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+	pWorld.SetMainRenderableContainerVisible(abActive);
+	return;
+}
+
+/**
+ * Set if the terrain should be visible area should be active
+ * 
+ **/
+void Visibility_SetTerrainActive(bool abActive)
+{
+	cWorld@ pWorld = cLux_GetCurrentMap().GetWorld();
+	pWorld.SetTerrainActive(abActive);
+	return;
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// DECALS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Sets visiblity of all decals with material in the area
+ * 
+ * @param abVisible If visible or not
+ * @param avMin Min of area
+ * @param avMax Max of area
+ * @param avMaterials Array of decals with materials to affect
+ **/
+void Decal_SetVisibleInArea(bool abVisible, const cVector3f&in avMin, const cVector3f&in avMax, array<tString> avMaterials)
+{
+	array<cSubMeshEntity@> vSubMeshes;
+	cLux_GetCurrentMap().GetWorld().GetSubMeshEntityInArea(vSubMeshes, avMin, avMax);
+
+	for(uint i = 0; i < vSubMeshes.length(); ++i)
+	{
+		cSubMeshEntity@ pMesh = vSubMeshes[i];
+		cMaterial@ pMat = pMesh.GetMaterial();
+
+		if(pMat !is null)
+		{
+			tString sFileName = cString_GetFileName(pMat.GetName());
+
+			for(uint j = 0; j < avMaterials.length(); ++j)
+			{
+				if(sFileName == avMaterials[j])
+				{
+					pMesh.SetVisible(abVisible);
+					break;
+				}
+			}
+		}
+	}
+} 
+
+//-----------------------------------------------
+
+/**
+ * Sets visiblity of all decals with material in the area
+ * 
+ * @param abVisible If visible or not
+ * @param asArea Name of the area that the decals has to intersect with
+ * @param avMaterials Array of decals with materials to affect
+ **/
+void Decal_SetVisibleInArea(bool abVisible, const tString&in asArea, array<tString> avMaterials)
+{
+	iLuxEntity@ pEnt = Map_GetEntity(asArea);
+
+	if(pEnt is null)
+	{
+		Error("Failed to use Decal_SetVisibleInArea(), No Area with the name '" + asArea +"'");
+	}
+	else
+	{
+		cBoundingVolume@ pBV = null;
+
+		if(pEnt.GetMainBody() !is null) @pBV = pEnt.GetMainBody().GetBoundingVolume();
+		else if(pEnt.GetMeshEntity() !is null) @pBV = pEnt.GetMeshEntity().GetBoundingVolume();
+
+		if(pBV is null)
+		{
+			Error("Failed to use Decal_SetVisibleInArea(), No Area with the name '" + asArea +"'");
+		}
+		else
+		{
+			Decal_SetVisibleInArea(abVisible, pBV.GetMin(), pBV.GetMax(), avMaterials);
+		}
+	}
+} 
+
+//-----------------------------------------------
+
+/**
+ * Sets visiblity of all decals with material in the area
+ * 
+ * @param abVisible If visible or not
+ * @param asArea Name of the area that the decals has to intersect with
+ * @param asMaterial Only decals with this material will be affected
+ **/
+void Decal_SetVisibleInArea(bool abVisible, const tString&in asArea, tString asMaterial)
+{
+	array<tString> vMaterials = { asMaterial };
+	Decal_SetVisibleInArea(abVisible, asArea, vMaterials);
+} 
+
+//-----------------------------------------------

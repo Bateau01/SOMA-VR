@@ -1,0 +1,1318 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+// H576BP_CONNECTED_SUBMESH_TERMINAL: VR-only physical fingertip pointer uses the authored connected screen submesh; flatscreen remains literal stock.
+bool _HPL3VR_RuntimeActive_PropTerminal()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+class cScrPropTerminal : iScrProp, iScrProp_Interface
+{
+
+	// H576BP: Prop_Terminal GUIs are render-to-submesh surfaces.  The focused
+	// cGuiSet itself is not a world-space 3D set, so Get3DTransform/Get3DSize
+	// legitimately return the identity/default values seen by BO hardware.
+	// Publish the ACTUAL connected screen submesh as an affine world plane:
+	// top-left point + right span + down span.  The existing GuiSet remains the
+	// sole widget/input/story authority; this only tells the DLL where the glass is.
+
+    // S26M: UV0 from the shipped security_keypad GUI mesh, normalized to
+    // its local AABB. This maps glass contact to the authored GUI, not digits.
+    cVector2f _HPL3VR_KeypadUV(const cVector3f &in p, const cVector3f &in lo, const cVector3f &in hi)
+    {
+        float x=(p.x-lo.x)/(hi.x-lo.x), y=(p.y-lo.y)/(hi.y-lo.y);
+        return cVector2f(0.224604525f,0.788855435f) + cVector2f(0.377696778f,0.001089576f)*x + cVector2f(0.001319317f,-0.576605372f)*y;
+    }
+
+
+	// S26O: mesh-derived laptop planes. Coordinates are normalized to the live
+	// vertex bounds, preserving entity scale and placement. No render mesh changes.
+	bool _HPL3VR_LaptopPlane(const cVector3f &in lo, const cVector3f &in hi, cVector3f &out plane, cVector2f &out uv0, cVector2f &out uvX, cVector2f &out uvY)
+	{
+		tString file=cString_GetFileName(mBaseObj.GetFileName());
+		cVector3f ext=hi-lo;
+		if(ext.x<0.001f || ext.y<0.001f || ext.z<0.001f) return false;
+		if(file=="computer_laptop.ent" && msConnectedSubmesh=="computer_laptop_001"
+		   && cMath_Abs(ext.y/ext.x-0.5637135546f)<0.01f && cMath_Abs(ext.z/ext.x-0.2074582110f)<0.01f)
+		{
+			plane=cVector3f(0.0000035309f,-0.9999964916f,0.9999976529f);
+			uv0=cVector2f(0.0017169992f,0.9998936909f);
+			uvX=cVector2f(0.9962402429f,-0.0044954540f);
+			uvY=cVector2f(-0.0025784657f,-0.9982599078f);
+			return true;
+		}
+		if(file=="laptop_touchscreen.ent" && msConnectedSubmesh=="screen1"
+		   && cMath_Abs(ext.y/ext.x-0.5482911723f)<0.01f && cMath_Abs(ext.z/ext.x-0.1995616278f)<0.01f)
+		{
+			plane=cVector3f(0.0000000000f,-1.0000000000f,1.0000000000f);
+			uv0=cVector2f(0.0000000000f,-0.0000000000f);
+			uvX=cVector2f(-0.0000000000f,1.0000000000f);
+			uvY=cVector2f(1.0000000000f,0.0000000000f);
+			return true;
+		}
+		if(file=="laptop_touchscreen_nosound.ent" && msConnectedSubmesh=="screen1"
+		   && cMath_Abs(ext.y/ext.x-0.5482911723f)<0.01f && cMath_Abs(ext.z/ext.x-0.1995616278f)<0.01f)
+		{
+			plane=cVector3f(0.0000000000f,-1.0000000000f,1.0000000000f);
+			uv0=cVector2f(0.0000000000f,-0.0000000000f);
+			uvX=cVector2f(-0.0000000000f,1.0000000000f);
+			uvY=cVector2f(1.0000000000f,0.0000000000f);
+			return true;
+		}
+		return false;
+	}
+	cVector3f _HPL3VR_ProjectLaptop(cVector3f p, const cVector3f &in lo, const cVector3f &in hi, const cVector3f &in plane)
+	{
+		p.z=lo.z+(hi.z-lo.z)*(plane.x*(p.x-lo.x)/(hi.x-lo.x)+plane.y*(p.y-lo.y)/(hi.y-lo.y)+plane.z);
+        return p;
+	}
+	cVector2f _HPL3VR_LaptopUV(const cVector3f &in p, const cVector3f &in lo, const cVector3f &in hi, const cVector2f &in origin, const cVector2f &in ux, const cVector2f &in uy)
+	{
+		return origin+ux*((p.x-lo.x)/(hi.x-lo.x))+uy*((p.y-lo.y)/(hi.y-lo.y));
+	}
+
+
+    // S26Q: cached mesh-derived mapping for planar connected screens.
+    // Match the shipped asset, submesh, normal axis and live bounds proportions.
+    [nosave] bool mbVRFitChecked=false;
+    [nosave] bool mbVRFitValid=false;
+    [nosave] tString msVRFitFile="";
+    [nosave] tString msVRFitSubmesh="";
+    [nosave] int mlVRFitAxis=-1;
+    [nosave] cVector3f mvVRFitPlane;
+    [nosave] cVector2f mvVRFitRatio;
+    [nosave] cVector2f mvVRFitUV0;
+    [nosave] cVector2f mvVRFitUVX;
+    [nosave] cVector2f mvVRFitUVY;
+    float _HPL3VR_Axis(const cVector3f &in p, int axis)
+    {
+        return axis==0 ? p.x : (axis==1 ? p.y : p.z);
+    }
+    bool _HPL3VR_MeshFit(int axis, const cVector3f &in lo, const cVector3f &in hi)
+    {
+        tString file=cString_GetFileName(mBaseObj.GetFileName());
+        if(!mbVRFitChecked || msVRFitFile!=file || msVRFitSubmesh!=msConnectedSubmesh || mlVRFitAxis!=axis)
+        {
+            mbVRFitChecked=true;mbVRFitValid=false;msVRFitFile=file;msVRFitSubmesh=msConnectedSubmesh;mlVRFitAxis=axis;
+            if(file=="death_terminal.ent" && msConnectedSubmesh=="large_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7651861948f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0002045180f,1.0000022948f);
+                mvVRFitUVX=cVector2f(0.9995954820f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-0.9999982948f);
+            }
+            else if(file=="catherine_worker_lambda_screen.ent" && msConnectedSubmesh=="Mesh" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7752421187f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="vehicle_mscurie_escape_pod_terminal_map.ent" && msConnectedSubmesh=="terminal_left" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.1505121186f,0.1075583277f,0.1469701859f);
+                mvVRFitRatio=cVector2f(0.8206297425f,0.2509751705f);
+                mvVRFitUV0=cVector2f(1.0062305635f,0.9997873421f);
+                mvVRFitUVX=cVector2f(-1.0060180499f,0.0343136631f);
+                mvVRFitUVY=cVector2f(-0.0064430790f,-1.0338886340f);
+            }
+            else if(file=="vehicle_mscurie_escape_pod_terminal_status.ent" && msConnectedSubmesh=="terminal_right" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.1505121077f,0.1075583170f,-0.0035419182f);
+                mvVRFitRatio=cVector2f(0.8206295718f,0.2509751705f);
+                mvVRFitUV0=cVector2f(0.9997874872f,1.0341008655f);
+                mvVRFitUVX=cVector2f(-1.0060180505f,-0.0343135586f);
+                mvVRFitUVY=cVector2f(0.0064430783f,-1.0338885308f);
+            }
+            else if(file=="03_03_elevator_monitor_ceiling_large_GUI.ent" && msConnectedSubmesh=="screen" && axis==0)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0024964574f,-0.0000000417f,0.0000000695f);
+                mvVRFitRatio=cVector2f(1.1472061293f,0.0024964991f);
+                mvVRFitUV0=cVector2f(-0.0000000454f,1.0000000000f);
+                mvVRFitUVX=cVector2f(0.0000001363f,-1.0000000000f);
+                mvVRFitUVY=cVector2f(1.0000001363f,-0.0000000000f);
+            }
+            else if(file=="03_03_elevator_panel_GUI.ent" && msConnectedSubmesh=="screen" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.8291653408f,0.0000005656f,0.0000001885f);
+                mvVRFitRatio=cVector2f(0.9664281568f,0.8291659064f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(-0.0000000000f,-1.0000000000f);
+                mvVRFitUVY=cVector2f(1.0000000000f,-0.0000000000f);
+            }
+            else if(file=="05_01_computer_panel_launch.ent" && msConnectedSubmesh=="small_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6923067622f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000210042f,1.0000322670f);
+                mvVRFitUVX=cVector2f(0.9999982082f,0.0000258370f);
+                mvVRFitUVY=cVector2f(0.0000053629f,-0.9999975460f);
+            }
+            else if(file=="02_04_computer_relaystation_screen.ent" && msConnectedSubmesh=="Mesh__2_" && axis==0)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0002124425f,-0.0008987847f,0.0009693852f);
+                mvVRFitRatio=cVector2f(1.3551150029f,0.0011107699f);
+                mvVRFitUV0=cVector2f(-0.0000030833f,0.9999961606f);
+                mvVRFitUVX=cVector2f(0.0000037925f,-1.0006787610f);
+                mvVRFitUVY=cVector2f(1.0000037844f,0.0002889374f);
+            }
+            else if(file=="computer_panel_large_overgrown_GUI.ent" && msConnectedSubmesh=="large_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7651861948f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0002050000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(0.9995950000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-0.9999960000f);
+            }
+            else if(file=="computer_panel_medium_overgrown_GUI.ent" && msConnectedSubmesh=="medium_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7966347452f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0002600000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(0.9997220000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-0.9999450000f);
+            }
+            else if(file=="computer_panels_rusty_large_GUI.ent" && msConnectedSubmesh=="screen__3_" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,-0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7651861948f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000657000f,1.0000006766f);
+                mvVRFitUVX=cVector2f(0.9999995000f,-0.0000010298f);
+                mvVRFitUVY=cVector2f(0.0000034000f,-0.9999990000f);
+            }
+            else if(file=="computer_panels_rusty_med_GUI.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7966347452f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000784310f,1.0000068002f);
+                mvVRFitUVX=cVector2f(1.0000015000f,-0.0000109007f);
+                mvVRFitUVY=cVector2f(-0.0000367930f,-1.0000005000f);
+            }
+            else if(file=="computer_panels_rusty_med_narrow_GUI.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7966347452f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000784310f,1.0000068002f);
+                mvVRFitUVX=cVector2f(1.0000015000f,-0.0000109007f);
+                mvVRFitUVY=cVector2f(-0.0000367930f,-1.0000005000f);
+            }
+            else if(file=="computer_panels_rusty_med_wide_GUI.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.5598066032f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000784310f,1.0000068002f);
+                mvVRFitUVX=cVector2f(1.0000015000f,-0.0000109007f);
+                mvVRFitUVY=cVector2f(-0.0000367930f,-1.0000005000f);
+            }
+            else if(file=="computer_panels_rusty_small_GUI.ent" && msConnectedSubmesh=="screen__2_" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6923067622f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000090383f,1.0000455643f);
+                mvVRFitUVX=cVector2f(0.9999995000f,0.0000208070f);
+                mvVRFitUVY=cVector2f(0.0000033852f,-1.0000025000f);
+            }
+            else if(file=="computer_parts_station_screen_terminal.ent" && msConnectedSubmesh=="terminal" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6299109531f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000114871f,0.9999999856f);
+                mvVRFitUVX=cVector2f(1.0000260077f,0.0000000433f);
+                mvVRFitUVY=cVector2f(-0.0000026492f,-1.0000000000f);
+            }
+            else if(file=="high_pressure_terminal.ent" && msConnectedSubmesh=="terminal" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7740513319f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0092697094f,0.0067901263f);
+                mvVRFitUVX=cVector2f(0.9853669540f,-0.0000001371f);
+                mvVRFitUVY=cVector2f(0.0000000486f,0.9842986050f);
+            }
+            else if(file=="high_pressure_terminal_cracked.ent" && msConnectedSubmesh=="terminal" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7740513319f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0092699627f,0.0067901221f);
+                mvVRFitUVX=cVector2f(0.9853667083f,-0.0000001387f);
+                mvVRFitUVY=cVector2f(0.0000000267f,0.9842986093f);
+            }
+            else if(file=="02_02_monitor_reactor_maintenance.ent" && msConnectedSubmesh=="pPlane2" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(1.3932226553f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="computer_cargo_terminal.ent" && msConnectedSubmesh=="screen-Pivot" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.4211351743f,0.4211351743f);
+                mvVRFitRatio=cVector2f(0.4405030898f,0.4211351743f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="computer_cargo_terminal_readable.ent" && msConnectedSubmesh=="screen-Pivot" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.4211351743f,0.4211351743f);
+                mvVRFitRatio=cVector2f(0.4405030898f,0.4211351743f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="bridge_panel_curved_terminal.ent" && msConnectedSubmesh=="screen" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.2267671358f,0.2267671358f);
+                mvVRFitRatio=cVector2f(0.7132193946f,0.2267671358f);
+                mvVRFitUV0=cVector2f(0.0000000498f,0.0000000000f);
+                mvVRFitUVX=cVector2f(0.9999998505f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0001558505f,1.0000000000f);
+            }
+            else if(file=="01_05_transporter_passenger_destinationpicker.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6509503884f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="01_05_transporter_passenger_good_to_go_display.ent" && msConnectedSubmesh=="Plane" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(4.2408170153f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000000000f,0.0019531000f);
+                mvVRFitUVX=cVector2f(-0.0000000000f,0.9980469000f);
+                mvVRFitUVY=cVector2f(1.0000000000f,0.0000000000f);
+            }
+            else if(file=="01_05_transporter_passenger_radio.ent" && msConnectedSubmesh=="screen" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0007545352f,-0.5776794630f,0.5769260015f);
+                mvVRFitRatio=cVector2f(0.7668527740f,0.5769263773f);
+                mvVRFitUV0=cVector2f(-0.0008559079f,0.0004538343f);
+                mvVRFitUVX=cVector2f(0.9994063123f,-0.0015373852f);
+                mvVRFitUVY=cVector2f(0.0008585530f,1.0008636568f);
+            }
+            else if(file=="02_01_computer_parts_readout_flat.ent" && msConnectedSubmesh=="readout_flat__2__001" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.5515787827f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,0.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,1.0000000000f);
+            }
+            else if(file=="02_06_scan_chamber.ent" && msConnectedSubmesh=="innerscreen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.6907321052f,0.0000000000f,0.6907321052f);
+                mvVRFitRatio=cVector2f(1.0450775321f,0.6907321052f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="02_06_scan_chamber_outercomputer.ent" && msConnectedSubmesh=="outerscreen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.2057662056f,0.0000000000f,0.2057662056f);
+                mvVRFitRatio=cVector2f(0.8913437938f,0.2057662056f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="03_02_robotrepair_terminal.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7220678531f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="04_02_lindwall_heartmonitor.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,-0.6224690815f,0.6224690815f);
+                mvVRFitRatio=cVector2f(0.7682921128f,0.6224690815f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="05_01_info_terminal_GUI.ent" && msConnectedSubmesh=="medium_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7966347452f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0002602790f,1.0000073314f);
+                mvVRFitUVX=cVector2f(0.9997217210f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-0.9999523314f);
+            }
+            else if(file=="cath_terminal_screen.ent" && msConnectedSubmesh=="screen" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000007005f,0.0000000000f);
+                mvVRFitRatio=cVector2f(1.2811259160f,0.0000007005f);
+                mvVRFitUV0=cVector2f(-0.0000003880f,0.0000005563f);
+                mvVRFitUVX=cVector2f(0.9999995000f,-0.0000008345f);
+                mvVRFitUVY=cVector2f(0.0000006639f,1.0000000000f);
+            }
+            else if(file=="computer_ceiling.ent" && msConnectedSubmesh=="computer_ceiling_display" && axis==0)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(1.2817672977f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.3117480039f,0.7171909996f);
+                mvVRFitUVX=cVector2f(-0.0000000026f,-0.0144370014f);
+                mvVRFitUVY=cVector2f(-0.0185670026f,0.0000000014f);
+            }
+            else if(file=="computer_dive_preparation_terminal.ent" && msConnectedSubmesh=="Mesh" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.2974366703f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6030398256f,0.2974366703f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="computer_flesher_portable.ent" && msConnectedSubmesh=="screen1" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6287445763f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,0.9999999833f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000500f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-0.9999999500f);
+            }
+            else if(file=="computer_flesher_stationary_screen_GUI.ent" && msConnectedSubmesh=="GUI" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000001753f,-0.4304712112f,0.4304712385f);
+                mvVRFitRatio=cVector2f(0.7134093543f,0.4304713864f);
+                mvVRFitUV0=cVector2f(-0.0000001352f,1.0000003158f);
+                mvVRFitUVX=cVector2f(1.0000004055f,-0.0000001895f);
+                mvVRFitUVY=cVector2f(-0.0000001352f,-1.0000001895f);
+            }
+            else if(file=="computer_floor.ent" && msConnectedSubmesh=="computer_floor_display" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0251842970f,-0.0000005487f,0.0251849283f);
+                mvVRFitRatio=cVector2f(1.5369251694f,0.0251848412f);
+                mvVRFitUV0=cVector2f(0.9999910000f,0.1745679165f);
+                mvVRFitUVX=cVector2f(0.0000090000f,0.6508500964f);
+                mvVRFitUVY=cVector2f(-0.9999910000f,0.0000140193f);
+            }
+            else if(file=="computer_laptop_modded_GUI.ent" && msConnectedSubmesh=="computer_laptop_GUI" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.8310700390f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000111930f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000335800f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000004f,-1.0000000000f);
+            }
+            else if(file=="computer_parts_monitor_swivvel_GUI.ent" && msConnectedSubmesh=="screen_GUI" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6292768819f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000082351f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000275568f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000009505f,-1.0000000000f);
+            }
+            else if(file=="computer_terminal_slide_flesher.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0029721765f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6724115706f,0.0029721765f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="monitor_theta_GUI.ent" && msConnectedSubmesh=="gui" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.0000000017f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7184924486f,0.0000000017f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="power_box_GUI.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.5199371725f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="server_mainframe.ent" && msConnectedSubmesh=="server_mainframe_display" && axis==0)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.2308840298f,0.0000000000f,0.2308840298f);
+                mvVRFitRatio=cVector2f(1.4640229083f,0.2308840298f);
+                mvVRFitUV0=cVector2f(1.0006780000f,0.8693006667f);
+                mvVRFitUVX=cVector2f(-0.0013580000f,-0.7010175000f);
+                mvVRFitUVY=cVector2f(-0.9999980000f,0.0019375000f);
+            }
+            else if(file=="server_underwater.ent" && msConnectedSubmesh=="server_underwater_display" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,-0.4370304427f,0.4370304427f);
+                mvVRFitRatio=cVector2f(0.5165101852f,0.4370304427f);
+                mvVRFitUV0=cVector2f(0.0052860000f,0.8480680000f);
+                mvVRFitUVX=cVector2f(0.9894280000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-0.6694400000f);
+            }
+            else if(file=="terminal_airlock_tau_small.ent" && msConnectedSubmesh=="Mesh__2_" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000027344f,-0.3450633542f,0.3450593547f);
+                mvVRFitRatio=cVector2f(0.6038684521f,0.3450582320f);
+                mvVRFitUV0=cVector2f(0.0148952400f,0.9776975319f);
+                mvVRFitUVX=cVector2f(0.9702086817f,-0.0000006847f);
+                mvVRFitUVY=cVector2f(0.0000029382f,-0.6747810680f);
+            }
+            else if(file=="ark_testing_terminal.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000002878f,0.0875917136f,-0.0000000648f);
+                mvVRFitRatio=cVector2f(0.4336321468f,0.0875916165f);
+                mvVRFitUV0=cVector2f(1.0000004763f,0.9999988401f);
+                mvVRFitUVX=cVector2f(-1.0000009528f,0.0000080717f);
+                mvVRFitUVY=cVector2f(-0.0000007144f,-1.0000001974f);
+            }
+            else if(file=="computer_ceiling_terminal.ent" && msConnectedSubmesh=="computer_ceiling_display" && axis==0)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,-0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(1.2860212022f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(-0.0000000000f,-1.0000000000f);
+                mvVRFitUVY=cVector2f(1.0000000000f,-0.0000000000f);
+            }
+            else if(file=="computer_ceiling_terminal_centered.ent" && msConnectedSubmesh=="computer_ceiling_display" && axis==0)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,-0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(1.2860212022f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(-0.0000000000f,-1.0000000000f);
+                mvVRFitUVY=cVector2f(1.0000000000f,-0.0000000000f);
+            }
+            else if(file=="computer_panel_large_GUI.ent" && msConnectedSubmesh=="large_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7651861948f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0002045180f,1.0000022948f);
+                mvVRFitUVX=cVector2f(0.9995954820f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-0.9999982948f);
+            }
+            else if(file=="computer_panel_medium_GUI.ent" && msConnectedSubmesh=="medium_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7966347452f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0002602790f,1.0000073314f);
+                mvVRFitUVX=cVector2f(0.9997217210f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-0.9999523314f);
+            }
+            else if(file=="computer_panel_medium_white_GUI.ent" && msConnectedSubmesh=="medium_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7966347452f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0002602790f,1.0000073314f);
+                mvVRFitUVX=cVector2f(0.9997217210f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-0.9999523314f);
+            }
+            else if(file=="computer_panel_medium_white_GUI_no_collide.ent" && msConnectedSubmesh=="medium_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7966347452f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0002602790f,1.0000073314f);
+                mvVRFitUVX=cVector2f(0.9997217210f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-0.9999523314f);
+            }
+            else if(file=="computer_panel_small_GUI.ent" && msConnectedSubmesh=="small_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6923067622f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000210042f,1.0000322670f);
+                mvVRFitUVX=cVector2f(0.9999982082f,0.0000258370f);
+                mvVRFitUVY=cVector2f(0.0000053629f,-0.9999975460f);
+            }
+            else if(file=="computer_panel_small_white_GUI.ent" && msConnectedSubmesh=="small_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6923067622f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000210042f,1.0000322670f);
+                mvVRFitUVX=cVector2f(0.9999982082f,0.0000258370f);
+                mvVRFitUVY=cVector2f(0.0000053629f,-0.9999975460f);
+            }
+            else if(file=="computer_systemcontrol.ent" && msConnectedSubmesh=="polymsh_detached1" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.9024042480f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000000865f,0.9512020000f);
+                mvVRFitUVX=cVector2f(0.9999996809f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000199f,-0.9024040000f);
+            }
+            else if(file=="monitor_theta_terminal.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7220678531f,0.0000000000f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="monitor_theta_wide_terminal.ent" && msConnectedSubmesh=="screen__2_" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.0487880633f,0.0487880633f);
+                mvVRFitRatio=cVector2f(0.6062467478f,0.0487880633f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="05_02_terminal_freestaning.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.3491514823f,0.3491514823f);
+                mvVRFitRatio=cVector2f(0.6481720143f,0.3491514823f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="terminal_freestaning.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.3491514823f,0.3491514823f);
+                mvVRFitRatio=cVector2f(0.6481720143f,0.3491514823f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="theta_panel_nobase_terminaln.ent" && msConnectedSubmesh=="Mesh__2_" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(1.7293352275f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0073420558f,0.9986745875f);
+                mvVRFitUVX=cVector2f(0.9911143896f,0.0001459539f);
+                mvVRFitUVY=cVector2f(0.0005610116f,-0.9921352610f);
+            }
+            else if(file=="theta_panel_nobase_terminaln_elevator.ent" && msConnectedSubmesh=="Mesh__2_" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(1.7293352275f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0073420558f,0.9986745875f);
+                mvVRFitUVX=cVector2f(0.9911143896f,0.0001459539f);
+                mvVRFitUVY=cVector2f(0.0005610116f,-0.9921352610f);
+            }
+            else if(file=="00_02_subway_display.ent" && msConnectedSubmesh=="pPlane1" && axis==0)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(7.6220247601f,0.0000000000f);
+                mvVRFitUV0=cVector2f(1.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(0.0000000000f,-1.0000000000f);
+                mvVRFitUVY=cVector2f(-1.0000000000f,-0.0000000000f);
+            }
+            else if(file=="00_01_smartphone_terminal.ent" && msConnectedSubmesh=="screen" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.0000000000f,0.0000000000f);
+                mvVRFitRatio=cVector2f(0.5656805357f,0.0000000000f);
+                mvVRFitUV0=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVX=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVY=cVector2f(-1.0000000000f,-0.0000000000f);
+            }
+            else if(file=="cellphone_terminal.ent" && msConnectedSubmesh=="Plane" && axis==1)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000353125f,0.0000018750f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.7812491406f,0.0000371875f);
+                mvVRFitUV0=cVector2f(0.9999999000f,0.0000000167f);
+                mvVRFitUVX=cVector2f(0.0000000000f,0.9999999500f);
+                mvVRFitUVY=cVector2f(-0.9999999000f,0.0000000500f);
+            }
+            else if(file=="monitor_terminal.ent" && msConnectedSubmesh=="monitor_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000012944f,-0.1092316366f,0.1092317645f);
+                mvVRFitRatio=cVector2f(0.7230262916f,0.1092307951f);
+                mvVRFitUV0=cVector2f(-0.0007036555f,1.0000461221f);
+                mvVRFitUVX=cVector2f(1.0014152730f,0.0002120466f);
+                mvVRFitUVY=cVector2f(-0.0001685639f,-1.0008665904f);
+            }
+            else if(file=="monitor_wall.ent" && msConnectedSubmesh=="screen2" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000001714f,0.1401815429f,-0.0000001799f);
+                mvVRFitRatio=cVector2f(0.6946573215f,0.1401815174f);
+                mvVRFitUV0=cVector2f(-0.0005713525f,0.9999714899f);
+                mvVRFitUVX=cVector2f(1.0008569052f,0.0001079648f);
+                mvVRFitUVY=cVector2f(-0.0001976684f,-1.0002385658f);
+            }
+            else if(file=="monitor_large.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.2621514538f,0.2621514538f);
+                mvVRFitRatio=cVector2f(0.5621856133f,0.2621514538f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="monitor_large_left.ent" && msConnectedSubmesh=="screen3" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.3069333361f,-0.7559266192f,1.0056174974f);
+                mvVRFitRatio=cVector2f(1.6210895762f,0.9483751207f);
+                mvVRFitUV0=cVector2f(0.0009226576f,1.0818532896f);
+                mvVRFitUVX=cVector2f(1.0103401137f,-0.0827760849f);
+                mvVRFitUVY=cVector2f(-0.0121856221f,-1.0809304754f);
+            }
+            else if(file=="monitor_large_main.ent" && msConnectedSubmesh=="screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.2621514338f,0.2621514338f);
+                mvVRFitRatio=cVector2f(0.5621856433f,0.2621514338f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="monitor_large_right_down.ent" && msConnectedSubmesh=="screen5" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.2956495480f,-0.3242043059f,0.2713995871f);
+                mvVRFitRatio=cVector2f(0.6952582800f,0.5142442734f);
+                mvVRFitUV0=cVector2f(0.0000000167f,1.0000000000f);
+                mvVRFitUVX=cVector2f(0.9999999597f,0.1945647916f);
+                mvVRFitUVY=cVector2f(-0.0000000597f,-1.1945647916f);
+            }
+            else if(file=="monitor_large_right_up.ent" && msConnectedSubmesh=="screen4" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.2956493140f,-0.3242040414f,0.2713991726f);
+                mvVRFitRatio=cVector2f(0.6952577494f,0.5142435939f);
+                mvVRFitUV0=cVector2f(0.0000000000f,0.9999999553f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.1945653199f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.1945653199f);
+            }
+            else if(file=="televison_small.ent" && msConnectedSubmesh=="GUI" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(-0.0000000000f,0.0000000000f,-0.0000000000f);
+                mvVRFitRatio=cVector2f(0.6422009217f,0.0000000000f);
+                mvVRFitUV0=cVector2f(0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,-0.0000000000f);
+                mvVRFitUVY=cVector2f(-0.0000000000f,-1.0000000000f);
+            }
+            else if(file=="terminal_waitroom.ent" && msConnectedSubmesh=="terminal_screen" && axis==2)
+            {
+                mbVRFitValid=true;mvVRFitPlane=cVector3f(0.0000000000f,-0.3491515103f,0.3491515103f);
+                mvVRFitRatio=cVector2f(0.6481772695f,0.3491515103f);
+                mvVRFitUV0=cVector2f(-0.0000000000f,1.0000000000f);
+                mvVRFitUVX=cVector2f(1.0000000000f,0.0000000000f);
+                mvVRFitUVY=cVector2f(0.0000000000f,-1.0000000000f);
+            }
+        }
+        if(!mbVRFitValid) return false;
+        cVector3f ext=hi-lo;
+        float eu=_HPL3VR_Axis(ext,axis==0 ? 1 : 0), ev=_HPL3VR_Axis(ext,axis==2 ? 1 : 2);
+        if(eu<0.001f || ev<0.001f) return false;
+        return cMath_Abs(ev/eu-mvVRFitRatio.x)<0.01f && cMath_Abs(_HPL3VR_Axis(ext,axis)/eu-mvVRFitRatio.y)<0.01f;
+    }
+    cVector2f _HPL3VR_MeshCoordinates(const cVector3f &in p, const cVector3f &in lo, const cVector3f &in hi)
+    {
+        int u=mlVRFitAxis==0 ? 1 : 0, v=mlVRFitAxis==2 ? 1 : 2;
+        return cVector2f((_HPL3VR_Axis(p,u)-_HPL3VR_Axis(lo,u))/(_HPL3VR_Axis(hi,u)-_HPL3VR_Axis(lo,u)),
+                         (_HPL3VR_Axis(p,v)-_HPL3VR_Axis(lo,v))/(_HPL3VR_Axis(hi,v)-_HPL3VR_Axis(lo,v)));
+    }
+    cVector3f _HPL3VR_ProjectMesh(cVector3f p, const cVector3f &in lo, const cVector3f &in hi)
+    {
+        cVector2f uv=_HPL3VR_MeshCoordinates(p,lo,hi);
+        int u=mlVRFitAxis==0 ? 1 : 0;
+        float value=_HPL3VR_Axis(lo,mlVRFitAxis)+(_HPL3VR_Axis(hi,u)-_HPL3VR_Axis(lo,u))*(mvVRFitPlane.x*uv.x+mvVRFitPlane.y*uv.y+mvVRFitPlane.z);
+        if(mlVRFitAxis==0) p.x=value;
+        else if(mlVRFitAxis==1) p.y=value;
+        else p.z=value;
+        return p;
+    }
+    cVector2f _HPL3VR_MeshUV(const cVector3f &in p, const cVector3f &in lo, const cVector3f &in hi)
+    {
+        cVector2f uv=_HPL3VR_MeshCoordinates(p,lo,hi);
+        return mvVRFitUV0+mvVRFitUVX*uv.x+mvVRFitUVY*uv.y;
+    }
+
+	void _HPL3VR_PublishConnectedTerminalSurface(const cVector3f &in avScreenNormal, bool abRefresh=false)
+	{
+		cGuiSet@ pSet = cGui_GetFocusedSet();
+		cMeshEntity@ pMeshEntity = mBaseObj.GetMeshEntity();
+		if (pSet is null || pMeshEntity is null || msConnectedSubmesh == "")
+		{
+			cScript_RunGlobalFunc("VRTERM", "", "X");
+			return;
+		}
+
+		cMesh@ pMesh = pMeshEntity.GetMesh();
+		if (pMesh is null)
+		{
+			cScript_RunGlobalFunc("VRTERM", "", "X");
+			return;
+		}
+
+		int lSubIdx = pMesh.GetSubMeshIndex(msConnectedSubmesh);
+		if (lSubIdx < 0 || lSubIdx >= pMeshEntity.GetSubMeshEntityNum())
+		{
+			cScript_RunGlobalFunc("VRTERM", "", "X");
+			return;
+		}
+
+		cSubMeshEntity@ pSubEnt = pMeshEntity.GetSubMeshEntity(lSubIdx);
+		cSubMesh@ pSubMesh = pMesh.GetSubMesh(lSubIdx);
+		if (pSubEnt is null || pSubMesh is null)
+		{
+			cScript_RunGlobalFunc("VRTERM", "", "X");
+			return;
+		}
+
+		iVertexBuffer@ pVB = pSubMesh.GetVertexBuffer();
+		if (pVB is null)
+		{
+			cScript_RunGlobalFunc("VRTERM", "", "X");
+			return;
+		}
+
+		cVector3f vMin = pVB.GetAABBMin();
+		cVector3f vMax = pVB.GetAABBMax();
+		cVector3f vExt = vMax - vMin;
+		cVector3f vCenter = (vMin + vMax) * 0.5f;
+		cMatrixf mtxWorld = pSubEnt.GetWorldMatrix();
+        bool same=abRefresh && mbAYSurfaceCached;
+        if(same)for(int row=0;row<3;row++)for(int col=0;col<4;col++)
+            if(cMath_Abs(mtxWorld.GetElement(row,col)-mtxAYSurface.GetElement(row,col))>0.000001f)same=false;
+        if(same)return;
+        mbAYSurfaceCached=false;
+
+		cVector3f vWorldCenter = cMath_MatrixMul(mtxWorld, vCenter);
+
+		// Pick the thinnest local AABB dimension as the panel normal.  This is
+		// data-driven from the authored connected submesh, not a map/entity table.
+		int lNormalAxis = 0;
+		if (vExt.y < vExt.GetElement(lNormalAxis)) lNormalAxis = 1;
+		if (vExt.z < vExt.GetElement(lNormalAxis)) lNormalAxis = 2;
+		int lAxisA = (lNormalAxis == 0) ? 1 : 0;
+		int lAxisB = (lNormalAxis == 2) ? 1 : 2;
+		if (lNormalAxis == 1) lAxisB = 2;
+
+		cVector3f vLocalA(0), vLocalB(0);
+		vLocalA.SetElement(lAxisA, vExt.GetElement(lAxisA));
+		vLocalB.SetElement(lAxisB, vExt.GetElement(lAxisB));
+		cVector3f vWorldA = cMath_MatrixMul(mtxWorld, vCenter + vLocalA) - vWorldCenter;
+		cVector3f vWorldB = cMath_MatrixMul(mtxWorld, vCenter + vLocalB) - vWorldCenter;
+		float fLenA = vWorldA.Length();
+		float fLenB = vWorldB.Length();
+		if (fLenA < 0.005f || fLenB < 0.005f)
+		{
+			cScript_RunGlobalFunc("VRTERM", "", "X");
+			return;
+		}
+
+		// ScreenSize is the authored terminal render-target aspect.  Use it only
+		// to decide which of the two panel axes is horizontal; actual dimensions
+		// still come from the connected submesh itself.
+		float fGuiAspect = mvHPL3VRScreenSize.y > 0.001f ? mvHPL3VRScreenSize.x / mvHPL3VRScreenSize.y : 1.0f;
+		float fAB = fLenA / fLenB;
+		float fBA = fLenB / fLenA;
+		int lHAxis = cMath_Abs(fAB - fGuiAspect) <= cMath_Abs(fBA - fGuiAspect) ? lAxisA : lAxisB;
+		int lVAxis = lHAxis == lAxisA ? lAxisB : lAxisA;
+
+		cVector3f vLocalH(0), vLocalV(0);
+		vLocalH.SetElement(lHAxis, vExt.GetElement(lHAxis));
+		vLocalV.SetElement(lVAxis, vExt.GetElement(lVAxis));
+		cVector3f vWorldHPlus = cMath_MatrixMul(mtxWorld, vCenter + vLocalH) - vWorldCenter;
+		cVector3f vWorldVPlus = cMath_MatrixMul(mtxWorld, vCenter + vLocalV) - vWorldCenter;
+
+		// Prefer physical world-up for the screen's visual top/bottom.  On nearly
+		// horizontal panels, retain positive local V rather than inventing a map rule.
+		bool bVUpPositive = true;
+		if (cMath_Abs(vWorldVPlus.y) > vWorldVPlus.Length() * 0.15f)
+			bVUpPositive = vWorldVPlus.y > 0;
+		cVector3f vWorldVUp = bVUpPositive ? vWorldVPlus : vWorldVPlus * -1.0f;
+
+		// Pick screen-right so right x up faces the authored screen normal.  This
+		// keeps mirrored/rotated terminals generic while preserving GUI Y-down.
+		cVector3f vN = cMath_Vector3Normalize(avScreenNormal);
+		bool bHRightPositive = cMath_Vector3Dot(cMath_Vector3Cross(vWorldHPlus, vWorldVUp), vN) >= 0;
+
+		cVector3f vTL = vCenter;
+		cVector3f vTR = vCenter;
+		cVector3f vBL = vCenter;
+		float fHMin = vMin.GetElement(lHAxis), fHMax = vMax.GetElement(lHAxis);
+		float fVMin = vMin.GetElement(lVAxis), fVMax = vMax.GetElement(lVAxis);
+		float fLeft = bHRightPositive ? fHMin : fHMax;
+		float fRight = bHRightPositive ? fHMax : fHMin;
+		float fTop = bVUpPositive ? fVMax : fVMin;
+		float fBottom = bVUpPositive ? fVMin : fVMax;
+		vTL.SetElement(lHAxis, fLeft);  vTL.SetElement(lVAxis, fTop);
+		vTR.SetElement(lHAxis, fRight); vTR.SetElement(lVAxis, fTop);
+		vBL.SetElement(lHAxis, fLeft);  vBL.SetElement(lVAxis, fBottom);
+
+		cVector3f vLaptopPlane(0); cVector2f vLaptopUV0(0),vLaptopUVX(0),vLaptopUVY(0);
+		bool bLaptopPlane=lNormalAxis==2 && _HPL3VR_LaptopPlane(vMin,vMax,vLaptopPlane,vLaptopUV0,vLaptopUVX,vLaptopUVY);
+		if(bLaptopPlane)
+		{
+			vTL=_HPL3VR_ProjectLaptop(vTL,vMin,vMax,vLaptopPlane);
+			vTR=_HPL3VR_ProjectLaptop(vTR,vMin,vMax,vLaptopPlane);
+			vBL=_HPL3VR_ProjectLaptop(vBL,vMin,vMax,vLaptopPlane);
+		}
+        bool bMeshPlane=!bLaptopPlane && _HPL3VR_MeshFit(lNormalAxis,vMin,vMax);
+        if(bMeshPlane)
+        {
+            vTL=_HPL3VR_ProjectMesh(vTL,vMin,vMax);
+            vTR=_HPL3VR_ProjectMesh(vTR,vMin,vMax);
+            vBL=_HPL3VR_ProjectMesh(vBL,vMin,vMax);
+        }
+		cVector3f vP0 = cMath_MatrixMul(mtxWorld, vTL);
+		cVector3f vUSpan = cMath_MatrixMul(mtxWorld, vTR) - vP0;
+		cVector3f vVSpan = cMath_MatrixMul(mtxWorld, vBL) - vP0;
+		if(bLaptopPlane || bMeshPlane)
+		{
+			cVector3f vExactN=cMath_Vector3Normalize(cMath_Vector3Cross(vUSpan,vVSpan));
+			vN=cMath_Vector3Dot(vExactN,vN)<0 ? vExactN*-1.0f : vExactN;
+		}
+		cVector2f vVirtual = pSet.GetVirtualSize();
+		cVector2f vOffset = pSet.GetVirtualSizeOffset();
+
+		tString sSurface = cString_ToString(vP0.x, 6) + "," +
+					   cString_ToString(vP0.y, 6) + "," +
+					   cString_ToString(vP0.z, 6) + "," +
+					   cString_ToString(vUSpan.x, 6) + "," +
+					   cString_ToString(vUSpan.y, 6) + "," +
+					   cString_ToString(vUSpan.z, 6) + "," +
+					   cString_ToString(vVSpan.x, 6) + "," +
+					   cString_ToString(vVSpan.y, 6) + "," +
+					   cString_ToString(vVSpan.z, 6) + "," +
+					   cString_ToString(vN.x, 6) + "," +
+					   cString_ToString(vN.y, 6) + "," +
+					   cString_ToString(vN.z, 6) + "," +
+					   cString_ToString(vVirtual.x, 3) + "," +
+					   cString_ToString(vVirtual.y, 3) + "," +
+					   cString_ToString(vOffset.x, 3) + "," +
+					   cString_ToString(vOffset.y, 3);
+        // Keep world contact bounds unchanged; carry the real texture mapping
+        // separately. The baseline 16-field token still means full-rectangle UV.
+        if(cString_GetFileName(mBaseObj.GetFileName())=="security_keypad.ent" && msConnectedSubmesh=="GUI"
+           && lNormalAxis==2 && vExt.x>0.001f && vExt.y>0.001f)
+        {
+            cVector2f uv0=_HPL3VR_KeypadUV(vTL,vMin,vMax);
+            cVector2f uvU=_HPL3VR_KeypadUV(vTR,vMin,vMax)-uv0;
+            cVector2f uvV=_HPL3VR_KeypadUV(vBL,vMin,vMax)-uv0;
+            sSurface+=","+cString_ToString(uv0.x,6)+","+cString_ToString(uv0.y,6)
+                +","+cString_ToString(uvU.x,6)+","+cString_ToString(uvU.y,6)
+                +","+cString_ToString(uvV.x,6)+","+cString_ToString(uvV.y,6);
+        }
+		if(bLaptopPlane)
+		{
+			cVector2f uv0=_HPL3VR_LaptopUV(vTL,vMin,vMax,vLaptopUV0,vLaptopUVX,vLaptopUVY);
+			cVector2f uvU=_HPL3VR_LaptopUV(vTR,vMin,vMax,vLaptopUV0,vLaptopUVX,vLaptopUVY)-uv0;
+			cVector2f uvV=_HPL3VR_LaptopUV(vBL,vMin,vMax,vLaptopUV0,vLaptopUVX,vLaptopUVY)-uv0;
+			sSurface+=","+cString_ToString(uv0.x,6)+","+cString_ToString(uv0.y,6)
+				+","+cString_ToString(uvU.x,6)+","+cString_ToString(uvU.y,6)
+				+","+cString_ToString(uvV.x,6)+","+cString_ToString(uvV.y,6);
+		}
+        if(bMeshPlane)
+        {
+            cVector2f uv0=_HPL3VR_MeshUV(vTL,vMin,vMax);
+            cVector2f uvU=_HPL3VR_MeshUV(vTR,vMin,vMax)-uv0;
+            cVector2f uvV=_HPL3VR_MeshUV(vBL,vMin,vMax)-uv0;
+            sSurface+=","+cString_ToString(uv0.x,6)+","+cString_ToString(uv0.y,6)
+                +","+cString_ToString(uvU.x,6)+","+cString_ToString(uvU.y,6)
+                +","+cString_ToString(uvV.x,6)+","+cString_ToString(uvV.y,6);
+        }
+		cScript_RunGlobalFunc("VRTERM", sSurface, abRefresh ? "U" : "B");
+        mtxAYSurface=mtxWorld;mbAYSurfaceCached=true;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		msConnectedSubmesh = apVars.GetVarString("ConnectedSubmesh", "");
+		
+		cColor clearColor = apVars.GetVarColor("ClearColor", cColor(0,1));
+		cColor offlineClearColor = apVars.GetVarColor("OfflineClearColor", cColor(0,1));
+		cColor colorMul = apInstanceVars.GetVarColor("TerminalColorMul", cColor(1,1)) * 
+						  cColor(apInstanceVars.GetVarFloat("TerminalBrightness", 1.0f),1.0);
+		cVector2f vScreenSize = apVars.GetVarVector2f("ScreenSize", cVector2f(512.0f));
+		mvHPL3VRScreenSize = vScreenSize;
+		
+		mBaseObj.CreateAndSetupGui(msConnectedSubmesh, colorMul, clearColor, offlineClearColor, vScreenSize);
+		
+		mvScreenPos = apVars.GetVarVector3f("ScreenPosition", cVector3f(0, 0, 0))*mBaseObj.GetOnLoadScale();
+		mvScreenNormal = apVars.GetVarVector3f("ScreenNormal", cVector3f(0, 0, 1));
+		mfCameraDistance = apVars.GetVarFloat("TargetCameraDistance", 1)*mBaseObj.GetOnLoadScale().y;
+
+		///////////////////////////
+		// Instance variables
+		float fFPSWhenIdle = apInstanceVars.GetVarFloat("FPSWhenIdle", 30);
+		mBaseObj.SetGuiVariableFPS(fFPSWhenIdle);
+		
+		mfCacheAtScreenSize = apInstanceVars.GetVarFloat("CacheAtScreenSize", 0.05);
+		mBaseObj.SetGuiCacheAtScreenSize(mfCacheAtScreenSize);
+		mBaseObj.SetOnGuiFunction(apInstanceVars.GetVarString("OnGuiFunction", ""));
+		mBaseObj.SetGuiUpdateWhenOutOfView(apInstanceVars.GetVarBool("UpdateWhenOutOfView", false));
+		mBaseObj.SetGuiActive(apInstanceVars.GetVarBool("GuiActive", true));
+		
+		mbShowMouse = apInstanceVars.GetVarBool("ShowMouse", true);
+		mbAllowInteraction = apInstanceVars.GetVarBool("AllowInteraction", true);
+		
+		msEnterCallback = apInstanceVars.GetVarString("EnterCallback", "");
+		msLeaveCallback = apInstanceVars.GetVarString("LeaveCallback", "");
+		
+		msPlayerPosEntity = apInstanceVars.GetVarString("PlayerPosEntity", "");
+		mfFOV = cMath_ToRad(apInstanceVars.GetVarFloat("VerticalFOV", 70));
+
+		mBaseObj.SetGuiSetUseInput(mbAllowInteraction);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+    [nosave] float mfVRCursorPoll=0;
+    [nosave] bool mbVRAutoCursorOwned=false;
+    [nosave] bool mbVRAutoCursorOriginal=true;
+    [nosave] bool mbVRSetCursorOwned=false;
+    [nosave] bool mbVRSetCursorOriginal=true;
+    void OnUpdate(float afTimeStep)
+    {
+        // A moving monitor must publish its current connected mesh transform.
+        if(mBaseObj.IsGuiFocused() && _HPL3VR_RuntimeActive_PropTerminal())
+        {
+            cVector3f n=cMath_MatrixMul(mBaseObj.GetMatrix().GetRotation(),cMath_Vector3Normalize(mvScreenNormal));
+            _HPL3VR_PublishConnectedTerminalSurface(n,true);
+        }
+        else mbAYSurfaceCached=false;
+        mfVRCursorPoll-=afTimeStep;if(mfVRCursorPoll>0) return;mfVRCursorPoll=0.1f;
+        if(mBaseObj.GetGuiSet() is null) return;
+        bool vr=_HPL3VR_RuntimeActive_PropTerminal();
+        // Legacy widget terminals (including the laptop) need no ImGui.
+        cGuiSet@ cursorSet=mBaseObj.GetGuiSet().GetSet();
+        if(cursorSet !is null)
+        {
+            if(vr){if(!mbVRSetCursorOwned){mbVRSetCursorOriginal=cursorSet.GetDrawMouse();mbVRSetCursorOwned=true;}cursorSet.SetDrawMouse(false);}
+            else if(mbVRSetCursorOwned){cursorSet.SetDrawMouse(mbVRSetCursorOriginal);mbVRSetCursorOwned=false;}
+        }
+        cImGui@ gui=mBaseObj.GetGuiSet().GetImGui();if(gui is null) return;
+        if(vr)
+        {
+            if(!mbVRAutoCursorOwned){mbVRAutoCursorOriginal=gui.GetShowMouseAutomatically();mbVRAutoCursorOwned=true;}
+            gui.SetShowMouseAutomatically(false);
+            if(cScript_RunGlobalFunc("VRGUI","","R"))
+            {
+                gui.SendMouseVirtualPosition(cVector2f(0),cVector2f(0));
+                cScript_RunGlobalFunc("VRGUI","","E");
+            }
+        }
+        else if(mbVRAutoCursorOwned){gui.SetShowMouseAutomatically(mbVRAutoCursorOriginal);mbVRAutoCursorOwned=false;}
+    }
+	//------------------------------------------------------------
+	/*
+	void OnPostUpdate(float afTimeStep)
+	{
+	
+	}
+	*/
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+		
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
+	{
+	
+	}
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// TERMINAL SPECIFIC ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		if (mBaseObj.HasActiveGui()==false || mBaseObj.IsGuiActive()==false || mbAllowInteraction==false)
+			return false;
+			
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		if(pCharBody.IsOnGround() == false && !_HPL3VR_RuntimeActive_PropTerminal()) return false;
+					
+		///////////////////////////////////
+		// Get screen position and normal
+		cMatrixf mtxToWorld = GetBase().GetMatrix();		
+		cVector3f vPosition = cMath_MatrixMul(mtxToWorld, mvScreenPos);
+		cVector3f vNormal = cMath_MatrixMul(mtxToWorld.GetRotation(), cMath_Vector3Normalize(mvScreenNormal));
+				
+		////////////////
+		// The player must face and see the screen to activate it
+		cVector3f vScreenToCam = cMath_Vector3Normalize(cLux_GetPlayer().GetCamera().GetPosition() - vPosition);
+		float fDot = cMath_Vector3Dot(vNormal, vScreenToCam);
+		if(fDot < 0 && !_HPL3VR_RuntimeActive_PropTerminal()) return false;
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{				
+		///////////////////////////////////
+		// Get screen position and normal
+		cMatrixf mtxToWorld = mBaseObj.GetMatrix();		
+		cVector3f vPosition = cMath_MatrixMul(mtxToWorld, mvScreenPos);
+		cVector3f vNormal = cMath_MatrixMul(mtxToWorld.GetRotation(), cMath_Vector3Normalize(mvScreenNormal));
+				
+		////////////////
+		// The player must face and see the screen to activate it
+		cVector3f vScreenToCam = cMath_Vector3Normalize(cLux_GetPlayer().GetCamera().GetPosition() - vPosition);
+		float fDot = cMath_Vector3Dot(vNormal, vScreenToCam);
+		if(fDot < 0 && !_HPL3VR_RuntimeActive_PropTerminal()) return false;
+		
+		///////////////////////////////
+		// Set up the interact state.
+		// VR keeps SOMA's authored Terminal state/focus/callback lifetime, but
+		// the physical fingertip is the pointer and the HMD remains camera authority.
+		if (_HPL3VR_RuntimeActive_PropTerminal())
+		{
+			if(mBaseObj.SetGuiIsFocused(true, true))
+			{
+                // Mouse input must stay enabled for physical fingertip events.
+                // S26AA1: show-mouse focus ALSO enables ImGui hit testing.
+                // Keep it enabled; suppress cursor DRAWING separately in OnUpdate.
+                // GetGuiSet returns cLuxGuiSet, not cGuiSet. Keep input enabled.
+                _HPL3VR_PublishConnectedTerminalSurface(vNormal);
+
+				////////////////////////////////////
+				// Callback
+				if(msEnterCallback != "")
+				{
+					cLuxMap @pMap = mBaseObj.GetMap();
+					if(pMap.ScriptPrepare("void " + msEnterCallback + "(const tString &in asEntityName)" ) )
+					{
+						tString sName = mBaseObj.GetName();
+						pMap.SetArgString(0, sName);
+						pMap.ScriptExecute();
+					}
+				}
+
+				////////////////////////////////////
+				// Allow interaction again
+				mbAllowInteraction = true;
+				mBaseObj.SetGuiSetUseInput(mbAllowInteraction);
+
+				////////////////////////////////////
+				// Enter the authored Terminal state. VR intentionally does not fade
+				// camera FOV here; the state script also skips desktop body/camera snap.
+				cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+				cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+				cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab position
+				cScript_SetGlobalArgVector3f(3, vNormal);//Screen normal
+				cScript_SetGlobalArgVector3f(4, vPosition);//Screen world position
+				cScript_SetGlobalArgFloat(5, mfCameraDistance);//Target camera distance from screen
+				cScript_SetGlobalArgString(6, msLeaveCallback);//Called when the interaction is over.
+				cScript_SetGlobalArgString(7, msPlayerPosEntity);//Entity the player should be placed at
+
+				cScript_RunGlobalFunc("State_Interact_Terminal", "", "SetupTerminal");
+				cLux_GetPlayer().ChangeState(ePlayerState_Terminal);
+
+				return true;
+			}
+			return false;
+		}
+
+		///////////////////////////////
+		//Set up the interact state
+		if(mBaseObj.SetGuiIsFocused(true, _HPL3VR_RuntimeActive_PropTerminal() ? false : mbShowMouse))
+		{
+			////////////////////////////////////
+			// Callback
+			if(msEnterCallback != "")
+			{
+				cLuxMap @pMap = mBaseObj.GetMap();
+				if(pMap.ScriptPrepare("void " + msEnterCallback + "(const tString &in asEntityName)" ) )
+				{
+					tString sName = mBaseObj.GetName();
+					pMap.SetArgString(0, sName);
+					pMap.ScriptExecute();
+				}
+			}
+
+			/////////////////////
+			// Fade fov		
+			cLux_GetPlayer().FadeCameraFOVTo(mfFOV, 4.0f);
+
+			////////////////////////////////////
+			// Allow interction again
+			mbAllowInteraction = true;
+			mBaseObj.SetGuiSetUseInput(mbAllowInteraction);
+					
+			////////////////////////////////////
+			// Enter terminal state
+			
+			cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+			cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+			cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab position
+			cScript_SetGlobalArgVector3f(3, vNormal);//Screen normal
+			cScript_SetGlobalArgVector3f(4, vPosition);//Screen world position
+			cScript_SetGlobalArgFloat(5, mfCameraDistance);//Target camera distance from screen
+			cScript_SetGlobalArgString(6, msLeaveCallback);//Called when the interaction is over.
+			cScript_SetGlobalArgString(7, msPlayerPosEntity);//Entity the player should be placed at
+			
+			cScript_RunGlobalFunc("State_Interact_Terminal", "", "SetupTerminal");
+		
+			cLux_GetPlayer().ChangeState(ePlayerState_Terminal);	
+			
+			return true;
+		}
+		
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_Terminal;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL 
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetAllowInteraction()
+	{
+		mbAllowInteraction = cScript_GetGlobalArgBool(0);
+		mBaseObj.SetGuiSetUseInput(mbAllowInteraction);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetOnGuiFunction()
+	{
+		tString sCallback = cScript_GetGlobalArgString(0);
+		mBaseObj.SetOnGuiFunction(sCallback);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetEnterCallback()
+	{
+		msEnterCallback = cScript_GetGlobalArgString(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetLeaveCallback()
+	{
+		msLeaveCallback = cScript_GetGlobalArgString(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		//apSet.DrawFont(tWString("Terminal: "+ mBaseObj.GetName()), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		//afStartY += 14;
+		
+		return afStartY;
+	}
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] tString msConnectedSubmesh;
+	
+	[nosave] cVector3f mvScreenPos;
+	[nosave] cVector3f mvScreenNormal;
+	[nosave] cVector2f mvHPL3VRScreenSize;
+    [nosave] bool mbAYSurfaceCached=false;
+    [nosave] cMatrixf mtxAYSurface;
+	[nosave] float mfCameraDistance;
+	[nosave] float mfFOV;
+	
+	//------------------------------------------------------------
+	
+	bool mbShowMouse;
+	bool mbAllowInteraction;
+	tString msEnterCallback;
+	tString msLeaveCallback;
+	tString msPlayerPosEntity;
+	float mfCacheAtScreenSize;
+}	

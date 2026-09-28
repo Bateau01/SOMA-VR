@@ -1,0 +1,155 @@
+//------------------------------------------------------------
+
+/////////////////////////////////////////
+// CRAZY DEATH EFFECT
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+#include "helpers/helper_imgui.hps"
+#include "helpers/helper_props.hps"
+#include "helpers/helper_player.hps"
+
+//------------------------------------------------------------
+
+const bool gbDeathFXOn = true;
+
+//------------------------------------------------------------
+
+void DeathFX_Preload()
+{
+	ImGui_PreloadImage("advanced_black", eImGuiGfx_Texture);
+	ImGui_PreloadImage("vignette_alpha", eImGuiGfx_Texture);
+	for (int i=1;i<=25;++i)
+	{
+		ImGui_PreloadImage("death_image_"+i, eImGuiGfx_Texture);
+	}
+	
+	for (int i=1;i<=4;++i)
+	{
+		ImGui_PreloadImage("death_static_"+i, eImGuiGfx_Texture);
+	}
+	
+	ImGui_PreloadImage("death_image_alt_5", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_7", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_10", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_11", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_12", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_13", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_14", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_15", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_16", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_17", eImGuiGfx_Texture);
+	ImGui_PreloadImage("death_image_alt_19", eImGuiGfx_Texture);
+	
+    Sound_PreloadGroup("Player/UI/death", true);
+    
+	Entity_Preload("death_terminal.ent");
+}
+
+//-------------------------------------------------------
+
+bool DeathFX_IsActive()
+{
+	return (Entity_Exists("DeathFXTerminal"));
+}
+
+//-------------------------------------------------------
+
+void DeathFX_Start()
+{	
+	// Crazy nonsense - we create a very small terminal just in front of the player's face. 
+	// Why? We could draw to the screen, but if we do this in-world then we can use the video
+	// distortion and chromabb and other effects!
+    
+    //Call the sound blerrugghhhargghhh
+    Music_StopAll(0.25f);
+    Sound_PlayGui("Player/UI/death/death_slideshow", 1.0f, eSoundEntryType_Gui);
+    //cLux_AddTodoMessage("Death sound starts here");
+    
+	Player_ShowCrossHairIcons(false);
+	
+	iLuxEntity@ pTerm = null;
+	
+	if (Entity_Exists("DeathFXTerminal"))
+	{
+		@pTerm = Map_GetEntity("DeathFXTerminal");
+	}
+	else
+	{		
+		// Create the new terminal
+		@pTerm = Entity_CreateAtEntity("DeathFXTerminal","death_terminal.ent","Player",false);
+		Terminal_SetOnGuiFunction("DeathFXTerminal","$_DeathFX_OnGui");
+		Entity_SetInteractionDisabled("DeathFXTerminal",true);
+	}
+			
+	// Move and rotate it to just in front of the player's face
+	cVector3f vPos = cLux_GetPlayer().GetCamera().GetPosition();
+	
+	// Sort out FoV
+	float fFOV = cMath_ToDeg(cLux_GetPlayer().GetCamera().GetFOV());
+	cLux_AddDebugMessage("FOV:"+fFOV);
+	float fAdj = (1.0f-((fFOV-50.0f)/33.0f))*0.08+0.09;
+	vPos += cLux_GetPlayer().GetCamera().GetForward()*fAdj;
+	
+	cMatrixf mat = cLux_GetPlayer().GetCamera().GetMatrix().GetRotation();
+	mat = cMath_MatrixMul(cMath_MatrixScale(cVector3f(0.16f,0.16f,0.16f)), mat);
+	mat.SetTranslation(vPos);
+	pTerm.SetMatrix(mat);
+	Entity_AttachToEntity("DeathFXTerminal","Camera","",true,false,true);
+	
+	// Video Distortion
+	int lDistortionID = Terminal_GetImGuiStateInt("DeathFXTerminal", "DistortionID",-1);
+	if (lDistortionID!=-1)
+		Effect_VideoDistortion_FadeOut(lDistortionID,0.1f);
+	lDistortionID = Effect_VideoDistortion_Start(1.0f,-1,0.0f,0.0f,0.0f);
+	Terminal_SetImGuiStateInt("DeathFXTerminal", "DistortionID", lDistortionID);
+	
+	// Chromatic Aberration
+	int lChromAbbID = Terminal_GetImGuiStateInt("DeathFXTerminal", "ChromAbbID",-1);
+	if (lChromAbbID!=-1)
+		Effect_ChromaticAberration_DestroyInstance(lChromAbbID);
+	lChromAbbID = Effect_ChromaticAberration_CreateInstance(0.01f,1.0f);
+	Terminal_SetImGuiStateInt("DeathFXTerminal", "ChromAbbID", lChromAbbID);
+	
+	// Tone Mapping
+	int lPrevToneMapping = Terminal_GetImGuiStateFloat("DeathFXTerminal", "ToneMapping", -1.0f);
+	if (lPrevToneMapping<0.0f)
+	{
+		Terminal_SetImGuiStateFloat("DeathFXTerminal", "ToneMapping", Effect_ToneMapping_GetExposure() );
+	}
+	Effect_ToneMapping_FadeExposure(1.0f,0.0f);
+}
+
+//-------------------------------------------------------
+
+void DeathFX_SetBlack()
+{
+	Terminal_SetGuiActive("DeathFXTerminal",false);
+}
+
+//-------------------------------------------------------
+
+void DeathFX_Stop()
+{	
+	// Video Distortion
+	int lDistortionID = Terminal_GetImGuiStateInt("DeathFXTerminal", "DistortionID",-1);
+	Effect_VideoDistortion_FadeOut(lDistortionID,0.1f);
+	Terminal_SetImGuiStateInt("DeathFXTerminal", "DistortionID", -1);
+	
+	// ChromeABB
+	int lChromAbbID = Terminal_GetImGuiStateInt("DeathFXTerminal", "ChromAbbID",-1);
+	Effect_ChromaticAberration_DestroyInstance(lChromAbbID);
+	Terminal_SetImGuiStateInt("DeathFXTerminal", "ChromAbbID", -1);
+	
+	// Tone Mapping
+	int lPrevToneMapping = Terminal_GetImGuiStateFloat("DeathFXTerminal", "ToneMapping", -1.0f);
+	Effect_ToneMapping_FadeExposure(lPrevToneMapping,0.0f);
+	
+	// Destroy fake prop
+	Entity_Destroy("DeathFXTerminal");
+	
+	Player_ShowCrossHairIcons(true);
+}
+
+//------------------------------------------------------------

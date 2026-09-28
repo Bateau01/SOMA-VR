@@ -1,0 +1,767 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+
+enum eMovingButtonTimer
+{
+	eMovingButtonTimer_InteractWait,
+	eMovingButtonTimer_BlinkOn,
+	eMovingButtonTimer_BlinkOff,
+}
+
+class cScrPropMovingButton : iScrProp, iScrProp_Interface
+{
+    [nosave] bool mbVRRockerChecked=false;
+    [nosave] bool mbVRRockerY=false;
+    [nosave] bool mbVRRockerRegistered=false;
+    [nosave] float mfVRRockerRefresh=0;
+    void VRRockerY_Update(float dt)
+    {
+        if(!mbVRRockerChecked)
+        {
+            mbVRRockerChecked=true;
+            tString file=cString_GetFileName(mBaseObj.GetFileName());
+            mbVRRockerY=(file=="light_switch.ent" || file=="lightswitch_button.ent");
+        }
+        if(!mbVRRockerY) return;
+        mfVRRockerRefresh-=dt;if(mfVRRockerRefresh>0) return;mfVRRockerRefresh=0.5f;
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        if(!cScript_GetGlobalReturnBool()) { VRRockerY_Remove(); return; }
+        if(!cScript_RunGlobalFunc("VRROCKERY","","C")) return;
+        iPhysicsBody@ main=mBaseObj.GetMainBody();
+        bool captured=cScript_RunGlobalFunc("VRROCKERY","","D");
+        if(main is null || !captured) return;
+        mbVRRockerRegistered=true;
+        tString file=cString_GetFileName(mBaseObj.GetFileName());
+        iPhysicsBody@ paddle=mBaseObj.GetBodyFromName(file=="light_switch.ent" ? "Body_2" : "Body_1");
+        for(int i=0;i<mBaseObj.GetBodyNum();i++)
+        {
+            iPhysicsBody@ body=mBaseObj.GetBody(i);
+            if(body !is null) cScript_RunGlobalFunc("VRROCKERY",""+body.GetUniqueID(),(body is paddle) ? "A" : "R");
+        }
+    }
+    void VRRockerY_Remove()
+    {
+        if(!mbVRRockerRegistered) return;
+        mbVRRockerRegistered=false;
+        for(int i=0;i<mBaseObj.GetBodyNum();i++)
+        {
+            iPhysicsBody@ body=mBaseObj.GetBody(i);
+            if(body !is null) cScript_RunGlobalFunc("VRROCKERY",""+body.GetUniqueID(),"U");
+        }
+    }
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mbSwitchedOn = true;
+		mfStateAmount = -1;
+		mfReturnToOffCount =0;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		/////////////////////////////
+		// Type vars
+		mbUseColorChange = apVars.GetVarBool("UseColorChange", false);
+		if(mbUseColorChange)
+		{
+			mColorChangeOn = apVars.GetVarColor("ColorChangeOn", cColor(1,1));
+			mColorChangeOff = apVars.GetVarColor("ColorChangeOff", cColor(1,1));
+			mColorChangeLocked = apVars.GetVarColor("ColorChangeLocked", cColor(1,1));
+			mColorChangeDisabled = apVars.GetVarColor("ColorChangeDisabled", cColor(1,1));
+		}
+		
+		msSound_InteractOn = apVars.GetVarString("Sound_InteractOn", "");
+		msSound_InteractOff = apVars.GetVarString("Sound_InteractOff", "");
+		msSound_InteractLocked = apVars.GetVarString("Sound_InteractLocked", "");
+		msSound_InteractDisabled = apVars.GetVarString("Sound_InteractDisabled", "");
+		
+		mfInteractOnWaitTime = apVars.GetVarFloat("InteractOnWaitTime", 0.5);
+		mfInteractOffWaitTime = apVars.GetVarFloat("InteractOffWaitTime", 0.5);
+		
+		mlLockedBlinkCount = apVars.GetVarInt("LockedBlinkCount", 0);
+		mfLockedBlinkTime = apVars.GetVarFloat("LockedBlinkTime", 0);
+		
+		mfMinMoveSpeed = apVars.GetVarFloat("MinMoveSpeed", 0);
+		mfMaxMoveSpeed = apVars.GetVarFloat("MaxMoveSpeed", 0);
+		mfMinMoveLength = apVars.GetVarFloat("MinMoveLength", 0);
+		mfStateAmountOnSpeed = apVars.GetVarFloat("StateAmountOnSpeed", 0);
+		mfStateAmountOffSpeed = apVars.GetVarFloat("StateAmountOffSpeed", 0);
+		mbHasInputDirection = apVars.GetVarBool("HasInputDirection", false);
+		mvInputDirectionToOn = apVars.GetVarVector2f("InputDirectionToOn", cVector2f(0));
+		mvInputDirectionToOn.Normalize();
+		mfChangeStateAmount = apVars.GetVarFloat("ChangeStateAmount", 0.3);
+		mbSimplePressInteraction = apVars.GetVarBool("SimplePressInteraction",false);
+		mCustomInteractIcon = PlayerTypes_StringToCrossHairState( apVars.GetVarString("CustomInteractIcon", "None"));
+		
+		tString sMoveBody = apVars.GetVarString("MoveBody","");
+		if(sMoveBody != "")
+		{
+			@mpMoveBody = mBaseObj.GetBodyFromName(sMoveBody);
+			if(mpMoveBody !is null)
+			{
+				mvOnPosOffset = apVars.GetVarVector3f("OnPosOffset", cVector3f(0));
+				
+				cVector3f vRot = apVars.GetVarVector3f("OnRotOffset", cVector3f(0));
+				vRot = cMath_Vector3ToRad(vRot);
+				mqOnRotOffset = cMath_QuaternionEuler(vRot, eEulerRotationOrder_XYZ);
+				
+				m_mtxMoveBody = mpMoveBody.GetLocalMatrix();
+				
+				mbCanOnlyInteractWithMainBody = apVars.GetVarBool("CanOnlyInteractWithMainBody", true);
+			}
+			else
+			{
+				Error("Could not find move body '"+sMoveBody+"' for moving button '"+mBaseObj.GetName()+"'!");
+			}
+		}
+		
+		/////////////////////////////
+		// Setup
+		cMeshEntity @pEntity = mBaseObj.GetMeshEntity();
+		if(pEntity.GetAnimationStateNum()>0)
+		{
+			@mpAnimState = pEntity.GetAnimationState(0);
+			mpAnimState.SetActive(true);
+			mpAnimState.SetPaused(true);
+			pEntity.SetDisableSleep(true);
+		}
+		else
+		{
+			@mpAnimState = null;
+		}
+		
+		/////////////////////////////
+		// Instance vars
+		bool bSetOn = apInstanceVars.GetVarBool("SwitchedOn",false);
+		mbSwitchedOn = !bSetOn;
+		SetSwitchedOn(bSetOn, false, false);
+		//SetStateAmount(mbSwitchedOn ? 1 : 0);
+		
+		mbCanBeSwitchedOn = apInstanceVars.GetVarBool("CanBeSwitchedOn",true);
+		mbCanBeSwitchedOff = apInstanceVars.GetVarBool("CanBeSwitchedOff",true);
+		
+		mfReturnToOffTime = apInstanceVars.GetVarFloat("ReturnToOffTime", -1);
+		
+		SetLocked(apInstanceVars.GetVarBool("Locked",false), false);
+		SetDisabled(apInstanceVars.GetVarBool("Disabled",false), false);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{
+        VRRockerY_Update(afTimeStep);
+		if(mBaseObj.IsInteractedWith()) return;
+			
+		if(mfReturnToOffTime > 0 && mbSwitchedOn)
+		{
+			mfReturnToOffCount+=afTimeStep;
+			if(mfReturnToOffCount >= mfReturnToOffTime)
+			{
+				mfReturnToOffCount =0;
+				SetSwitchedOn(false, true);
+			}
+		}
+		
+		float fX = mfStateAmount;
+		if(	(mbSwitchedOn && mfStateAmount < 1))
+		{
+			fX += afTimeStep*mfStateAmountOnSpeed;
+			if(fX > 1) 
+			{
+				fX =1;
+			}
+			SetStateAmount(fX);
+		}
+		else if(mbSwitchedOn==false && mfStateAmount > 0)
+		{
+			fX -= afTimeStep*mfStateAmountOffSpeed;
+			if(fX < 0)
+			{
+				fX =0;
+			}
+			SetStateAmount(fX);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/*void OnPostUpdate(float afTimeStep)
+	{
+	
+	}*/
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+        VRRockerY_Remove();
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnUpdateAutoSleep()
+	{
+		if(mbSwitchedOn && mfReturnToOffTime>0) return false;
+		
+		if(mbSwitchedOn && mfStateAmount<1) return false;
+		if(mbSwitchedOn==false && mfStateAmount>0) return false;
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+		if(alState==0) return;
+		
+		SetSwitchedOn(alState==1 ? true : false, true, false);
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+	
+	//------------------------------------------------------------
+	
+	void OnAttachmentUpdate(const cMatrixf&in a_mtxTransformAdd)
+	{
+		m_mtxMoveBody = cMath_MatrixMul(a_mtxTransformAdd, m_mtxMoveBody);
+	}
+	
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
+	{
+	
+	}	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+        VRRockerY_Update(0.5f); // Sleeping props must register before their first interaction.
+		if(mBaseObj.Timer_Exists(eMovingButtonTimer_InteractWait)) return false;
+		if(mbDisabled) return false;
+				
+		//If entity allows interaction with other than main body
+		if(mbCanOnlyInteractWithMainBody && apBody.GetName() != mBaseObj.GetMainBody().GetName()) return false;
+		if(mbCanBeSwitchedOff && mbSwitchedOn) return true;
+		if(mbCanBeSwitchedOn && mbSwitchedOn==false) return true;
+			
+		return false;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		float fWaitTime =0.5f;
+		//////////////////////
+		// Disabled
+		if(mbDisabled)
+		{
+			mBaseObj.PlaySound("MovingButtonDisabled", msSound_InteractDisabled, true, true);
+			fWaitTime = 0.2f;
+		}
+		//////////////////////
+		// Locked
+		else if(mbLocked)
+		{
+			mBaseObj.PlaySound("MovingButtonLocked", msSound_InteractLocked, true, true);
+			
+			if(mlLockedBlinkCount>0)
+			{
+				mlBlinkCount=mlLockedBlinkCount;
+				fWaitTime = mlBlinkCount*mfLockedBlinkTime;
+				Timer_BlinkOff(0);
+			}	
+		}
+		//////////////////////
+		// Working
+		else
+		{
+			
+			///////////////////////////////
+			//If Simple, simple switch state
+			if(mbSimplePressInteraction)
+			{
+				SetSwitchedOn(!mbSwitchedOn, true);
+				fWaitTime = mbSwitchedOn ? mfInteractOnWaitTime : mfInteractOffWaitTime;
+			}
+			///////////////////////////////
+			//Enter Interaction State
+			else
+			{
+				fWaitTime =0;
+				
+				///////////////////////////////
+				//Set up the new state!
+				// S26N: publish the actual authored moving body, not the static hit body.
+				cScript_SetGlobalReturnBool(false);
+				cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+				if(cScript_GetGlobalReturnBool() && mpMoveBody !is null)
+				{
+					cScript_RunGlobalFunc("VRMECH",mBaseObj.GetName(),"B");
+					iPhysicsBody@ pVRIdentity=mBaseObj.GetMainBody();
+					cScript_RunGlobalFunc("VRMECH",""+mpMoveBody.GetUniqueID(),"E");
+				}
+				cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+				cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+				cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
+				
+				cScript_SetGlobalArgFloat(3, mfMinMoveSpeed); //The minimum speed for movement to be counted.
+				cScript_SetGlobalArgFloat(4, mfMaxMoveSpeed); //Mouse speed will be capped to this
+				cScript_SetGlobalArgFloat(5, mfMinMoveLength); //The minimum length of total movement for an interaction to happen.
+				cScript_SetGlobalArgBool(6, mbSwitchedOn); 
+				cScript_SetGlobalArgBool(7, mbCanBeSwitchedOn);
+				cScript_SetGlobalArgBool(8, mbCanBeSwitchedOff);
+				cScript_SetGlobalArgFloat(9, mfStateAmount);
+				cScript_SetGlobalArgBool(10, mbHasInputDirection);
+				cScript_SetGlobalArgVector2f(11, mvInputDirectionToOn);
+				cScript_SetGlobalArgFloat(12, mfChangeStateAmount);
+				
+				cScript_RunGlobalFunc("State_Interact_MovingButton", "", "SetupMovingButton");
+				
+				///////////////////////////////
+				//Change to the moving button state
+				cLux_GetPlayer().ChangeState(ePlayerState_MovingButton);	
+			}
+		}
+		
+		if(fWaitTime>0)
+			mBaseObj.Timer_Add(eMovingButtonTimer_InteractWait, fWaitTime);
+			
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void Timer_BlinkOff(uint64 alID)
+	{
+		mBaseObj.FadeEffectBaseColor(cColor(0,0), mfLockedBlinkTime/2.0f);
+		mBaseObj.Timer_Add(eMovingButtonTimer_BlinkOn, mfLockedBlinkTime/2.0f, "Timer_BlinkOn");
+	}
+	
+	void Timer_BlinkOn(uint64 alID)
+	{
+		mBaseObj.FadeEffectBaseColor(mColorChangeLocked, mfLockedBlinkTime/2.0f);
+		mlBlinkCount--;
+		if(mlBlinkCount>0)
+			mBaseObj.Timer_Add(eMovingButtonTimer_BlinkOff, mfLockedBlinkTime/2.0f, "Timer_BlinkOff");
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		if(mCustomInteractIcon != eCrossHairState_None)
+		{
+			return mCustomInteractIcon;
+		}
+		else
+		{
+			if(mbSimplePressInteraction)
+				return eCrossHairState_PushButton;
+			else
+				return eCrossHairState_PullLeverSmall;
+		}
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPECIFIC ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetCustomInteractIcon()
+	{
+		mCustomInteractIcon = eCrossHairState(cScript_GetGlobalArgInt(0));
+	}
+			
+	//------------------------------------------------------------
+	
+	void _Global_SetSwitchedOn()
+	{
+		SetSwitchedOn(cScript_GetGlobalArgBool(0), cScript_GetGlobalArgBool(1));
+	}
+		
+	void SetSwitchedOn(bool abX, bool abUseEffects, bool abChangeConnectionState = true)
+	{
+		if(mbSwitchedOn == abX) return;
+		
+		mBaseObj.WakeUp();
+		
+		mbSwitchedOn =  abX;
+		
+		if(abChangeConnectionState)
+			mBaseObj.ChangeConnectionState(mbSwitchedOn ? 1 : -1);
+			
+		if(mbDisabled || mbLocked) return;
+
+		if(mbUseColorChange)
+		{
+			cColor col = mbSwitchedOn ? mColorChangeOn : mColorChangeOff;
+					
+			if(abUseEffects)
+			{
+				float fTime = mbSwitchedOn ? mBaseObj.GetEffectsOnTime() : mBaseObj.GetEffectsOffTime();
+				mBaseObj.FadeEffectBaseColor(col, fTime);
+			}
+			else
+			{
+				mBaseObj.SetEffectBaseColor(col);
+			}
+		}
+		
+		if(abUseEffects)
+		{
+			if(mbSwitchedOn)
+				mBaseObj.PlaySound("MovingButtonOn", msSound_InteractOn, true, true);
+			else
+				mBaseObj.PlaySound("MovingButtonOff", msSound_InteractOff, true, true);
+		}
+				
+		if(mbSwitchedOn==false)
+		{
+			mfReturnToOffCount = 0;
+		}
+		
+		if(abUseEffects == false)
+		{
+			if(mBaseObj.IsInteractedWith()==false)
+				SetStateAmount(mbSwitchedOn ? 1 : 0);
+		}
+		
+		
+	}
+			
+	//------------------------------------------------------------
+	
+	void _Global_SetCanBeSwitchedOn()
+	{
+		mbCanBeSwitchedOn = cScript_GetGlobalArgBool(0);
+	}
+			
+	//------------------------------------------------------------
+	
+	void _Global_SetCanBeSwitchedOff()
+	{
+		mbCanBeSwitchedOff = cScript_GetGlobalArgBool(0);
+	}
+
+	//-----------------------------------------------------------------------
+	
+	void _Global_GetStateAmount()
+	{
+		cScript_SetGlobalReturnFloat(mfStateAmount);
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_SetStateAmount()
+	{
+		SetStateAmount(cScript_GetGlobalArgFloat (0) );
+	}
+	
+	void SetStateAmount(float afAmount)
+	{
+		if(mfStateAmount == afAmount) return;
+		
+		mfStateAmount = afAmount;
+		
+		/////////////////////////////////////
+		// Move Body
+		if(mpMoveBody !is null)
+		{
+			cVector3f vPos = mvOnPosOffset * afAmount;
+			cQuaternion qRot = cMath_QuaternionSlerp(afAmount, cQuaternion_Identity, mqOnRotOffset, true);
+			cMatrixf mtxOffset = cMath_MatrixQuaternion(qRot);
+			mtxOffset.SetTranslation(vPos);
+		
+			mpMoveBody.SetMatrix(cMath_MatrixMul(m_mtxMoveBody, mtxOffset) );
+		}
+		/////////////////////////////////////
+		// Animation State
+		else if(mpAnimState !is null)
+		{
+			mpAnimState.SetRelativeTimePosition(mfStateAmount);
+		}
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_IsSwitchedOn()
+	{
+		/////////////////////////////////////////////////
+		// Sets the state of the button as return value.
+		cScript_SetGlobalReturnBool(mbSwitchedOn);
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_SetReturnToOffTime()
+	{
+		mfReturnToOffTime = cScript_GetGlobalArgFloat(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	
+	void SetLocked(bool abState, bool abUseEffects)
+	{
+		if(mbLocked == abState) return;
+		
+		mbLocked = abState;
+		
+		if(mbDisabled) return;
+		
+		if(mbLocked==false) {
+			mBaseObj.Timer_Remove(eMovingButtonTimer_BlinkOff);
+			mBaseObj.Timer_Remove(eMovingButtonTimer_BlinkOn);
+		}
+		
+		if(mbUseColorChange)
+		{
+			cColor col = cColor_White;
+			
+			if (mbLocked)
+				col = mColorChangeLocked;
+			else
+				col = mbSwitchedOn ? mColorChangeOn : mColorChangeOff;
+		
+			if (abUseEffects)
+			{
+				float fTime = abState ? mBaseObj.GetEffectsOffTime() : mBaseObj.GetEffectsOnTime();
+				mBaseObj.FadeEffectBaseColor(col, fTime);
+			}
+			else
+			{
+				mBaseObj.SetEffectBaseColor(col);
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+		
+	void SetDisabled(bool abState, bool abUseEffects)
+	{
+		if(mbDisabled == abState) return;
+		
+		mbDisabled = abState;
+		
+		if(mbDisabled) {
+			mBaseObj.Timer_Remove(eMovingButtonTimer_BlinkOff);
+			mBaseObj.Timer_Remove(eMovingButtonTimer_BlinkOn);
+		}
+		
+		if(mbUseColorChange)
+		{
+			cColor col = cColor_White;
+			
+			if(mbDisabled)
+				col = mColorChangeDisabled;
+			else if(mbLocked)
+				col= mColorChangeLocked;
+			else col = mbSwitchedOn ? mColorChangeOn : mColorChangeOff;
+			
+			if(abUseEffects)
+			{
+				float fTime = abState ? mBaseObj.GetEffectsOffTime() : mBaseObj.GetEffectsOnTime();
+				mBaseObj.FadeEffectBaseColor(col, fTime);
+			}
+			else
+			{
+				mBaseObj.SetEffectBaseColor(col);
+			}
+		}
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_SetLocked()
+	{
+		SetLocked(cScript_GetGlobalArgBool(0), cScript_GetGlobalArgBool(1));
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_SetDisabled()
+	{
+		SetDisabled(cScript_GetGlobalArgBool(0), cScript_GetGlobalArgBool(1));
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_GetLocked()
+	{
+		cScript_SetGlobalReturnBool(mbLocked);
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_GetDisabled()
+	{
+		cScript_SetGlobalReturnBool(mbDisabled);
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_Blink()
+	{
+		if(mlLockedBlinkCount>0)
+		{
+			mlBlinkCount=mlLockedBlinkCount;
+			Timer_BlinkOff(0);
+		}
+	}
+	
+	//-----------------------------------------------------------------------
+	
+
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbUseColorChange;
+	[nosave] cColor mColorChangeOn;
+	[nosave] cColor mColorChangeOff;
+	[nosave] cColor mColorChangeLocked;
+	[nosave] cColor mColorChangeDisabled;
+	
+	[nosave] tString msSound_InteractOn;
+	[nosave] tString msSound_InteractOff;
+	[nosave] tString msSound_InteractLocked;
+	[nosave] tString msSound_InteractDisabled;
+	
+	[nosave] float mfInteractOnWaitTime;
+	[nosave] float mfInteractOffWaitTime;
+	
+	[nosave] int mlLockedBlinkCount;
+	[nosave] float mfLockedBlinkTime;
+	
+	[nosave] float mfMinMoveSpeed;
+	[nosave] float mfMaxMoveSpeed;
+	[nosave] float mfMinMoveLength;
+	[nosave] iPhysicsBody@ mpMoveBody;
+	[nosave] cVector3f mvOnPosOffset;
+	[nosave] cQuaternion mqOnRotOffset;
+	[nosave] cAnimationState@ mpAnimState;
+	[nosave] float mfStateAmountOnSpeed;
+	[nosave] float mfStateAmountOffSpeed;
+	[nosave] bool mbHasInputDirection;
+	[nosave] cVector2f mvInputDirectionToOn;
+	[nosave] bool mbSimplePressInteraction;
+	[nosave] eCrossHairState mCustomInteractIcon;
+	[nosave] bool mbCanOnlyInteractWithMainBody;
+	
+	//------------------------------------------------------------
+	
+	cMatrixf m_mtxMoveBody;
+
+	bool mbSwitchedOn;
+	bool mbCanBeSwitchedOn;
+	bool mbCanBeSwitchedOff;
+	float mfStateAmount;
+	float mfChangeStateAmount;
+	float mfReturnToOffTime;
+	float mfReturnToOffCount;
+	
+	bool mbLocked=false;
+	bool mbDisabled=false;
+	int mlBlinkCount=0;
+		
+	
+	
+	//------------------------------------------------------------
+		
+}	

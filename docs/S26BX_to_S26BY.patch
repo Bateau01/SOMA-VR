@@ -1,0 +1,13 @@
+--- S26BX/s26n.c
++++ S26BY/s26n.c
+@@ -12072,6 +12072,10 @@
+         for(i32 r=0;r<4;++r)for(i32 c=0;c<4;++c)native[r*4+c]=local[c*4+r];
+         p_s26NodeMatrix(g_s26NativeBones[h][j],native,0);
+     }
++    // S26BY: native free/held/healing meshes need the same apparent-size
++    // compensation as custom rendering and the later held-pose refresh.
++    // M is a fresh rigid frame; scale its basis once, never its position.
++    s26bb_scale_visual_basis(M);
+     for(i32 r=0;r<4;++r)for(i32 c=0;c<4;++c)hm[r*4+c]=M[c*4+r];
+     p_s26MeshMatrix(mesh,hm);p_s26MeshReset(mesh);
+     g_s26MeshSuccess=1;g_s26NativeHandVisible[h]=1;

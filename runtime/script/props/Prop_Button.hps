@@ -1,0 +1,542 @@
+#include "interfaces/Prop_Interface.hps"
+
+#include "player/player_types.hps"
+
+enum eButtonTimer
+{
+	eButtonTimer_InteractWait,
+	eButtonTimer_BlinkOn,
+	eButtonTimer_BlinkOff,
+}
+
+class cScrPropButton : iScrProp, iScrProp_Interface
+{
+    [nosave] bool mbVRRockerChecked=false;
+    [nosave] bool mbVRRockerY=false;
+    [nosave] bool mbVRRockerRegistered=false;
+    [nosave] float mfVRRockerRefresh=0;
+    void VRRockerY_Update(float dt)
+    {
+        if(!mbVRRockerChecked)
+        {
+            mbVRRockerChecked=true;
+            tString file=cString_GetFileName(mBaseObj.GetFileName());
+            mbVRRockerY=(file=="light_switch.ent" || file=="lightswitch_button.ent");
+        }
+        if(!mbVRRockerY) return;
+        mfVRRockerRefresh-=dt;if(mfVRRockerRefresh>0) return;mfVRRockerRefresh=0.5f;
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        if(!cScript_GetGlobalReturnBool()) { VRRockerY_Remove(); return; }
+        if(!cScript_RunGlobalFunc("VRROCKERY","","C")) return;
+        iPhysicsBody@ main=mBaseObj.GetMainBody();
+        bool captured=cScript_RunGlobalFunc("VRROCKERY","","D");
+        if(main is null || !captured) return;
+        mbVRRockerRegistered=true;
+        tString file=cString_GetFileName(mBaseObj.GetFileName());
+        iPhysicsBody@ paddle=mBaseObj.GetBodyFromName(file=="light_switch.ent" ? "Body_2" : "Body_1");
+        for(int i=0;i<mBaseObj.GetBodyNum();i++)
+        {
+            iPhysicsBody@ body=mBaseObj.GetBody(i);
+            if(body !is null) cScript_RunGlobalFunc("VRROCKERY",""+body.GetUniqueID(),(body is paddle) ? "A" : "R");
+        }
+    }
+    void OnUpdate(float afTimeStep) { VRRockerY_Update(afTimeStep); }
+    void VRRockerY_Remove()
+    {
+        if(!mbVRRockerRegistered) return;
+        mbVRRockerRegistered=false;
+        for(int i=0;i<mBaseObj.GetBodyNum();i++)
+        {
+            iPhysicsBody@ body=mBaseObj.GetBody(i);
+            if(body !is null) cScript_RunGlobalFunc("VRROCKERY",""+body.GetUniqueID(),"U");
+        }
+    }
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mbSwitchedOn = true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		//////////////////////////////
+		// Type vars
+		mbUseColorChange = apVars.GetVarBool("UseColorChange", false);
+		
+		if(mbUseColorChange)
+		{
+			mColorChangeOn = apVars.GetVarColor("ColorChangeOn", cColor(1,1));
+			mColorChangeOff = apVars.GetVarColor("ColorChangeOff", cColor(1,1));
+			mColorChangeLocked = apVars.GetVarColor("ColorChangeLocked", cColor(1,1));
+			mColorChangeDisabled = apVars.GetVarColor("ColorChangeDisabled", cColor(1,1));
+		}
+		
+		msSound_InteractOn = apVars.GetVarString("Sound_InteractOn", "");
+		msSound_InteractOff = apVars.GetVarString("Sound_InteractOff", "");
+		msSound_InteractLocked = apVars.GetVarString("Sound_InteractLocked", "");
+		msSound_InteractDisabled = apVars.GetVarString("Sound_InteractDisabled", "");
+		
+		mfInteractOnWaitTime = apVars.GetVarFloat("InteractOnWaitTime", 0.5);
+		mfInteractOffWaitTime = apVars.GetVarFloat("InteractOffWaitTime", 0.5);
+		
+		mlLockedBlinkCount = apVars.GetVarInt("LockedBlinkCount", 0);
+		mfLockedBlinkTime = apVars.GetVarFloat("LockedBlinkTime", 0);
+		
+		//////////////////////////////
+		// Instance vars
+		bool bSetOn = apInstanceVars.GetVarBool("SwitchedOn",false);
+		mbSwitchedOn = !bSetOn;
+		SetSwitchedOn(bSetOn, false, false);
+		mbCanBeSwitchedOn = apInstanceVars.GetVarBool("CanBeSwitchedOn",true);
+		mbCanBeSwitchedOff = apInstanceVars.GetVarBool("CanBeSwitchedOff",true);
+		SetLocked(apInstanceVars.GetVarBool("Locked",false), false);
+		SetDisabled(apInstanceVars.GetVarBool("Disabled",false), false);
+	
+		//mBaseObj.SetSaveDataIsUpdated(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	/*void OnPostUpdate(float afTimeStep)
+	{
+	
+	}*/
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+        VRRockerY_Remove();
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+		if(alState==0) return;
+		
+		SetSwitchedOn(alState==1 ? true : false, true, false);
+	}
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
+	{
+	
+	}	
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+        VRRockerY_Update(0.5f); // Sleeping props must register before their first interaction.
+		if(mBaseObj.Timer_Exists(eButtonTimer_InteractWait)) return false;
+		if(mbDisabled) return false;
+		
+		if(mbCanBeSwitchedOff && mbSwitchedOn) return true;
+		if(mbCanBeSwitchedOn && mbSwitchedOn==false) return true;
+		
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		float fWaitTime =0.5f;
+		//////////////////////
+		// Disabled
+		if(mbDisabled)
+		{
+			mBaseObj.PlaySound("ButtonDisabled", msSound_InteractDisabled, true, true);
+			fWaitTime = 0.2f;
+		}
+		//////////////////////
+		// Locked
+		else if(mbLocked)
+		{
+			mBaseObj.PlaySound("ButtonLocked", msSound_InteractLocked, true, true);
+			
+			if(mlLockedBlinkCount>0)
+			{
+				mlBlinkCount=mlLockedBlinkCount;
+				fWaitTime = mlBlinkCount*mfLockedBlinkTime;
+				Timer_BlinkOff(0);
+			}	
+		}
+		//////////////////////
+		// Working
+		else
+		{
+			SetSwitchedOn(!mbSwitchedOn, true);
+			fWaitTime = mbSwitchedOn ? mfInteractOnWaitTime : mfInteractOffWaitTime;
+		}
+		
+		mBaseObj.Timer_Add(eButtonTimer_InteractWait, fWaitTime);
+		
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void Timer_BlinkOff(uint64 alID)
+	{
+		mBaseObj.FadeEffectBaseColor(cColor(0,0), mfLockedBlinkTime/2.0f);
+		mBaseObj.Timer_Add(eButtonTimer_BlinkOn, mfLockedBlinkTime/2.0f, "Timer_BlinkOn");
+	}
+	
+	void Timer_BlinkOn(uint64 alID)
+	{
+		mlBlinkCount--;
+		if(mlBlinkCount>0)
+		{
+			mBaseObj.Timer_Add(eButtonTimer_BlinkOff, mfLockedBlinkTime/2.0f, "Timer_BlinkOff");
+			mBaseObj.FadeEffectBaseColor(mColorChangeLocked, mfLockedBlinkTime/2.0f);
+		}
+		else
+		{
+			cColor col = mColorChangeLocked;
+			if (mbLocked==false)
+				col = mbSwitchedOn ? mColorChangeOn : mColorChangeOff;
+				
+			mBaseObj.FadeEffectBaseColor(col, mfLockedBlinkTime/2.0f);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_PushButton;
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPECIFIC ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+			
+	void SetSwitchedOn(bool abX, bool abUseEffects, bool abChangeConnectionState = true)
+	{
+		if(mbSwitchedOn == abX) return;
+		
+		mbSwitchedOn =  abX;
+		
+		mBaseObj.SetSaveDataIsUpdated(true);
+
+		if (abChangeConnectionState)
+			mBaseObj.ChangeConnectionState(mbSwitchedOn ? 1 : -1);
+		
+		if(mbDisabled || mbLocked) return;
+				
+		///////////////////////////////////////
+		// Color change
+		if(mbUseColorChange)
+		{
+			cColor col = mbSwitchedOn ? mColorChangeOn : mColorChangeOff;
+					
+			if(abUseEffects)
+			{
+				float fTime = mbSwitchedOn ? mBaseObj.GetEffectsOnTime() : mBaseObj.GetEffectsOffTime();
+				mBaseObj.FadeEffectBaseColor(col, fTime);
+			}
+			else
+			{
+				mBaseObj.SetEffectBaseColor(col);
+			}
+		}
+		///////////////////////////////////////
+		// Normal Effects
+		else
+		{
+			mBaseObj.SetEffectsActive(mbSwitchedOn, abUseEffects);  //Just skip this for now while testing color fade.
+		}
+		
+		//////////////////////////////////////
+		// Sounds
+		if(abUseEffects)
+		{
+			if(mbSwitchedOn)
+				mBaseObj.PlaySound("ButtonOn", msSound_InteractOn, true, true);
+			else
+				mBaseObj.PlaySound("ButtonOff", msSound_InteractOff, true, true);
+		}
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetLocked(bool abState, bool abUseEffects)
+	{
+		if(mbLocked == abState) return;
+		
+		mbLocked = abState;
+		mBaseObj.SetSaveDataIsUpdated(true);
+		
+		if(mbDisabled) return;
+		
+		if(mbLocked==false) {
+			mBaseObj.Timer_Remove(eButtonTimer_BlinkOff);
+			mBaseObj.Timer_Remove(eButtonTimer_BlinkOn);
+		}
+		
+		if(mbUseColorChange)
+		{
+			cColor col = cColor_White;
+			
+			if (mbLocked)
+				col = mColorChangeLocked;
+			else
+				col = mbSwitchedOn ? mColorChangeOn : mColorChangeOff;
+		
+			if (abUseEffects)
+			{
+				float fTime = abState ? mBaseObj.GetEffectsOffTime() : mBaseObj.GetEffectsOnTime();
+				mBaseObj.FadeEffectBaseColor(col, fTime);
+			}
+			else
+			{
+				mBaseObj.SetEffectBaseColor(col);
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+		
+	void SetDisabled(bool abState, bool abUseEffects)
+	{
+		if(mbDisabled == abState) return;
+		
+		mbDisabled = abState;
+		mBaseObj.SetSaveDataIsUpdated(true);
+		
+		if(mbDisabled) {
+			mBaseObj.Timer_Remove(eButtonTimer_BlinkOff);
+			mBaseObj.Timer_Remove(eButtonTimer_BlinkOn);
+		}
+		
+		if(mbUseColorChange)
+		{
+			cColor col = cColor_White;
+			
+			if(mbDisabled)
+				col = mColorChangeDisabled;
+			else if(mbLocked)
+				col= mColorChangeLocked;
+			else col = mbSwitchedOn ? mColorChangeOn : mColorChangeOff;
+			
+			if(abUseEffects)
+			{
+				float fTime = abState ? mBaseObj.GetEffectsOffTime() : mBaseObj.GetEffectsOnTime();
+				mBaseObj.FadeEffectBaseColor(col, fTime);
+			}
+			else
+			{
+				mBaseObj.SetEffectBaseColor(col);
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetSwitchedOn()
+	{
+		SetSwitchedOn(cScript_GetGlobalArgBool(0), cScript_GetGlobalArgBool(1));
+	}
+			
+	//------------------------------------------------------------
+	
+	void _Global_IsSwitchedOn()
+	{
+		cScript_SetGlobalReturnBool(mbSwitchedOn);
+	}
+			
+	//------------------------------------------------------------
+	
+	void _Global_SetCanBeSwitchedOn()
+	{
+		mbCanBeSwitchedOn = cScript_GetGlobalArgBool(0);
+	}
+			
+	//------------------------------------------------------------
+	
+	void _Global_SetCanBeSwitchedOff()
+	{
+		mbCanBeSwitchedOff = cScript_GetGlobalArgBool(0);
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_SetLocked()
+	{
+		SetLocked(cScript_GetGlobalArgBool(0), cScript_GetGlobalArgBool(1));
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_SetDisabled()
+	{
+		SetDisabled(cScript_GetGlobalArgBool(0), cScript_GetGlobalArgBool(1));
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_GetLocked()
+	{
+		cScript_SetGlobalReturnBool(mbLocked);
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_GetDisabled()
+	{
+		cScript_SetGlobalReturnBool(mbDisabled);
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	void _Global_Blink()
+	{
+		if(mlLockedBlinkCount>0)
+		{
+			mlBlinkCount=mlLockedBlinkCount;
+			Timer_BlinkOff(0);
+		}
+	}
+	
+	
+	//-----------------------------------------------------------------------
+
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbUseColorChange;
+	[nosave] cColor mColorChangeOn;
+	[nosave] cColor mColorChangeOff;
+	[nosave] cColor mColorChangeLocked;
+	[nosave] cColor mColorChangeDisabled;
+	
+	[nosave] tString msSound_InteractOn;
+	[nosave] tString msSound_InteractOff;
+	[nosave] tString msSound_InteractLocked;
+	[nosave] tString msSound_InteractDisabled;
+	
+	[nosave] float mfInteractOnWaitTime;
+	[nosave] float mfInteractOffWaitTime;
+	
+	[nosave] int mlLockedBlinkCount;
+	[nosave] float mfLockedBlinkTime;
+	
+	
+	//------------------------------------------------------------
+	
+	bool mbSwitchedOn;
+	bool mbCanBeSwitchedOn;
+	bool mbCanBeSwitchedOff;
+	bool mbLocked=false;
+	bool mbDisabled=false;
+	int mlBlinkCount=0;
+	
+	//------------------------------------------------------------
+		
+}	

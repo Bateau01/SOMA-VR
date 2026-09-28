@@ -1,0 +1,1814 @@
+#include "helpers/helper_vr_phone_q.hps"
+#include "interfaces/Map_Interface.hps"
+
+#include "base/InputHandler_Types.hps"
+#include "helpers/helper_game.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_map.hps"
+#include "helpers/helper_props.hps"
+#include "helpers/helper_areas.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_sequences.hps"
+#include "helpers/helper_modules.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_imgui.hps"
+#include "helpers/helper_modules.hps"
+#include "custom_depth/helper_custom_depth_audio.hps"
+#include "helper_imgui_urban.hps"
+#include "helper_imgui_cellphone.hps"
+
+#include "helper_custom_depth.hps"
+
+//--------------------------------------------------
+
+/*Place any global values here. These must be const variables as they will not be saved*/
+/*This is also the place for enums and classes, but these should be avoided whenever possible*/
+
+//--------------------------------------------------
+
+bool _HPL3VR_TracerActive()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+class cScrMap : iScrMap
+{
+    cVRPhoneQ mVRPhone;
+    void VRPhoneW_Gui(const tString &in entity,float dt)
+    {
+        mVRPhone.Draw("unknown","00_01_Time","A",false);
+    }
+
+
+	//--------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN CALLBACKS
+	// ==============
+	/////////////////////////////////////////
+	//-------------------------------------------------------
+	
+	void Setup()
+	{
+		GetBase().SetDisplayNameEntry("00-01-apartment");
+		
+		// Effect init
+		Effect_Bloom_FadeBrightPass(0.25f, 2);
+        Effect_Bloom_FadeBloomWidth(128, 2);
+        Effect_Bloom_FadeBloomFalloff(0.5f, 2);
+        Effect_Bloom_FadeBloomTint(1, 1, 1, 2);
+	}
+	
+	//-------------------------------------------------------
+
+	void PreloadData()
+	{
+		UrbanGui_Preload();
+		CellphoneGui_Preload();
+		PlayerHands_PreloadHandModel_Human();
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run first time starting map
+	void OnStart() 
+	{		
+		/////////////////////////
+		///Preload Sounds
+		Sound_PreloadProject("00_05_apartment2");
+		Sound_PreloadProject("00_03_apartment1");
+		Sound_PreloadProject("entities_urban");
+		Sound_PreloadProject("physics");
+		Sound_CreateAtEntity("WindowSpot", "00_05_apartment2/amb/spot/window_spot", "WindowSpotSoundSource", 3.5f, true, 1.0f);
+		Sound_SetGlobalVolume(0.0f);
+		
+		////////////////////////
+		//Set voice sources
+		Voice_SetSource("Jerry","AnsMachSource",1,15,true,15,10000, 100, eLuxVoiceSourceFreqencyFlag_LowPass);
+		Voice_SetSource("AnswerMachine","AnsMachSource",1,15,true,15,10000, 1000, eLuxVoiceSourceFreqencyFlag_LowPass);
+		
+		////////////////////////
+		//Setup Entities
+		Entity_SetInteractionDisabled("fire_alarm_1", true);
+		
+		/////////////////////////
+		// Debug
+		if(cLux_ScriptDebugOn()) 
+		{
+			cLux_AddDebugMessage("Debug on.");
+			//Add any debug stuff here
+			Sound_FadeGlobalVolume(1.0f, 0.5f, eSoundEntryType_WorldAll);
+			cLux_SetDebugInfoWindowText("Text that should show up when pressing F1");
+		}
+
+		////////////////////////////
+		// Setup
+		SetupLights();
+		Billboard_SetVisible("PhoneBillboard",false);
+		Entity_SetActive("pigeon_*", false);
+		Entity_SetActive("toilet_flush_ripples", false);
+		Entity_SetActive("tap_pouring", false);
+		Entity_SetEffectsActive("fridge_light", false, false);
+
+		////////////////////////////
+		// Kick off intro
+		if (cLux_ScriptDebugOn() == false) 
+		{
+			Effect_Fade_Out(0);
+			
+			///////////////////////////////
+			// Intro dialogue over black screen
+			Map_AddTimer("timer_introtext",1.5,"TimerStartNarration");
+			
+			/////////////////////
+			// Disable interactions that interfere with wakeup sequence (re-enabled after phone call)
+			Entity_SetInteractionDisabled("lamp_bedside_1",true);
+			Entity_SetInteractionDisabled("chest_of_drawers_bedside_drawer_1",true);
+			Entity_SetInteractionDisabled("chest_of_drawers_bedside_drawer_2",true);
+			Entity_SetInteractionDisabled("mug_coffee_6",true);
+			
+			Entity_SetInteractionDisabled("InteractAuxArea_1",true);
+			Entity_SetInteractionDisabled("Simon_PhoneHandset", true);
+			Entity_SetInteractionDisabled("Simon_Phone", true);
+			Entity_SetInteractionDisabled("chest_of_drawers_medium_drawer*",true);
+		}
+
+		///////////////////////////////
+		// Defaults
+		Player_SetJumpDisabled(false);
+		Player_SetMoveSpeedMul(1.0);
+		Player_SetLookSpeedMul(1.0);
+		Player_SetRunSpeedMul(1.0);
+		Player_SetAmbientLight_Indoors();
+
+		Entity_SetMaxInteractionDistance("drapes_simon", 0.01); //So that only auxareas are used for interaction.
+		Player_SetFlashlightDisabled(true);
+		if (cLux_ScriptDebugOn())
+		{
+			Player_SetFlashlightDisabled(false);
+		}
+		
+		PlayerHands_SetHandModel_Human();
+		
+		// Just in case!
+		cScript_SetGlobalVarBool("InIntro",false);
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when entering map
+	void OnEnter() 
+	{
+		MainMenu_SetBGPhase(eMainMenuPhase_Initial_To_1_3);
+		
+		Player_SetFootWear("sneaker");
+		Player_SetClothing("dressed");
+	}
+
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// Run when leaving map
+	void OnLeave() 
+	{
+        mVRPhone.End();
+	}
+	
+	void OnAction(int alAction, bool abPressed)
+	{
+		if (!abPressed) return;
+		
+		if (alAction == eAction_Test1)
+		{
+			Player_SetHealth(0.5f);
+		}
+		else if (alAction == eAction_Test2)
+		{
+			Entity_SetActive("Tracer_Fluid", true);
+			Entity_CallEntityInteract("Tracer_Fluid");
+		}
+		else if (alAction == eAction_Test3)
+		{
+			Player_SetPitchLimits(-50, 20);
+			Player_SetYawLimits(-30, 80);	
+		}
+		else if (alAction == eAction_Test4)
+		{
+			Player_GiveDamage(0.1f,0.1f,eDamageType_Hit,"Box");
+		}
+		else if (alAction == eAction_Test5)
+		{
+			Map_AddTimer("schedule_reminder",1.0,"TracerReminder");
+			mlLocationsSearched=1;
+		}
+		else if (alAction == eAction_Test6)
+		{
+			array<iLuxEntity@> vEnts;
+			
+			cLux_GetCurrentMap().GetEntityArray("*", eLuxEntityType_LastEnum,"", vEnts);
+			
+			for(int i=0; i<vEnts.size(); ++i)
+			{
+				iLuxEntity @pEnt = vEnts[i];
+				if(pEnt.IsSleeping()==false)
+					cLux_AddDebugMessage(pEnt.GetName()+" type:"+pEnt.GetEntityType());
+			}
+		}
+		
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// This only used for pure debug purposes when info needs to printed.
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afY) 
+	{
+		//afY = cLux_DrawDebugText("My Debug value:"+..., afY);
+		
+		return afY;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN FUNCTIONS
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void TimerStartNarration(const tString &in asTimer)
+	{
+		//////////////////////////////////////////////////////////
+		// Scene begins with dialogue over black screen
+		Voice_SetSource("Player","player",0,100,false,100);
+		IntroSequence("");
+	}
+	
+	//--------------------------------------------------------
+	
+	void IntroOver(const tString&in asScene, const tString&in asSubject)
+	{
+		///////////////////////////////
+		// Fade in
+		IntroSequence("");
+	}
+	
+	//--------------------------------------------------------
+	
+
+	bool mbTracerFound = false;
+	int mlTracerReminderCount = 1;
+	int mlDoorSlammedCount = 0;
+	float mfTracerReminderTime = 15.0f;
+
+	//-------------------------------------------------------
+
+	void TracerReminder(const tString &in asTimer) 
+	{
+		///////////////////////////////////////////////////////////
+		// If player has found tracer already, do nothing
+		if (mbTracerFound) return;
+		
+		tString sSubject="13_TracerReminder";
+		if (mlTracerReminderCount == 2)
+			sSubject="13_TracerReminderB";
+		mlTracerReminderCount++;
+		
+		Voice_PlayWhenPossible(sSubject,"CheckCanPlayTracerReminder",120.0f,3.0f,"OnTracerReminderPlayed");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnTracerReminderPlayed(const tString&in asScene, const tString&in asSubject)
+	{
+		if (mlTracerReminderCount<3)
+			Map_AddTimer("schedule_reminder", 21.0f, "TracerReminder");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CheckCanPlayTracerReminder(const tString& in asSubject)
+	{
+		if (mbTracerFound)
+			return false;
+			
+		if (mbUsingLaptop)
+			return false;
+			
+		if (mbListeningToVoiceMail)
+			return false;
+		
+		if (Player_IsInteracting())
+			return false;
+
+		return true;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 1 | APARTMENT
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbFluidTaken = false;
+	bool mbVRTracerCapRemoved = false;
+	void HPL3VR_TracerCapRemoved() { if (_HPL3VR_TracerActive() && !mbFluidTaken) mbVRTracerCapRemoved=true; }
+	bool HPL3VR_TracerCapIsRemoved() { return mbVRTracerCapRemoved; }
+
+	//-------------------------------------------------------
+
+	////////////////////////////////
+	// Lightswitches
+	////////////////////////////////
+
+	//-------------------------------------------------------
+
+	/* -----------------------------------------------------------
+	 * Lights are hooked up in the editor, but billboards need to be
+	 * faded here
+	 * ----------------------------------------------------------*/
+
+	//-------------------------------------------------------
+
+	void Lightswitch_Hallway_Interact(const tString &in asEntity) 
+	{
+		bool bState = !MovingButton_IsSwitchedOn(asEntity);
+		cLux_AddDebugMessage("State of switch: " + bState);
+
+		
+		///////////////////
+		// Lights on
+		if (bState == true) 
+		{
+			ParticleSystem_SetVisible("ParticleSystem_HallwayLights",true);
+		}
+
+		///////////////////
+		// Lights off
+		if (bState == false) 
+		{
+			ParticleSystem_SetVisible("ParticleSystem_HallwayLights",false);
+		}
+		
+		Lightswitch_Sound(asEntity);
+	}
+
+	//-------------------------------------------------------
+
+	void Lightswitch_Livingroom_Interact(const tString &in asEntity) 
+	{
+		bool bState = !MovingButton_IsSwitchedOn(asEntity);
+		cLux_AddDebugMessage("State of switch: " + bState);
+
+		///////////////////
+		// Lights on
+		if (bState == true) 
+		{
+			ParticleSystem_SetVisible("ParticleSystem_LivingRoomLight",true);
+		}
+
+		///////////////////
+		// Lights off
+		if (bState == false) 
+		{
+			ParticleSystem_SetVisible("ParticleSystem_LivingRoomLight",false);
+		}
+
+		Lightswitch_Sound(asEntity);
+	}
+	
+	//-------------------------------------------------------
+	void Lightswitch_Sound(const tString &in asEntity)
+	{
+		Sound_CreateAtEntity("LightSwitch","Entities_Urban/lamp/generic_INT/switch_plastic_on_off",asEntity,0,false);
+	}
+	//-------------------------------------------------------
+	
+	////////////////////////////////
+	// Oven Fan Sound
+	////////////////////////////////
+	
+	void OvenFanSound(const tString &in asEntity)
+	{
+		bool bState = !Lamp_GetLit(asEntity);
+		cLux_AddDebugMessage("State of switch: " + bState);
+		
+		if (bState == false)
+		{
+			Sound_Stop("OvenFan", 0.0f);
+			cLux_AddDebugMessage("Fan Off");
+		}
+		if (bState == true) 
+		{
+			Sound_CreateAtEntity("OvenFan", "Entities_Urban/kitchen/oven_fan/oven_fan", "fan_kitchen_1", 0.0f, true, 1.0f);
+			cLux_AddDebugMessage("Fan On");
+		}
+	}
+
+	////////////////////////////////
+	// Drapes
+	////////////////////////////////
+
+	//-------------------------------------------------------
+	bool mbDrapesFirstTime = true;
+	bool mbDrapesClosed = true;
+	//-------------------------------------------------------
+
+	void OnPlayerUseDrapes(const tString &in asEntity)
+	{
+		TimerUpdateDrapes("");
+	}
+
+	//-------------------------------------------------------
+
+	void TimerUpdateDrapes(const tString& in asName)
+	{
+		float fOpenAmount = MovingButton_GetStateAmount("drapes_simon");
+		if (mbDrapesClosed)
+		{
+			if (fOpenAmount>0.6f)
+			{
+				mbDrapesClosed = false;
+				cLux_AddDebugMessage("OPEN!");
+				Billboard_SetVisible("window_ray_*",true);
+				Light_FadeTo("WindowLight_3",cColor(1.0,1.0,1.0,1.0),4.5,0.25);
+				Light_FadeTo("WindowLight_sh_probe",cColor(1.1,1.0,1.0,1.0),4.5,0.25);
+				Light_FadeTo("window_gobo",cColor(1.1,1.0,1.0,1.0),4.5,0.25);
+				Sound_CreateAtEntity("DrapesSound", "Entities_Urban/ornament/curtains/curtains_draw", "drapes_simon");
+				
+				if (mbDrapesFirstTime) 
+				{
+					mbDrapesFirstTime = false;
+					
+					Entity_SetActive("pigeon_*", true);
+				
+					Sound_CreateAtEntity("SummertimeWindowSweetener", "00_05_apartment2/Sweeteners/summer_window_spot", "WindowSpotSoundSource", 0.0f, true, 1.0f);
+					Map_AddTimer("8_OpenDrapes",1.0f,"Timer_PlayWhenPossibleQuick");
+				}
+
+				Entity_SetActive("Area_DrapesClosed",false);
+				Entity_SetActive("Area_DrapesOpen_1",true);
+				Entity_SetActive("Area_DrapesOpen_2",true);
+			}
+		}
+		else
+		{
+			if (fOpenAmount<0.4f)
+			{
+				mbDrapesClosed = true;
+				cLux_AddDebugMessage("CLOSED!");
+				Billboard_SetVisible("window_ray_*",false);
+				Light_FadeTo("WindowLight_3",cColor(0.0,0.0,0.0,0.0),0,0.25);
+				Light_FadeTo("WindowLight_sh_probe",cColor(0.0,0.0,0.0,0.0),0,0.5);
+				Light_FadeTo("window_gobo",cColor(0.0,0.0,0.0,0.0),0,0.25);
+				
+				Entity_SetActive("Area_DrapesClosed",true);
+				Entity_SetActive("Area_DrapesOpen_1",false);
+				Entity_SetActive("Area_DrapesOpen_2",false);
+				Sound_CreateAtEntity("DrapesSound", "Entities_Urban/ornament/curtains/curtains_draw", "DrapesSoundSource");
+			}
+		}
+		if (!Entity_IsInteractedWith("drapes_simon"))
+		{
+			if (!Map_TimerExists("TimerStopDrapesInteraction"))
+				Map_AddTimer("TimerStopDrapesInteraction",1.5f,"TimerStopDrapesInteraction");
+		}
+		else
+		{
+			if (Map_TimerExists("TimerStopDrapesInteraction"))
+				Map_RemoveTimer("TimerStopDrapesInteraction");
+		}
+		Map_AddTimer("TimerUpdateDrapes",0.1f,"TimerUpdateDrapes");
+	}
+	
+	//-------------------------------------------------------
+
+	void TimerStopDrapesInteraction(const tString& in asName)
+	{
+		Map_RemoveTimer("TimerUpdateDrapes");
+	}
+
+	//-------------------------------------------------------
+	
+	void ChangeShowerCurtainState(const tString &in asEntity, int alState)
+    {
+	    if (alState >= 0)
+		{
+		    cLux_AddDebugMessage("OPEN!");
+		    Entity_SetActive("shower_curtain_interact_closed",false);
+		    Entity_SetActive("block_box_shower_curtain",false);
+		}
+		else if (alState < 0)
+		{
+		    cLux_AddDebugMessage("CLOSED!");
+		    Entity_SetActive("shower_curtain_interact_closed",true);
+		    Entity_SetActive("block_box_shower_curtain",true);
+		}
+    }
+
+	//-------------------------------------------------------
+
+	bool Trigger_DrapesSound(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1)
+		{
+			cLux_AddDebugMessage("Drapes moved in direction "+alState);
+		}
+		else
+		{
+			cLux_AddDebugMessage("Drapes moved in direction "+alState);
+		}
+		return true;
+	}
+
+	//-------------------------------------------------------
+
+	//////////////////////////////////
+	// Initial lights configuration //
+	//////////////////////////////////
+
+	//-------------------------------------------------------
+	void SetupLights() 
+	{
+		Light_FadeTo("WindowLight_3",cColor(0.0,0.0,0.0,0.0),0,0.75);
+		
+		Billboard_SetVisible("window_ray_*",false);
+		
+		ParticleSystem_SetVisible("ParticleSystem_HallwayLights",false);
+		ParticleSystem_SetVisible("ParticleSystem_LivingRoomLight",false);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////////
+	// Scene 1 Event 1 | WAKE UP & ANSWER PHONE
+	////////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbTelephoneAnswered = false;
+	bool mbTelephoneRinging = false;
+	bool mbMessageWaiting = false;
+	bool mbDavidCallDone = false;
+
+	//-------------------------------------------------------
+
+	cSequenceStatesData mIntroSequence;
+	void IntroSequence(const tString &in asTimer) 
+	{
+		Sequence_Begin("IntroSequence", mIntroSequence);
+		
+		/////////////////////////////////////
+		//Fade in background audio
+		if (Sequence_DoStepAndWait(0.01)) 
+		{
+			// Start Telephone Ringing (Note this is destroyed later when phone is answered)
+			
+			// Hack for phone sound
+			Sound_StopGui("Entities_Urban/tech/cellphone/vibrating_wood",0.0f);
+
+			Map_AddTimer("Timer_PhoneRing",0.05,"TimerRingTelephone");
+			Player_SetLookSpeedMul(0.0f);
+			
+			Entity_SetActive("BedCollider",false);
+			Entity_SetActive("BedCollider_Crouch",true);
+			CameraAnimation_Begin("CamAnim_WakeUp","",true);
+			
+			Player_SetJumpDisabled(true);
+			Player_SetCrouchDisabled(true);
+			Player_SetStandDisabled(true);
+			Player_SetHeadBobMul(0.0f);
+		}
+
+		/////////////////////////////////////////
+		// Start in darkness and do camera anim
+		if (Sequence_DoStepAndWait(0.01)) 
+		{
+			cLux_AddDebugMessage("Begin in darkness..");
+			Effect_Fade_Out(0);
+			
+			Map_AddTimer("timer_phone_reminder",25.0f,"TimerPhoneHint");
+			cLux_AddDebugMessage("Camera Animation Begin");
+			Effect_ImageTrail_Start(1.0,0,10.0,5.0);
+			
+			Effect_Rumble_Start(0.7, 0.5);
+		}
+
+		/////////////////////////////////////////
+		// Fade in from darkness
+		if (Sequence_DoStepAndWait(3)) 
+		{
+			Dialog_Begin();
+				Dialog_AddBranchAndSubject("1_PhoneCallOver", "", "");
+			Dialog_End();
+					
+			cLux_AddDebugMessage("Fade");
+			Player_SetLookSpeedMul(0.75f);
+			Effect_Fade_In(0.0);
+			Sound_FadeGlobalVolume(1.0f, 1.0f, eSoundEntryType_WorldAll);
+            Sound_FadeGlobalVolume(1.0f, 1.0f, eSoundEntryType_GuiWorld);
+			
+			Player_SetMoveSpeedMul(0);
+
+			CameraAnimationNode_SetAutoMove("CamAnim_WakeUp_1", 1);
+						
+			Sound_CreateAtEntity("WakeUp","00_05_apartment2/SFX/bed_awaken","Player",0,false);
+		}
+
+		Sequence_End();
+	}
+
+	//-------------------------------------------------------
+	
+	bool WakeUpInteractHint(const tString &in asEntity, int alDirection)
+	{
+		Map_AddTimer("timer_phone_justwokeup", 1.0f, "TimerPhoneHint");
+		
+		return true;
+	}
+
+	//-------------------------------------------------------
+
+	cVector2f mvSavedPitchLimits;
+	
+	bool OnWaitForPhoneInteraction(const tString &in asEntity, int alDirection)
+	{
+		Entity_SetActive("Legs", true);
+		
+	//	Entity_SetActive("InteractCellPhone",true);
+		Entity_SetActive("InteractCellPhone_Dummy",true);
+        if(mVRPhone.Begin("CellPhone"))
+        {
+            Entity_SetActive("CellPhone",false);
+            Entity_SetActive("InteractCellPhone_Dummy",false);
+            Map_AddTimer("VRPhoneQ",0.05f,"VRPhoneQ_Tick");
+        }
+		
+		mvSavedPitchLimits = Player_GetPitchLimits();
+		Player_SetPitchLimits(-50, 20);
+		Player_SetYawLimits(-30, 40);	
+		
+		if (EyeTracking_IsActive())
+		{
+			Player_SetPitchLimits(-40, 20);
+			EyeTracking_SetExtendedViewMul(0.5f);
+		}
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnInteractCellPhone(const tString& in asEntity)
+	{
+		//Entity_SetActive("InteractCellPhone", false);
+		Entity_SetActive("InteractCellPhone_Dummy", false);
+		
+		PhoneInteraction(asEntity);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerPhoneHint(const tString &in asTimer) 
+	{
+		bool bAddAsGiven = false;
+		if(asTimer=="timer_phone_reminder")
+			bAddAsGiven = true;
+				
+		Hint_ShowHint("Hints","HintPhone", true, 1.5f, bAddAsGiven);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerRingTelephone(const tString &in asTimer) 
+	{
+		////////////////////////////////
+		// Ring the phone for 30 seconds
+		Sound_CreateAtEntity("PhoneRing","Entities_Urban/tech/cellphone/vibrating_wood","MobilePhoneSource",0,true);
+
+		mbTelephoneRinging = true;
+
+		Entity_SetInteractionDisabled("Simon_Phone",false);
+	}
+
+	//-------------------------------------------------------
+
+	void TimerStopTelephone(const tString &in asTimer) 
+	{
+		//////////////////////////////
+		// Stop phone ringing and disable interaction
+		Sound_Stop("PhoneRing",0);
+		mbTelephoneRinging = false;
+		Entity_SetInteractionDisabled("Simon_Phone",true);
+	}
+
+	//-------------------------------------------------------
+	
+	void PhoneInteraction(const tString &in asEntity)
+	{
+		AnswerPhone("Simon_Phone",1);
+		Map_RemoveTimer("timer_phone_justwokeup");
+		Map_RemoveTimer("timer_phone_reminder");
+	}
+	
+	//-------------------------------------------------------
+
+	bool AnswerPhone(const tString &in asEntity, int alDirection) 
+	{
+		CameraAnimation_End();
+		Player_ChangeStateToNormal();
+		
+		////////////////////////////
+		// Pickup the phone
+		mbTelephoneAnswered = true;
+		Map_RemoveTimer("Timer_StopRinging");
+		Map_AddTimer("Timer_StopRinging",0.1,"TimerStopTelephone");
+		Hint_StopHint();
+		
+	//	Entity_SetActive("InteractCellPhone", false);
+		Entity_SetActive("InteractCellPhone_Dummy", false);
+		Entity_SetActive("CellPhone",false);
+        if(mVRPhone.state==0)
+        {
+		Entity_SetActive("CellPhoneArm", true);
+		Entity_CallEntityInteract("CellPhoneArm");
+        }
+		
+		//////////////////////////
+		// Pickup sound
+		Sound_CreateAtEntity("PhonePickup","00_05_apartment2/SFX/phone/pickup_counter","Simon_Phone",0,false);
+
+		///////////////////////////
+		// Play Dialog
+		Dialog_Begin();
+		Dialog_AddBranchAndSubject("1_PhoneCall", "", "HandleTelephoneCall");
+		Dialog_End();
+
+		return false;
+	}
+	
+	//-------------------------------------------------------
+
+	
+	void HandleTelephoneCall(const tString&in asSubject, bool abStartOfSubject) 
+	{
+		/////////////////////////
+		// Resume control when done
+		if (abStartOfSubject == false) 
+		{
+			mbDavidCallDone = true;
+            if(mVRPhone.state!=0) OnExitCellPhone("");
+			LastOnSoma_SetText("00_01_apartment_1");
+		}
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnExitCellPhone(const tString&in asEntityName)
+	{
+		if (Map_TimerExists("TimerExitCellPhone"))
+			return;
+		Map_AddTimer("TimerExitCellPhone",0.5f,"TimerExitCellPhone");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerExitCellPhone(const tString& in asName)
+	{
+        mVRPhone.End();
+		Sound_CreateAtEntity("PutawayPhone", "00_05_apartment2/SFX/phone/pickup_putaway", "Player");
+		Entity_SetActive("CellPhone",false);
+		Entity_SetActive("CellPhoneArm",false);
+		EndofCallSequence("");
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mEndofPhoneCall;
+	void EndofCallSequence(const tString &in asTimer) 
+	{
+		Sequence_Begin("EndofCallSequence", mEndofPhoneCall);			
+		if (Sequence_DoStepAndWait(1.0f)) 
+		{
+			cLux_AddDebugMessage("Rise out of bed sequence begin");
+			Sound_CreateAtEntity("RiseBed", "00_05_apartment2/SFX/bed_get_up", "Player");
+			Entity_SetActive("BedCollider",true);
+			Entity_SetActive("BedCollider_Crouch",false);
+			CameraAnimation_Begin("CamAnim_WakeUp2","",true);
+			
+			// Allow player to look around
+			Player_SetPitchLimits(mvSavedPitchLimits.x,mvSavedPitchLimits.y);
+			Player_SetYawLimits(0, 0);	
+			EyeTracking_SetExtendedViewMul(1.0f);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			/////////////////////////
+			// Schedule answer machine message
+			mbMessageWaiting = true;
+			Map_AddTimer("AnswerMachine_timer",1.0,"AnswerMachineTimer");
+
+			// Allow player to move
+			Player_FadeMoveSpeedMulTo(1.0f,2.0f);
+			Player_SetJumpDisabled(false);
+			Player_SetCrouchDisabled(false);
+			Player_SetStandDisabled(false);
+			Player_SetHeadBobMul(1.0f);
+			Player_FadeLookSpeedMulTo(1.0f,10.0f);
+	
+			/////////////////////
+			// Re-enable entities
+			Entity_SetInteractionDisabled("lamp_bedside_1",false);
+			Entity_SetInteractionDisabled("chest_of_drawers_bedside_drawer_1",false);
+			Entity_SetInteractionDisabled("chest_of_drawers_bedside_drawer_2",false);
+			Entity_SetInteractionDisabled("mug_coffee_6",false);
+			
+			Entity_SetInteractionDisabled("InteractAuxArea_1",false);
+			Entity_SetInteractionDisabled("Simon_PhoneHandset", false);
+			Entity_SetInteractionDisabled("Simon_Phone", false);
+			Entity_SetInteractionDisabled("chest_of_drawers_medium_drawer*",false);
+			
+			////////////////////
+			// Kick off tracer reminder
+			Map_AddTimer("schedule_reminder",15.0,"TracerReminder");
+			
+			//////////////////////////////
+			// Ceiling Music Trigger
+			Map_AddTimer("ceiling_music",cMath_RandRectf(16.0f,23.0f),"Timer_PlayMusicCeilingSound");
+			
+			if(cLux_ScriptDebugOn()==false)
+				Map_Preload("00_02_subway.hpm");
+		}
+		else if (Sequence_DoStepAndWait(0.0f))
+		{
+			////////////////////////////
+			// Display helpful hints
+			Hint_ShowHint("Hints","HintMoveAround", true);
+			
+			Game_AutoSave();
+		}
+		Sequence_End();
+	}
+
+	//-------------------------------------------------------
+
+	bool OnGetUpLookingAhead(const tString &in asEntity, int alDirection)
+	{
+		Entity_SetActive("Legs", false);
+		
+		return true;
+	}
+
+	//-------------------------------------------------------
+
+	void OnGuiCellPhone(const tString&in asEntityName, float afTimeStep)
+	{
+		if (ImGui_IsFirstRun())
+		{
+			CellPhoneGui_SetClockString("00_01_Time");
+			CellPhoneGui_SetReceptionIcons("A");
+			
+			if (asEntityName=="CellPhoneArm_open")	// Picked up
+			{
+				CellPhoneGui_PickUp("unknown");
+			}
+			else	// On bedside table
+			{
+				CellPhoneGui_StartRinging("unknown");
+			}
+		}
+		
+		CellPhoneGui_Update();
+		
+		if (mbDavidCallDone && asEntityName=="CellPhoneArm_open")
+		{
+			if (CellPhoneGui_GetState()!=eCellPhoneGuiState_Idle)
+			{
+				CellPhoneGui_HangUp();
+				ImGui_Exit();
+			}
+		}
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////////
+	// Scene 1 Event 2 | FIND THE TRACER FLUID
+	////////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	int mlLocationsSearched = 0;
+	int mlMaxSearches = 3;
+	bool mbTracerInCabinet = false;
+
+	//-------------------------------------------------------
+	
+	//Floorboard creak player
+	bool Trigger_FloorboardCreak(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+
+		Sound_CreateAtEntity("FloorboardCreak", "00_05_apartment2/SFX/floorboard_creaks", "Player");
+		Entity_SetActive("FloorboardCreakPlayer_*", false);
+		Map_AddTimer("FloorboardCreakReset", cMath_RandRectf(10.0f,20.0f), "FloorboardCreakReset");
+		
+		return true;
+	}
+	
+	void FloorboardCreakReset(const tString &in asTimer)
+	{
+		Entity_SetActive("FloorboardCreakPlayer_*", true);
+	}
+	
+	//-------------------------------------------------------
+	
+	
+	bool CollideHintDoors(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		////////////////////////////
+		// Display helpful hints
+		Hint_ShowHint("Hints","HintDoors", true);
+		return false;
+	}
+	
+	//-------------------------------------------------------
+
+	bool SearchBathroom(const tString &in asParent, const tString &in asChild, int alState) 
+	{
+		if (alState != 1) return true;
+
+		//////////////////////////////////
+		// Increment search count
+		mlLocationsSearched++;
+		cLux_AddDebugMessage("Searched Bathroom");
+
+		//////////////////////////////////////////////////////////
+		// If this is the last place searched - spawn tracer fluid
+		if (mlLocationsSearched == mlMaxSearches) 
+		{
+			Entity_SetActive("Tracer_Fluid", true);
+			Entity_PlaceAtEntity("Tracer_Fluid","Area_TracerPos_Bathroom",cVector3f_Zero,true);
+			mbTracerInCabinet = true;
+			mbTracerFound = true;
+		}
+
+		/* Dialog for bathroom search handled differently
+		 * as player must approach the cabinet */
+
+		////////////
+		// do not run again
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	void OnLookedAtMedicineCabinet(const tString &in asEntity, int alState)
+	{
+		////////////////////////
+		// If tracer is in cabinet, play the 'found it!' dialog
+		if (mbTracerInCabinet) 
+		{
+			mbTracerFound = true;
+			
+			if(mbListeningToVoiceMail) return;
+			
+			Map_AddTimer("5_FoundTracer",0.5f,"Timer_FoundTracer");
+		}
+
+		////////////////////////
+		// Otherwise, Simon is confused as to its whereabouts
+		else 
+		{
+			cLux_AddDebugMessage("No tracer fluid here..");
+		}
+	}
+	
+	void Timer_FoundTracer(const tString&in asTimer)
+	{
+		Voice_Play("5_FoundTracer",-1, "", 10);
+	}
+
+	//-------------------------------------------------------
+
+	bool ApproachKitchenCupboard(const tString &in asParent, const tString &in asChild, int alState) 
+	{
+		if (alState != 1) return true;
+
+		///////////////////////////////////////////////
+		// Simon thinks tracer could be in the cupboard
+		if (mlLocationsSearched < mlMaxSearches) 
+		{
+			/*Dialog_Begin();
+			Dialog_AddBranchAndSubject("2_LookInCupboard", "", "");
+			Dialog_End();*/
+		}
+
+		///////////////
+		// do not run again
+		return false;
+	}
+
+	//-----------------------------------------------------
+
+	bool SearchKitchenCupboard(const tString &in asParent, const tString &in asChild, int alState) 
+	{
+		if (alState != 1) return true;
+
+		//////////////////////////////////
+		// Increment search count
+		mlLocationsSearched++;
+		cLux_AddDebugMessage("Searched Kitchen Cupboard");
+
+		//////////////////////////////////////////////////////////
+		// If this is the last place searched - spawn tracer fluid
+		if (mlLocationsSearched == mlMaxSearches) 
+		{
+			Entity_SetActive("Tracer_Fluid", true);
+			Entity_PlaceAtEntity("Tracer_Fluid","Area_TracerPos_KitchenCupboard",cVector3f_Zero,true);
+			Entity_AddForce("Tracer_Fluid", cVector3f(0,0,-5.5),false,true);
+			
+			mbTracerFound = true;
+			
+			if(mbListeningToVoiceMail) return false;
+			
+			Map_AddTimer("5_FoundTracer",0.5f,"Timer_PlayWhenPossible");
+		}
+
+		///////////////
+		// do not run again
+		return false;
+	}
+
+	//-------------------------------------------------------
+
+	bool SearchDeskDrawer(const tString &in asParent, const tString &in asChild, int alState) 
+	{
+		cLux_AddDebugMessage("Searching Drawer...");
+
+		if (alState != 1) return true;
+
+		//////////////////////////////////
+		// Increment search count
+		mlLocationsSearched++;
+		cLux_AddDebugMessage("Searched Desk Drawer");
+
+		//////////////////////////////////////////////////////////
+		// If this is the last place searched - spawn tracer fluid
+		if (mlLocationsSearched == mlMaxSearches) 
+		{
+			Entity_SetActive("Tracer_Fluid", true);
+			Entity_PlaceAtEntity("Tracer_Fluid","Area_TracerPos_DeskDrawer",cVector3f_Zero,true);
+
+			mbTracerFound = true;
+			
+			if(mbListeningToVoiceMail) return false;
+			
+			Map_AddTimer("5_FoundTracer",0.5f,"Timer_PlayWhenPossible");
+		}
+		
+		///////////////////////////////////////////////
+		// Tracer fluid is elsewhere..
+		if (mlLocationsSearched < mlMaxSearches)
+		{
+			/*Dialog_Begin();
+			Dialog_AddBranchAndSubject("4_LookInDrawer", "", "");
+			Dialog_End();*/
+		}
+
+		return false;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////////
+	// Scene 1 Event 3 | TAKE THE TRACER FLUID
+	////////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void area_tracerfluid_pickup_OnPlayerInteract(const tString &in asEntity)
+	{
+		cLux_AddDebugMessage("Picked up tracer fluid via Area, not entity");
+		Entity_CallEntityInteract("tracer_fluid");
+		Entity_SetActive("area_tracerfluid_pickup",false);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool Interact_TracerFluid(const tString &in asTool)
+	{
+		if (!_HPL3VR_TracerActive()) Prop_SetActiveAndFade(asTool,false,0);
+
+		/////////////////////////////////////////////////
+		// Play sound of Simon first getting tracer fluid
+		Sound_CreateAtEntity("PickupFluid","00_05_apartment2/SFX/collect_medicine","Player",0,false);
+		
+		Entity_SetActive("TriggerArea_UseTracer",true);
+		
+		////////////////////////////
+		// Display helpful hints
+		Hint_ShowHint("Hints","HintTools", true);
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CanUseTracerFluid(const tString &in asTool, const tString &in asEntity)
+	{
+		if (mbFluidTaken)
+			return false;
+		if (_HPL3VR_TracerActive()) return true;
+			
+		if ((PlayerHands_GetCurrentAnimationState()==null) or (PlayerHands_GetCurrentAnimationState().GetName()=="tool_tracer_fluid_draw"))
+			return false;
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool Use_TracerFluid(const tString &in asTool, const tString &in asEntity)
+	{
+		////////////////////////////////////////////////////////
+		// Play sound of Simon obtaining and drinking the tracer
+		Sound_CreateAtEntity("DrinkTracerFluid","00_05_apartment2/SFX/collect_medicine_drink","player",0,false);
+		Map_AddTimer("TimerPlayDrinkTracerReaction",7.5,"TimerPlayDrinkTracerReaction");
+		if (!_HPL3VR_TracerActive()) PlayerHands_PlayAnimation("tool_tracer_fluid_drink", false, false,0, "Tracer_Fluid_HudObject");
+		Map_AddTimer("TimerTracerFluidDrunk",7.0f,"TimerTracerFluidDrunk");
+		mbFluidTaken = true;
+		Player_SetInteractionAllowed(false);
+		Entity_SetActive("TriggerArea_UseTracer",false);
+		if (!_HPL3VR_TracerActive()) Map_AddTimer("TimerTracerRemoveCap",3.0f,"TimerTracerRemoveCap");
+		else
+		{
+			cScript_RunGlobalFunc("VROMNIINV","Tracer_Fluid","C");
+			cScript_RunGlobalFunc("Tracer_Fluid","cScrPropTool","_Global_VRConsumePhysicalUpgradeChip");
+			Player_RemoveTool("Tracer_Fluid");
+		}
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTracerRemoveCap(const tString& in asName)
+	{
+		cLux_AddDebugMessage("Removing cap.");
+		
+		iLuxEntity@ pEntity = Map_GetEntity("Tracer_Fluid_HudObject");
+		cSubMeshEntity@ pSubMesh = pEntity.GetMeshEntity().GetSubMeshEntityName("cap");
+		pSubMesh.SetVisible(false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTracerFluidDrunk(const tString& in asName)
+	{
+		cLux_AddDebugMessage("Tool removed.");
+		Player_SetInteractionAllowed(true);
+		if (!_HPL3VR_TracerActive()) Player_RemoveTool("Tracer_Fluid");
+		
+		LastOnSoma_SetText("00_01_apartment_2");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerPlayDrinkTracerReaction(const tString &in asTimer) 
+	{
+		if(mbListeningToVoiceMail) return;
+		
+		Dialog_Begin();
+		Dialog_AddBranchAndSubject("6_DrinkTracer", "", "");
+		Dialog_End();
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 - Event 4 - Use the shower
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	void InteractShower(const tString &in asEntity) 
+	{
+		if(mbListeningToVoiceMail) return;
+				
+		Dialog_Begin();
+		Dialog_AddBranchAndSubject("7_BrokenShower", "", "");
+		Dialog_End();
+		
+		Entity_SetPlayerInteractCallback(asEntity,"",false);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 - Event 5 - Open the fridge
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool OpenFridge(const tString &in asParent, const tString &in asChild, int alState) 
+	{
+		if(mbListeningToVoiceMail) return false;
+		
+		Dialog_Begin();
+		Dialog_AddBranchAndSubject("9_InspectFridge", "", "");
+		Dialog_End();
+
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideFridgeLightArea(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("Fridge Light:"+(alState==1));
+		Entity_SetEffectsActive("fridge_light", (alState==1), true);
+		return true;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 - Event 6 - Play answer machine message
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	bool mbAnswerMachineLight = false;
+	//-------------------------------------------------------
+	
+	void AnswerMachineTimer(const tString &in asTimer) 	
+	{
+		////////////////////////////////
+		// Answer phone now has a message waiting, 
+		// player can interact only once	
+		
+		//Sound_CreateAtEntity("1NewMessage","Entities_Urban/tech/phone_answermachine/answer_phone_1_newmessage","Simon_Phone",0,false);
+		Entity_SetInteractionDisabled("Simon_Phone",false);
+		
+		if (mbMessageWaiting)
+		{
+			mbAnswerMachineLight = !mbAnswerMachineLight;
+			Billboard_SetVisible("PhoneBillboard",mbAnswerMachineLight);
+			Map_AddTimer("FlashMachineLight",1.0,"AnswerMachineTimer");
+		}
+	}
+	
+	//-------------------------------------------------------
+	bool mbListeningToVoiceMail = false;
+	
+	void InteractPhone(const tString &in asEntity) 
+	{
+		if (mbMessageWaiting == false)
+		{
+			Voice_SetSource("AnswerMachine","AnsMachSource",1,18,true,18,22000, 1000, eLuxVoiceSourceFreqencyFlag_LowPass);
+			Dialog_Begin("13_NoNewMessages");
+			Sound_CreateAtEntity("AnswerMachineButtonPress", "Entities_Urban/tech/telephone_home/answer_machine_button", "AnsMachSource", 0.0f, false, 1.0f);
+			Sound_CreateAtEntity("AnswerMachineBeep", "Entities_Urban/tech/phone_answermachine/answer_phone_beep", "AnsMachSource", 0.0f, false, 1.0f);	
+			Entity_SetInteractionDisabled("Simon_Phone", false);
+			Map_AddTimer("InteractPhoneEnable",  4.5f, "PhoneEnable");
+			return;
+		}
+		
+		Sound_CreateAtEntity("AnswerMachineButtonPress", "Entities_Urban/tech/telephone_home/answer_machine_button", "AnsMachSource", 0.0f, false, 1.0f);
+		Sound_CreateAtEntity("AnswerMachineBeep", "Entities_Urban/tech/phone_answermachine/answer_phone_beep", "AnsMachSource", 0.0f, false, 1.0f);
+		Sound_FadeGlobalVolume(0.85f, 3.0f, eSoundEntryType_World);
+		
+		Voice_SetSource("Jerry","AnsMachSource",1,15,true,15,10000, 100, eLuxVoiceSourceFreqencyFlag_LowPass);
+		Voice_SetSource("AnswerMachine","AnsMachSource",1,15,true,15,10000, 100, eLuxVoiceSourceFreqencyFlag_LowPass);
+		Dialog_Begin();
+		Dialog_AddBranchAndSubject("10_AnswerMachine", "", "EndAnswerMachineMessage");
+		Dialog_End();
+		mbListeningToVoiceMail = true;
+		mbMessageWaiting = false;
+		Billboard_SetVisible("PhoneBillboard",false);
+	}
+	//-------------------------------------------------------
+
+	void EndAnswerMachineMessage(const tString&in asSubject, bool abStartOfSubject) 
+	{
+		if (abStartOfSubject) return;
+		mbListeningToVoiceMail = false;
+		if (!mbSeenMail)
+		{
+			Voice_Play("10_AnswerMachine_NotReadMail");
+		}
+		else if (mbSentMail)
+		{
+			Voice_Play("10_AnswerMachine_SentMail");
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void LineOver_AnswerPhoneBeepSound(const tString &in asParent, const tString &in asChild, int alState, bool abStart)
+	{
+		if (abStart)
+			return;
+			
+		Sound_CreateAtEntity("AnswerMachineBeep", "Entities_Urban/tech/phone_answermachine/answer_phone_beep", "AnsMachSource", 0.0f, false, 1.0f);
+		Sound_FadeGlobalVolume(0.85f, 3.0f, eSoundEntryType_World);
+	}
+
+	//-------------------------------------------------------
+	
+	void PhoneEnable(const tString &in asTimer)
+	{
+		Entity_SetInteractionDisabled("Simon_Phone", true);
+	}
+
+	/////////////////////////////////////////
+	// Scene 1 - Event 7 - Put on Clothes
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void InteractPickShoes(const tString&in asEntity)
+	{
+		cLux_AddTodoMessage("SOUND: Simon quickly puts on a shoe");
+		Prop_SetActiveAndFade(asEntity,false,0.5);
+	}
+	
+	//-------------------------------------------------------
+	
+	void InteractPickKeys(const tString &in asEntity)
+	{
+		Entity_SetActive("Keys_Interact",false);
+		Prop_SetActiveAndFade("Keys",false,0.5);
+		Sound_CreateAtEntity("KeysUp","00_05_apartment2/SFX/collect_keys","Player",0,false);
+	}
+	
+	//-------------------------------------------------------
+	
+	///////////////////////////////////////////////////
+	// Scene 1 - Event 8 - Interact with Sink/Toilet //
+	///////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_BathroomHandleSound(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			//Sound source is "HandleSoundTrigger"
+			Sound_CreateAtEntity("HandleDown", "Entities_Urban/door/toilet_door/door_handle_down", "HandleSoundTrigger",0,false);
+		}
+		else
+		{
+			//Sound source is "HandleSoundTrigger"
+			Sound_CreateAtEntity("HandleUp", "Entities_Urban/door/toilet_door/door_handle_up", "HandleSoundTrigger",0,false);
+		}
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	
+	void InteractKitchenTap(const tString &in asEntity, int alState)
+	{
+		if (alState == 1)
+		{
+			cLux_AddDebugMessage("Tap On");
+			Sound_CreateAtEntity("KitchenTapRunning","Entities_Urban/toilet/sink_toilet_tap/interact","KitchenSinkTap_Effect",0,false);
+			Sound_CreateAtEntity("KitchenTapLoop", "Entities_Urban/toilet/sink_toilet_tap/interact_loop", "KitchenSinkTap_Effect", 2.2f, false);
+			Sound_Stop("KitchenTapOff", 0.5f);
+			ParticleSystem_CreateAtEntity("Particles_kitchentap_splash","sink_tap_splash.ps","KitchenSinkTap_Effect",false);
+			//Prop_MoveLinearTo("sink_ripples", "sink_ripples_target_2", 5, 15, 8, true);
+			Entity_SetActive("tap_pouring_kitchen", true);
+			Entity_PlayAnimation("tap_pouring_kitchen", "activate", 0.1f, false, false);
+	
+		}
+		
+		///////////////////
+		// Tap off..
+		if (alState == -1)
+		{
+			cLux_AddDebugMessage("Tap Off");
+			Sound_Stop("KitchenTapRunning",0.5f);
+			Sound_Stop("KitchenTapLoop",1.0f);
+			Sound_CreateAtEntity("KitchenTapOff", "Entities_Urban/toilet/sink_toilet_tap/interact_off","KitchenSinkTap_Effect",0,false);
+			ParticleSystem_Destroy("Particles_kitchentap_splash");
+			//Prop_MoveLinearTo("sink_ripples", "sink_ripples_target_1", 5, 15, 8, true);
+			Entity_PlayAnimation("tap_pouring_kitchen", "deactivate", 0.1f, false, false);
+		}
+	}
+	
+	//-------------------------------------------------------
+
+	int mlPrevSplashBodies = -1;
+	
+	void VariableUpdate(float afDeltaTime)
+	{
+		// Check for splashes in sink
+		// Hacked in here because it's far less fps-heavy than
+		// a collide area with "*"
+		
+		array<iPhysicsBody@> vBodies;
+		iLuxEntity@ pArea = Map_GetEntity("TriggerArea_Splash");
+		cBoundingVolume@ pVol = pArea.GetMainBody().GetBoundingVolume();
+		cLux_GetCurrentMap().GetPhysicsWorld().GetBodiesInAABB(pVol.GetMin(), pVol.GetMax(), vBodies);
+		
+		int lNewSize = vBodies.length();
+		if (mlPrevSplashBodies==-1)
+			mlPrevSplashBodies = lNewSize;
+
+		if (lNewSize>mlPrevSplashBodies && Map_TimeHasPassed("SinkSplashTime",0.5f))
+		{
+			Sound_CreateAtEntity("SinkSplash", "Entities_Urban/toilet/sink_toilet_tap/sink_splash","TriggerArea_Splash",0,false);
+		}
+		
+		mlPrevSplashBodies = lNewSize;
+	}
+
+	//-------------------------------------------------------
+
+	void InteractToiletTap(const tString &in asEntity, int alState)
+	{
+		///////////////////
+		// Tap on
+		if (alState == 1)
+		{
+			cLux_AddDebugMessage("Tap On");
+			Sound_CreateAtEntity("TapRunning","Entities_Urban/toilet/sink_toilet_tap/interact","ToiletSinkTap_Effect",0,false);
+			Sound_CreateAtEntity("TapLoop", "Entities_Urban/toilet/sink_toilet_tap/interact_loop", "ToiletSinkTap_Effect", 2.2f, false);
+			Sound_Stop("TapOff", 0.5f);
+			ParticleSystem_CreateAtEntity("Particles_tap_splash","sink_tap_splash.ps","ToiletSinkTap_Effect",false);
+			Prop_MoveLinearTo("sink_ripples", "sink_ripples_target_2", 5, 15, 8, true);
+			Entity_SetActive("tap_pouring", true);
+			Entity_PlayAnimation("tap_pouring", "activate", 0.1f, false, false);
+	
+		}
+		
+		///////////////////
+		// Tap off..
+		if (alState == -1)
+		{
+			cLux_AddDebugMessage("Tap Off");
+			Sound_Stop("TapRunning",0.5f);
+			Sound_Stop("TapLoop",1.0f);
+			Sound_CreateAtEntity("TapOff", "Entities_Urban/toilet/sink_toilet_tap/interact_off","ToiletSinkTap_Effect",0,false);
+			ParticleSystem_Destroy("Particles_tap_splash");
+			Prop_MoveLinearTo("sink_ripples", "sink_ripples_target_1", 5, 15, 8, true);
+			Entity_PlayAnimation("tap_pouring", "deactivate", 0.1f, false, false);
+		}
+	}
+	
+	void StateChangeToilet(const tString &in asEntity, int alState)
+	{
+		
+		///////////////////
+		// Flush toilet
+		if (alState == 1)
+		{
+			Sound_Stop("ToiletRefill", 2.5f);
+			Sound_CreateAtEntity("ToiletFlush","Entities_Urban/toilet/toilet/flush","AreaToilet_Effect",0,false);
+			Map_AddTimer("Timer_ToiletRefillSound", 3.0f, "ToiletRefillSound");
+			ParticleSystem_CreateAtEntity("Particles_ToiletFlush","toilet_flush_splash.ps","AreaToilet_Effect",false);
+			Entity_SetActive("toilet_flush_ripples", true);
+			Prop_MoveLinearTo("toilet_flush_ripples", "flush_effect_target", 5, 15, 8, true);
+			if(mbObjectInToilet && mbFlushObjFirst){ cLux_SetAreaOffline(113); Entity_SetActive("figurine01_1", false); mbFlushObjFirst=false;}
+			
+			/////////////////////////////////
+			////Switch off Toilet Handle active to stop sound from getting spammed
+			Map_AddTimer("ToiletInteractTrue", 5.0f, "ToiletInteractTrue");
+			Entity_SetInteractionDisabled("toilet_chair_hand_1", true);
+			cLux_AddDebugMessage("Toilet Interact - False");
+		}
+		
+		//////////////////
+		// Cease flushing.
+		//if (alState == -1)
+		//{
+			//ParticleSystem_Destroy("toilet_flush_splash");
+		//}
+	}
+	
+	void ToiletRefillSound(const tString &in asTimer)
+	{
+		Sound_CreateAtEntity("ToiletRefill", "Entities_Urban/toilet/toilet/flush_refill", "AreaToilet_RefillSource", 3.0f);
+	}
+	
+	///////////////////////
+	//Activate Toilet Handle for Interaction
+	void ToiletInteractTrue(const tString &in asTimer) 
+	{
+		//add toilet handle active
+		cLux_AddDebugMessage("Toilet Interact - True");
+		Entity_SetInteractionDisabled("toilet_chair_hand_1", false);
+		Prop_MoveLinearTo("toilet_flush_ripples", "flush_effect_target_1", 5, 15, 8, true);
+		ParticleSystem_Destroy("Particles_ToiletFlush");
+	}
+	
+	bool mbObjectInToilet=false; bool mbFlushObjFirst=true;
+	bool OnTriggerObjectInToilet(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		mbObjectInToilet = alState==1;
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 - Exit Level
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void InteractExitDoor(const tString&in asEntity)
+	{
+		if (mbFluidTaken == false)
+		{
+			if(mbListeningToVoiceMail) return;
+			
+			Dialog_Begin();
+			Dialog_AddBranchAndSubject("12_TryToExit", "", "");
+			Dialog_End();
+			return;
+		}
+		
+		Player_SetMoveSpeedMul(0);
+		Player_SetLookSpeedMul(0);
+		
+		Effect_Fade_Out(1.0f);
+		
+		//LEAVING SOUND
+		Sound_PlayGui("00_05_apartment2/VIPScriptedEvents/apt_door/leave_apt_door",1.0);
+		
+		//////////////////////////////
+		// Go to next level - slight delay so next level doesn't rush in so quickly
+		Map_AddTimer("timer_exit",6.0,"Timer_End_Level");
+		Sound_FadeGlobalVolume(0.0f, 3.0f, eSoundEntryType_World);
+		
+		//////////////////////////////
+		// Disable interaction on the door
+		Entity_SetInteractionDisabled("exit_apartment_1",true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_End_Level(const tString &in asTimer) 
+	{
+		cLux_AddTodoMessage("SCRIPT: EXIT LEVEL");
+		Player_SetMoveSpeedMul(1);
+		Player_SetLookSpeedMul(1);
+		
+		Map_ChangeMap("00_02_subway.hpm","PlayerStartArea_1","","");
+	}
+	
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// TERMINALS
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Terminal TV
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	bool mbTV_On = false;
+	bool mbTV_FirstTime = true;
+	//-------------------------------------------------------
+	void televison_small_1_GuiEnter(const tString&in asEntityName) 
+	{
+		///////////////////////////////////////////////////
+		// First time using TV, Simon will speak about this
+		if (mbTV_FirstTime == true) 
+		{
+			mbTV_FirstTime = false;
+			
+			if(mbListeningToVoiceMail) return;
+			
+			Dialog_Begin();
+			Dialog_AddBranchAndSubject("11_UseTV", "", "");
+			Dialog_End();
+		}
+
+		////////////////////////////
+		// Turn on TV
+		mbTV_On = true;
+		
+		Sound_CreateAtEntity("TV_Button_ON","Entities_Urban/tech/television_home/television_on","televison_small_1",0,false);	
+	}
+	//-------------------------------------------------------
+	void televison_small_1_GuiLeave(const tString&in asEntityName) 
+	{
+		////////////////////////////
+		// Turn off TV
+		mbTV_On = false;
+		
+		Sound_CreateAtEntity("TV_Button_OFF","Entities_Urban/tech/television_home/television_off","televison_small_1",0,false);	
+	}
+	//-------------------------------------------------------
+	void televison_small_1_OnGui(const tString&in asEntityName, float afTimeStep) 
+	{
+		////////////////////////////////
+		// Display "no disc" message
+		ImGui_SetTransCategory("");
+		cImGuiLabelData labelData;
+		labelData.mColorText = cColor(1,1,1,1);
+		labelData.mFontAlign = eFontAlign_Center;
+
+		cImGuiGfx mDiscGfx;
+		mDiscGfx.SetFile("urban/tv/00_05_tv_no_disc");
+
+		if (mbTV_On) 
+		{
+			ImGui_DoImage(mDiscGfx,ImGui_NrmPos(cVector3f(0.35,0.2,1.0)),ImGui_NrmSize(cVector2f(0.315,0.5)));
+		}
+		
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Terminal Laptop
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbUsingLaptop = false;
+	bool mbLaptopActivated = true;
+	
+	//-------------------------------------------------------
+
+	void Laptop_OnEnter(const tString&in asEntityName)
+	{
+		if (mbLaptopActivated == false)
+		{
+			mbLaptopActivated = true;
+			cLux_AddTodoMessage("SOUND: Laptop starting up?");
+		}
+		
+		mbUsingLaptop = true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Laptop_OnExit(const tString&in asEntityName)
+	{
+		mbUsingLaptop = false;
+	}
+
+	//-------------------------------------------------------
+
+	void Laptop_OnGui(const tString&in asEntityName, float afTimeStep) 
+	{
+		if (mbLaptopActivated == false) return;
+		
+		UrbanGui_Unbranded_DrawBackdrop(1.0f);
+		UrbanGui_PACE_DrawDesktopIcons(2.0f);
+
+		ImGui_SetTransCategory("00_01_apartment");
+		
+		Depth_ImGui_AddMail("GUI_EMAIL_SUBJ1", "EMAIL_1_BODY", "EMAIL_1_FROM", "EMAIL_1_DATE", eMailAppEntryType_Inbox);
+		Depth_ImGui_AddMail("GUI_EMAIL_SUBJ2", "EMAIL_2_BODY", "EMAIL_2_FROM", "EMAIL_2_DATE", eMailAppEntryType_Inbox);
+		Depth_ImGui_AddMail("GUI_EMAIL_SUBJ3", "EMAIL_3_BODY", "EMAIL_3_FROM", "EMAIL_3_DATE", eMailAppEntryType_Draft);
+		Depth_ImGui_AddMail("GUI_EMAIL_SUBJ4", "EMAIL_4_BODY", "EMAIL_4_FROM", "EMAIL_4_DATE", eMailAppEntryType_Inbox);
+		UrbanGui_MailApp("GUIMailASimon", "MailSent_ApartmentEmail", "Mail_SelectionChanged");
+	}
+
+	//-------------------------------------------------------
+	
+	bool mbSeenMail = false;
+	bool mbSentMail = false;
+	
+	void Mail_SelectionChanged(int alType, int alMessage)
+	{
+		if (alType==1)
+		{
+			if (!mbSeenMail)
+			{
+				mbSeenMail = true;
+				if (mbMessageWaiting)
+				{
+					Map_AddTimer("2_UnsentMailReaction",3.0f,"Timer_PlayWhenPossible");
+				}
+				else
+				{
+					Map_AddTimer("2_UnsentMailReaction_HeardMsg",3.0f,"Timer_PlayWhenPossible");
+				}
+			}
+		}
+	}
+	
+	bool MailSent_ApartmentEmail(const tString &in asTitle)
+	{
+		mbSentMail = true;
+		
+		cScript_SetGlobalVarBool("PlayerSentApartmentEmail", true);
+		
+		Voice_AbortIfQueued("2_UnsentMailReaction_HeardMsg");
+		Map_RemoveTimer("2_UnsentMailReaction_HeardMsg");
+		Voice_AbortIfQueued("2_UnsentMailReaction");
+		Map_RemoveTimer("2_UnsentMailReaction");
+		
+		Map_AddTimer("2_SentMailReaction",2.0f,"Timer_PlayWhenPossible");
+		
+		return true;
+	}
+	
+	void Timer_PlayWhenPossible(const tString& in asSubject)
+	{
+		Voice_PlayWhenPossible(asSubject);
+	}
+	
+	void Timer_PlayWhenPossibleQuick(const tString& in asSubject)
+	{
+		Voice_PlayWhenPossible(asSubject, "", 5, 4);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Audio
+	//{///////////////////////////////////////
+	
+	//-------------------------------------------------------
+	//Ambient audio 
+	
+	//Plays a noisy neighbour piece of music follow by an argument above the stairs
+	void Timer_PlayMusicCeilingSound(const tString &in asTimer) 
+	{
+		// Play Music Sound Ceiling and rattle at oven source
+		Sound_CreateAtEntity("music_above", "00_05_apartment2/amb/spot/music_spot_1", "Sound_MusicRattleSource", 0.0f, false);
+		Sound_CreateAtEntity("music_above_rattle", "00_05_apartment2/amb/spot/music_spot_1_rattle", "Sound_MusicRattleSource", 0.0f, false);
+		Map_AddTimer("ceiling_neighbours",cMath_RandRectf(90.0f,100.0f),"Timer_PlayNeighbourCeilingSound");
+		
+		if(mbInBathroom==true)
+		{
+			Sound_Fade("music_above_rattle", 0.0f, 1.0f);
+		}
+	}
+	
+	//Fade out rattle sound when in bathroom
+	bool mbInBathroom = false;
+	bool Trigger_EnterBathroom(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1)
+		{
+			Sound_Fade("music_above_rattle", 0.0f, 1.0f);
+			mbInBathroom = true;
+		}
+		else
+		{
+			Sound_Fade("music_above_rattle", 1.0f, 1.0f);
+			mbInBathroom = false;
+		}
+		return true;
+	}
+	
+	void Timer_PlayNeighbourCeilingSound(const tString &in asTimer)
+	{
+		// Play noisy neighbours above - oneshot special
+		cLux_AddDebugMessage("Noisy neighbours start");
+		Sound_CreateAtEntity("neighbours_above", "00_05_apartment2/amb/spot/couple_arguing_01", "Sound_NeighboursSource");
+		Map_AddTimer("ceiling_neighboursgeneric", cMath_RandRectf(20.0f, 35.0f), "Timer_PlayNeighbourGenericSound");
+	}
+	
+	//Repeating timer - for neighbours upstairs
+	void Timer_PlayNeighbourGenericSound(const tString &in asTimer)
+	{
+		// Play noisy neighbours above - generic movement
+		cLux_AddDebugMessage("Noisy neighbours start - generic");
+		Sound_CreateAtEntity("neighbours_above_generic", "00_05_apartment2/amb/spot/movements_above", "Sound_NeighboursSource");
+		Map_AddTimer("ceiling_neighboursgeneric", cMath_RandRectf(20.0f, 35.0f), "Timer_PlayNeighbourGenericSound");
+	}
+	
+	//}End Audio-----------------------------------------------------
+
+    void VRPhoneQ_Tick(const tString &in timer)
+    {
+        if(mVRPhone.state==0) return;
+        // Resume the authored presentation when an unanswered VR save is loaded flat.
+        if(mVRPhone.state==1 && !VRPhoneQ_Active())
+        {
+            mVRPhone.End();
+            PhoneInteraction("CellPhone");
+            return;
+        }
+
+        if(mVRPhone.Tick(0)==1) PhoneInteraction("CellPhone");
+        if(mVRPhone.state!=0) Map_AddTimer("VRPhoneQ",0.05f,"VRPhoneQ_Tick");
+    }
+}

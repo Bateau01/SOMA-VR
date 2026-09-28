@@ -1,0 +1,87 @@
+<Entity>
+    <!-- H5756T_CORTEX_DIRECT_MESH_COMPOUND_12 -->
+    <ModelData>
+        <Entities />
+        <Mesh Filename="entities/station/gameplay/omnitool/brainchip.dae">
+            <SubMesh ID="19" Name="Mesh" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="405" Material="" />
+            <SubMesh ID="20" Name="wau" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="2792" Material="" />
+        </Mesh>
+        <Bones />
+        <Shapes>
+            <Shape ID="100" Name="CortexDirectFit_01" CreStamp="0" ModStamp="0" WorldPos="0.0103193 -0.01788729 0.00020124" Rotation="0 0 0" Scale="0.05959819 0.02602976 0.15834748" RelativeTranslation="0.01675239 -0.08671109 0.00020124" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="101" Name="CortexDirectFit_02" CreStamp="0" ModStamp="0" WorldPos="0.08806375 0.01451081 0.09375935" Rotation="0 0 0" Scale="0.0231093 0.01999438 0.0521073" RelativeTranslation="0.09449684 -0.05431299 0.09375935" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="102" Name="CortexDirectFit_03" CreStamp="0" ModStamp="0" WorldPos="-0.00426377 0.03585275 -0.055734" Rotation="0 0 0" Scale="0.14547794 0.01508419 0.054118" RelativeTranslation="0.00216932 -0.03297105 -0.055734" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="103" Name="CortexDirectFit_04" CreStamp="0" ModStamp="0" WorldPos="0.03562741 0.01201138 0.01170621" Rotation="0 0 0" Scale="0.09639099 0.01495972 0.23008471" RelativeTranslation="0.0420605 -0.05681242 0.01170621" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="104" Name="CortexDirectFit_05" CreStamp="0" ModStamp="0" WorldPos="-0.0880648 0.00470072 0.02192571" Rotation="0 0 0" Scale="0.02310721 0.04769934 0.20070583" RelativeTranslation="-0.08163171 -0.06412308 0.02192571" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="105" Name="CortexDirectFit_06" CreStamp="0" ModStamp="0" WorldPos="0.03794373 0.0378946 -0.01587703" Rotation="0 0 0" Scale="0.04615385 0.021351 0.09655975" RelativeTranslation="0.04437682 -0.0309292 -0.01587703" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="106" Name="CortexDirectFit_07" CreStamp="0" ModStamp="0" WorldPos="-0.00170885 0.03089391 0.0521888" Rotation="0 0 0" Scale="0.15520141 0.02853508 0.0473428" RelativeTranslation="0.00472424 -0.03792989 0.0521888" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="107" Name="CortexDirectFit_08" CreStamp="0" ModStamp="0" WorldPos="-0.05817591 -0.03403176 0.00006227" Rotation="0 0 0" Scale="0.08288498 0.03505427 0.15877895" RelativeTranslation="-0.05174282 -0.10285556 0.00006227" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="108" Name="CortexDirectFit_09" CreStamp="0" ModStamp="0" WorldPos="0.00438588 0.00013667 0.005644" Rotation="0 0 0" Scale="0.02746504 0.0145717 0.24220915" RelativeTranslation="0.01081897 -0.06868713 0.005644" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="109" Name="CortexDirectFit_10" CreStamp="0" ModStamp="0" WorldPos="-0.00692904 -0.00482532 -0.10924696" Rotation="0 0 0" Scale="0.16100587 0.05938804 0.06530608" RelativeTranslation="-0.00049595 -0.07364912 -0.10924696" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="110" Name="CortexDirectFit_11" CreStamp="0" ModStamp="0" WorldPos="0.00520385 0.02311737 0.01193508" Rotation="0 0 0" Scale="0.1888291 0.01675004 0.23076615" RelativeTranslation="0.01163694 -0.04570643 0.01193508" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="111" Name="CortexDirectFit_12" CreStamp="0" ModStamp="0" WorldPos="-0.02454615 0.00157667 0.10922736" Rotation="0 0 0" Scale="0.1293291 0.04714207 0.06535929" RelativeTranslation="-0.01811306 -0.06724713 0.10922736" RelativeRotation="0 0 0" RelativeScale="1 1 1" ShapeType="Box" />
+        </Shapes>
+        <Bodies>
+            <Body ID="22" Name="Body_1" CreStamp="0" ModStamp="1441751554" WorldPos="-0.00643309 0.0688238 0" Rotation="0 0 0" Scale="1 1 1" Material="Plastic Electronic" Mass="0" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="false" CollideNonCharacter="false" Volatile="false" UseSurfaceEffects="true" HasGravity="true" BlocksLight="true">
+                <Shape ID="100" />
+                <Shape ID="101" />
+                <Shape ID="102" />
+                <Shape ID="103" />
+                <Shape ID="104" />
+                <Shape ID="105" />
+                <Shape ID="106" />
+                <Shape ID="107" />
+                <Shape ID="108" />
+                <Shape ID="109" />
+                <Shape ID="110" />
+                <Shape ID="111" />
+            </Body>
+        </Bodies>
+        <Joints />
+        <Animations />
+        <ProcAnimations />
+    </ModelData>
+    <UserDefinedVariables EntityType="Prop_Tool">
+        <Var Name="Health" Value="100" />
+        <Var Name="Toughness" Value="0" />
+        <Var Name="MaxInteractDistance" Value="0" />
+        <Var Name="EventTag" Value="" />
+        <Var Name="ShowHints" Value="true" />
+        <Var Name="LifeLength" Value="0" />
+        <Var Name="DissolveDuringLifeDecrease" Value="true" />
+        <Var Name="BlocksLineOfSight" Value="true" />
+        <Var Name="MainPhysicsBody" Value="" />
+        <Var Name="NoGravityWhenUnderwater" Value="" />
+        <Var Name="DisableFreezeAtStart" Value="false" />
+        <Var Name="CustomScriptFile" Value="" />
+        <Var Name="CustomScriptClass" Value="" />
+        <Var Name="ShowMesh" Value="true" />
+        <Var Name="DissolveOnDestruction" Value="false" />
+        <Var Name="DissolveTime" Value="1.0" />
+        <Var Name="RandomizeAnimationStart" Value="true" />
+        <Var Name="EffectsOnSound" Value="" />
+        <Var Name="EffectsOffSound" Value="" />
+        <Var Name="EffectsOnTime" Value="0.2" />
+        <Var Name="EffectsOffTime" Value="0.2" />
+        <Var Name="StaticMoveCheckCollision" Value="false" />
+        <Var Name="StaticMoveStartSound" Value="" />
+        <Var Name="StaticMoveStopSound" Value="" />
+        <Var Name="StaticMoveLoopSound" Value="" />
+        <Var Name="StaticMoveLoopSoundFade" Value="true" />
+        <Var Name="BreakActive" Value="false" />
+        <Var Name="BreakOnlyOnMainBody" Value="false" />
+        <Var Name="BreakDestroyJoints" Value="false" />
+        <Var Name="BreakMinEnergy" Value="100" />
+        <Var Name="BreakEntity" Value="" />
+        <Var Name="BreakEntityAlignBody" Value="" />
+        <Var Name="BreakSound" Value="" />
+        <Var Name="BreakParticleSystem" Value="" />
+        <Var Name="BreakImpulse" Value="4" />
+        <Var Name="HudObjectEntity" Value="brainchip_hud.ent" />
+        <Var Name="InventoryTextEntry" Value="" />
+        <Var Name="InventoryIcon" Value="inv_brainchip.tga" />
+        <Var Name="HandAnimationSuffix" Value="brainchip" />
+        <Var Name="IsHeavy" Value="false" />
+        <Var Name="CustomUseIcon" Value="UseToolAction" />
+    </UserDefinedVariables>
+</Entity>

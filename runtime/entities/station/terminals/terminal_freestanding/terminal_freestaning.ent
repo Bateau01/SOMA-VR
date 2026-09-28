@@ -1,0 +1,81 @@
+<Entity>
+    <ModelData>
+        <Entities />
+        <Mesh Filename="entities/station/terminals/terminal_freestanding/terminal_freestanding.dae">
+            <SubMesh ID="0" Name="terminal_freestanding" CreStamp="0" ModStamp="1423046498" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="218" Material="" />
+            <SubMesh ID="1" Name="screen" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="2" Material="" />
+        </Mesh>
+        <Bones />
+        <Shapes>
+            <Shape ID="2" Name="ShapeBox_1" CreStamp="1423046100" ModStamp="1423046519" WorldPos="0.026473 0.614182 -0.030466" Rotation="0 0 0" Scale="0.762919 1.2498 0.41141" RelativeTranslation="0.00211665 0.296863 -0.0854225" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="3" Name="ShapeBox_2" CreStamp="1423046191" ModStamp="1423046531" WorldPos="0.0222397 0.020455 0.140379" Rotation="0 0 0" Scale="0.920111 0.0819947 0.472566" RelativeTranslation="-0.00211665 -0.296863 0.0854225" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="4" Name="ShapeBox_3" CreStamp="1423046208" ModStamp="1423046551" WorldPos="0.0219344 1.46929014 -0.0788651918" Rotation="-0.491078 -0 0" Scale="0.773253 0.616489 0.210758489" RelativeTranslation="0 -0.00301986236 -0.00564699183" RelativeRotation="-0.491078 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="8" Name="AZ_frame_8" CreStamp="1423046208" ModStamp="1423046551" WorldPos="-0.30902505 1.5220044 0.0197078534" Rotation="-0.491078 -0 0" Scale="0.1113341 0.616489 0.0128075111" RelativeTranslation="-0.33095945 0.0496944036 0.0929260534" RelativeRotation="-0.491078 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="9" Name="AZ_frame_9" CreStamp="1423046208" ModStamp="1423046551" WorldPos="0.35599695 1.5220044 0.0197078534" Rotation="-0.491078 -0 0" Scale="0.1051279 0.616489 0.0128075111" RelativeTranslation="0.33406255 0.0496944036 0.0929260534" RelativeRotation="-0.491078 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="10" Name="AZ_frame_10" CreStamp="1423046208" ModStamp="1423046551" WorldPos="0.0250375 1.30748017 0.134429757" Rotation="-0.491078 -0 0" Scale="0.556791 0.129942964 0.0128075111" RelativeTranslation="0.0031031 -0.164829828 0.207647957" RelativeRotation="-0.491078 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="11" Name="AZ_frame_11" CreStamp="1423046208" ModStamp="1423046551" WorldPos="0.0250375 1.76027111 -0.107710901" Rotation="-0.491078 -0 0" Scale="0.556791 0.0760944653 0.0128075111" RelativeTranslation="0.0031031 0.287961112 -0.034492701" RelativeRotation="-0.491078 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="12" Name="AZ_glass_12" WorldPos="0.0250375 1.54277864 0.00147015885" Rotation="-0.494103754 6.53509588e-16 1.21318868e-15" Scale="0.554791 0.408453441 0.003" RelativeTranslation="0.0031031 0.0704686358 0.0746883588" RelativeRotation="-0.494103754 6.53509588e-16 1.21318868e-15" RelativeScale="1 1 1" ShapeType="Box" />
+        </Shapes>
+        <Bodies>
+            <Body ID="6" Name="screen_body" CreStamp="0" ModStamp="1423046568" WorldPos="0.0219344 1.47231 -0.0732182" Rotation="0 0 0" Scale="1 1 1" Material="" Mass="0" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="true" CollideNonCharacter="true" Volatile="false" UseSurfaceEffects="true" HasGravity="true" BlocksLight="true">
+                <Shape ID="4" />
+                <Shape ID="8" />
+                <Shape ID="9" />
+                <Shape ID="10" />
+                <Shape ID="11" />
+                <Shape ID="12" />
+            </Body>
+            <Body ID="7" Name="base_body" CreStamp="0" ModStamp="1423046564" WorldPos="0.0243564 0.317318 0.0549565" Rotation="0 0 0" Scale="1 1 1" Material="" Mass="0" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="true" CollideNonCharacter="true" Volatile="false" UseSurfaceEffects="true" HasGravity="true" BlocksLight="true">
+                <Shape ID="2" />
+                <Shape ID="3" />
+            </Body>
+        </Bodies>
+        <Joints />
+        <Animations />
+        <ProcAnimations />
+    </ModelData>
+    <UserDefinedVariables EntityType="Prop_Terminal">
+        <Var Name="Health" Value="100" />
+        <Var Name="Toughness" Value="0" />
+        <Var Name="MaxInteractDistance" Value="0" />
+        <Var Name="EventTag" Value="" />
+        <Var Name="ShowHints" Value="true" />
+        <Var Name="LifeLength" Value="0" />
+        <Var Name="DissolveDuringLifeDecrease" Value="true" />
+        <Var Name="BlocksLineOfSight" Value="true" />
+        <Var Name="MainPhysicsBody" Value="screen_body" />
+        <Var Name="NoGravityWhenUnderwater" Value="false" />
+        <Var Name="DisableFreezeAtStart" Value="false" />
+        <Var Name="CustomScriptFile" Value="" />
+        <Var Name="CustomScriptClass" Value="" />
+        <Var Name="ShowMesh" Value="true" />
+        <Var Name="DissolveOnDestruction" Value="false" />
+        <Var Name="DissolveTime" Value="1.0" />
+        <Var Name="RandomizeAnimationStart" Value="true" />
+        <Var Name="EffectsOnSound" Value="" />
+        <Var Name="EffectsOffSound" Value="" />
+        <Var Name="EffectsOnTime" Value="0.2" />
+        <Var Name="EffectsOffTime" Value="0.2" />
+        <Var Name="StaticMoveCheckCollision" Value="false" />
+        <Var Name="StaticMoveStartSound" Value="" />
+        <Var Name="StaticMoveStopSound" Value="" />
+        <Var Name="StaticMoveLoopSound" Value="" />
+        <Var Name="StaticMoveLoopSoundFade" Value="true" />
+        <Var Name="BreakActive" Value="false" />
+        <Var Name="BreakOnlyOnMainBody" Value="false" />
+        <Var Name="BreakDestroyJoints" Value="false" />
+        <Var Name="BreakMinEnergy" Value="100" />
+        <Var Name="BreakEntity" Value="" />
+        <Var Name="BreakEntityAlignBody" Value="" />
+        <Var Name="BreakSound" Value="" />
+        <Var Name="BreakParticleSystem" Value="" />
+        <Var Name="BreakImpulse" Value="4" />
+        <Var Name="ConnectedSubmesh" Value="screen" />
+        <Var Name="ClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenSize" Value="731 576" />
+        <Var Name="OfflineClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenPosition" Value="0 0.025 0" />
+        <Var Name="ScreenNormal" Value="0 0.7 1" />
+        <Var Name="TargetCameraDistance" Value="0.525" />
+    </UserDefinedVariables>
+</Entity>

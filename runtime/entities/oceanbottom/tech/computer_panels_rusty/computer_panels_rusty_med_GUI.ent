@@ -1,0 +1,83 @@
+<Entity>
+    <EditorSession>
+        <ViewportConfig Enlarged="true" Focused="3">
+            <Viewport CameraPos="0 0 200" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="2" LockToGrid="true" Mode="Front" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+            <Viewport CameraPos="200 0 0" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="0" LockToGrid="true" Mode="Right" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+            <Viewport CameraPos="0 200 0" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="1" LockToGrid="true" Mode="Top" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+            <Viewport CameraPos="-0.835973 0.827564 0.963585" CameraTarget="0 0 0" Controller="Maya" GridHeights="0 0 0" GridPlane="1" LockToGrid="true" Mode="Perspective" Renderer="Shaded" ShowAxes="true" ShowGrid="true" />
+        </ViewportConfig>
+    </EditorSession>
+    <ModelData>
+        <Entities />
+        <Mesh Filename="entities/oceanbottom/tech/computer_panels_rusty/computer_panels_rusty_med_GUI.dae">
+            <SubMesh ID="0" Material="" Name="computer_panel_medium" Rotation="0 0 0" Scale="1 1 1" TriCount="80" WorldPos="0 0 0" />
+            <SubMesh ID="1" Material="" Name="screen" Rotation="0 0 0" Scale="1 1 1" TriCount="2" WorldPos="0 0 0" />
+        </Mesh>
+        <Bones />
+        <Shapes>
+            <Shape ID="2" Name="Shape_1" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="0 0 -0.0065206" Rotation="0 -0 0" Scale="1.02117 0.814544 0.1033908" ShapeType="Box" WorldPos="0 0 0.0705056" />
+            <Shape ID="4" Name="AZ_frame_4" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="-0.449803613 0 0.0516954" Rotation="0 -0 0" Scale="0.121562774 0.814544 0.0130412" ShapeType="Box" WorldPos="-0.449803613 0 0.1287216" />
+            <Shape ID="5" Name="AZ_frame_5" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="0.454359191 0 0.0516954" Rotation="0 -0 0" Scale="0.112451618 0.814544 0.0130412" ShapeType="Box" WorldPos="0.454359191 0 0.1287216" />
+            <Shape ID="6" Name="AZ_frame_6" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="0.0045555781 -0.347086686 0.0516954" Rotation="0 -0 0" Scale="0.787155608 0.120370627 0.0130412" ShapeType="Box" WorldPos="0.0045555781 -0.347086686 0.1287216" />
+            <Shape ID="7" Name="AZ_frame_7" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="0.0045555781 0.37380913 0.0516954" Rotation="0 -0 0" Scale="0.787155608 0.0669257404 0.0130412" ShapeType="Box" WorldPos="0.0045555781 0.37380913 0.1287216" />
+            <Shape ID="8" Name="AZ_glass_8" WorldPos="0.0045555781 0.0267224433 0.121701" Rotation="-0 -0 -8.68378127e-06" Scale="0.785150179 0.625240815 0.003" RelativeTranslation="0.0045555781 0.0267224433 0.0446748" RelativeRotation="0 -0 -8.68378127e-06" RelativeScale="1 1 1" ShapeType="Box" />
+        </Shapes>
+        <Bodies>
+            <Body AngularDamping="0.1" BlocksLight="true" BlocksSound="false" BuoyancyDensityMul="1" CanAttachCharacter="false" CollideCharacter="true" CollideNonCharacter="true" ContinuousCollision="true" HasGravity="true" ID="3" LinearDamping="0.1" Mass="0" Material="Plastic Electronic" MaxAngularSpeed="20" MaxLinearSpeed="20" Name="Body_1" PushedByCharacterGravity="false" Rotation="0 0 0" Scale="1 1 1" UseSurfaceEffects="true" Volatile="false" WorldPos="0 0 0.0770262">
+                <Children>
+                    <Child ID="0" />
+                    <Child ID="1" />
+                </Children>
+                <Shape ID="2" />
+                <Shape ID="4" />
+                <Shape ID="5" />
+                <Shape ID="6" />
+                <Shape ID="7" />
+                <Shape ID="8" />
+            </Body>
+        </Bodies>
+        <Joints />
+        <Animations />
+    </ModelData>
+    <UserDefinedVariables EntityType="Prop_Terminal">
+        <Var Name="Health" Value="100" />
+        <Var Name="Toughness" Value="0" />
+        <Var Name="MaxInteractDistance" Value="0" />
+        <Var Name="EventTag" Value="" />
+        <Var Name="ShowHints" Value="true" />
+        <Var Name="LifeLength" Value="0" />
+        <Var Name="DissolveDuringLifeDecrease" Value="true" />
+        <Var Name="BlocksLineOfSight" Value="true" />
+        <Var Name="MainPhysicsBody" Value="" />
+        <Var Name="CustomScriptFile" Value="" />
+        <Var Name="CustomScriptClass" Value="" />
+        <Var Name="ShowMesh" Value="true" />
+        <Var Name="DissolveOnDestruction" Value="false" />
+        <Var Name="DissolveTime" Value="1.0" />
+        <Var Name="RandomizeAnimationStart" Value="true" />
+        <Var Name="EffectsOnSound" Value="" />
+        <Var Name="EffectsOffSound" Value="" />
+        <Var Name="EffectsOnTime" Value="0.2" />
+        <Var Name="EffectsOffTime" Value="0.2" />
+        <Var Name="StaticMoveCheckCollision" Value="false" />
+        <Var Name="StaticMoveStartSound" Value="" />
+        <Var Name="StaticMoveStopSound" Value="" />
+        <Var Name="StaticMoveLoopSound" Value="" />
+        <Var Name="BreakActive" Value="false" />
+        <Var Name="BreakOnlyOnMainBody" Value="false" />
+        <Var Name="BreakDestroyJoints" Value="false" />
+        <Var Name="BreakMinEnergy" Value="100" />
+        <Var Name="BreakEntity" Value="" />
+        <Var Name="BreakEntityAlignBody" Value="" />
+        <Var Name="BreakSound" Value="" />
+        <Var Name="BreakParticleSystem" Value="" />
+        <Var Name="BreakImpulse" Value="4" />
+        <Var Name="ConnectedSubmesh" Value="screen" />
+        <Var Name="ClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenSize" Value="768 613" />
+        <Var Name="OfflineClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenPosition" Value="0 0 0" />
+        <Var Name="ScreenNormal" Value="0 0 1" />
+        <Var Name="TargetCameraDistance" Value="0.6" />
+    </UserDefinedVariables>
+</Entity>

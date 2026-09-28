@@ -1,0 +1,1477 @@
+#include "player/PlayerState_Interact.hps"
+#include "utilities/utility_readables.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_modules.hps"
+
+// H5755CH_VR_NATIVE_GRAB_SEMANTIC_SHELL
+// H5755CH_VR_MOTION_OWNED_BY_TRACKED_HAND
+// SOMA owns Grab state/lifecycle/connected-body discovery; hpl3vr owns the physical tracked-hand target.
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+bool _HPL3VR_RuntimeActive_Grab()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+const float gfMaxForce = 1000;
+const float gfMaxTorque = 1000;
+const float gfMaxAngularSpeed = 6;
+
+const float gfMinSlowPlayerMass = 10;
+const float gfMaxSlowPlayerMass = 40;
+const float gfMinSlowPlayerMul = 0.1f;
+
+const float gfMinSlowLookSpeedMass = 10;
+const float gfMaxSlowLookSpeedMass = 30;
+const float gfMinSlowLookSpeedMul = 0.1f;
+
+const float gfMaxLeaveAngularSpeed = 4;
+const float gfMaxLeaveLinearSpeed = 4;
+
+const float gfNormalMaxSpeed = 2;
+const float gfHeavyMaxSpeed = 1;
+
+
+//------------------------------------------------------------
+
+class cGrabbedBodyProperties
+{
+	tID mBodyID;
+	bool mbHasGravity;
+	bool mbCollideCharacter;
+	float mfMass;
+	float mfMaxLinearSpeed;
+	float mfBuoyancyDensityMul;
+};
+
+//------------------------------------------------------------
+
+class cScrPlayerState_Interact_Grab : iScrPlayerState_Interact, iScrPlayerState_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mForcePid.SetErrorNum(20);;
+		mSpeedTorquePid.SetErrorNum(20);
+
+		mForcePid.p = 400;
+		mForcePid.i = 0;
+		mForcePid.d = 40;
+
+		mSpeedTorquePid.p = 40;
+		mSpeedTorquePid.i = 0;
+		mSpeedTorquePid.d = 0.4f;
+		
+		// mReadable.SetAdditionalHint("ReadableGrabAdditionalHint");
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+        mbVRReadablePressPending=false;
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] tString msVRReadableOwner;
+    [nosave] bool mbVRReadablePressPending=false;
+	void _Global_VRSetReadableOwner()
+	{
+		if (_HPL3VR_RuntimeActive_Grab())
+        {
+            msVRReadableOwner = cScript_GetGlobalArgString(0);
+            mbVRReadablePressPending = msVRReadableOwner!="";
+        }
+	}
+    void _Global_VRConsumeReadablePress()
+    {
+        bool consume=mbVRReadablePressPending && msVRReadableOwner!="" && _HPL3VR_RuntimeActive_Grab();
+        mbVRReadablePressPending=false;
+        cScript_SetGlobalReturnBool(consume);
+    }
+	void VR_CloseReadable()
+	{
+        mbVRReadablePressPending=false;
+		if (msVRReadableOwner == "") return;
+		tString sOwner = msVRReadableOwner;
+		msVRReadableOwner = "";
+		cLuxMap@ map=cLux_GetCurrentMap();
+		if (map is null) return;
+		iLuxEntity@ readable=map.GetEntityByName(sOwner,eLuxEntityType_Prop,"");
+		if (readable !is null && readable.ScriptPrepare("void _Global_VRClosePhysicalRead()")) readable.ScriptExecute();
+	}
+	void SetupGrab()
+	{
+		if (!_HPL3VR_RuntimeActive_Grab())
+		{
+				
+				
+				////////////////////////////////
+				// Get basic params & setup
+				SetupInteractVars();
+						
+				////////////////////////////////
+				// Get specific params
+				mbUseCustomOffset =	cScript_GetGlobalArgBool(3);
+				mvCustomPositionOffset =	cScript_GetGlobalArgVector3f(4);
+				mvCustomRotationOffset =	cScript_GetGlobalArgVector3f(5);
+				mbUseCustomDepth =	cScript_GetGlobalArgBool(6);
+				mfCustomGrabDepth =	cScript_GetGlobalArgFloat(7);
+				mfGrabMassMul =	cScript_GetGlobalArgFloat(8);
+				mfMinDepth = cScript_GetGlobalArgFloat(9);
+				mfMaxDepth = cScript_GetGlobalArgFloat(10);
+				mfDepthStep = (mfMinDepth + mfMaxDepth) / 15.0f;
+				mfForceMul = cScript_GetGlobalArgFloat(11);
+				mfTorqueMul = cScript_GetGlobalArgFloat(12);
+				mfThrowImpulse = cScript_GetGlobalArgFloat(13);
+				mbIsHeavy = cScript_GetGlobalArgBool(14);
+				mbCollisionWithPlayer = cScript_GetGlobalArgBool(15);
+				
+				
+				//////////////////////////////////
+				// Set up variables
+				cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
+				
+				///////////////////////////////
+				//Save Body properties (this will also save settings for any body connected by joints)
+				iPhysicsBody@ pBody = cLux_ID_Body(mBodyID);
+				mvBodyProperties.resize(0);
+				SaveBodyProperties(pBody);
+				
+				mfBodyBuoyancyDensityMul = pBody.GetBuoyancyDensityMul();
+				if(mbIsHeavy==false) pBody.SetBuoyancyDensityMul(0);
+				
+				//////////////////////////////////////
+				// Rotation setup
+				{
+					//////////////////////////////////
+					// Set rotation based on entity file offset
+					if(mbUseCustomOffset)
+					{
+						m_mtxBodyRotation = cMath_MatrixRotateXYZ(mvCustomRotationOffset);	
+					}
+					//////////////////////////////////
+					// Set the rotation as the current of the body
+					else
+					{
+						cVector3f vCamRotation( pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll());
+						cMatrixf mtxCamRot = cMath_MatrixRotateXYZ(vCamRotation);
+						cMatrixf mtxInvCamRot = cMath_MatrixInverse(mtxCamRot);
+			
+						m_mtxBodyRotation = cMath_MatrixMul(mtxInvCamRot, pBody.GetLocalMatrix().GetRotation());
+						
+						//Need to calculate special local offset.
+						mvLocalBodyOffset = pBody.GetLocalPosition() - mvFocusPos;
+						mvLocalBodyOffset = cMath_MatrixMul( mtxInvCamRot, mvLocalBodyOffset);
+					}
+				}
+				
+				//////////////////////////////////////
+				// Depth setup
+				{
+					if(mbUseCustomDepth)
+					{
+						mfDepth = mfCustomGrabDepth;
+					}
+					else
+					{
+						mfDepth = cMath_Vector3Dist(mvFocusPos, pCam.GetPosition())-0.08f;
+					}
+				}
+				
+				///////////////////////
+				//Calculate the max distance
+				mfMaxDistance = cMath_Vector3Dist(mBaseObj.mpPlayer.GetCamera().GetPosition(), pBody.GetLocalPosition());
+				mfMaxDistance = cMath_Max(mfMaxDistance, mfMaxDepth) * 1.1f + 0.2f;
+				mfDepthVel= 0.0f;
+									
+				//////////////////////////////
+				//Set up properties for all bodies and calculate total mass
+				float fProperMassSum=0;
+				{
+					mfMassSum = 0;
+					for(uint i=0; i<mvBodyProperties.length(); ++i)
+					{
+						iPhysicsBody @pBody = cLux_ID_Body(mvBodyProperties[i].mBodyID);
+			
+						fProperMassSum += pBody.GetMass();
+						
+						//If it is the body in focus, make sure it has no gravity and does not collide with player.
+						if(mvBodyProperties[i].mBodyID == mBodyID)
+						{	
+							pBody.SetGravity(false); 
+							pBody.SetCollideCharacter(mbCollisionWithPlayer); 
+							
+							float fMaxSpeed = mbIsHeavy ? gfHeavyMaxSpeed : gfNormalMaxSpeed;
+							if(pBody.GetMaxLinearSpeed() > fMaxSpeed) pBody.SetMaxLinearSpeed(fMaxSpeed);
+						}
+						
+						//Make lower mass so it does not push a lot of objects around
+						pBody.SetMass(pBody.GetMass() * mfGrabMassMul);
+						pBody.SetMassMulApplied(mfGrabMassMul);
+						
+						//Stop any movement
+						pBody.SetAngularVelocity(cVector3f(0) );
+						pBody.SetLinearVelocity(cVector3f(0));
+						
+						// Disable bouyancy
+						pBody.SetBuoyancyDensityMul(0.00001f);
+			
+						mfMassSum += pBody.GetMass();
+					}
+				}
+				
+				//////////////////////////////
+				//Player setup
+				{
+					mBaseObj.mpPlayer.GetCharacterBody().SetMass(gfPlayer_BodyDefaultMass + fProperMassSum);
+					
+					//////////////////////////////////////////////////
+					//If mass is high enough, lower the player speed.
+					if(fProperMassSum >= gfMinSlowPlayerMass)
+					{
+						if(fProperMassSum >= gfMaxSlowPlayerMass)
+						{
+							cScript_SetGlobalVarFloat("InteractionMoveSpeedMul", gfMinSlowPlayerMul);
+						}
+						else
+						{
+							float fMul = (fProperMassSum-gfMinSlowPlayerMass)/(gfMaxSlowPlayerMass-gfMinSlowPlayerMass);
+							fMul = fMul*gfMinSlowPlayerMul + (1.0f-fMul);
+							
+							cScript_SetGlobalVarFloat("InteractionMoveSpeedMul", fMul);
+						}
+					}
+					
+					//////////////////////////////////////////////////
+					//If mass is high enough, lower the look speed
+					if(fProperMassSum >= gfMinSlowLookSpeedMass)
+					{
+						if(fProperMassSum >= gfMaxSlowLookSpeedMass)
+						{
+							Player_SetLookSpeedMul(gfMinSlowLookSpeedMul);
+						}
+						else
+						{
+							float fMul = (fProperMassSum-gfMinSlowLookSpeedMass)/(gfMaxSlowLookSpeedMass-gfMinSlowLookSpeedMass);
+							fMul = fMul*gfMinSlowLookSpeedMul + (1.0f-fMul);
+							
+							Player_SetLookSpeedMul(fMul);
+						}
+					}
+				}
+				
+				//////////////////////////////
+				// Check if entity is anchored
+				mbIsAnchored = false;
+				mfChainLength=0;
+				for(int i=0; i<mvBodyProperties.size(); ++i)
+				{
+					iPhysicsBody@ pBody = cLux_ID_Body(mvBodyProperties[i].mBodyID);
+					if(pBody is null) continue;
+					
+					///////////////////////
+					// Check if anchor
+					if(mbIsAnchored==false)
+					{
+						for(int j=0; j<pBody.GetJointNum(); ++j)
+						{
+							iPhysicsJoint@ pJoint = pBody.GetJoint(j);
+							
+							///////////////////////
+							//Check if anchor
+							if(	pJoint.GetParentBody() is null ||
+								pJoint.GetParentBody().GetMass()==0)
+							{
+								mbIsAnchored = true;
+								mvAnchorPos = pJoint.GetPivotPoint();
+							}
+						}
+					}
+					
+					///////////////////////
+					// Calc length
+					if(pBody.GetJointNum()==2)
+					{
+						mfChainLength += cMath_Vector3Dist(pBody.GetJoint(0).GetPivotPoint(), pBody.GetJoint(1).GetPivotPoint());
+					}
+				}
+				float fCurrentDist = cMath_Vector3Dist(pBody.GetWorldPosition(), mvAnchorPos);
+				if(fCurrentDist >= mfChainLength-0.15f)
+				{
+					mfChainLength = fCurrentDist + 0.3f;
+				}
+					
+						
+				//////////////////////////////
+				//Prop entity set up
+				cLux_ID_Prop(mPropID).SetDisableCollisionUntilOutSidePlayer(false);
+			return;
+		}
+		
+		
+		////////////////////////////////
+		// Get basic params & setup
+		SetupInteractVars();
+				
+		////////////////////////////////
+		// Get specific params
+		mbUseCustomOffset =	cScript_GetGlobalArgBool(3);
+		mvCustomPositionOffset =	cScript_GetGlobalArgVector3f(4);
+		mvCustomRotationOffset =	cScript_GetGlobalArgVector3f(5);
+		mbUseCustomDepth =	cScript_GetGlobalArgBool(6);
+		mfCustomGrabDepth =	cScript_GetGlobalArgFloat(7);
+		mfGrabMassMul =	1.0f; // H57.55CH: authored mass preserved while held
+		mfMinDepth = cScript_GetGlobalArgFloat(9);
+		mfMaxDepth = cScript_GetGlobalArgFloat(10);
+		mfDepthStep = (mfMinDepth + mfMaxDepth) / 15.0f;
+		mfForceMul = cScript_GetGlobalArgFloat(11);
+		mfTorqueMul = cScript_GetGlobalArgFloat(12);
+		mfThrowImpulse = cScript_GetGlobalArgFloat(13);
+		mbIsHeavy = cScript_GetGlobalArgBool(14);
+		mbCollisionWithPlayer = cScript_GetGlobalArgBool(15);
+		
+		
+		//////////////////////////////////
+		// Set up variables
+		cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
+		
+		///////////////////////////////
+		//Save Body properties (this will also save settings for any body connected by joints)
+		iPhysicsBody@ pBody = cLux_ID_Body(mBodyID);
+		mvBodyProperties.resize(0);
+		SaveBodyProperties(pBody);
+		
+		mfBodyBuoyancyDensityMul = pBody.GetBuoyancyDensityMul(); // read-only native semantic provenance
+		
+		//////////////////////////////////////
+		// Rotation setup
+		{
+			//////////////////////////////////
+			// Set rotation based on entity file offset
+			if(mbUseCustomOffset)
+			{
+				m_mtxBodyRotation = cMath_MatrixRotateXYZ(mvCustomRotationOffset);	
+			}
+			//////////////////////////////////
+			// Set the rotation as the current of the body
+			else
+			{
+				cVector3f vCamRotation( pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll());
+				cMatrixf mtxCamRot = cMath_MatrixRotateXYZ(vCamRotation);
+				cMatrixf mtxInvCamRot = cMath_MatrixInverse(mtxCamRot);
+
+				m_mtxBodyRotation = cMath_MatrixMul(mtxInvCamRot, pBody.GetLocalMatrix().GetRotation());
+				
+				//Need to calculate special local offset.
+				mvLocalBodyOffset = pBody.GetLocalPosition() - mvFocusPos;
+				mvLocalBodyOffset = cMath_MatrixMul( mtxInvCamRot, mvLocalBodyOffset);
+			}
+		}
+		
+		//////////////////////////////////////
+		// Depth setup
+		{
+			if(mbUseCustomDepth)
+			{
+				mfDepth = mfCustomGrabDepth;
+			}
+			else
+			{
+				mfDepth = cMath_Vector3Dist(mvFocusPos, pCam.GetPosition())-0.08f;
+			}
+		}
+		
+		///////////////////////
+		//Calculate the max distance
+		mfMaxDistance = cMath_Vector3Dist(mBaseObj.mpPlayer.GetCamera().GetPosition(), pBody.GetLocalPosition());
+		mfMaxDistance = cMath_Max(mfMaxDistance, mfMaxDepth) * 1.1f + 0.2f;
+		mfDepthVel= 0.0f;
+							
+		//////////////////////////////
+		//Set up properties for all bodies and calculate total mass
+		float fProperMassSum=0;
+		{
+			mfMassSum = 0;
+			for(uint i=0; i<mvBodyProperties.length(); ++i)
+			{
+				iPhysicsBody @pBody = cLux_ID_Body(mvBodyProperties[i].mBodyID);
+
+				fProperMassSum += pBody.GetMass();
+				
+				//If it is the body in focus, make sure it has no gravity and does not collide with player.
+				if(mvBodyProperties[i].mBodyID == mBodyID)
+				{
+					// H57.55CH: focused-body gravity/character-collision remain owned by hpl3vr's existing hold flags.
+				}
+				
+				// H57.55CH: connected-body discovery is native, but physics ownership is VR-side.
+				// Do not mass-scale, zero velocity, or alter buoyancy here.
+				mfMassSum += pBody.GetMass();
+			}
+		}
+		
+		//////////////////////////////
+		// H57.55CH VR player setup
+		// No player-mass, locomotion-speed, or look-speed penalty while physically held.
+
+		//////////////////////////////
+		// Check if entity is anchored
+		mbIsAnchored = false;
+		mfChainLength=0;
+		for(int i=0; i<mvBodyProperties.size(); ++i)
+		{
+			iPhysicsBody@ pBody = cLux_ID_Body(mvBodyProperties[i].mBodyID);
+			if(pBody is null) continue;
+			
+			///////////////////////
+			// Check if anchor
+			if(mbIsAnchored==false)
+			{
+				for(int j=0; j<pBody.GetJointNum(); ++j)
+				{
+					iPhysicsJoint@ pJoint = pBody.GetJoint(j);
+					
+					///////////////////////
+					//Check if anchor
+					if(	pJoint.GetParentBody() is null ||
+						pJoint.GetParentBody().GetMass()==0)
+					{
+						mbIsAnchored = true;
+						mvAnchorPos = pJoint.GetPivotPoint();
+					}
+				}
+			}
+			
+			///////////////////////
+			// Calc length
+			if(pBody.GetJointNum()==2)
+			{
+				mfChainLength += cMath_Vector3Dist(pBody.GetJoint(0).GetPivotPoint(), pBody.GetJoint(1).GetPivotPoint());
+			}
+		}
+		float fCurrentDist = cMath_Vector3Dist(pBody.GetWorldPosition(), mvAnchorPos);
+		if(fCurrentDist >= mfChainLength-0.15f)
+		{
+			mfChainLength = fCurrentDist + 0.3f;
+		}
+			
+				
+		//////////////////////////////
+		//Prop entity set up
+		cLux_ID_Prop(mPropID).SetDisableCollisionUntilOutSidePlayer(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetupReading()
+	{
+		mReadable.SetupReading(cScript_GetGlobalArgString(0), cScript_GetGlobalArgString(1),
+			cScript_GetGlobalArgString(2) );
+		mfTextRotateOffset = cScript_GetGlobalArgFloat(3);
+		mbZoomed = false;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	int mlHintID = -1;
+	
+	void OnEnterState(int alPrevStateId)
+	{
+        mbVRReadablePressPending=false;
+		EnterInteractState(alPrevStateId);
+		
+		////////////////////////////////
+		// Player setup
+		if(mbIsHeavy)
+			cScript_SetGlobalVarBool("Climb_Allowed", false);
+		
+		///////////////////////////////
+		//Set up variables.
+		mForcePid.Reset();
+		mSpeedTorquePid.Reset();
+		
+		mfOutOfReachCount = 0;
+		
+		mReadable.Reset();
+		
+		// Attempt to show hint and hold in case it's blocked while in the state
+		mlHintID = Hint_ShowHint_Hold("Hints", "HintGrab", true);
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnLeaveState(int alNextStateId)
+	{
+		if (!_HPL3VR_RuntimeActive_Grab())
+		{
+				///////////////////////////////////
+				//Reset Player properties
+				{
+					// Need to make sure so pointer exists! (as this might be on leave!)
+					if(mBaseObj.mpPlayer.GetCharacterBody() !is null)
+					{
+						mBaseObj.mpPlayer.GetCharacterBody().SetMass(gfPlayer_BodyDefaultMass);
+					}
+					
+					//Reset speed mul to normal
+					cScript_SetGlobalVarFloat("InteractionMoveSpeedMul", 1);
+					Player_SetLookSpeedMul(1);
+					
+					if(mbIsHeavy)
+						cScript_SetGlobalVarBool("Climb_Allowed", true);
+				}
+				
+				/////////////////////////////////
+				// Reset saved properties
+				ResetPropVars();
+				
+				// Release hint
+				Hint_Release(mlHintID);
+			return;
+		}
+		///////////////////////////////////
+		// H57.55CH: no player mass/move/look reset is needed because this VR shell never changed them.
+		if(mbIsHeavy) cScript_SetGlobalVarBool("Climb_Allowed", true);
+		
+		/////////////////////////////////
+		// Reset saved properties
+		ResetPropVars();
+		
+		// Release hint
+		Hint_Release(mlHintID);
+		VR_CloseReadable();
+	}
+	
+	//------------------------------------------------------------
+		
+	void ResetPropVars()
+	{
+		if (!_HPL3VR_RuntimeActive_Grab())
+		{
+				///////////////////////////////////
+				//Reset Prop properties
+				cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+				if(pProp !is null)
+				{
+					///////////////////////
+					//Reset body
+					for(uint i=0; i<mvBodyProperties.length(); ++i)
+					{
+						iPhysicsBody @pBody = cLux_ID_Body(mvBodyProperties[i].mBodyID);
+			
+						if(pBody.GetNoGravityWhenUnderwater())
+						{
+							pBody.SetGravity(!pBody.GetIsUnderwater());
+							pBody.SetMaxLinearSpeed(pBody.GetIsUnderwater() ? 1 : 20);
+						}
+						else
+						{
+							pBody.SetGravity(mvBodyProperties[i].mbHasGravity);
+							pBody.SetMaxLinearSpeed(mvBodyProperties[i].mfMaxLinearSpeed);
+						}
+						
+						pBody.SetBuoyancyDensityMul(mvBodyProperties[i].mfBuoyancyDensityMul);
+						pBody.SetMass(mvBodyProperties[i].mfMass);
+						pBody.SetMassMulApplied(1.0f);
+						
+						//if(mbIsHeavy)
+						//	pBody.SetCollideCharacter(mvBodyProperties[i].mbCollideCharacter);
+					}
+					if(mbIsHeavy==false) cLux_ID_Body(mBodyID).SetBuoyancyDensityMul(mfBodyBuoyancyDensityMul);	
+					
+					pProp.SetDisableCollisionUntilOutSidePlayer(true);
+					
+					/////////////////////////////
+					//Resets some general stuff
+					ResetPropInteractVars();
+				}
+			return;
+		}
+		///////////////////////////////////
+		//Reset Prop properties
+		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+		if(pProp !is null)
+		{
+			///////////////////////
+			// H57.55CH: body mass/gravity/collision/buoyancy are restored by the VR physical hold owner.
+			// The authored Grab state remains responsible for prop/state cleanup only.
+			
+			pProp.SetDisableCollisionUntilOutSidePlayer(true);
+			
+			/////////////////////////////
+			//Resets some general stuff
+			ResetPropInteractVars();
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+
+	void Update(float afTimeStep)
+	{
+		if(CheckShouldUpdate()==false) return;
+				
+		cLux_GetPlayer().ResetTimeSincePhysicsObjectInteraction();
+		
+		//Show no crosshair!
+		Player_SetCrossHairState(eCrossHairState_None);
+		
+		UpdateDepth(afTimeStep);
+		
+		mReadable.Update(afTimeStep);
+		
+		////////////////////////////////////////////
+		// Work out which text is facing the player
+		if (mbZoomed)
+		{
+			cVector3f vRot = m_mtxBodyRotation.GetForward();
+			float fAngle = 0.0f;
+			float fLength = 0.0f;
+			cMath_GetAngleFromVector(cVector2f(vRot.x, vRot.z), fAngle, fLength);
+			if (fLength!=0.0f)
+			{
+				fAngle = cMath_ToDeg(fAngle)+mfTextRotateOffset;
+				if ((fAngle<60.0f)||(fAngle>300.0f))
+					mReadable.SetTextAvailable(eTextSide_Back);
+				else if ((fAngle>120.0f)&&(fAngle<240.0f))
+					mReadable.SetTextAvailable(eTextSide_Front);
+				else
+					mReadable.SetTextAvailable(eTextSide_None);
+			}
+		
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateDepth(float afTimeStep)
+	{
+		//If outside of min/max, just leave be (else there will be a bad jump)
+		if(mfDepthVel >= 0 && mfDepth>mfMaxDepth) return;
+		if(mfDepthVel <= 0 && mfDepth<mfMinDepth) 
+		{
+			mbZoomed=true;
+			return;
+		}
+			
+		mfDepth += mfDepthStep * mfDepthVel;
+		if(mfDepthVel > 0 && mfDepth >mfMaxDepth) 
+		{
+			mfDepth = mfMaxDepth;
+			mfDepthVel = 0.0f;
+		}
+		
+		if(mfDepthVel < 0 && mfDepth <mfMinDepth) 
+		{
+			mfDepth = mfMinDepth;
+			mfDepthVel = 0.0f;
+			mbZoomed = true;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+		if (!_HPL3VR_RuntimeActive_Grab())
+		{
+				if(CheckShouldUpdate()==false) return;
+				
+				//////////////////////////////////////////
+				// Check if too far away from anchor
+				if(mbIsAnchored)
+				{
+					iPhysicsBody @pBody = cLux_ID_Body(mBodyID);
+					
+					float fDist = cMath_Vector3Dist(pBody.GetWorldPosition(), mvAnchorPos);
+					if(fDist > mfChainLength)
+					{
+						DropBody();
+						return;
+					}
+				}
+				
+				////////////////////////////
+				// Check so interact is still pressed.
+				if(cInput_IsTriggered(eAction_Interact)==false && cInput_IsTriggered(eAction_InteractRotate)==false)
+				{
+					DropBody();
+							
+					return;
+				}
+				
+				/////////////////////////////////////
+				// Init
+				cLuxMap @pMap = cLux_GetCurrentMap();
+				iPhysicsWorld @pPhysicsWorld = pMap.GetPhysicsWorld();
+			
+				cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
+				iCharacterBody @pPlayerBody = mBaseObj.mpPlayer.GetCharacterBody();
+				iPhysicsBody @pBody = cLux_ID_Body(mBodyID);
+			
+				/////////////////////////////////////
+				// Check if still in distance
+				float fDistance = cMath_Vector3Dist(pCam.GetPosition(), pBody.GetLocalPosition());
+				if(fDistance > mfMaxDistance)
+				{
+					//Have a little count so there is some time for the object to come back
+					mfOutOfReachCount += afTimeStep;
+					if(mfOutOfReachCount > 0.5f)
+					{
+						mBaseObj.mpPlayer.ChangeState(mlPreviousState);	
+						return;
+					}
+				}
+				else
+				{
+					mfOutOfReachCount = 0;
+				}
+				
+				/////////////////////////////////////
+				// Get the final body transform
+				cMatrixf mtxGoal;
+				{
+					////////////////////////
+					// Camera rotation
+					cVector3f vCamRotation( pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll());
+					cMatrixf mtxCamTransform = cMath_MatrixRotateXYZ(vCamRotation);
+					mtxCamTransform.SetTranslation(pCam.GetPosition());
+			
+					///////////////////////
+					// The base postion
+					cVector3f vBasePos;
+					if(mbUseCustomOffset)
+					{
+						vBasePos = mvCustomPositionOffset + cVector3f(0,0,-mfDepth);
+					}
+					else
+					{
+						vBasePos = cVector3f(0,0,-mfDepth) + mvLocalBodyOffset;
+					}
+					
+					///////////////////////
+					//The final body matrix.
+					mtxGoal = cMath_MatrixMul(cMath_MatrixTranslate(vBasePos), m_mtxBodyRotation);
+					mtxGoal = cMath_MatrixMul(mtxCamTransform, mtxGoal);
+				}
+				
+				///////////////////////
+				//Add Linear Forces
+				{
+					//Set up the basic variables
+					cVector3f vWantedPos = mtxGoal.GetTranslation();
+					cVector3f vPosError = vWantedPos - pBody.GetLocalPosition();
+					
+					//Calculate the linear force
+					cVector3f vForce = mForcePid.Output(vPosError, afTimeStep) * pBody.GetMass();//Do not use mass sum here as it can make it all unstable)
+				
+					//Make sure force is not too large
+					vForce = cMath_Vector3MaxLength(vForce, gfMaxForce);
+					vForce = vForce * mfForceMul;
+					
+					//If heavy let it fall!
+					if(mbIsHeavy)
+					{
+						float fMul = 0.4f;
+						vForce.y = pPhysicsWorld.GetGravity().y * pBody.GetMass() * fMul + vForce.y * (1.0f-fMul);
+					}
+					
+					pBody.AddForce(vForce);
+				}
+				
+				
+				///////////////////////
+				//Add Angular Force
+				{
+					/////////////////////////
+					// Get the wanted speed
+					cVector3f vWantedRotSpeed= cVector3f(0);
+					float fTorqueExtraMul = 0.8f;
+					
+					cMatrixf mtxGoalInv = cMath_MatrixInverse(mtxGoal);
+				
+					cVector3f vWantedUp = mtxGoalInv.GetUp();
+					cVector3f vWantedRight = mtxGoalInv.GetRight();
+			
+					cMatrixf mtxBodyInv = cMath_MatrixInverse(pBody.GetLocalMatrix());
+					cVector3f vUp = mtxBodyInv.GetUp();
+					cVector3f vRight = mtxBodyInv.GetRight();
+			
+					//Up alignment
+					cVector3f vRotateAxis = cMath_Vector3Cross(vUp,vWantedUp);
+			
+					float fError = cMath_Vector3Angle(vWantedUp,vUp);
+					vWantedRotSpeed += vRotateAxis * fError * 100;
+			
+					//Right alignment
+					vRotateAxis = cMath_Vector3Cross(vRight,vWantedRight);
+			
+					fError = cMath_Vector3Angle(vWantedRight,vRight);
+					vWantedRotSpeed += vRotateAxis * fError *100;
+			
+					//Make sure wanted speed is not too large
+					float fSpeed = vWantedRotSpeed.Length();
+					if(fSpeed > gfMaxAngularSpeed)
+					{
+						vWantedRotSpeed = (vWantedRotSpeed / fSpeed) * 6.0f;
+					}
+			
+					////////////
+					// Change pid derivate if underwater
+					if(Player_GetUnderwater())
+					{
+						mSpeedTorquePid.d = 0.1f;
+					}
+					else
+					{
+						mSpeedTorquePid.d = 0.4f;
+					}
+					
+					/////////////////////////
+					// Set speed by torque
+					cVector3f vRotError = vWantedRotSpeed - pBody.GetAngularVelocity();
+					
+					cVector3f vTorque =  mSpeedTorquePid.Output(vRotError,afTimeStep);
+					vTorque = cMath_MatrixMul(pBody.GetInertiaMatrix(), vTorque);
+			
+					//Make sure force is not too large
+					vTorque = cMath_Vector3MaxLength(vTorque, gfMaxTorque);
+					vTorque = vTorque * mfTorqueMul * fTorqueExtraMul;
+					
+					pBody.AddTorque(vTorque);
+				}
+			return;
+		}
+		if(CheckShouldUpdate()==false) return;
+		
+		//////////////////////////////////////////
+		// Check if too far away from anchor
+		if(mbIsAnchored)
+		{
+			iPhysicsBody @pBody = cLux_ID_Body(mBodyID);
+			
+			float fDist = cMath_Vector3Dist(pBody.GetWorldPosition(), mvAnchorPos);
+			if(fDist > mfChainLength)
+			{
+				DropBody();
+				return;
+			}
+		}
+		
+		////////////////////////////
+		// Check so interact is still pressed.
+		if(cInput_IsTriggered(eAction_Interact)==false && cInput_IsTriggered(eAction_InteractRotate)==false)
+		{
+			DropBody();
+					
+			return;
+		}
+		
+		/////////////////////////////////////
+		// Init
+		cLuxMap @pMap = cLux_GetCurrentMap();
+		iPhysicsWorld @pPhysicsWorld = pMap.GetPhysicsWorld();
+
+		cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
+		iCharacterBody @pPlayerBody = mBaseObj.mpPlayer.GetCharacterBody();
+		iPhysicsBody @pBody = cLux_ID_Body(mBodyID);
+
+		/////////////////////////////////////
+		// Check if still in distance
+		float fDistance = cMath_Vector3Dist(pCam.GetPosition(), pBody.GetLocalPosition());
+		if(fDistance > mfMaxDistance)
+		{
+			//Have a little count so there is some time for the object to come back
+			mfOutOfReachCount += afTimeStep;
+			if(mfOutOfReachCount > 0.5f)
+			{
+				mBaseObj.mpPlayer.ChangeState(mlPreviousState);	
+				return;
+			}
+		}
+		else
+		{
+			mfOutOfReachCount = 0;
+		}
+		
+		/////////////////////////////////////
+		// H57.55CH: tracked-hand rigid target owns motion.
+		// Native Grab keeps the authored reach/drop/anchored-chain lifetime above,
+		// but does not build a camera-space goal or apply mass-dependent force/torque.
+		return;
+	}
+
+	//------------------------------------------------------------
+	
+	void _Global_GetPropID()
+	{
+		cScript_SetGlobalReturnID(mPropID);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetForceMul()
+	{
+		mfForceMul = cScript_GetGlobalArgFloat(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void DropBody()
+	{
+		if (!_HPL3VR_RuntimeActive_Grab())
+		{
+				///////////////////////
+				//Limit the body speed
+				for(uint i=0; i<mvBodyProperties.length(); ++i)
+				{
+					iPhysicsBody @pBody = cLux_ID_Body(mvBodyProperties[i].mBodyID);
+					
+					//If heavy, much less max
+					float fAngMax = mbIsHeavy ? gfMaxLeaveAngularSpeed*0.25f : gfMaxLeaveAngularSpeed;
+					float fLinMax = mbIsHeavy ? gfMaxLeaveLinearSpeed*0.25f : gfMaxLeaveLinearSpeed;
+					
+					
+					float fLinearSpeed = pBody.GetLinearVelocity().Length();
+					if(fLinearSpeed > fLinMax)
+						pBody.SetLinearVelocity( (pBody.GetLinearVelocity()/fLinearSpeed)*fLinMax );
+			
+					float fAngularSpeed = pBody.GetAngularVelocity().Length();
+					if(fAngularSpeed > fAngMax)
+						pBody.SetAngularVelocity( (pBody.GetAngularVelocity()/fAngularSpeed)*fAngMax );
+				}
+				
+				///////////////////////
+				//Enable the object to hit a character if thrown.
+				cLux_ID_Prop(mPropID).EnableCharCollisionUntilStopped();
+				
+				///////////////////////
+				//Change state
+				mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+			return;
+		}
+		///////////////////////
+		// H57.55CH: do not clamp release velocity. hpl3vr applies tracked OpenXR linear/angular release velocity.
+
+		///////////////////////
+		//Enable the object to hit a character if thrown.
+		cLux_ID_Prop(mPropID).EnableCharCollisionUntilStopped();
+		
+		///////////////////////
+		//Change state
+		mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+	}
+		
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+		if (!_HPL3VR_RuntimeActive_Grab())
+		{
+				/*
+				////////////////////////////////
+				// Text scrolling
+				if (mReadable.IsShowingText())
+				{
+					mReadable.ScrollInput(alAction, abPressed);
+				}
+				*/
+				if(abPressed==false) return true;
+				
+				////////////////////////
+				// Drop (TEST FEATURE)
+				/*if (alAction == eAction_Interact)
+				{
+					///////////////////////
+					//Enable the object to hit a character if thrown.
+					cLux_ID_Prop(mPropID).EnableCharCollisionUntilStopped();
+					
+					///////////////////////
+					//Change state
+					mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+				}*/
+				
+				///////////////////////////
+				// Reading
+				if ( mbZoomed )
+				{
+					if (alAction == eAction_Jump)
+						return false;
+			
+					// Examine is currently disabled, so this will never happen. :-)
+					if (alAction == eAction_Examine)
+					{
+						if (!mReadable.IsShowingText())
+						{
+							Effect_Shake_EnableAll(false);
+							mReadable.ShowText();
+						}
+						else
+						{
+							// Increase page num
+							if(mReadable.GetPage() < mReadable.GetPageNum())
+							{
+								mReadable.NextPage();
+							}
+							else
+							{
+								cLux_AddDebugMessage("Close Text");
+								mReadable.HideText();
+								Effect_Shake_EnableAll(true);
+							}
+						}
+						return false;
+					}
+				}
+				
+				if (alAction == eAction_InteractCancel)
+				{
+					// Hide text if showing
+					if (mReadable.IsShowingText())
+					{
+						mReadable.HideText();
+						Effect_Shake_EnableAll(true);
+						return false;
+					}
+				}
+				
+				////////////////////////
+				// Throw
+				if (alAction == eAction_Throw)
+				{
+					////////////////////////////////////////////////////////
+					// Set the body position as right in front of the camera
+					cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
+					cVector3f vCamRotation(pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll());
+					cMatrixf mtxCamTransform = cMath_MatrixRotateXYZ(vCamRotation);
+					mtxCamTransform.SetTranslation(pCam.GetPosition());
+					
+					/////////////////////////////
+					// Reset the props values
+					ResetPropVars();
+					
+					//////////////////////////////
+					// Add impulse and reset speed
+					iPhysicsBody@ pBody = cLux_ID_Body(mBodyID);
+					
+					float fImpulseMul=1.0f;
+					if(pBody.GetMass()<3) fImpulseMul=1.5f;
+					if(Player_GetUnderwater() && pBody.GetNoGravityWhenUnderwater()==false) fImpulseMul *= 0.5f;
+					cLux_AddDebugMessage("Mass: "+pBody.GetMass());
+					
+					
+					pBody.SetLinearVelocity(cVector3f_Zero);
+					pBody.SetAngularVelocity(cVector3f_Zero);
+					pBody.AddImpulse(pCam.GetForward() * mfThrowImpulse*fImpulseMul);
+					mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+					return false;
+				}
+				
+				if (alAction == eAction_InteractRotate)
+				{
+					// Pull object towards the player
+					mfDepthVel=-1.0f;
+				}
+				
+				return true;
+		}
+		/*
+		////////////////////////////////
+		// Text scrolling
+		if (mReadable.IsShowingText())
+		{
+			mReadable.ScrollInput(alAction, abPressed);
+		}
+		*/
+		if(abPressed==false) return true;
+		
+		////////////////////////
+		// Drop (TEST FEATURE)
+		/*if (alAction == eAction_Interact)
+		{
+			///////////////////////
+			//Enable the object to hit a character if thrown.
+			cLux_ID_Prop(mPropID).EnableCharCollisionUntilStopped();
+			
+			///////////////////////
+			//Change state
+			mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+		}*/
+		
+		///////////////////////////
+		// Reading
+		if ( mbZoomed )
+		{
+			if (alAction == eAction_Jump)
+				return false;
+
+			// Examine is currently disabled, so this will never happen. :-)
+			if (alAction == eAction_Examine)
+			{
+				if (!mReadable.IsShowingText())
+				{
+					Effect_Shake_EnableAll(false);
+					mReadable.ShowText();
+				}
+				else
+				{
+					// Increase page num
+					if(mReadable.GetPage() < mReadable.GetPageNum())
+					{
+						mReadable.NextPage();
+					}
+					else
+					{
+						cLux_AddDebugMessage("Close Text");
+						mReadable.HideText();
+						Effect_Shake_EnableAll(true);
+					}
+				}
+				return false;
+			}
+		}
+		
+		if (alAction == eAction_InteractCancel)
+		{
+			// Hide text if showing
+			if (mReadable.IsShowingText())
+			{
+				mReadable.HideText();
+				Effect_Shake_EnableAll(true);
+				return false;
+			}
+		}
+		
+		////////////////////////
+		// H57.55CH: desktop camera-forward throw is disabled in VR.
+		// Physical Grip release transfers the tracked controller's linear + angular velocity.
+		if (alAction == eAction_Throw)
+		{
+			return false;
+		}
+		
+		if (alAction == eAction_InteractRotate)
+		{
+			// Pull object towards the player
+			mfDepthVel=-1.0f;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+		///////////////////////////////////
+		// Looking and Rotate held.
+		if( (alAnalogId == eAnalogType_Look && cInput_IsTriggered(eAction_InteractRotate)) ||
+			alAnalogId == eAnalogType_GamepadRotate)
+		{			
+			if(mbIsHeavy) return false;
+			
+			float fMul = 3.2f;
+			
+			if(alAnalogId == eAnalogType_GamepadRotate) fMul *=0.03f;
+			
+			float fY = avAmount.y;
+			if (cLux_GetInputHandler().IsYAxisInverted() && (alAnalogId == eAnalogType_Look) )
+				fY*=-1.0f;
+				
+			cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+			if(pProp.GetParentType() == eParentType_Sticky) fMul = 0.2;
+						
+			m_mtxBodyRotation = cMath_MatrixMul(cMath_MatrixRotateY(avAmount.x * fMul),m_mtxBodyRotation);
+			m_mtxBodyRotation = cMath_MatrixMul(cMath_MatrixRotateX(fY * fMul),m_mtxBodyRotation);
+
+			//If using gamepad, make it come upfront directly.
+			if(alAnalogId == eAnalogType_GamepadRotate && mbIsHeavy==false) mfDepthVel=-1.0f;
+			
+			mbZoomed = true;
+					
+			return false;
+		}
+		
+		////////////////////////////////////////////////////
+		// Text scrolling
+		if (alAnalogId == eAnalogType_Scroll)
+		{
+			if (mReadable.IsShowingText())
+			{
+				return false;
+			}
+		}
+		
+		///////////////////////////////////
+		// Scroll
+		if(alAnalogId == eAnalogType_Scroll)
+		{
+			bool bReturn = true;
+			
+			cVector3f vFinalAmount = avAmount;
+
+			if(mbIsHeavy) vFinalAmount.y*0.3f;
+			
+			//If outside of min/max, just leave be (else there will be a bad jump)
+			if(vFinalAmount.y >= 0 && mfDepth>mfMaxDepth) return false;
+			if(vFinalAmount.y <= 0 && mfDepth<mfMinDepth) return false;
+			
+			mfDepth += mfDepthStep * vFinalAmount.y;
+			if(vFinalAmount.y > 0 && mfDepth >mfMaxDepth) mfDepth = mfMaxDepth;
+			if(vFinalAmount.y < 0 && mfDepth <mfMinDepth) mfDepth = mfMinDepth;
+
+			return bReturn;
+		}
+
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// BODY CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool AllowBuoyancy(iPhysicsBody @apBody)
+	{
+		if(mbIsHeavy) return true;
+		if(apBody is cLux_ID_Body(mBodyID)) return false;
+		
+		return true;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	void SaveBodyProperties(iPhysicsBody @apBody)
+	{
+		//////////////////////////////////
+		// Add the body to array
+		cGrabbedBodyProperties bodyData;
+
+		bodyData.mBodyID = apBody.GetID();
+		bodyData.mbHasGravity = apBody.GetGravity();
+		bodyData.mbCollideCharacter = apBody.GetCollideCharacter();
+		bodyData.mfMass = apBody.GetMass();
+		bodyData.mfMaxLinearSpeed = apBody.GetMaxLinearSpeed();
+		bodyData.mfBuoyancyDensityMul = apBody.GetBuoyancyDensityMul();
+
+		mvBodyProperties.insertLast(bodyData);
+
+		///////////////////////////////
+		// Go through all joints and add any connected bodies too!
+		for(int i=0; i<apBody.GetJointNum();++i)
+		{
+			iPhysicsJoint @pJoint = apBody.GetJoint(i);
+			iPhysicsBody @pChild = pJoint.GetChildBody();
+			iPhysicsBody @pParent = pJoint.GetParentBody();
+			
+			if(BodyIsAdded(pChild)==false)  SaveBodyProperties(pChild);
+			if(BodyIsAdded(pParent)==false)  SaveBodyProperties(pParent);
+		}
+	}
+
+	//-----------------------------------------------------------------------
+
+	bool BodyIsAdded(iPhysicsBody @apBody)
+	{
+		if(apBody is null) return true;
+	
+		for(uint i=0; i<mvBodyProperties.length(); ++i)
+		{
+			if(cLux_ID_Body(mvBodyProperties[i].mBodyID) is apBody) return true;
+		}
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnGui(float afTimeStep)
+	{
+		//mReadable.DrawGui(afTimeStep);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		apSet.DrawFont(tWString("Something:"+mBaseObj.mpPlayer.GetCamera().GetPitch()), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		afStartY += 14;
+						
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool mbUseCustomOffset;
+	cVector3f mvCustomPositionOffset;
+	cVector3f mvCustomRotationOffset;
+	bool mbUseCustomDepth;
+	float mfCustomGrabDepth;
+	float mfGrabMassMul;
+	float mfMinDepth;
+	float mfMaxDepth;
+	float mfForceMul;
+	float mfTorqueMul;
+	float mfThrowImpulse;
+	bool mbIsHeavy;
+	float mfOutOfReachCount;
+	bool mbCollisionWithPlayer;
+	float mfDepthVel=0.0f;
+	
+	//------------------------------------------------------------
+	
+	bool mbIsAnchored=false;
+	cVector3f mvAnchorPos;
+	float mfChainLength=0;
+	
+	//------------------------------------------------------------
+	
+	cPidControllerVec3 mForcePid;
+	cPidControllerVec3 mSpeedTorquePid;
+	
+	//------------------------------------------------------------
+	
+	cMatrixf m_mtxBodyRotation;
+	float mfDepth;
+	float mfMassSum;
+	float mfMaxDistance;
+	float mfDepthStep; //How much depth is changed with scroll wheel.
+	float mfBodyBuoyancyDensityMul;
+	
+	//------------------------------------------------------------
+	
+	array<cGrabbedBodyProperties> mvBodyProperties;
+	
+	//------------------------------------------------------------
+	
+	cUtility_Readable mReadable;
+	float mfTextRotateOffset;
+	bool mbZoomed = false;
+		
+	//------------------------------------------------------------
+}

@@ -1,0 +1,1283 @@
+#include "interfaces/UserModule_Interface.hps"
+#include "modules/ModuleInterfaces.hps"
+#include "base/InputHandler_Types.hps"
+#include "player/Player_Types.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_player.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+bool _HPL3VR_RuntimeActive_PlayerHands()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+const cVector3f gvHandsOffset = cVector3f(0, -0.3, 0);
+
+//------------------------------------------------------------
+
+class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPlayerHandsHandler_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+		cConfigFile@ pConfig = cLux_GetUserConfig();
+		float fFOV = cMath_ToRad(pConfig.GetFloat("Gameplay", "FOV", 70.0f));
+
+		float fAspectRatio = pConfig.GetFloat("Screen", "Width", 1920) / pConfig.GetFloat("Screen", "Height", 1080);
+
+		mfHorizontalFov = 2.0f * cMath_ATan(cMath_Tan(fFOV / 2.0f) * fAspectRatio);
+		mfDefaultHorizontalFov = 2.0f * cMath_ATan(cMath_Tan(cMath_ToRad(70.0f) / 2.0f) * (1920.0f / 1080.0f));
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mlHandNum=0;
+		mlVRScenePublished=-1;
+		HPL3VR_PublishSceneHands();
+	}
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		mlVRSceneOverride=-1; mbVRSeatSequence=false;
+		if (_HPL3VR_RuntimeActive_PlayerHands()) cScript_RunGlobalFunc("VRSCENE", "", "S");
+		mlVRScenePublished=-1;
+		m_idCurrentAttachProp = tID_Invalid;
+	}
+	
+	//------------------------------------------------------------
+	
+	void PreloadData(cLuxMap @apMap)
+	{
+		PreloadHandModel(msHandModel);
+	}
+
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+        HPL3VR_DestroyNativeHands(apMap);
+		DestroyHandModel(apMap);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		mlVRSceneOverride=-1;
+		mbVRSeatSequence=false;
+		mlVRScenePublished=-1;
+		m_idHands = tID_Invalid;
+		
+		mbDisableWhenAnimOver = false;
+		mbActive = false;
+		mbUseFullScaleModel=false;
+		mlCurrentAnimation =-1;
+		m_idCurrentAttachProp = tID_Invalid;
+		
+		mbUseCustomRotation = false;
+		mvCustomRotation =0;
+		
+		mbUseCustomPosition = false;
+		mvCustomPosition =0;
+		
+		msCameraAttachBone="";
+		mfCameraAttachT =0;
+		mfCameraAttachFadeTime=0;
+		
+		msAnimationOverCallback="";
+		
+		mbEntityVisible=true;
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector3f InterpolateAngles(const cVector3f vVecA, const cVector3f vVecB, float afT)
+	{
+		float fRotTotalX = cMath_GetAngleDistance(vVecA.x, vVecB.x, cMath_PiMul2);
+		float fRotTotalY = cMath_GetAngleDistance(vVecA.y, vVecB.y, cMath_PiMul2);
+		float fRotTotalZ = cMath_GetAngleDistance(vVecA.z, vVecB.z, cMath_PiMul2);
+				
+		cVector3f vRot;
+		vRot.x = vVecA.x + fRotTotalX*afT;
+		vRot.y = vVecA.y + fRotTotalY*afT;
+		vRot.z = vVecA.z + fRotTotalZ*afT;
+		
+		return vRot;
+	}
+	
+
+    [nosave] array<cMeshEntity@> mvVRNativeHands(2);
+    [nosave] int mlVRNativeFamily = -1;
+
+    void HPL3VR_DestroyNativeHands(cLuxMap@ apMap)
+    {
+        if (mlVRNativeFamily>=0) cScript_RunGlobalFunc("VRMESH", "", "X");
+        for (int h=0; h<2; ++h)
+        {
+            if (mvVRNativeHands[h] !is null && apMap !is null)
+                apMap.GetWorld().DestroyMeshEntity(mvVRNativeHands[h]);
+            @mvVRNativeHands[h] = null;
+        }
+        mlVRNativeFamily = -1;
+    }
+
+    void HPL3VR_UpdateNativeHands()
+    {
+        if (!_HPL3VR_RuntimeActive_PlayerHands())
+        {
+            for (int h=0; h<2; ++h)
+                if (mvVRNativeHands[h] !is null) mvVRNativeHands[h].SetVisible(false);
+            if (mlVRNativeFamily>=0) cScript_RunGlobalFunc("VRMESH", "", "X");
+            return;
+        }
+        cLuxMap@ pMap = cLux_GetCurrentMap();
+        if (pMap is null) return;
+        int lFamily = mlVRNativeFamily;
+        if (lFamily<0 || !cScript_RunGlobalFunc("VRMESH", ""+lFamily, "F"))
+        {
+            lFamily=-1;
+            for (int f=0; f<4; ++f)
+                if (cScript_RunGlobalFunc("VRMESH", ""+f, "F")) { lFamily=f; break; }
+        }
+        if (lFamily<0) return;
+        if (lFamily!=mlVRNativeFamily)
+        {
+            HPL3VR_DestroyNativeHands(pMap);
+            // One attempt per family/map; a missing asset uses the GL fallback.
+            mlVRNativeFamily=lFamily;
+            array<tString> vFamily={"human","diving","deepsea","deepsea_mutilated"};
+            for (int h=0; h<2; ++h)
+            {
+                tString sSide=h==0 ? "left" : "right";
+                cMesh@ pMesh=cResources_CreateMesh("entities/soma_vr/s26f/hand_"+vFamily[lFamily]+"_"+sSide+".dae");
+                if (pMesh is null) continue;
+                @mvVRNativeHands[h]=pMap.GetWorld().CreateMeshEntity("S26F_TrackedHand_"+sSide,pMesh,false);
+                if (mvVRNativeHands[h] is null) { cResources_DestroyMesh(pMesh); continue; }
+                mvVRNativeHands[h].SetScriptableIsSaved(false);
+                mvVRNativeHands[h].SetVisible(false);
+                mvVRNativeHands[h].SetIsOccluder(false);
+                mvVRNativeHands[h].SetRenderFlagBit(eRenderableFlag_ShadowCaster,true);
+                mvVRNativeHands[h].SetRenderFlagBit(eRenderableFlag_VisibleInReflection,true);
+                mvVRNativeHands[h].SetRenderFlagBit(eRenderableFlag_VisibleInNonReflection,true);
+                mvVRNativeHands[h].SetDisableSleep(true);
+                mvVRNativeHands[h].Stop();
+                // Native UpdateAnimation resets active bones to their bind pose.
+                // These bones are driven by the tracked-pose bridge instead.
+                for (int b=0; b<mvVRNativeHands[h].GetBoneStateNum(); ++b)
+                    mvVRNativeHands[h].GetBoneState(b).SetActive(false);
+            }
+        }
+        for (int h=0; h<2; ++h)
+        {
+            if (mvVRNativeHands[h] is null) continue;
+            bool bVisible=false;
+            if (cScript_RunGlobalFunc("VRMESH", ""+h, "C"))
+            {
+                mvVRNativeHands[h].SetCoverageAmount(1.0f);
+                bVisible=cScript_RunGlobalFunc("VRMESH", "", "R");
+            }
+            mvVRNativeHands[h].SetVisible(bVisible);
+            if (bVisible)
+            {
+                mvVRNativeHands[h].GetBoneStateRoot().UpdateMatrix(true);
+                mvVRNativeHands[h].PostUpdateLogic(0.0f);
+            }
+        }
+    }
+
+	void PostUpdate(float afTimeStep)
+	{
+		HPL3VR_PublishSceneHands();
+        HPL3VR_UpdateNativeHands();
+		/////////////////////////
+		// Setup Properties
+		cCamera @pCam = cLux_GetPlayer().GetCamera();
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+		
+		//////////////////////////////
+		// Update hand model
+		if(mbActive)
+		{
+			/////////////////////////
+			// Setup Properties
+			float fScale = mbUseFullScaleModel ? 1.0f : 0.25f;
+			cVector3f vCamRot(pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll()*0.5);
+			
+			/////////////////////////
+			// Update current rotation
+			cVector3f vCameraPos;
+			cMatrixf mtxCameraRot;
+			if(pCam.GetRotateMode() == eCameraRotateMode_EulerAngles)
+			{
+				cVector3f vDist = cMath_GetAngleDistanceVector3fRad(mvCurrentHandRotation,vCamRot);
+				float fMaxDist = cMath_ToRad(25);
+				for(int i=0; i<3; ++i)
+				{
+					float fDist = vDist.GetElement(i);
+					float fAngle = mvCurrentHandRotation.GetElement(i);
+					float fSign = cMath_Sign(fDist);
+					
+					if(cMath_Abs(fDist) > fMaxDist)
+					{
+						mvCurrentHandRotation.SetElement(i, vCamRot.GetElement(i)-fMaxDist*fSign*0.999f);
+						fAngle = mvCurrentHandRotation.GetElement(i);
+						fDist = cMath_GetAngleDistanceRad(fAngle, vCamRot.GetElement(i));
+					}
+					
+					float fT = cMath_Easing(eEasing_QuadIn, cMath_Abs(fDist)/fMaxDist);
+					mvCurrentHandRotation.SetElement(i, fAngle + fDist*afTimeStep*45*fT);		
+				}
+				
+				vCameraPos = pCam.GetPosition();
+				mtxCameraRot = cMath_MatrixRotateZXY(mvCurrentHandRotation);
+			}
+			else
+			{
+				cMatrixf mtxCamera = cMath_MatrixInverse(pCam.GetViewMatrix());
+				
+				mvCurrentHandRotation = cMath_MatrixToEulerAngles(mtxCamera.GetRotation());
+				mtxCameraRot = mtxCamera.GetRotation();
+				vCameraPos = mtxCamera.GetTranslation();
+			}
+			
+			/////////////////////////
+			// Head bob
+			cVector3f vHeadBob = Player_GetHeadBob();
+					
+			/////////////////////////
+			// Transform the hand
+			cMatrixf mtxHands = cMath_MatrixScale(fScale);
+			mtxHands = cMath_MatrixMul(cMath_MatrixRotateY(cMath_Pi), mtxHands);
+			
+			if(mbUseCustomPosition==false || mbCustomPositionUseBasicOffset)
+				mtxHands.SetTranslation(gvHandsOffset * fScale + vHeadBob*fScale*0.2f);
+				
+			if(mbUseCustomRotation)
+				mtxHands = cMath_MatrixMul(cMath_MatrixRotateXYZ(mvCustomRotation), mtxHands);
+			else
+				mtxHands = cMath_MatrixMul(mtxCameraRot, mtxHands);
+					
+			/*if(cLux_GetPlayer().GetCurrentStateId() == ePlayerState_Ladder)
+			{
+				float fFOVScale = cMath_Max(1.0f, mfHorizontalFov / mfDefaultHorizontalFov);
+				mtxHands = cMath_MatrixMul( cMath_MatrixScale(cVector3f(1, 1, fFOVScale)), mtxHands);
+				
+				mtxHands.SetTranslation(mtxHands.GetTranslation() + cVector3f(0, 0, fScale * mfMeshDepth * (fFOVScale - 1.0f) * 0.85f));
+			}*/
+
+			if(mbUseCustomPosition)
+			{
+				mtxHands.SetTranslation(mtxHands.GetTranslation() + mvCustomPosition);
+			}	
+			else
+			{
+				mtxHands.SetTranslation(mtxHands.GetTranslation() + vCameraPos);
+			}
+			
+			if(pEntity !is null) pEntity.SetMatrix(mtxHands);
+			
+			/////////////////////////
+			// Update entity
+			if(m_idCurrentAttachProp!=tID_Invalid)
+			{
+				iLuxEntity @pAttachProp = cLux_ID_Entity(m_idCurrentAttachProp);
+				if(pAttachProp !is null) pAttachProp.UpdateEntityAttachment();
+			}
+		}
+							
+		/////////////////////////
+		// Update camera
+		if(	( mbCameraAttachActive || (mbCameraAttachActive==false && mfCameraAttachT>0) ) &&
+			mbUseCustomPosition && mbUseCustomRotation)
+		{
+			cMeshEntity @pMeshEnt = pEntity.GetMeshEntity();
+			
+			/////////////////////////
+			// Update mesh (if needed)
+			// This in needed for the nodes to keep proper positions.
+			if(mbCameraAttachFadingIn && pMeshEnt.IsVisible()==false)
+			{
+				pMeshEnt.SetVisible(true);
+				pMeshEnt.ResetGraphicsUpdated();
+				pMeshEnt.UpdateAnimation(0.0f);
+				pMeshEnt.UpdateLogic(0.0f);
+				pMeshEnt.PostUpdateLogic(0.0f);
+				pMeshEnt.SetVisible(false);
+			}
+			
+			cBoneState@ pBone = pMeshEnt.GetBoneStateFromName(msCameraAttachBone);
+			if(pBone !is null)
+			{
+				////////////////////////////
+				//Get the T value
+				float fStep = mfCameraAttachFadeTime<0.0001f ? 100000.0f : afTimeStep/mfCameraAttachFadeTime;
+				
+				float fGoal = mbCameraAttachActive ? 1.0f : 0.0f;
+				mfCameraAttachT = cMath_IncreaseTo(mfCameraAttachT,  fStep, fGoal);
+				float fT = cMath_Easing(eEasing_CubicInOut, mfCameraAttachT);
+				
+				//if(mbCameraAttachActive==false) fT=0;
+				
+				////////////////////////////
+				//Set position of camera
+				cVector3f vPos = pBone.GetWorldPosition()*fT + Player_GetCameraPosition()*(1-fT);
+				vPos += cMath_MatrixMul(cMath_MatrixRotateXYZ(mvCustomRotation), mvCameraAttachPosOffset);
+				cLux_GetPlayer().GetCamera().SetPosition(vPos);
+				
+				////////////////////////////
+				//Set rotation of camera
+				iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+				mvCameraAttachStartRotation.y = pCharBody.GetYaw();
+				cVector3f vPlayerRot = mvCameraAttachStartRotation;
+				
+				cMatrixf mtxSocketRot;
+				{
+					mtxSocketRot = pBone.GetWorldMatrix().GetRotation();
+					mtxSocketRot = cMath_MatrixMul(mtxSocketRot, cMath_MatrixRotateXYZ(mvCameraAttachRotOffset));
+				}
+					
+				cMatrixf mtxRot = cMath_MatrixSlerp(fT, cMath_MatrixRotateXYZ(vPlayerRot), mtxSocketRot, true);
+				
+				pCam.SetRotationMatrix(mtxRot.GetTranspose());
+				
+				////////////////////////////
+				//Update model visiblity
+				if(mbCameraAttachActive)
+				{
+					//////////////////////
+					// Fade Over
+					if(mfCameraAttachT==1 && mbCameraAttachFadingIn)
+					{
+						mbCameraAttachFadingIn = false;
+						
+						///////////////////
+						//Start animation
+						SetVisible(true);
+						if(GetCurrentAnimationState() !is null)
+							GetCurrentAnimationState().SetPaused(false);
+						
+						///////////////////
+						//Callback
+						if(msCameraAttachFadeOverCallback != "")
+						{
+							tString sCallback = msCameraAttachFadeOverCallback;
+							msCameraAttachFadeOverCallback = "";
+					
+							cLuxMap @pMap = cLux_GetCurrentMap();
+							if(pMap.ScriptPrepare("void "+sCallback+"()"))
+							{
+								pMap.ScriptExecute();
+							}
+						}
+					}
+				}
+				
+				////////////////////////////
+				//Attachment is over
+				if(mbCameraAttachActive==false && mfCameraAttachT==0)
+				{
+					ClearCameraState();
+				}
+			}
+		}
+		// Apply after every authored camera/animation visibility update.
+		if (HPL3VR_ReplaceAuthoredHands() && pEntity !is null)
+			pEntity.GetMeshEntity().SetVisible(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	void ClearCameraState()
+	{
+		mbCameraAttachActive = false;
+		
+		cCamera @pCam = cLux_GetPlayer().GetCamera();
+		
+		cLux_GetPlayer().GetCamera().SetRotateMode(eCameraRotateMode_EulerAngles);
+		cLux_GetPlayer().GetCharacterBody().SetCameraUpdateActive(true);
+		
+		cLux_GetPlayer().GetCharacterBody().SetYaw(mvCameraAttachStartRotation.y);
+		pCam.SetPitch(mvCameraAttachStartRotation.x);
+		pCam.SetYaw(mvCameraAttachStartRotation.y);
+		pCam.SetRoll(mvCameraAttachStartRotation.z);
+	}
+	
+	//------------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		if(mbActive==false) return;
+		
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+
+		if(pEntity is null) return;
+		
+		/////////////////////////
+		// Check if animation is over
+		if(pEntity.GetAnimationIsPlaying()==false)
+		{
+			tString sAnimName = "";
+			if(GetCurrentAnimationState() !is null)
+				sAnimName = GetCurrentAnimationState().GetName();
+			
+			////////////////////////////////////
+			// Disable
+			if(mbDisableWhenAnimOver)
+			{
+				SetActive(false);
+			}
+			
+			////////////////////////////////////
+			// Detach
+			if(mbCameraAttachActive && mbCameraAttachAutoDetach)
+			{
+				DetachCameraFromSocket(mfCameraAttachAutoDetachTime);
+				
+				if(mbCameraAttachDisablePlayer)
+					Player_SetActive(true);
+			}
+			
+			//////////////////////////////////
+			//Callback
+			if(msAnimationOverCallback != "")
+			{			
+				tString sCallback = msAnimationOverCallback;
+				msAnimationOverCallback = "";
+				
+				if(sAnimName != "")
+				{		
+					cLuxMap @pMap = cLux_GetCurrentMap();
+					if(pMap.ScriptPrepare("void "+sCallback+"(const tString& in asAnimName)"))
+					{
+						pMap.SetArgString(0, sAnimName);
+						pMap.ScriptExecute();
+					}
+				}
+			}
+		}
+		
+		
+		
+	}
+
+	void VariableUpdate(float afDeltaTime)
+	{
+	}
+
+	//------------------------------------------------------------
+		
+	void OnAction(int alAction, bool abPressed)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnDraw(float)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	void OnPostRender(float){}
+	void OnEnterContainer(const tString&in){}
+	void OnLeaveContainer(const tString&in){}
+	void AppGotInputFocus(){}
+	void AppLostInputFocus(){}	
+	void OnAnalogInput(int alAnalogId, const cVector3f &in avAmount){}
+	void OnExitPressed(){}
+	
+	//------------------------------------------------------------
+	
+	void OnRenderSolid(cRendererCallbackFunctions@ apFunctions)
+	{
+		return;
+		if(mbCameraAttachActive)
+		{
+			cCamera @pCam = cLux_GetPlayer().GetCamera();
+
+			apFunctions.GetLowLevelGfx().DrawSphere(pCam.GetPosition(), 0.05f, cColor(0.5,0.5,0.5,1));
+			apFunctions.GetLowLevelGfx().DrawLine(pCam.GetPosition(), pCam.GetPosition()+pCam.GetForward()*0.3f, cColor(3,1,3,1));
+			
+
+			iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+			
+			//apFunctions.GetLowLevelGfx().DrawLine(pEntity.GetPosition(), pEntity.GetPosition()+cVector3f(0.3,0,0), cColor(5,0,0,1));
+			//apFunctions.GetLowLevelGfx().DrawLine(pEntity.GetPosition(), pEntity.GetPosition()+cVector3f(0,0.3,0), cColor(0,5,0,1));
+			//apFunctions.GetLowLevelGfx().DrawLine(pEntity.GetPosition(), pEntity.GetPosition()+cVector3f(0,0,0.3), cColor(0,0,5,1));
+			
+			//apFunctions.GetLowLevelGfx().DrawLine(pCam.GetPosition(), pCam.GetPosition()+pCam.GetForward()*0.3, cColor(5,5,5,1));
+			
+			
+			cBoneState@ pBone = pEntity.GetMeshEntity().GetBoneStateFromName(msCameraAttachBone);
+			if(pBone !is null)
+			{
+				apFunctions.GetLowLevelGfx().DrawSphere(pBone.GetWorldPosition(), 0.05f, cColor(5,5,0,1));
+				
+				cMatrixf mtxTrans = pBone.GetWorldMatrix().GetRotation();//cMath_MatrixInverse(pBone.GetWorldMatrix().GetRotation());
+				apFunctions.GetLowLevelGfx().DrawLine(pBone.GetWorldPosition(), pBone.GetWorldPosition()+mtxTrans.GetRight()*0.2, cColor(5,0,0,1));
+				apFunctions.GetLowLevelGfx().DrawLine(pBone.GetWorldPosition(), pBone.GetWorldPosition()+mtxTrans.GetUp()*0.2, cColor(0,5,0,1));
+				apFunctions.GetLowLevelGfx().DrawLine(pBone.GetWorldPosition(), pBone.GetWorldPosition()+mtxTrans.GetForward()*0.2, cColor(0,0,5,1));
+			
+			}
+		}
+	}
+ 	
+	
+	/////////////////////////////////////////
+	// HPL3VR ONE-SHOT SAVE BOOTSTRAP + UI AUTHORITY
+	/////////////////////////////////////////
+
+	//------------------------------------------------------------
+
+	// H57.55bl semantic publisher: reports AngelScript-owned msHandModel for
+	// exact loaded-save refreshes and authored SetHandModel transitions.
+	void HPL3VR_EndHealingVisibility()
+	{
+		// Restore the default for the NEXT authored animation without showing
+		// the completed full-scale healing mesh after its entity was disabled.
+		mbEntityVisible=true;
+		iLuxEntity@ pHands=cLux_ID_Entity(m_idHands);
+		if(pHands !is null) pHands.GetMeshEntity().SetVisible(false);
+	}
+
+	bool HPL3VR_ReplaceAuthoredHands()
+	{
+		if (!_HPL3VR_RuntimeActive_PlayerHands()) return false;
+		if (cScript_GetGlobalVarBool("UsingWauFlower") || mlVRSceneOverride==0) return true;
+		cAnimationState@ pAnim = GetCurrentAnimationState();
+		if (pAnim is null) return false;
+		tString sName = pAnim.GetName();
+		return cString_Sub(sName,0,5)=="tool_" || cString_Sub(sName,0,11)=="customtool_" ||
+			sName=="event_look_at_hands_1_3";
+	}
+
+	bool mbVRSeatSequence=false;
+	int mlVRSceneOverride=-1;
+	void HPL3VR_SetSceneOverride()
+	{
+		if(!_HPL3VR_RuntimeActive_PlayerHands()) return;
+		mlVRSceneOverride=cScript_GetGlobalArgInt(0);
+		HPL3VR_PublishSceneHands();
+	}
+	[nosave] int mlVRScenePublished = -1;
+	void HPL3VR_PublishSceneHands()
+	{
+		if (!_HPL3VR_RuntimeActive_PlayerHands())
+		{
+			mlVRScenePublished = -1;
+			return;
+		}
+		int lPlayerState = cLux_GetPlayer().GetCurrentStateId();
+		bool bStateHide = lPlayerState==ePlayerState_Sit || lPlayerState==ePlayerState_Ladder ||
+			lPlayerState==ePlayerState_ClimbLedge || lPlayerState==ePlayerState_InteractiveCameraAnimation;
+		if(lPlayerState==ePlayerState_Sit || lPlayerState==ePlayerState_InteractiveCameraAnimation) mbVRSeatSequence=true;
+		if(lPlayerState==ePlayerState_Normal || lPlayerState==ePlayerState_Grab) mbVRSeatSequence=false;
+		if(mbVRSeatSequence && lPlayerState==ePlayerState_CustomControls) bStateHide=true;
+		bool bHide = bStateHide;
+		iLuxEntity@ pHands = cLux_ID_Entity(m_idHands);
+		if(mbActive && pHands !is null && mlCurrentAnimation >= 0)
+		{
+			cAnimationState@ pAnim = pHands.GetMeshEntity().GetAnimationState(mlCurrentAnimation);
+			if(pAnim !is null)
+			{
+				tString sName = pAnim.GetName();
+				// All inventory tools keep physical hands, including Omnitool and baton.
+				bool bTool = cString_Sub(sName,0,5)=="tool_" || cString_Sub(sName,0,11)=="customtool_" ||
+                    (cString_Sub(sName,0,17)=="wau_flower_touch_" && cScript_GetGlobalVarBool("UsingWauFlower"));
+				bHide = bStateHide || (!bTool && (pHands.GetAnimationIsPlaying() || mbCameraAttachActive || mfCameraAttachT>0));
+				if (sName=="event_look_at_hands_1_3" && pHands.GetAnimationIsPlaying()) bHide=false;
+			}
+		}
+		if(mlVRSceneOverride>=0) bHide=mlVRSceneOverride==1;
+		int lState = bHide ? 1 : 0;
+		if(lState == mlVRScenePublished) return;
+		mlVRScenePublished = lState;
+		cScript_RunGlobalFunc("VRSCENE", "", bHide ? "H" : "S");
+	}
+
+	void HPL3VR_PublishHandFamilyBootstrap()
+	{
+		if (!_HPL3VR_RuntimeActive_PlayerHands()) return;
+		if(msHandModel == "character/player/hands/hands_human.ent")
+			cScript_RunGlobalFunc("VRHAND", "", "H");
+		else if(msHandModel == "character/player/hands/hands_diving.ent")
+			cScript_RunGlobalFunc("VRHAND", "", "D");
+		else if(msHandModel == "character/player/hands/hands_deepsea.ent")
+			cScript_RunGlobalFunc("VRHAND", "", "S");
+		else if(msHandModel == "character/player/hands/hands_deepsea_mutilated.ent")
+			cScript_RunGlobalFunc("VRHAND", "", "M");
+		else
+			cScript_RunGlobalFunc("VRHAND", "", "U");
+	}
+
+	//------------------------------------------------------------
+
+	// H57.54h authoritative UI-state publisher. This deliberately queries the
+	// real SOMA load-screen/menu handlers rather than inferring Pause from
+	// PlayerState_Normal or Newton timing. L=loading/continue modal, M=menu
+	// handler active, G=ordinary gameplay.
+	void HPL3VR_PublishUIState()
+	{
+		if (!_HPL3VR_RuntimeActive_PlayerHands()) return;
+		if(cLux_IsLoadingScreenVisible())
+		{
+			cScript_RunGlobalFunc("VRUI", "", "L");
+			return;
+		}
+
+		iScrMenuHandler_Interface @pMenu = cast<iScrMenuHandler_Interface>(cLux_GetUserModuleFromID(eModuleType_MenuHandler));
+		if(pMenu.GetMenuActive())
+			cScript_RunGlobalFunc("VRUI", "", "M");
+		else
+			cScript_RunGlobalFunc("VRUI", "", "G");
+	}
+
+	//------------------------------------------------------------
+
+	// Open Pause through SOMA's own MenuHandler. The DLL never fabricates an
+	// Escape key to enter Pause; SDL Escape is retained only for authored Back
+	// navigation once the menu is already active.
+    void HPL3VR_ComfortHoldBegin() { if(_HPL3VR_RuntimeActive_PlayerHands()) cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_MenuHoldBegin"); }
+    void HPL3VR_ComfortHoldEnd() { if(_HPL3VR_RuntimeActive_PlayerHands()) cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_MenuHoldEnd"); }
+	void HPL3VR_AlphaTouch()
+	{
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap !is null && pMap.ScriptPrepare("void HPL3VR_AlphaCommit()")) pMap.ScriptExecute();
+	}
+
+    void HPL3VR_SnapLeft() { HPL3VR_SnapTurn(1.0f); }
+    void HPL3VR_SnapRight() { HPL3VR_SnapTurn(-1.0f); }
+    void HPL3VR_SnapTurn(float sign)
+    {
+        if(!_HPL3VR_RuntimeActive_PlayerHands()) return;
+        int mode=cLux_GetUserConfig().GetInt("SOMA_VR_Comfort","TurnMode",0);
+        if(mode!=1 && mode!=2) return;
+        cLux_GetPlayer().GetCharacterBody().AddYaw(sign*cMath_ToRad(mode==1 ? 30.0f : 45.0f));
+    }
+	void HPL3VR_PhysicalCrouchDown() { cScript_RunGlobalFunc("MoveState_Normal","","HPL3VR_PhysicalCrouchDown"); }
+	void HPL3VR_PhysicalCrouchUp() { cScript_RunGlobalFunc("MoveState_Normal","","HPL3VR_PhysicalCrouchUp"); }
+	void HPL3VR_PhiAction(int action,bool pressed)
+	{
+		if(!_HPL3VR_RuntimeActive_PlayerHands() || cLux_GetPlayer().GetCurrentStateId()!=ePlayerState_CustomControls) return;
+		cLuxMap@ map=cLux_GetCurrentMap();
+		if(map !is null && map.ScriptPrepare("bool LoaderArm_Action(int alAction, bool abPressed)"))
+		{ map.SetArgInt(0,action);map.SetArgBool(1,pressed);map.ScriptExecute(); }
+	}
+	void HPL3VR_PhiPress() { HPL3VR_PhiAction(eAction_Interact,true); }
+	void HPL3VR_PhiRelease() { HPL3VR_PhiAction(eAction_Interact,false); }
+	void HPL3VR_PhiZoomPress() { HPL3VR_PhiAction(eAction_InteractCancel,true); }
+	void HPL3VR_PhiZoomRelease() { HPL3VR_PhiAction(eAction_InteractCancel,false); }
+	void HPL3VR_PhiPauseRelease()
+	{
+		HPL3VR_PhiRelease(); HPL3VR_PhiZoomRelease();
+		cScript_RunGlobalFunc("VRREMOTE","","S");
+	}
+	void HPL3VR_OpenPause()
+	{
+		if (!_HPL3VR_RuntimeActive_PlayerHands()) return;
+		iScrMenuHandler_Interface @pMenu = cast<iScrMenuHandler_Interface>(cLux_GetUserModuleFromID(eModuleType_MenuHandler));
+		pMenu.SetMenuActive(true);
+	}
+
+	// H57.55FZ: use SOMA/HPL's authored viewport camera setter so all
+	// dependent viewport/frustum/render bookkeeping follows the native path.
+	void HPL3VR_RebindGameplayViewport()
+	{
+		if (!_HPL3VR_RuntimeActive_PlayerHands()) return;
+		// DLL-side preconditions already prove an active viewport and recovered
+		// gameplay camera. Keep the script bridge on the exact authored API.
+		cLux_GetViewport().SetCamera(cLux_GetPlayer().GetCamera());
+	}
+
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// PUBLIC METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetHandModel(const tString& in asFile)
+	{
+		if (!_HPL3VR_RuntimeActive_PlayerHands())
+		{
+				if(msHandModel == asFile) return;
+				
+				msHandModel = asFile;
+				
+				DestroyHandModel(cLux_GetCurrentMap());
+				CreateHandModelIfNeeded(cLux_GetCurrentMap());
+			return;
+		}
+		if(msHandModel == asFile) return;
+		
+		msHandModel = asFile;
+		// H57.55bl: SetHandModel is the semantic family authority. Publish before
+		// native entity destruction/recreation; the DLL still switches safely.
+		HPL3VR_PublishHandFamilyBootstrap();
+		
+		DestroyHandModel(cLux_GetCurrentMap());
+		CreateHandModelIfNeeded(cLux_GetCurrentMap());
+	}
+	
+	//------------------------------------------------------------
+		
+	void PreloadHandModel(const tString& in asFile)
+	{
+		Entity_Preload(asFile);
+	}
+	
+	//------------------------------------------------------------
+	
+	void PlayAnimation(const tString &in asAnim, bool abLoop, bool abFullScaleModel, float afFadeTime, const tString &in asAttachedProp, bool abDisableWhenOver, float afSpeed, float afRelTimePos)
+	{
+		CreateHandModelIfNeeded(cLux_GetCurrentMap());
+		
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+		
+		float fFadeTime = afFadeTime;
+		if(mbUseFullScaleModel!=abFullScaleModel || pEntity.IsActive()==false)
+		{
+			fFadeTime=0;
+		}
+		
+		int lAnim = pEntity.PlayAnimation(asAnim,  fFadeTime, abLoop);
+		if(lAnim<0)
+			return;
+		//if(lAnim == mlCurrentAnimation) return;
+		mlCurrentAnimation = lAnim;
+			
+		cMeshEntity@ pMeshEntity = pEntity.GetMeshEntity();
+		cAnimationState@ pAnim = pMeshEntity.GetAnimationState(mlCurrentAnimation);
+		
+		////////////////////////////////////
+		// Set up animation state
+		pAnim.SetSpeed(afSpeed);
+		if(afRelTimePos<0)
+		{
+			if(afSpeed<0) 	pAnim.SetRelativeTimePosition(1);
+			else			pAnim.SetRelativeTimePosition(0);
+		}
+		else
+		{
+			pAnim.SetRelativeTimePosition(afRelTimePos);
+		}
+		
+		////////////////////////////////////
+		// Set up properties
+		if(mbCameraAttachActive && mbCameraAttachFadingIn)
+		{
+			pAnim.SetPaused(true);
+			SetVisible(false);
+		}
+		
+		//cLux_AddDebugMessage("Hand Animation - "+asAnim);
+		
+		
+		////////////////////////////////////
+		// Hand animation sounds
+		if(cLux_GetUnderwaterEffectsActive())
+		{	
+			//Underwater hand animation sounds
+			Sound_PlayGui("Player/foley/default/hand_animation/underwater/"+asAnim, 1.0f, eSoundEntryType_WorldClean);
+		}
+		else
+		{	
+			//Normal hand animation sounds
+			Sound_PlayGui("Player/foley/default/hand_animation/"+asAnim, 1.0f, eSoundEntryType_World);
+		}
+		
+		////////////////////////////////////
+		// Set up properties
+		mbUseFullScaleModel = abFullScaleModel;
+		SetActive(true);
+		mbDisableWhenAnimOver = abDisableWhenOver;
+		HPL3VR_PublishSceneHands();
+		
+		pEntity.GetMeshEntity().SetVisible(mbEntityVisible && !HPL3VR_ReplaceAuthoredHands());
+				
+		
+		/////////////////////////////
+		// Attach a prop
+		if(asAttachedProp != "")
+		{
+			iLuxEntity @pProp = cLux_GetCurrentMap().GetEntityByName(asAttachedProp);
+			if(pProp is null)
+			{
+				Error("Could not find entity '"+asAttachedProp+"' to be attached to player hands");
+				return;
+			}
+			
+			iLuxEntity @pPrevProp = null;
+			if(m_idCurrentAttachProp!=tID_Invalid) @pPrevProp = cLux_ID_Entity(m_idCurrentAttachProp);
+			
+			if(pPrevProp !is pProp)
+			{
+				if(pPrevProp !is null)
+				{
+					pPrevProp.RemoveEntityAttachment();
+					pPrevProp.SetActive(false);
+				} 
+				
+				if(pProp.GetMainBody() !is null)
+				{
+					pProp.GetMainBody().SetCollideCharacter(false);
+					pProp.GetMainBody().SetCollide(false);
+				}
+				
+				pProp.AttachToSocket(pEntity, "R_Hand", true, true);
+				pProp.SetActive(true);
+				m_idCurrentAttachProp  = pProp.GetID();
+			}
+		}
+		/////////////////////////////
+		// If something is attached, remove it.
+		else
+		{
+			if(m_idCurrentAttachProp!=tID_Invalid)
+			{
+				iLuxEntity @pAttachProp = cLux_ID_Entity(m_idCurrentAttachProp);
+				if(pAttachProp !is null)
+				{
+					pAttachProp.SetActive(false);
+					pAttachProp.RemoveEntityAttachment();	
+				}
+				m_idCurrentAttachProp = tID_Invalid;
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	bool GetAnimationPlaying()
+	{
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+		return (pEntity !is null) && pEntity.GetAnimationIsPlaying();
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetActive(bool abX)
+	{
+		if(mbActive == abX) return;
+		
+		CreateHandModelIfNeeded(cLux_GetCurrentMap());
+		
+		mbActive = abX;
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+		pEntity.SetActive(abX);
+		
+		if(m_idCurrentAttachProp!=tID_Invalid)
+		{
+			iLuxEntity@ pAttachProp = cLux_ID_Entity(m_idCurrentAttachProp);
+			if(pAttachProp !is null)
+				pAttachProp.SetActive(false);
+			m_idCurrentAttachProp = tID_Invalid;
+		}
+			
+		
+		if(abX==false)
+		{
+			pEntity.StopAllAnimations(0);
+		}
+					
+		cCamera @pCam = cLux_GetPlayer().GetCamera();
+		mvCurrentHandRotation = cVector3f(pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll()*0.5);
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsActive()
+	{
+		return mbActive;
+	}
+	
+	//------------------------------------------------------------
+	
+	tString GetEntityName()
+	{
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+		return pEntity.GetName();
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetUseCustomRotation(bool abX)
+	{
+		mbUseCustomRotation = abX;	
+	}
+	
+	void SetCustomRotation(const cVector3f& in avRot)
+	{
+		mvCustomRotation = avRot;
+	}
+	
+	//------------------------------------------------------------
+	
+	cAnimationState@ GetCurrentAnimationState()
+	{
+		if(mlCurrentAnimation<0) return null;
+		
+		CreateHandModelIfNeeded(cLux_GetCurrentMap());
+		
+		return cLux_ID_Entity(m_idHands).GetMeshEntity().GetAnimationState(mlCurrentAnimation);
+	}
+	
+	//------------------------------------------------------------
+	
+	cBoneState@ GetBoneState(const tString& in asBone)
+	{
+		CreateHandModelIfNeeded(cLux_GetCurrentMap());
+		
+		return cLux_ID_Entity(m_idHands).GetMeshEntity().GetBoneStateFromName(asBone);
+	}
+	
+	//------------------------------------------------------------
+	
+	cNode3D@ GetSocket(const tString& in asSocket)
+	{
+		CreateHandModelIfNeeded(cLux_GetCurrentMap());
+		
+		return cLux_ID_Entity(m_idHands).GetMeshEntity().GetSocket(asSocket);
+	}
+		
+	//------------------------------------------------------------
+	
+	void SetUseCustomPosition(bool abX)
+	{
+		mbUseCustomPosition = abX;	
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetCustomPosition(const cVector3f& in avPos, bool abUseBasicOffset)
+	{
+		mvCustomPosition = avPos;
+		mbCustomPositionUseBasicOffset = abUseBasicOffset;
+	}
+	
+	//------------------------------------------------------------
+	
+	void AttachCameraToSocket(	const tString& in asBoneName, float afFadeTime,
+								const tString &in asFadeOverCallback,
+								bool abDisablePlayer, bool abAutoDetach, float afDetachTime,
+								const cVector3f&in avPosOffset, const cVector3f&in avRotOffset)
+	{
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+		
+		if(pEntity.GetMeshEntity().GetBoneStateFromName(asBoneName) is null)
+		{
+			Error("Could not find bone name '"+asBoneName+"' in player hands mesh!");
+			return;
+		}
+		
+		msCameraAttachBone =asBoneName;
+		mfCameraAttachFadeTime = afFadeTime;
+		mfCameraAttachT=0;
+		mbCameraAttachActive=true;
+		mbCameraAttachFadingIn = true;
+		
+		mvCameraAttachPosOffset = avPosOffset;
+		mvCameraAttachRotOffset = avRotOffset;
+		
+		cAnimationState@ pState = GetCurrentAnimationState();
+		if(pState !is null)
+		{
+			pState.SetPaused(true);
+			
+			float fSpeed = pState.GetSpeed();
+			pState.SetTimePosition(fSpeed>=0 ? 0 : pState.GetLength());
+			
+			SetVisible(false);
+		}
+		
+		mbCameraAttachDisablePlayer = abDisablePlayer;
+		if(abDisablePlayer)
+			Player_SetActive(false);
+			
+		cCamera@ pCam = cLux_GetPlayer().GetCamera();
+		mvCameraAttachStartRotation.x = pCam.GetPitch();
+		mvCameraAttachStartRotation.y = pCam.GetYaw();
+		mvCameraAttachStartRotation.z = pCam.GetRoll();
+		
+		mbCameraAttachAutoDetach = abAutoDetach;
+		mfCameraAttachAutoDetachTime = afDetachTime;
+		
+		msCameraAttachFadeOverCallback = asFadeOverCallback;
+		
+		cLux_GetPlayer().GetCharacterBody().SetCameraUpdateActive(false);
+		
+		pCam.SetRotateMode(eCameraRotateMode_Matrix);
+	}
+	
+	//------------------------------------------------------------
+	
+	void DetachCameraFromSocket(float afFadeTime)
+	{
+		if(msCameraAttachBone=="") return;
+		
+		// Force to happen now
+		if (afFadeTime<=0.0f)
+		{
+			ClearCameraState();
+		}
+		
+		mfCameraAttachFadeTime = afFadeTime;
+		mbCameraAttachActive=false;
+		
+		//No need to set T, as the detach might happen when the fade is not done
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetAnimationOverCallback(const tString& in asFunction)
+	{
+		msAnimationOverCallback = asFunction;
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetVisible(bool abX)
+	{
+		CreateHandModelIfNeeded(cLux_GetCurrentMap());
+		
+		if (_HPL3VR_RuntimeActive_PlayerHands() && cScript_GetGlobalVarBool("UsingWauFlower")) abX=false;
+		mbEntityVisible = abX;
+		
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+		pEntity.GetMeshEntity().SetVisible(mbEntityVisible && !HPL3VR_ReplaceAuthoredHands());
+	}
+		
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CreateHandModelIfNeeded(cLuxMap @apMap)
+	{
+		if(m_idHands != tID_Invalid)
+		{
+			//fail safe
+			iLuxEntity @pEnt = cLux_ID_Entity(m_idHands);
+
+			if(pEnt is null) m_idHands = tID_Invalid;
+			else return;
+		}
+
+		iLuxEntity @pEntity = null;
+				
+		///////////////////////////////
+		//Load the file
+		if(pEntity is null)
+		{
+			apMap.CreateEntity("PlayerHands_"+mlHandNum++,msHandModel, cMatrixf_Identity, cVector3f(1));
+			@pEntity = apMap.GetLatestEntity();
+			
+			if(pEntity !is null)
+			{
+				cLuxProp@ pProp = cast<cLuxProp>(pEntity);
+				pProp.SetAllowMapTransfer(false);
+			}
+
+			pEntity.SetActive(false);
+		}
+		
+		///////////////////////////////
+		//Set up the model
+		if(pEntity is null)
+		{
+			Error("Could not load player hand model: '"+msHandModel+"'");
+		}
+		else
+		{
+			pEntity.GetMeshEntity().SetRenderFlagBit(eRenderableFlag_ShadowCaster, false);
+			pEntity.GetMeshEntity().SetRenderFlagBit(eRenderableFlag_VisibleInReflection, false);
+			m_idHands = pEntity.GetID();
+
+			SetActive(false);
+			pEntity.GetMeshEntity().SetDisableSleep(true);
+			pEntity.SetActive(false);
+			pEntity.StopAllAnimations(0);
+			
+			GetMeshDepth();
+		}
+	}
+	
+	//------------------------------------------------------------
+		
+	void DestroyHandModel(cLuxMap @apMap)
+	{
+		if(m_idHands != tID_Invalid)
+		{
+			iLuxEntity@ pEnt = cLux_ID_Entity(m_idHands);			
+			apMap.DestroyEntity(pEnt);
+			
+			m_idHands = tID_Invalid;
+			
+			mlCurrentAnimation=-1;
+		}
+	}
+	
+	//------------------------------------------------------------
+			
+	void GetMeshDepth()
+	{
+		//////////
+		// Reset incase of failure
+		mfMeshDepth = 0;
+
+		/////////////
+		// Get mesh
+		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+		if(pEntity is null) return;
+		cMeshEntity@ pMeshEntity = pEntity.GetMeshEntity();
+		if(pMeshEntity is null) return;
+
+		cMesh@ pMesh = pMeshEntity.GetMesh();
+
+		/////////////
+		// Get the base AABB of the mesh
+		cVector3f vMin = 10000;
+		cVector3f vMax =-10000;
+
+		for(int i = 0; i < pMesh.GetSubMeshNum(); ++i)
+		{
+			cSubMesh@ pSubMesh = pMesh.GetSubMesh(i);
+			iVertexBuffer@ pVtxBuffer = pSubMesh.GetVertexBuffer();
+			vMin = cMath_Vector3Min(vMin, pVtxBuffer.GetAABBMin());
+			vMax = cMath_Vector3Max(vMax, pVtxBuffer.GetAABBMax());
+		}
+		
+		mfMeshDepth = vMax.x - vMin.x; //Get depth from x axis
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		
+		if(mlCurrentAnimation>=0)		
+		{
+			iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
+			cMeshEntity@ pMeshEntity = pEntity.GetMeshEntity();
+			cAnimationState@ pAnim = pMeshEntity.GetAnimationState(mlCurrentAnimation);
+			
+			afStartY = cLux_DrawDebugText("Animation: "+pAnim.GetName()+" Rel:"+pAnim.GetRelativeTimePosition()+" Active:"+pAnim.IsActive()+" Paused:"+pAnim.IsPaused()+" Over:"+pAnim.IsOver(), afStartY);
+			afStartY = cLux_DrawDebugText("Mesh active: "+pMeshEntity.IsActive(), afStartY);
+		}
+		else		
+			afStartY = cLux_DrawDebugText("Animation: NONE", afStartY);
+				
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+		
+	////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	tID m_idHands = tID_Invalid;
+	tString msHandModel = "character/player/hands/hands_human.ent";
+	
+	//------------------------------------------------------------
+	
+	bool mbActive=false;
+	bool mbDisableWhenAnimOver=false;
+	bool mbUseFullScaleModel=false;
+	int mlCurrentAnimation=-1;
+	
+	bool mbUseCustomRotation;
+	cVector3f mvCustomRotation;
+	
+	bool mbEntityVisible=true;
+	
+	bool mbUseCustomPosition;
+	bool mbCustomPositionUseBasicOffset;
+	cVector3f mvCustomPosition;
+	
+	cVector3f mvCurrentHandRotation;
+	
+	tID m_idCurrentAttachProp = tID_Invalid;
+	
+	bool mbCameraAttachActive;
+	bool mbCameraAttachFadingIn;
+	tString msCameraAttachBone;
+	float mfCameraAttachT;
+	float mfCameraAttachFadeTime;
+	bool mbCameraAttachDisablePlayer;
+	bool mbCameraAttachAutoDetach;
+	float mfCameraAttachAutoDetachTime;
+	cVector3f mvCameraAttachStartRotation;
+	tString msCameraAttachFadeOverCallback;
+	cVector3f mvCameraAttachRotOffset=0;
+	cVector3f mvCameraAttachPosOffset=0;
+	
+	tString msAnimationOverCallback;
+	
+	float mfHorizontalFov=1;
+	float mfDefaultHorizontalFov=1;
+	float mfMeshDepth=0;
+	
+	int mlHandNum;
+	
+	//------------------------------------------------------------
+}

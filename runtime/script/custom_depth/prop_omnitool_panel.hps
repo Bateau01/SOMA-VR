@@ -1,0 +1,114 @@
+#include "Prop_Button.hps"
+#include "helpers/helper_props.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_map.hps"
+
+#include "helper_custom_depth_audio.hps"
+
+enum eOmniPanelTimer
+{
+	eOmniPanelTimer_DisplayErrorMsg,
+}
+
+class cScrPropOmniPanel : cScrPropButton
+{
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		cScrPropButton::SetupAfterLoad(apWorld, apVars, apInstanceVars);
+		
+		mBaseObj.CreateAndSetupGui("screen", cColor_White, 0, 0, cVector2f(512.0f));
+		mBaseObj.SetOnGuiFunction("$_OmniPanel_OnGui");
+		
+		mBaseObj.SetVarBool("IsOmniPanel", true);
+		cScript_SetGlobalReturnBool(false);
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		if (cScript_GetGlobalReturnBool()) mBaseObj.SetAutoSleep(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	// S26N: panel-owned contact polling is independent of the camera pick ray.
+	[nosave] float mfVRPanelPoll = 0;
+	void OnUpdate(float afTimeStep)
+	{
+		mfVRPanelPoll -= afTimeStep;
+		if (mfVRPanelPoll > 0) return;
+		mfVRPanelPoll = 0.05f;
+		if (!mBaseObj.IsActive()) return;
+		cScript_SetGlobalArgString(0, mBaseObj.GetName());
+		cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRProbeOmniPanel");
+	}
+
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		if (mbAccessDenied)
+		{
+			mbAccessDenied = false;
+			
+			Depth_Audio_Omnitool_Panel_Denied(mBaseObj);
+			
+			float fWaitTime =2.f;
+			if(mlLockedBlinkCount>0)
+			{
+				mBaseObj.Timer_Remove(eOmniPanelTimer_DisplayErrorMsg);
+				
+				mlBlinkCount=mlLockedBlinkCount;
+				fWaitTime += mlBlinkCount*mfLockedBlinkTime;
+				Timer_BlinkOff(0);
+			}
+			
+			mBaseObj.Timer_Add(eButtonTimer_InteractWait, fWaitTime);
+			mBaseObj.Timer_Add(eOmniPanelTimer_DisplayErrorMsg, fWaitTime, "Timer_StopErrorMsg");
+			
+			mBaseObj.SetVarBool("DisplayAccessDeniedText", true);
+			
+			return true;
+		}
+		
+		cScrPropButton::OnInteract(alType, apBody, avFocusPos, asData);
+		
+		if (mbDisabled)
+			return true;
+			
+		if (mbLocked)
+		{
+			Depth_Audio_Omnitool_Panel_Denied(mBaseObj);
+		}
+		else
+		{
+			Depth_Audio_Omnitool_Panel_Granted(mBaseObj);
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void Timer_StopErrorMsg(uint64 alID)
+	{
+		mBaseObj.SetVarBool("DisplayAccessDeniedText", false);
+		mBaseObj.SetVarString("CustomLangCategory", "");
+		mBaseObj.SetVarString("CustomLangEntry", "");
+	}
+	
+	//------------------------------------------------------------
+	
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetAccessDenied()
+	{
+		mbAccessDenied = true;
+		
+		mBaseObj.SetVarString("CustomLangCategory", cScript_GetGlobalArgString(0));
+		mBaseObj.SetVarString("CustomLangEntry", cScript_GetGlobalArgString(1));
+	}
+	
+	//------------------------------------------------------------
+	
+	bool mbAccessDenied = false;
+}

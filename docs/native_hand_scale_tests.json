@@ -1,0 +1,12 @@
+{
+  "before": {
+    "exit": 1,
+    "stdout": "FAIL line 95 scale=2.000000 heal=0 held=0\n",
+    "stderr": ""
+  },
+  "after": {
+    "exit": 0,
+    "stdout": "PASS 49106 checks: both hands, four families, 31 slider values, free/grab/two-hand/heal/release transitions; native refresh does not double-scale; positions and bone-local units unchanged.\n",
+    "stderr": ""
+  }
+}

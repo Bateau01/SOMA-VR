@@ -1,0 +1,1011 @@
+#include "interfaces/UserModule_Interface.hps"
+#include "modules/ModuleInterfaces.hps"
+#include "helper_imgui.hps"
+#include "helpers/helper_player.hps"
+#include "base/Inputhandler_Types.hps"
+#include "helpers/helper_modules.hps"
+
+//------------------------------------------------------------
+
+class cTrackedObject 
+{
+	tID m_idObject;
+	bool mbCheckLOS;
+	bool mbCheckClosestLOS;
+	bool mbZoomOnGaze;
+	float mfCheckDist;
+	float mfZoomDist;
+	bool mbZoomActive;
+	float mfTrackingCounter;
+}
+
+//------------------------------------------------------------
+
+class cTrackedArea
+{
+	tString msName;
+	cRect2f mArea;
+	float mfTrackingCounter;
+}
+
+//------------------------------------------------------------
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+const bool gbDebug = false;
+const float gfResponsivenessMin = 0.05f;
+const float gfResponsivenessMax = 0.5f;
+
+////////////////////////////
+// Smooth gaze/flashlight
+const float gfSmoothGazeDampFactor = 16.0f;
+const float gfFlashlightDeadZone = 0.08f;
+
+////////////////////////////
+// Extended view
+const float gfExtendedViewRotationDamp = 50.0f;
+const float gfExtendedViewGazeDamp = 6.0f;
+const float gfExtendedViewDeadZone = 0.15f;
+const float gfExtendedViewMinAngleFactor = 0.1f;
+const float gfExtendedViewMaxAngleFactor = 0.6f;
+const float gfExtendedViewMoveThreshold = 0.25f;
+
+////////////////////////////
+// Tracking counter properties
+const float gfCounterIncreaseSpeed = 1.2f;
+const float gfCounterDecreaseSpeed = 0.2f;
+const float gfTrackThreshold = 4.0f;
+const float gfCounterMax = 6.0f;
+const float gfCounterMin = 0.0f;
+const float gfStopTrackingGuiAreaThreshold = -30.0f;
+	
+//---------------------------------------------------
+
+class cScrEyeTrackingHandler : iScrUserModule, iScrUserModule_Interface, iScrEyeTrackingHandler_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+    [nosave] cVector3f mvVREyeOrigin;
+    [nosave] cVector3f mvVREyeDirection;
+    [nosave] cVector2f mvVREyeFlash;
+    bool VRMode() { cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");return cScript_GetGlobalReturnBool(); }
+    bool VRGazeHits(cVector3f low,cVector3f high,float maximum)
+    {
+        float enter=0, leave=maximum;
+        for(int axis=0;axis<3;++axis)
+        {
+            float o=axis==0?mvVREyeOrigin.x:(axis==1?mvVREyeOrigin.y:mvVREyeOrigin.z);
+            float d=axis==0?mvVREyeDirection.x:(axis==1?mvVREyeDirection.y:mvVREyeDirection.z);
+            float a=axis==0?low.x:(axis==1?low.y:low.z);
+            float b=axis==0?high.x:(axis==1?high.y:high.z);
+            if(cMath_Abs(d)<0.00001f) { if(o<a || o>b) return false; }
+            else
+            {
+                float x=(a-o)/d,y=(b-o)/d;
+                if(x>y) { float swap=x;x=y;y=swap; }
+                enter=cMath_Max(enter,x);leave=cMath_Min(leave,y);
+                if(enter>leave) return false;
+            }
+        }
+        return leave>=0;
+    }
+    void VRUpdate(float dt)
+    {
+        // No desktop gaze, camera zoom or extended-view branch in VR.
+        mvExtendedViewRotation=cVector3f_Zero;mvExtendedViewCrosshairOffset=cVector2f_Zero;
+        mbAnyZoomActive=false;
+        mbActive=cScript_RunGlobalFunc("VREYES","","ORIGIN");
+        if(mbActive) mvVREyeOrigin=cScript_GetGlobalReturnVector3f();
+        if(mbActive) mbActive=cScript_RunGlobalFunc("VREYES","","DIRECTION");
+        if(mbActive) mvVREyeDirection=cScript_GetGlobalReturnVector3f();
+        if(!mbActive)
+        {
+            for(int i=0;i<mvTrackedObjects.size();++i) mvTrackedObjects[i].mfTrackingCounter=0;
+            mvVREyeFlash=cVector2f_Zero;return;
+        }
+        if(cScript_RunGlobalFunc("VREYES","","LOCAL"))
+        {
+            cVector3f gaze=cScript_GetGlobalReturnVector3f();
+            // Native flashlight uses bounded pitch/yaw offsets in degrees.
+            cVector2f target(gaze.x/cMath_Max(0.2f,-gaze.z),gaze.y/cMath_Max(0.2f,-gaze.z));
+            target.x=cMath_Clamp(target.x,-0.6f,0.6f);target.y=cMath_Clamp(target.y,-0.6f,0.6f);
+            mvVREyeFlash+=(target-mvVREyeFlash)*cMath_Min(1.0f,dt*12.0f);
+        }
+        if(!cScript_RunGlobalFunc("VREYES","","ENV") && !cScript_RunGlobalFunc("VREYES","","AI"))
+        {for(int i=0;i<mvTrackedObjects.size();++i) mvTrackedObjects[i].mfTrackingCounter=0;return;}
+        float step=cMath_Clamp(dt,0.0f,0.10f)*60.0f;
+        for(int i=0;i<mvTrackedObjects.size();++i)
+        {
+            cTrackedObject@ item=mvTrackedObjects[i];item.mbZoomActive=false;
+            iLuxEntity@ ent=cLux_ID_Entity(item.m_idObject);
+            if(ent is null) {mvTrackedObjects.removeAt(i);--i;continue;}
+            bool hit=false;
+            if(ent.IsActive())
+            {
+                cBoundingVolume@ box=null;
+                if(ent.GetBodyNum()>0) @box=ent.GetBody(0).GetBoundingVolume();
+                else if(ent.GetMeshEntity() !is null) @box=ent.GetMeshEntity().GetBoundingVolume();
+                float maximum=item.mfCheckDist<0 ? 1000.0f : item.mfCheckDist;
+                if(box !is null && VRGazeHits(box.GetMin(),box.GetMax(),maximum))
+                {
+                    hit=true;
+                    if(item.mbCheckLOS)
+                    {
+                        cVector3f dir=ent.GetPosition()-mvVREyeOrigin;dir.Normalize();
+                        cLuxClosestEntityData closest;
+                        cLux_GetClosestEntity(mvVREyeOrigin,dir,1000.0f,0,item.mbCheckClosestLOS,closest);
+                        if(closest.mpEntity !is null) hit=closest.mpEntity.GetID()==ent.GetID();
+                        else hit=cLux_CheckLineOfSight(mvVREyeOrigin,box.GetWorldCenter(),false,false);
+                    }
+                }
+            }
+            item.mfTrackingCounter=cMath_Clamp(item.mfTrackingCounter+(hit?gfCounterIncreaseSpeed:0)*step-gfCounterDecreaseSpeed*step,gfCounterMin,gfCounterMax);
+        }
+    }
+
+	void Init()
+	{
+		mbActive = IsActive();
+		mfExtendedViewMul = 1.0f;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+		cConfigFile@ pConfig = cLux_GetUserConfig();
+		mbEnabled = pConfig.GetBool("Input", "EnableEyeTracking", true);
+		mbExtendedView = pConfig.GetBool("Input", "ExtendedView", true);
+		mfResponsiveness = 1.0f - pConfig.GetFloat("Input", "EyeTrackingResponsiveness", 0.5f);
+		mfExtendedViewSpeed = pConfig.GetFloat("Input", "ExtendedViewSpeed", 0.5f);
+		mfExtendedViewAngle = pConfig.GetFloat("Input", "ExtendedMaxAngle", 0.5f);
+		mbControlFlashlight = pConfig.GetBool("Input", "ControlFlashlight", true);
+		mbReactiveEnvironment = pConfig.GetBool("Input", "ReactiveEnvironment", true);
+		mbReactiveAi = pConfig.GetBool("Input", "ReactiveAi", true);
+		
+		mfGazeMoveThreshold = gfResponsivenessMin + ((gfResponsivenessMax - gfResponsivenessMin) * mfResponsiveness);
+	}
+	
+	//------------------------------------------------------------
+	
+	void SaveUserConfig()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MAP LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mfExtendedViewMul = 1.0f;
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void PreloadData(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnEnterContainer(const tString&in){}
+	void OnLeaveContainer(const tString&in){}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	cVector2f NormalizeGaze(cVector2f avGaze)
+	{
+		avGaze.x -= cGraphics_GetLowLevel().GetWindowPosition().x + (cGraphics_GetLowLevel().GetScreenSizeFloat().x / 2.0f);
+		avGaze.y -= cGraphics_GetLowLevel().GetWindowPosition().y + (cGraphics_GetLowLevel().GetScreenSizeFloat().y / 2.0f);
+		avGaze.y = -avGaze.y;
+		avGaze /= cGraphics_GetLowLevel().GetScreenSizeFloat() / 2.0f;
+		return avGaze;
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector2f ToWindowCoordinates(cVector2f avCoords)
+	{
+		avCoords.x -= cGraphics_GetLowLevel().GetWindowPosition().x;
+		avCoords.y -= cGraphics_GetLowLevel().GetWindowPosition().y;
+		return avCoords;
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector2f GetVirtualRatio()
+	{
+		cVector2f vVirtualRatio;
+		vVirtualRatio.x = cGraphics_GetLowLevel().GetScreenSizeFloat().x / cLux_GetGameHudSet().GetVirtualSize().x;
+		vVirtualRatio.y = cGraphics_GetLowLevel().GetScreenSizeFloat().y / cLux_GetGameHudSet().GetVirtualSize().y;
+		return vVirtualRatio;
+	}
+	
+	float GetPixelDensity()
+	{
+		return cGraphics_GetLowLevel().GetScreenSizeFloat().x / cInput_GetEyeTracker().GetDisplaySize().x;
+	}
+	
+	//------------------------------------------------------------
+	
+	void DrawCrosshairAtRawCoordinates(cVector2f avCoord, const cColor&in aColor = cColor_Red)
+	{
+		cVector2f vVirtualRatio = GetVirtualRatio();
+		avCoord.x /= vVirtualRatio.x;
+		avCoord.y /= vVirtualRatio.y;
+		avCoord.x -= cLux_GetGameHudSet().GetVirtualSizeOffset().x;
+		avCoord.y -= cLux_GetGameHudSet().GetVirtualSizeOffset().y;
+
+		cVector2f vFrom = avCoord;
+		vFrom.y += 10.0f;
+		cVector2f vTo = avCoord;
+		vTo.y -= 10.0f;
+		ImGui_DrawLine(vFrom, vTo, 1.0f, 2.5f, aColor);
+		
+		cVector2f vFrom2 = avCoord;
+		vFrom2.x += 10.0f;
+		cVector2f vTo2 = avCoord;
+		vTo2.x -= 10.0f;
+		ImGui_DrawLine(vFrom2, vTo2, 1.0f, 2.5f, aColor);
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsClipRectValid(const cRect2f&in pRect)
+	{
+		return !(pRect.x == 0 &&
+				pRect.y == 0 &&
+				pRect.w == cGraphics_GetLowLevel().GetScreenSizeFloat().x &&
+				pRect.h == cGraphics_GetLowLevel().GetScreenSizeFloat().y) &&
+				pRect.w >= 0 &&
+				pRect.h >= 0;
+	}
+
+	//------------------------------------------------------------
+	
+	void AddTrackedObject(tID a_idEntity, bool abCheckLOS, bool abCheckClosestLOS, bool abZoomOnGaze, float afCheckDist, float afZoomDist)
+	{
+		int lIndex = -1;
+		for (int i = 0; i < mvTrackedObjects.size(); ++i)
+		{
+			if (mvTrackedObjects[i].m_idObject == a_idEntity)
+				lIndex = i;
+		}
+		
+		if (lIndex >= 0)
+		{
+			cTrackedObject@ pObject = mvTrackedObjects[lIndex];
+			pObject.mbCheckLOS = abCheckLOS;
+			pObject.mbCheckClosestLOS = abCheckClosestLOS;
+			pObject.mbZoomOnGaze = abZoomOnGaze;
+			pObject.mfCheckDist = afCheckDist;
+			pObject.mfZoomDist = afZoomDist;
+		}
+		else
+		{
+			cTrackedObject object;
+			object.m_idObject = a_idEntity;
+			object.mbCheckLOS = abCheckLOS;
+			object.mbCheckClosestLOS = abCheckClosestLOS;
+			object.mbZoomOnGaze = abZoomOnGaze;
+			object.mfCheckDist = afCheckDist;
+			object.mfZoomDist = afZoomDist;
+			object.mbZoomActive = false;
+			object.mfTrackingCounter = gfCounterMin;
+			mvTrackedObjects.push_back(object);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector2f AdjustExtendedViewGaze(cVector2f avGaze)
+	{
+		int lState = cLux_GetPlayer().GetCurrentStateId();
+		if (lState == ePlayerState_Terminal) return cVector2f_Zero;
+		if (lState == ePlayerState_CustomControls) return cVector2f_Zero;
+		if (lState == ePlayerState_HandheldTerminal) return cVector2f_Zero;
+		if (lState == ePlayerState_Ladder) return avGaze * 0.1f;
+		if (Player_GetCurrentToolEntityName() == "CathTool") return avGaze * 0.15f;
+		if (Player_GetCurrentToolEntityName() == "CathBoxTool") return avGaze * 0.15f;
+		if (Player_GetCurrentToolEntityName() == "ARK") return avGaze * 0.1f;
+		return avGaze * mfExtendedViewMul;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INTERFACE
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool IsActive()
+	{
+        if(VRMode()) return cScript_RunGlobalFunc("VREYES","","ACTIVE");
+		return cInput_GetEyeTracker() !is null && mbEnabled && cInput_GetEyeTracker().IsTracking();
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetActive(bool abActive)
+	{
+        if(VRMode()) { mbActive=abActive && cScript_RunGlobalFunc("VREYES","","ACTIVE");return; }
+		if (abActive == mbActive) return;
+		if (cInput_GetEyeTracker() is null || cInput_GetEyeTracker().IsTracking() == false)
+		{
+			mbActive = false;
+			return;
+		}
+		
+		mbActive = abActive;
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector2f GetNormalizedGaze()
+	{
+        if(VRMode()) return mbActive?mvVREyeFlash:cVector2f_Zero;
+		if (mbActive == false) return cVector2f_Zero;
+		return NormalizeGaze(cInput_GetEyeTracker().GetGazePosition());
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector2f GetNormalizedSmoothGaze()
+	{
+        if(VRMode()) return mbActive?mvVREyeFlash:cVector2f_Zero;
+		if (mbActive == false) return cVector2f_Zero;
+		return mvSmoothGazeFinal;
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector2f GetFlashlightGaze()
+	{
+        if(VRMode()) return mbActive && cScript_RunGlobalFunc("VREYES","","FLASH") ? mvVREyeFlash : cVector2f_Zero;
+		if (mbControlFlashlight == false) return cVector2f_Zero;
+		return GetNormalizedSmoothGaze();
+	}
+
+	//------------------------------------------------------------
+	
+	void RegisterEntity(tID a_idEntity, bool abCheckLOS = true, bool abCheckClosestLOS = false, bool abZoomOnGaze = false, float afCheckDist = 15.0f, float afZoomDist = 4.0f)
+	{
+		AddTrackedObject(a_idEntity, abCheckLOS, abCheckClosestLOS, abZoomOnGaze, afCheckDist, afZoomDist);
+	}
+
+	//------------------------------------------------------------
+	
+	void RegisterEntity(const tString &in asName, bool abCheckLOS = true, bool abCheckClosestLOS = false, bool abZoomOnGaze = false, float afCheckDist = 15.0f, float afZoomDist = 4.0f)
+	{	
+		iLuxEntity@ pEnt = cLux_GetCurrentMap().GetEntityByName(asName);
+		if (pEnt is null) return;
+		
+		AddTrackedObject(pEnt.GetID(), abCheckLOS, abCheckClosestLOS, abZoomOnGaze, afCheckDist, afZoomDist);
+	}
+	
+	//------------------------------------------------------------
+	
+	void UnregisterEntity(tID a_idEntity)
+	{
+		for (int i = 0; i < mvTrackedObjects.size(); ++i)
+		{
+			if (mvTrackedObjects[i].m_idObject == a_idEntity)
+			{
+				mvTrackedObjects.removeAt(i);
+				return;
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void UnregisterEntity(const tString &in asName)
+	{
+		for (int i = 0; i < mvTrackedObjects.size(); ++i)
+		{
+			iLuxEntity@ pEnt = cLux_ID_Entity(mvTrackedObjects[i].m_idObject);
+			
+			if (pEnt is null || pEnt.GetName() == asName)
+			{
+				mvTrackedObjects.removeAt(i);
+				return;
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsEntityBeingLookedAt(tID a_idEntity)
+	{
+		if (mbActive == false) return false;
+		
+		for (int i = 0; i < mvTrackedObjects.size(); ++i)
+		{
+			if (mvTrackedObjects[i].m_idObject == a_idEntity)
+			{
+				iLuxEntity@ pEnt = cLux_ID_Entity(mvTrackedObjects[i].m_idObject);
+				if (pEnt is null) continue;
+
+				return mvTrackedObjects[i].mfTrackingCounter > gfTrackThreshold;
+			}
+		}
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsEntityBeingLookedAt(const tString &in asName)
+	{
+		if (mbActive == false) return false;
+		
+		for (int i = 0; i < mvTrackedObjects.size(); ++i)
+		{
+			iLuxEntity@ pEnt = cLux_ID_Entity(mvTrackedObjects[i].m_idObject);
+			if (pEnt is null) continue;
+			
+			if (pEnt.GetName() == asName)
+			{
+				return mvTrackedObjects[i].mfTrackingCounter > gfTrackThreshold;
+			}
+		}
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsAreaBeingLookedAt(cRect2f aArea, const tString &in asId)
+	{
+        if(VRMode()) return false; // Desktop GUI rectangles are not VR surfaces.
+		if (mbActive == false) return false;
+		
+		int lIndex = -1;
+		for (int i = 0; i < mvTrackedGuiAreas.size(); ++i)
+		{
+			if (mvTrackedGuiAreas[i].msName == asId)
+				lIndex = i;
+		}
+		
+		if (lIndex < 0)
+		{
+			cTrackedArea area;
+			area.msName = asId;
+			area.mArea = aArea;
+			area.mfTrackingCounter = gfCounterMin;
+			mvTrackedGuiAreas.push_back(area);
+		}
+		else
+		{
+			cTrackedArea@ pArea = mvTrackedGuiAreas[lIndex];
+			pArea.mArea = aArea;
+			return pArea.mfTrackingCounter > gfTrackThreshold;
+		}
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsGuiAreaBeingLookedAt(cRect2f aArea, const tString &in asId)
+	{
+		if (mbActive == false) return false;
+		
+		////////////////////////////
+		// Multiply all distances by virtual ratio and add offset to get raw coordinates
+		cVector2f vVirtualRatio = GetVirtualRatio();
+
+		aArea.x *= vVirtualRatio.x;
+		aArea.y *= vVirtualRatio.y;
+		
+		aArea.x += cLux_GetGameHudSet().GetVirtualSizeOffset().x;
+		aArea.y += cLux_GetGameHudSet().GetVirtualSizeOffset().y;
+		
+		aArea.w *= vVirtualRatio.x;
+		aArea.h *= vVirtualRatio.y;
+		
+		return IsAreaBeingLookedAt(aArea, asId);
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector3f GetExtendedViewRotation()
+	{
+        if(VRMode()) return cVector3f_Zero;
+		if (mbActive == false || mbExtendedView == false) return cVector3f_Zero;
+		return mvExtendedViewRotation;
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector2f GetExtendedViewCrosshairOffset()
+	{
+        if(VRMode()) return cVector2f_Zero;
+		if (mbActive == false || mbExtendedView == false) return cVector2f_Zero;
+		return mvExtendedViewCrosshairOffset;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool HasPlayerBlinked()
+	{
+        if(VRMode()) return false;
+		if (mbActive == false) return false;
+		return cInput_GetEyeTracker().HasBlinked();
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsAvailable()
+	{
+        if(VRMode()) return cScript_RunGlobalFunc("VREYES","","AVAILABLE");
+		return cInput_GetEyeTracker() !is null;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsEnvironmentReactive()
+	{
+        if(VRMode()) return mbActive && cScript_RunGlobalFunc("VREYES","","ENV");
+		return mbActive && mbReactiveEnvironment;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool IsAiReactive()
+	{
+        if(VRMode()) return mbActive && cScript_RunGlobalFunc("VREYES","","AI");
+		return mbActive && mbReactiveAi;
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetExtendedViewMul(float afMul)
+	{
+		if (mbActive == false) return;
+		mfExtendedViewMul = afMul;
+	}
+	
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// PER-FRAME
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+
+	void Update(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateCounters()
+	{
+		cVector2f vGaze = cInput_GetEyeTracker().GetGazePosition();
+		cVector2f vWindowGaze = ToWindowCoordinates(vGaze);
+		cVector2l vScreenSize = cGraphics_GetLowLevel().GetScreenSizeInt();
+		cVector2f vScreenSizeFloat(vScreenSize.x, vScreenSize.y);
+		
+		/////////////
+		// Check if the player is looking at the screen
+		bool bGazeInWindow = cMath_CheckPointInRectIntersection(vWindowGaze, cRect2f(0, 0, vScreenSize.x, vScreenSize.y));
+		if (bGazeInWindow == false) return;
+		
+		/////////////
+		// Check which object is being looked at
+		for (int i = 0; i < mvTrackedObjects.size(); ++i)
+		{
+			cTrackedObject@ pTrackedObject = mvTrackedObjects[i];
+			iLuxEntity@ pEnt = cLux_ID_Entity(pTrackedObject.m_idObject);
+			
+			/////////////
+			// Check if the object still exists
+			if (pEnt is null)
+			{
+				mvTrackedObjects.removeAt(i);
+				--i;
+				continue;
+			}
+
+			/////////////
+			// Don't update inactive objects
+			if (pEnt.IsActive() == false) continue;
+			
+			/////////////
+			// Don't update objects that are out of range
+			if (pTrackedObject.mfCheckDist >= 0.0f && (pEnt.GetPosition() - Player_GetPosition()).Length() > pTrackedObject.mfCheckDist)
+			{
+				pTrackedObject.mfTrackingCounter = 0;
+				continue;
+			}
+			
+			/////////////
+			// Get the bounding volume
+			cBoundingVolume@ boundingVolume = null;
+			if (pEnt.GetBodyNum() > 0)
+			{
+				@boundingVolume = pEnt.GetBody(0).GetBoundingVolume();
+			}
+			else if (pEnt.GetMeshEntity() !is null)	
+			{
+				@boundingVolume = pEnt.GetMeshEntity().GetBoundingVolume();
+			}
+			else
+			{
+				continue;
+			}
+												
+			/////////////
+			// Don't update objects that are out of sight
+			if (pTrackedObject.mbCheckLOS)
+			{
+				cVector3f vClosestStart = cLux_GetPlayer().GetCamera().GetPosition();
+				cVector3f vClosestDir = pEnt.GetPosition() - vClosestStart;
+				vClosestDir.Normalize();
+				
+				cLuxClosestEntityData closestEntityData;
+				cLux_GetClosestEntity(vClosestStart, vClosestDir, 1000.0f, 0, pTrackedObject.mbCheckClosestLOS, closestEntityData);
+
+				if (closestEntityData is null) continue;
+				if (closestEntityData.mpEntity is null)
+				{
+					if (cLux_CheckLineOfSight(vClosestStart, boundingVolume.GetWorldCenter(), false, false) == false) continue;
+				}
+				else
+				{
+					if (closestEntityData.mpEntity.GetID() != pEnt.GetID()) continue;
+				}
+			}
+						
+			/////////////
+			// Get a clip rect from the bounding volume of the object
+			cRect2l rectBounds;
+			cMath_GetClipRectFromBV(rectBounds, boundingVolume, cLux_GetPlayer().GetCamera().GetExtendedFrustum(), vScreenSize);
+			cRect2f rectBoundsFloat(rectBounds.x, rectBounds.y, rectBounds.w, rectBounds.h);
+			
+			/////////////
+			// Increase the tracking counter if the gaze is in the clip rect
+			if (IsClipRectValid(rectBoundsFloat) == true && cMath_CheckPointInRectIntersection(vWindowGaze, rectBoundsFloat) == true)
+			{
+				pTrackedObject.mfTrackingCounter += gfCounterIncreaseSpeed;
+			}
+			
+			/////////////
+			// Handle zoom in
+			if (pTrackedObject.mbZoomOnGaze)
+			{
+				float fDist = (pEnt.GetPosition() - Player_GetPosition()).Length();
+				if (pTrackedObject.mbZoomActive == false &&
+					pTrackedObject.mfTrackingCounter > gfTrackThreshold &&
+					pTrackedObject.mbZoomActive == false && 
+					fDist <= pTrackedObject.mfZoomDist)
+				{
+					pTrackedObject.mbZoomActive = true;
+					mbAnyZoomActive = true;
+					Player_FadeFOVMulTo(0.85f, 0.8f);
+				}
+				if (pTrackedObject.mbZoomActive &&
+					(pTrackedObject.mfTrackingCounter <= gfTrackThreshold || fDist > pTrackedObject.mfZoomDist))
+				{
+					pTrackedObject.mbZoomActive = false;
+					Player_FadeFOVMulTo(1.0f, 1.5f);
+				}
+			}
+		}
+		
+		/////////////
+		// Check which gui area is being looked at
+		for (int i = 0; i < mvTrackedGuiAreas.size(); ++i)
+		{
+			cTrackedArea@ pArea = mvTrackedGuiAreas[i];
+			if (cMath_CheckPointInRectIntersection(vWindowGaze, pArea.mArea) == true)
+			{
+				pArea.mfTrackingCounter = cMath_Clamp(pArea.mfTrackingCounter, gfCounterMin, gfCounterMax);
+				pArea.mfTrackingCounter += gfCounterIncreaseSpeed;
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void DecayCounters()
+	{
+		/////////////
+		// Decay the object tracking counter
+		for (int i = 0; i < mvTrackedObjects.size(); ++i)
+		{
+			cTrackedObject@ pTrackedObject = mvTrackedObjects[i];
+			pTrackedObject.mfTrackingCounter = cMath_Clamp(pTrackedObject.mfTrackingCounter - gfCounterDecreaseSpeed, gfCounterMin, gfCounterMax);
+		}
+		
+		/////////////
+		// Decay the gui area tracking counter
+		for (int i = 0; i < mvTrackedGuiAreas.size(); ++i)
+		{
+			cTrackedArea@ pArea = mvTrackedGuiAreas[i];
+			pArea.mfTrackingCounter -= gfCounterDecreaseSpeed;
+			if (pArea.mfTrackingCounter <= gfStopTrackingGuiAreaThreshold)
+			{
+				mvTrackedGuiAreas.removeAt(i);
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateSmoothGaze()
+	{
+		////////////////////////////
+		// Only update the gaze target when it has moved more than mfGazeMoveThreshold from the last position
+		if ((NormalizeGaze(cInput_GetEyeTracker().GetGazePosition()) - NormalizeGaze(mvSmoothGazeTarget)).Length() * GetPixelDensity() > mfGazeMoveThreshold)
+		{
+			mvSmoothGazeTarget = cInput_GetEyeTracker().GetGazePosition();
+		}
+		
+		////////////////////////////
+		// Set up dead zone
+		float fGazeX = NormalizeGaze(mvSmoothGazeTarget).x;
+		fGazeX = fGazeX > 0 ? cMath_Max(0.0f, fGazeX - gfFlashlightDeadZone) : cMath_Min(0.0f, fGazeX + gfFlashlightDeadZone);
+		fGazeX /= 1.0f - gfFlashlightDeadZone;
+		fGazeX = cMath_Clamp(fGazeX, -1.0f, 1.0f);
+		
+		float fGazeY = NormalizeGaze(mvSmoothGazeTarget).y;
+		fGazeY = fGazeY > 0 ? cMath_Max(0.0f, fGazeY - gfFlashlightDeadZone) : cMath_Min(0.0f, fGazeY + gfFlashlightDeadZone);
+		fGazeY /= 1.0f - gfFlashlightDeadZone;
+		fGazeY = cMath_Clamp(fGazeY, -1.0f, 1.0f);
+		
+		mvSmoothGaze = cVector2f(fGazeX, fGazeY);
+		
+		////////////////////////////
+		// Animate gaze smoothly with weighted average
+		mvSmoothGazeFinal = ((mvSmoothGazeFinal * (gfSmoothGazeDampFactor - 1.0f)) + mvSmoothGaze) / gfSmoothGazeDampFactor;
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateExtendedView()
+	{
+		if (mbExtendedView == false) return;
+		
+		////////////////////////////
+		// Only update the gaze target when it has moved more than mfGazeMoveThreshold from the last position
+		if ((NormalizeGaze(cInput_GetEyeTracker().GetGazePosition()) - NormalizeGaze(mvExtendedViewGazeTarget)).Length() * GetPixelDensity() > mfGazeMoveThreshold)
+		{		
+			mvExtendedViewGazeTarget = cInput_GetEyeTracker().GetGazePosition();
+		}
+		mvExtendedViewGaze = ((mvExtendedViewGaze * (gfExtendedViewGazeDamp - 1.0f)) + mvExtendedViewGazeTarget) / gfExtendedViewGazeDamp;
+		
+		////////////////////////////
+		// Set up dead zone
+		float fGazeX = NormalizeGaze(mvExtendedViewGaze).x;
+		fGazeX = fGazeX > 0 ? cMath_Max(0.0f, fGazeX - gfExtendedViewDeadZone) : cMath_Min(0.0f, fGazeX + gfExtendedViewDeadZone);
+		fGazeX /= 1.0f - gfExtendedViewDeadZone;
+		fGazeX = cMath_Clamp(fGazeX, -1.0f, 1.0f);
+		
+		float fGazeY = NormalizeGaze(mvExtendedViewGaze).y;
+		fGazeY = fGazeY > 0 ? cMath_Max(0.0f, fGazeY - gfExtendedViewDeadZone) : cMath_Min(0.0f, fGazeY + gfExtendedViewDeadZone);
+		fGazeY /= 1.0f - gfExtendedViewDeadZone;
+		fGazeY = cMath_Clamp(fGazeY, -1.0f, 1.0f);
+		
+		cVector2f vGaze = cVector2f(fGazeX, fGazeY);
+		vGaze = AdjustExtendedViewGaze(vGaze);
+		
+		////////////////////////////
+		// Set extended view target rotation
+		cVector3f vExtendedViewRotationTarget;
+		float fAngleFactor = gfExtendedViewMinAngleFactor + ((gfExtendedViewMaxAngleFactor - gfExtendedViewMinAngleFactor) * mfExtendedViewAngle);
+		vExtendedViewRotationTarget.x = fAngleFactor * vGaze.x;
+		vExtendedViewRotationTarget.y = fAngleFactor * vGaze.y;
+		
+		////////////////////////////
+		// Animate extended view smoothly with weighted average
+		float fDampFactor = gfExtendedViewRotationDamp * (0.1f + (1.0f - mfExtendedViewSpeed) / 0.9f);
+		mvExtendedViewRotation = ((mvExtendedViewRotation * (fDampFactor - 1.0f)) + vExtendedViewRotationTarget) / fDampFactor;
+		
+		////////////////////////////
+		// Crosshair offset
+		float fVerticalFov = cLux_GetPlayer().GetCamera().GetFOV();
+		float fVerticalAnglePerPixel = fVerticalFov / cGraphics_GetLowLevel().GetScreenSizeFloat().y;
+		float fHorizontalFov = 2.0f * cMath_ATan(cMath_Tan(fVerticalFov / 2.0f) * cLux_GetPlayer().GetCamera().GetAspect());
+		float fHorizontalAnglePerPixel = fHorizontalFov / cGraphics_GetLowLevel().GetScreenSizeFloat().y;
+		
+		mvExtendedViewCrosshairOffset.x = -mvExtendedViewRotation.x / fHorizontalAnglePerPixel / GetVirtualRatio().x * 1.29f;
+		mvExtendedViewCrosshairOffset.y = mvExtendedViewRotation.y / fVerticalAnglePerPixel / GetVirtualRatio().y * 0.88f;
+	}
+	
+	//------------------------------------------------------------
+	
+	void DeactivateOutstandingZoom()
+	{
+		if (mbAnyZoomActive == false) return;
+		for (int i = 0; i < mvTrackedObjects.size(); ++i)
+		{
+			cTrackedObject@ pObject = mvTrackedObjects[i];
+			if (pObject.mbZoomActive)
+			{
+				pObject.mbZoomActive = false;
+				Player_FadeFOVMulTo(1.0f, 5.0f);
+			}
+		}
+		mbAnyZoomActive = false;
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+        if(VRMode()) { VRUpdate(afTimeStep);return; }
+		if (mbActive)
+		{
+			UpdateCounters();
+			DecayCounters();
+			
+			UpdateSmoothGaze();
+			UpdateExtendedView();
+		}
+		else
+		{
+			DeactivateOutstandingZoom();
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void VariableUpdate(float afDeltaTime)
+	{
+		mbActive = IsActive();
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnDraw(float){}
+	void OnPostRender(float){}	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnAction(int alAction, bool abPressed)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnGui(float afTimeStep)
+	{
+        if(VRMode()) return;	
+		if (mbActive == false) return;
+		
+		if (gbDebug)
+		{
+			if(cInput_GetEyeTracker().HasBlinked() && mbBlinkCursor == false)
+			{
+				mbBlinkCursor = true;
+			}
+			
+			if (mbBlinkCursor)
+			{
+				mfBlinkCursorTime += afTimeStep;
+				if (mfBlinkCursorTime >= 0.2f)
+				{
+					mbBlinkCursor = false;
+					mfBlinkCursorTime = 0.0f;
+				}
+			}
+		
+			cColor mainCursorColor = mbBlinkCursor ? cColor_Blue : cColor_Red;
+			DrawCrosshairAtRawCoordinates(ToWindowCoordinates(cInput_GetEyeTracker().GetGazePosition()), mainCursorColor);
+//			DrawCrosshairAtRawCoordinates(ToWindowCoordinates(mvExtendedViewGaze), cColor_Green);
+		}
+	}	
+	
+	//------------------------------------------------------------
+	
+	void AppGotInputFocus(){}
+	void AppLostInputFocus(){}	
+	void OnAnalogInput(int alAnalogId, const cVector3f &in avAmount){}
+	void OnExitPressed(){}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool mbActive = false;
+	float mfGazeMoveThreshold = 0.3f;
+	bool mbAnyZoomActive = false;
+	
+	////////////////////////////
+	// Menu options
+	bool mbEnabled = true;
+	float mfResponsiveness = 0.5f;
+	bool mbReactiveEnvironment = true;
+	bool mbControlFlashlight = true;
+	bool mbReactiveAi = true;
+	bool mbExtendedView = true;
+	float mfExtendedViewSpeed = 0.5f;
+	float mfExtendedViewAngle = 0.5f;
+	
+	////////////////////////////
+	// Tracked objects and areas
+	array<cTrackedObject> mvTrackedObjects;
+	array<cTrackedArea> mvTrackedGuiAreas;
+	
+	////////////////////////////
+	// Smooth gaze/flashlight
+	[nosave] cVector2f mvSmoothGazeTarget;
+	[nosave] cVector2f mvSmoothGaze;
+	[nosave] cVector2f mvSmoothGazeFinal;
+	
+	////////////////////////////
+	// Extended view
+	[nosave] cVector2f mvExtendedViewGaze;
+	[nosave] cVector2f mvExtendedViewGazeTarget;
+	[nosave] cVector3f mvExtendedViewRotation;
+	[nosave] cVector2f mvExtendedViewCrosshairOffset;
+	[nosave] float mfExtendedViewMul = 1.0f;
+	
+	////////////////////////////
+	// Debug
+	bool mbBlinkCursor = false;
+	float mfBlinkCursorTime = 0.0f;
+	
+	//------------------------------------------------------------
+}

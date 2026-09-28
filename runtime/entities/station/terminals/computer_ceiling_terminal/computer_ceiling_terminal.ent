@@ -1,0 +1,91 @@
+<Entity>
+    <ModelData>
+        <Entities />
+        <Mesh Filename="entities/station/terminals/computer_ceiling_terminal/computer_ceiling_terminal.dae">
+            <SubMesh ID="0" Name="computer_ceiling" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="2141" Material="" />
+            <SubMesh ID="1" Name="computer_ceiling_display" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="2" Material="" />
+        </Mesh>
+        <Bones />
+        <Shapes>
+            <Shape ID="2" Name="ShapeBox_1" CreStamp="1423848000" ModStamp="1423848029" WorldPos="-0.02649255 0.297944 -0.0225944" Rotation="0 -0 0" Scale="0.2378789 0.398253 0.468401" RelativeTranslation="-0.03247455 -0.656221 -0.0813799" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="3" Name="ShapeBox_2" CreStamp="1423848031" ModStamp="1423848041" WorldPos="0.0980938 0.480372 -0.0225944" Rotation="0 0 0" Scale="0.261743 0.0805126 0.126517" RelativeTranslation="0.0921118 -0.473793 -0.0813799" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="4" Name="ShapeBox_3" CreStamp="1423848043" ModStamp="1423848048" WorldPos="0.238586 1.15804 -0.0225944" Rotation="0 0 0" Scale="0.261743 1.41322 0.126517" RelativeTranslation="0.232604 0.203875 -0.0813799" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="5" Name="ShapeBox_4" CreStamp="1423848050" ModStamp="1423848065" WorldPos="0.238586 1.89721 -0.0225944" Rotation="0 0 0" Scale="0.299893 0.264428 0.328863" RelativeTranslation="0.232604 0.943045 -0.0813799" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="6" Name="ShapeBox_5" CreStamp="1423848057" ModStamp="1423848064" WorldPos="-0.0517185 1.89721 -0.222686" Rotation="0 0 0" Scale="0.216205 0.264428 0.140612" RelativeTranslation="-0.0577005 0.943045 -0.281471" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="7" Name="ShapeBox_6" CreStamp="1423848070" ModStamp="1423848087" WorldPos="-0.0841867 1.15804 -0.230101" Rotation="0 -0 0.105942" Scale="0.119274 1.41322 0.0409992" RelativeTranslation="-0.0901687 0.203875 -0.288886" RelativeRotation="0 -0 0.105942" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="8" Name="ShapeBox_7" CreStamp="1423848090" ModStamp="1423848102" WorldPos="-0.0187069 0.0111193 -0.158951" Rotation="0 0.589776 0" Scale="0.233518 0.187824 0.141444" RelativeTranslation="-0.0246889 -0.943045 -0.217736" RelativeRotation="0 0.589776 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="9" Name="ShapeBox_8" CreStamp="1423848105" ModStamp="1423848121" WorldPos="-0.226622 0.0534099 0.0992539" Rotation="0 -0 -1.0472" Scale="0.0473856 0.189131 0.219794" RelativeTranslation="-0.232604 -0.900755 0.0404684" RelativeRotation="0 -0 -1.0472" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="10" Name="ShapeBox_9" CreStamp="1423848122" ModStamp="1423848134" WorldPos="-0.0262453 0.2242 0.347672" Rotation="0 0 0" Scale="0.0782691 0.0644975 0.33151" RelativeTranslation="-0.0322273 -0.729965 0.288886" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="12" Name="AZ_frame_12" CreStamp="1423848000" ModStamp="1423848029" WorldPos="-0.15736405 0.12202725 -0.0225944" Rotation="0 -0 0" Scale="0.0238641 0.0464195 0.468401" RelativeTranslation="-0.16334605 -0.83213775 -0.0813799" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="13" Name="AZ_frame_13" CreStamp="1423848000" ModStamp="1423848029" WorldPos="-0.15736405 0.48529725 -0.0225944" Rotation="0 -0 0" Scale="0.0238641 0.0235465 0.468401" RelativeTranslation="-0.16334605 -0.46886775 -0.0813799" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="14" Name="AZ_frame_14" CreStamp="1423848000" ModStamp="1423848029" WorldPos="-0.15736405 0.3093805 -0.24489495" Rotation="0 -0 0" Scale="0.0238641 0.328287 0.0237999" RelativeTranslation="-0.16334605 -0.6447845 -0.30368045" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="15" Name="AZ_frame_15" CreStamp="1423848000" ModStamp="1423848029" WorldPos="-0.15736405 0.3093805 0.20011155" Rotation="0 -0 0" Scale="0.0238641 0.328287 0.0229891" RelativeTranslation="-0.16334605 -0.6447845 0.14132605" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="16" Name="AZ_glass_16" WorldPos="-0.144932 0.3093805 -0.022189" Rotation="-0 -1.57079633 0" Scale="0.419612 0.326287 0.003" RelativeTranslation="-0.150914 -0.6447845 -0.0809745" RelativeRotation="-0 -1.57079633 0" RelativeScale="1 1 1" ShapeType="Box" />
+        </Shapes>
+        <Bodies>
+            <Body ID="11" Name="Body_1" CreStamp="0" ModStamp="1423848143" WorldPos="0.005982 0.954165 0.0587855" Rotation="0 0 0" Scale="1 1 1" Material="" Mass="0" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="true" CollideNonCharacter="true" Volatile="false" UseSurfaceEffects="true" HasGravity="true" BlocksLight="true">
+                <Shape ID="6" />
+                <Shape ID="7" />
+                <Shape ID="5" />
+                <Shape ID="9" />
+                <Shape ID="4" />
+                <Shape ID="10" />
+                <Shape ID="2" />
+                <Shape ID="3" />
+                <Shape ID="8" />
+                <Shape ID="12" />
+                <Shape ID="13" />
+                <Shape ID="14" />
+                <Shape ID="15" />
+                <Shape ID="16" />
+            </Body>
+        </Bodies>
+        <Joints />
+        <Animations />
+        <ProcAnimations />
+    </ModelData>
+    <UserDefinedVariables EntityType="Prop_Terminal">
+        <Var Name="Health" Value="100" />
+        <Var Name="Toughness" Value="0" />
+        <Var Name="MaxInteractDistance" Value="0" />
+        <Var Name="EventTag" Value="" />
+        <Var Name="ShowHints" Value="true" />
+        <Var Name="LifeLength" Value="0" />
+        <Var Name="DissolveDuringLifeDecrease" Value="true" />
+        <Var Name="BlocksLineOfSight" Value="true" />
+        <Var Name="MainPhysicsBody" Value="" />
+        <Var Name="NoGravityWhenUnderwater" Value="false" />
+        <Var Name="DisableFreezeAtStart" Value="false" />
+        <Var Name="CustomScriptFile" Value="" />
+        <Var Name="CustomScriptClass" Value="" />
+        <Var Name="ShowMesh" Value="true" />
+        <Var Name="DissolveOnDestruction" Value="false" />
+        <Var Name="DissolveTime" Value="1.0" />
+        <Var Name="RandomizeAnimationStart" Value="true" />
+        <Var Name="EffectsOnSound" Value="" />
+        <Var Name="EffectsOffSound" Value="" />
+        <Var Name="EffectsOnTime" Value="0.2" />
+        <Var Name="EffectsOffTime" Value="0.2" />
+        <Var Name="StaticMoveCheckCollision" Value="false" />
+        <Var Name="StaticMoveStartSound" Value="" />
+        <Var Name="StaticMoveStopSound" Value="" />
+        <Var Name="StaticMoveLoopSound" Value="" />
+        <Var Name="StaticMoveLoopSoundFade" Value="true" />
+        <Var Name="BreakActive" Value="false" />
+        <Var Name="BreakOnlyOnMainBody" Value="false" />
+        <Var Name="BreakDestroyJoints" Value="false" />
+        <Var Name="BreakMinEnergy" Value="100" />
+        <Var Name="BreakEntity" Value="" />
+        <Var Name="BreakEntityAlignBody" Value="" />
+        <Var Name="BreakSound" Value="" />
+        <Var Name="BreakParticleSystem" Value="" />
+        <Var Name="BreakImpulse" Value="4" />
+        <Var Name="ConnectedSubmesh" Value="computer_ceiling_display" />
+        <Var Name="ClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenSize" Value="731 576" />
+        <Var Name="OfflineClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenPosition" Value="0 -0.65 -0.075" />
+        <Var Name="ScreenNormal" Value="-1 0 0" />
+        <Var Name="TargetCameraDistance" Value="0.44" />
+    </UserDefinedVariables>
+</Entity>

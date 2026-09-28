@@ -1,0 +1,46 @@
+<Entity>
+  <EditorSession>
+    <ViewportConfig Enlarged="true" Focused="3">
+      <Viewport CameraPos="0 0 200" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="2" LockToGrid="true" Mode="Front" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+      <Viewport CameraPos="200 0 0" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="0" LockToGrid="true" Mode="Right" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+      <Viewport CameraPos="0 200 0" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="1" LockToGrid="true" Mode="Top" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+      <Viewport CameraPos="-0.481541 1.21428 -1.10076" CameraTarget="-0.00371115 0 0.00218134" Controller="Maya" GridHeights="0 0 0" GridPlane="1" LockToGrid="true" Mode="Perspective" Renderer="Shaded" ShowAxes="true" ShowGrid="true" />
+    </ViewportConfig>
+  </EditorSession>
+  <ModelData>
+    <Entities />
+    <Mesh Filename="entities/urban/tech/cellphone/cellphone_smartphone.dae">
+      <SubMesh ID="0" Material="" Name="screen" Rotation="0 0 0" Scale="1 1 1" WorldPos="0 0 0" />
+      <SubMesh ID="1" Material="" Name="polySurface1" Rotation="0 0 0" Scale="1 1 1" WorldPos="0 0 0" />
+    </Mesh>
+    <Bones />
+    <Shapes>
+      <Shape ID="2" Name="Shape_1" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="0 2.65427e-010 0" Rotation="0 0 0" Scale="0.183 0.015 0.093" ShapeType="Box" WorldPos="0 0.005 0" />
+    </Shapes>
+    <Bodies>
+      <Body AngularDamping="0.1" BlocksLight="true" BlocksSound="false" BuoyancyDensityMul="1" CanAttachCharacter="false" CollideCharacter="false" CollideNonCharacter="true" ContinuousCollision="true" HasGravity="true" ID="5" LinearDamping="0.1" Mass="0.18" Material="" MaxAngularSpeed="20" MaxLinearSpeed="20" Name="Body_1" PushedByCharacterGravity="false" Rotation="0 0 0" Scale="1 1 1" UseSurfaceEffects="false" Volatile="false" WorldPos="0 0.005 0">
+        <Shape ID="2" />
+        <Children>
+          <Child ID="0" />
+          <Child ID="1" />
+        </Children>
+      </Body>
+    </Bodies>
+    <Joints />
+    <Animations />
+  </ModelData>
+  <UserDefinedVariables EntityType="Prop_Grab">
+    <Var Name="Health" Value="100" />
+    <Var Name="Toughness" Value="0" />
+    <Var Name="MaxInteractDistance" Value="1.5" />
+    <Var Name="MainPhysicsBody" Value="Body_1" />
+    <Var Name="ShowMesh" Value="true" />
+    <Var Name="Grab_MassMul" Value="1" />
+    <Var Name="Grab_MinDepth" Value="0.1" />
+    <Var Name="Grab_MaxDepth" Value="2" />
+    <Var Name="Grab_ForceMul" Value="1" />
+    <Var Name="Grab_TorqueMul" Value="1" />
+    <Var Name="Grab_ThrowImpulse" Value="1" />
+    <Var Name="Grab_CollisionWithPlayer" Value="false" />
+  </UserDefinedVariables>
+</Entity>

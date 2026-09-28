@@ -1,0 +1,354 @@
+#include "interfaces/PlayerState_Interface.hps"
+#include "base/InputHandler_Types.hps"
+#include "player/Player_Types.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_map.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+//------------------------------------------------------------
+
+class cScrPlayerState_CustomControls : iScrPlayerState, iScrPlayerState_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbVRRemotePublished=false;
+	void HPL3VR_PublishRemote()
+	{
+		if(msLookInputCallback!="LoaderArm_Look" || msActionInputCallback!="LoaderArm_Action") return;
+		cScript_SetGlobalReturnBool(false);
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		if(!cScript_GetGlobalReturnBool()) return;
+		cScript_RunGlobalFunc("VRREMOTE","","P"); mbVRRemotePublished=true;
+	}
+
+	void _Global_Setup()
+	{		
+		msLookInputCallback = cScript_GetGlobalArgString(0);
+		msMoveInputCallback = cScript_GetGlobalArgString(1);
+		msActionInputCallback = cScript_GetGlobalArgString(2);
+		msLeanInputCallback = cScript_GetGlobalArgString(3);
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mbVRRemotePublished=false;
+
+	}
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		cScript_RunGlobalFunc("VRREMOTE","","O"); mbVRRemotePublished=false;
+
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnEnterState(int alPrevStateId)
+	{
+		HPL3VR_PublishRemote();		
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnLeaveState(int alNextStateId)
+	{
+		if(mbVRRemotePublished)
+		{
+			OnAction(eAction_Interact,false); OnAction(eAction_InteractCancel,false);
+			cScript_RunGlobalFunc("VRREMOTE","","O"); mbVRRemotePublished=false;
+		}
+	
+		
+	}
+		
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		if(!mbVRRemotePublished) HPL3VR_PublishRemote();		
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+		if(msActionInputCallback != "")
+		{
+			cLuxMap @pMap = cLux_GetCurrentMap();
+			
+			bool bRet = true;
+			if(pMap.ScriptPrepare("bool " + msActionInputCallback + "(int alAction, bool abPressed)" ) )
+			{
+				pMap.SetArgInt(0, alAction);
+				pMap.SetArgBool(1, abPressed);
+				if(pMap.ScriptExecute())
+				{
+					bRet = pMap.GetReturnBool();
+				}
+			}
+			return bRet;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+		cLuxMap @pMap = cLux_GetCurrentMap();
+		
+		////////////////////////////////////
+		// Look
+		if(alAnalogId == eAnalogType_Look)
+		{
+			if(msLookInputCallback != "")
+			{
+				/////////////////////////////
+				// Get look amount
+				cVector2f vLookAmount;
+				vLookAmount.x = avAmount.x*-1;
+				vLookAmount.y =  avAmount.y*-1;
+				
+				/////////////////////////////
+				// Callback
+				bool bRet = true;
+				if(pMap.ScriptPrepare("bool " + msLookInputCallback + "(const cVector2f &in avLookAmount)" ) )
+				{
+					pMap.SetArgVector2f(0, vLookAmount);
+					if(pMap.ScriptExecute())
+					{
+						bRet = pMap.GetReturnBool();
+					}
+				}
+				
+				return bRet;
+			}
+		}
+		////////////////////////////////////
+		// Move
+		else if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove)
+		{
+			if(msMoveInputCallback != "")
+			{
+				float fLength = avAmount.Length();
+				if(fLength > 0.1f)
+				{
+					/////////////////////////////
+					// Get move amount
+					cVector2f vMoveAmount = 0;
+					
+					if(cMath_Abs(avAmount.x) > 0.001f) vMoveAmount.x = avAmount.x;
+					if(cMath_Abs(avAmount.y) > 0.001f) vMoveAmount.y = avAmount.y;
+					
+					/////////////////////////////
+					// Callback
+					bool bRet = true;
+					if(pMap.ScriptPrepare("bool " + msMoveInputCallback + "(const cVector2f &in avMoveAmount)" ) )
+					{
+						pMap.SetArgVector2f(0, vMoveAmount);
+						if(pMap.ScriptExecute())
+						{
+							bRet = pMap.GetReturnBool();
+						}
+					}
+					return bRet;
+				}
+			}
+		}
+		else if (alAnalogId == eAnalogType_Lean)
+		{
+			if(msLeanInputCallback != "")
+			{
+				/////////////////////////////
+				// Callback
+				bool bRet = true;
+				if(pMap.ScriptPrepare("bool " + msLeanInputCallback + "(float afAmount)" ) )
+				{
+					pMap.SetArgFloat(0, avAmount.x);
+					if(pMap.ScriptExecute())
+					{
+						bRet = pMap.GetReturnBool();
+					}
+				}
+				return bRet;
+			}
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPECIFIC METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// BODY CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool AllowBuoyancy(iPhysicsBody @apBody)
+	{
+		return false;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	tString msLookInputCallback;
+	tString msMoveInputCallback;
+	tString msActionInputCallback;
+	tString msLeanInputCallback;
+	
+	//------------------------------------------------------------
+		
+}

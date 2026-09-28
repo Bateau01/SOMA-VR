@@ -1,0 +1,673 @@
+#include "player/PlayerState_Interact.hps" 
+#include "helpers/helper_player.hps" 
+#include "helpers/helper_modules.hps" 
+ 
+///////////////////////////////////////// 
+// SETTINGS 
+///////////////////////////////////////// 
+ 
+//------------------------------------------------------------ 
+ 
+//------------------------------------------------------------ 
+ 
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+bool _HPL3VR_RuntimeActive_Slide()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+class cScrPlayerState_Interact_Slide : iScrPlayerState_Interact, iScrPlayerState_Interface 
+{ 
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // INIT 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ void Init() 
+ { 
+  mfMoveToMouseAddFactor = 1.0f; 
+  mfMaxForce = 1000.0f; 
+ 
+  mForcePid.SetErrorNum(10);; 
+  mForcePid.p = 6; 
+  mForcePid.i = 0; 
+  mForcePid.d = 0.1f; 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // USER SETTINGS 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ void LoadUserConfig() 
+ { 
+  
+ } 
+ void SaveUserConfig() 
+ { 
+  
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // ENTER MAP 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ void OnMapEnter(cLuxMap @apMap) 
+ { 
+  
+ } 
+ void OnMapLeave(cLuxMap @apMap) 
+ { 
+  
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ void CreateWorldEntities(cLuxMap @apMap) 
+ { 
+  
+ } 
+ void DestroyWorldEntities(cLuxMap @apMap) 
+ { 
+  
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // GLOBAL FUNCTIONS 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ void SetupSlide() 
+ { 
+  //////////////////////////////// 
+  // Get basic params & setup 
+  SetupInteractVars(); 
+   
+  //////////////////////////////// 
+  // Get extended params 
+  mfSlideMaxSpeed = cScript_GetGlobalArgFloat(3); 
+  mfSlideSlowDownFactor = cScript_GetGlobalArgFloat(4); 
+  mfSlideSpeedFactor = cScript_GetGlobalArgFloat(5); 
+  mbLocked = cScript_GetGlobalArgBool(6); 
+  msLockedSound = cScript_GetGlobalArgString(7); 
+  msGrabStartSound = cScript_GetGlobalArgString(8); 
+  msGrabEndSound = cScript_GetGlobalArgString(9); 
+   
+  mfSlidePadMultiplier = cScript_GetGlobalArgFloat(10); 
+  if (mfSlidePadMultiplier==0.0f) 
+   mfSlidePadMultiplier=1.0f; 
+ } 
+  
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // GENERAL 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ int mlHintID = -1; 
+  
+ void OnEnterState(int alPrevStateId) 
+ { 
+ 	if (!_HPL3VR_RuntimeActive_Slide())
+ 	{
+ 			EnterInteractState(alPrevStateId);
+ 			
+ 			iPhysicsBody@ pBody = cLux_ID_Body(mBodyID);
+ 			iPhysicsJoint@ pCurrentJoint = pBody.GetJoint(0);
+ 			mCurrentJointID = pCurrentJoint.GetID();
+ 			
+ 			////////////////////////////////
+ 			// Player setup
+ 			cScript_SetGlobalVarBool("Climb_Allowed", false);
+ 		
+ 			//////////////////////////////
+ 			//Reset variables
+ 			mForcePid.Reset();
+ 		
+ 			mvMoveAdd = cVector2f(0);
+ 			mvLastMouseAdd =cVector2f(0);
+ 		
+ 			mfSlideSpeed =0;
+ 			
+ 			mfLockedSoundCount = 0.5f;
+ 		
+ 			/////////////////////////////////
+ 			//Setup body
+ 			mbHasGravity = pBody.GetGravity();
+ 			pBody.SetGravity(false);
+ 		
+ 			//////////////////////////////
+ 			//Setup variables
+ 		
+ 			//Get the local position
+ 			cMatrixf mtxTransformInv = cMath_MatrixInverse(pBody.GetLocalMatrix());
+ 			mvLocalInteractPos = cMath_MatrixMul(mtxTransformInv ,mvFocusPos);
+ 			
+ 			//Position where u sart interacting
+ 			mvStartInteractPos = mvFocusPos;
+ 		
+ 			///////////////////////
+ 			//Calculate the max distance
+ 			mfMaxFocusPosDistance = cMath_Vector3Dist(cLux_GetPlayer().GetCamera().GetPosition(), mvFocusPos)*2.0f;
+ 			
+ 			mfMaxStartPosDistance = cMath_Vector3Dist(cLux_GetPlayer().GetCamera().GetPosition(), mvStartInteractPos)*1.4f;
+ 			
+ 			if (msGrabStartSound!="")
+ 				cLux_ID_Prop(mPropID).PlaySound("GrabStart",msGrabStartSound,true, true);
+ 			
+ 			// Attempt to show hint and hold in case it's blocked while in the state
+ 			mlHintID = Hint_ShowHint_Hold("Hints", "HintSlider", true);
+ 		return;
+ 	}
+  EnterInteractState(alPrevStateId); 
+   
+  iPhysicsBody@ pBody = cLux_ID_Body(mBodyID); 
+  iPhysicsJoint@ pCurrentJoint = pBody.GetJoint(0); 
+  mCurrentJointID = pCurrentJoint.GetID(); 
+   
+  //////////////////////////////// 
+  // Player setup 
+  cScript_SetGlobalVarBool("Climb_Allowed", false); 
+ 
+  ////////////////////////////// 
+  //Reset variables 
+  mForcePid.Reset(); 
+ 
+  mvMoveAdd = cVector2f(0); 
+  mvLastMouseAdd =cVector2f(0); 
+ 
+  mfSlideSpeed =0; 
+  mbHPL3VRDirectSpeed = false;
+  mfHPL3VRDirectSpeed = 0.0f;
+   
+  mfLockedSoundCount = 0.5f; 
+ 
+  ///////////////////////////////// 
+  //Setup body 
+  mbHasGravity = pBody.GetGravity(); 
+  pBody.SetGravity(false); 
+ 
+  ////////////////////////////// 
+  //Setup variables 
+ 
+  //Get the local position 
+  cMatrixf mtxTransformInv = cMath_MatrixInverse(pBody.GetLocalMatrix()); 
+  mvLocalInteractPos = cMath_MatrixMul(mtxTransformInv ,mvFocusPos); 
+   
+  //Position where u sart interacting 
+  mvStartInteractPos = mvFocusPos; 
+  
+  /////////////////////// 
+  //Calculate the max distance 
+  mfMaxFocusPosDistance = cMath_Vector3Dist(cLux_GetPlayer().GetCamera().GetPosition(), mvFocusPos)*2.0f; 
+   
+  mfMaxStartPosDistance = cMath_Vector3Dist(cLux_GetPlayer().GetCamera().GetPosition(), mvStartInteractPos)*1.4f; 
+   
+  if (msGrabStartSound!="") 
+   cLux_ID_Prop(mPropID).PlaySound("GrabStart",msGrabStartSound,true, true); 
+   
+  // Attempt to show hint and hold in case it's blocked while in the state 
+  mlHintID = Hint_ShowHint_Hold("Hints", "HintSlider", true); 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ void OnLeaveState(int alNextStateId) 
+ { 
+  if(cLux_ID_Prop(mPropID) is null) return; 
+  
+  if (msGrabEndSound!="") 
+   cLux_ID_Prop(mPropID).PlaySound("GrabEnd",msGrabEndSound,true, true); 
+    
+  cLux_ID_Body(mBodyID).SetGravity(mbHasGravity); 
+  
+  ///////////////////////////// 
+  //Resets some general stuff 
+  ResetPropInteractVars(); 
+   
+  //////////////////////////////// 
+  // Player set back to normal 
+  cScript_SetGlobalVarBool("Climb_Allowed", true); 
+   
+  Hint_Release(mlHintID); 
+ } 
+   
+ //------------------------------------------------------------ 
+  
+ void Reset() 
+ { 
+   
+ } 
+  
+ //------------------------------------------------------------ 
+ 
+ void Update(float afTimeStep) 
+ { 
+ 	if (!_HPL3VR_RuntimeActive_Slide())
+ 	{
+ 			if(CheckShouldUpdate()==false) return;
+ 				
+ 			////////////////////////////
+ 			// Check so interact is still pressed.
+ 			if(cInput_IsTriggered(eAction_Interact)==false)
+ 			{
+ 				//////////////////////
+ 				//Change state
+ 				cLux_GetPlayer().ChangeState(mlPreviousState);
+ 				
+ 				return;
+ 			}
+ 			
+ 			//////////////////////////
+ 			//Show no crosshair!
+ 			Player_SetCrossHairState(eCrossHairState_None);
+ 			
+ 			//////////////////////////////
+ 			//Set up variables
+ 			iCharacterBody @pCharBody = cLux_GetPlayer().GetCharacterBody();
+ 			cCamera @pCam = cLux_GetPlayer().GetCamera();
+ 			iPhysicsBody@ pBody = cLux_ID_Body(mBodyID);
+ 			iPhysicsJoint@ pCurrentJoint = cLux_ID_Joint(mCurrentJointID);
+ 		
+ 			cVector3f vUp = pCam.GetUp();
+ 			cVector3f vRight = pCam.GetRight();
+ 			cVector3f vForward = pCam.GetForward();
+ 		
+ 			cVector3f vWorldInteractPos = cMath_MatrixMul(pBody.GetLocalMatrix(), mvLocalInteractPos);
+ 		
+ 			//////////////////////////////
+ 			//Check if out of range
+ 			
+ 			//This is only in case the object moves where far or is attached to one that moves.
+ 			float fFocusPosDistance = cMath_Vector3Dist(pCam.GetPosition(), vWorldInteractPos);
+ 			if(fFocusPosDistance > mfMaxFocusPosDistance)
+ 			{
+ 				cLux_GetPlayer().ChangeState(mlPreviousState);
+ 				return;
+ 			}
+ 			
+ 			float fStartPosDistance = cMath_Vector3Dist(pCam.GetPosition(), mvStartInteractPos);
+ 			if(fStartPosDistance > mfMaxStartPosDistance)
+ 			{
+ 				cLux_GetPlayer().ChangeState(mlPreviousState);
+ 				return;
+ 			}
+ 			
+ 			
+ 			//////////////////////////////
+ 			//Get the speed add.
+ 			cVector3f vMouseCamDir = vUp * -mvMoveAdd.y + vRight * mvMoveAdd.x;
+ 			float fSpeedAdd = cMath_Vector3Dot(vMouseCamDir, pCurrentJoint.GetPinDir());
+ 		
+ 		
+ 			//////////////////////////////
+ 			//Update speed
+ 			float fSlowDownSpeed = cMath_Abs(mfSlideSpeed) * 3.0f * mfSlideSlowDownFactor;
+ 			
+ 			float fPrevSlideSpeed = mfSlideSpeed;
+ 			mfSlideSpeed = cMath_IncreaseTo(mfSlideSpeed, afTimeStep * fSlowDownSpeed, 0);
+ 			if(mvMoveAdd == cVector2f(0))
+ 			{
+ 				mfSlideSpeed = 0;
+ 			}
+ 			mfSlideSpeed += fSpeedAdd * 600.0f * afTimeStep  * mfSlideSpeedFactor;
+ 			mfSlideSpeed = cMath_Clamp(mfSlideSpeed, -mfSlideMaxSpeed, mfSlideMaxSpeed);
+ 		
+ 			//////////////////////////////
+ 			//Update force
+ 			cVector3f vBodyVel = pBody.GetLinearVelocity();
+ 			
+ 			cVector3f vJointVel = pCurrentJoint.GetPinDir() * cMath_Vector3Dot(pCurrentJoint.GetPinDir(), vBodyVel);
+ 			cVector3f vWantedVel = pCurrentJoint.GetPinDir() * mfSlideSpeed;
+ 		
+ 			
+ 			cVector3f vForce = mForcePid.Output(vWantedVel - vJointVel, afTimeStep) * pBody.GetMass();
+ 			
+ 			vForce = cMath_Vector3MaxLength(vForce, mfMaxForce);
+ 		
+ 			pBody.AddForce(vForce);
+ 			mvLastForce = vForce;
+ 			
+ 			/////////////////////////////////
+ 			// Locked sound
+ 			mfLockedSoundCount-=afTimeStep;
+ 			if(mbLocked && mfSlideSpeed > 0 && vJointVel.SqrLength() > 0.01 && mfLockedSoundCount <= 0)
+ 			{
+ 				cLux_ID_Prop(mPropID).PlaySound("InteractLocked",msLockedSound,true, true);
+ 				mfLockedSoundCount = 0.5f;
+ 			}
+ 		
+ 			//Last stuff
+ 			mvLastMouseAdd = mvMoveAdd;
+ 			mvMoveAdd = cVector2f(0);
+ 			
+ 			/////////////////////////////
+ 			//Check if focus position is outside of screen.
+ 			CheckOutsideAtScreenEdgeAndMove(afTimeStep);
+ 		return;
+ 	}
+  if(CheckShouldUpdate()==false) return; 
+    
+  //////////////////////////// 
+  // Check so interact is still pressed. 
+  if(cInput_IsTriggered(eAction_Interact)==false) 
+  { 
+   ////////////////////// 
+   //Change state 
+   cLux_GetPlayer().ChangeState(mlPreviousState); 
+    
+   return; 
+  } 
+   
+  ////////////////////////// 
+  //Show no crosshair! 
+  Player_SetCrossHairState(eCrossHairState_None); 
+   
+  ////////////////////////////// 
+  //Set up variables 
+  iCharacterBody @pCharBody = cLux_GetPlayer().GetCharacterBody(); 
+  cCamera @pCam = cLux_GetPlayer().GetCamera(); 
+  iPhysicsBody@ pBody = cLux_ID_Body(mBodyID); 
+  iPhysicsJoint@ pCurrentJoint = cLux_ID_Joint(mCurrentJointID); 
+ 
+  cVector3f vUp = pCam.GetUp(); 
+  cVector3f vRight = pCam.GetRight(); 
+  cVector3f vForward = pCam.GetForward(); 
+ 
+  cVector3f vWorldInteractPos = cMath_MatrixMul(pBody.GetLocalMatrix(), mvLocalInteractPos); 
+ 
+  ////////////////////////////// 
+  //Check if out of range 
+   
+  //This is only in case the object moves where far or is attached to one that moves. 
+  float fFocusPosDistance = cMath_Vector3Dist(pCam.GetPosition(), vWorldInteractPos); 
+  if(fFocusPosDistance > mfMaxFocusPosDistance) 
+  { 
+   cLux_GetPlayer().ChangeState(mlPreviousState); 
+   return; 
+  } 
+   
+  float fStartPosDistance = cMath_Vector3Dist(pCam.GetPosition(), mvStartInteractPos); 
+  if(fStartPosDistance > mfMaxStartPosDistance) 
+  { 
+   cLux_GetPlayer().ChangeState(mlPreviousState); 
+   return; 
+  } 
+   
+   
+  ////////////////////////////// 
+  //Get the speed add. 
+  cVector3f vMouseCamDir = vUp * -mvMoveAdd.y + vRight * mvMoveAdd.x; 
+  float fSpeedAdd = cMath_Vector3Dot(vMouseCamDir, pCurrentJoint.GetPinDir()); 
+ 
+ 
+  ////////////////////////////// 
+  //Update speed. H57.55EA's VR-only sentinel supplies physical rail speed
+  //directly. Desktop/mouse/gamepad keeps the exact authored recurrence.
+  float fPrevSlideSpeed = mfSlideSpeed;
+  if(mbHPL3VRDirectSpeed)
+  {
+   mfSlideSpeed = mfHPL3VRDirectSpeed;
+  }
+  else
+  {
+   float fSlowDownSpeed = cMath_Abs(mfSlideSpeed) * 3.0f * mfSlideSlowDownFactor; 
+   mfSlideSpeed = cMath_IncreaseTo(mfSlideSpeed, afTimeStep * fSlowDownSpeed, 0); 
+   if(mvMoveAdd == cVector2f(0)) 
+   { 
+    mfSlideSpeed = 0; 
+   } 
+   mfSlideSpeed += fSpeedAdd * 600.0f * afTimeStep  * mfSlideSpeedFactor; 
+   mfSlideSpeed = cMath_Clamp(mfSlideSpeed, -mfSlideMaxSpeed, mfSlideMaxSpeed); 
+  }
+ 
+  ////////////////////////////// 
+  //Update force 
+  cVector3f vBodyVel = pBody.GetLinearVelocity(); 
+   
+  cVector3f vJointVel = pCurrentJoint.GetPinDir() * cMath_Vector3Dot(pCurrentJoint.GetPinDir(), vBodyVel); 
+  cVector3f vWantedVel = pCurrentJoint.GetPinDir() * mfSlideSpeed; 
+ 
+   
+  cVector3f vForce = mForcePid.Output(vWantedVel - vJointVel, afTimeStep) * pBody.GetMass(); 
+   
+  vForce = cMath_Vector3MaxLength(vForce, mfMaxForce); 
+ 
+  pBody.AddForce(vForce); 
+  mvLastForce = vForce; 
+  mbHPL3VRDirectSpeed = false;
+  mfHPL3VRDirectSpeed = 0.0f;
+   
+  ///////////////////////////////// 
+  // Locked sound 
+  mfLockedSoundCount-=afTimeStep; 
+  if(mbLocked && mfSlideSpeed > 0 && vJointVel.SqrLength() > 0.01 && mfLockedSoundCount <= 0) 
+  { 
+   cLux_ID_Prop(mPropID).PlaySound("InteractLocked",msLockedSound,true, true); 
+   mfLockedSoundCount = 0.5f; 
+  } 
+ 
+  //Last stuff 
+  mvLastMouseAdd = mvMoveAdd; 
+  mvMoveAdd = cVector2f(0); 
+   
+  ///////////////////////////// 
+  //Check if focus position is outside of screen. 
+  CheckOutsideAtScreenEdgeAndMove(afTimeStep); 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ void PostUpdate(float afTimeStep) 
+ { 
+ } 
+  
+  
+ //------------------------------------------------------------ 
+   
+ ///////////////////////////////////////// 
+ // ACTIONS 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ bool OnAction(int alAction, bool abPressed) 
+ { 
+  return true; 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount) 
+ { 
+ 	if (!_HPL3VR_RuntimeActive_Slide())
+ 	{
+ 			///////////////////////////////////
+ 			// Looking
+ 			if(alAnalogId == eAnalogType_Look)
+ 			{	
+ 				cVector2f vAmount(avAmount.x, avAmount.y);
+ 				if(cLux_GetInputHandler().IsYAxisInverted()) vAmount.y = -vAmount.y;
+ 				if (cLux_GetInputHandler().WasAnalogueInputFromPad())
+ 					vAmount*=mfSlidePadMultiplier;
+ 				mvMoveAdd += vAmount;
+ 				
+ 				return false;
+ 			}
+ 			///////////////////////////////////
+ 			// Moving
+ 			else if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove)
+ 			{
+ 				if (avAmount.SqrLength() < 0.01) return true;
+ 				
+ 				cVector2f vAmount(avAmount.x, avAmount.y*-1);
+ 				mvMoveAdd += vAmount * mfMoveToMouseAddFactor;
+ 				return true;
+ 			}
+ 			
+ 			return true;
+ 	}
+  /////////////////////////////////// 
+  // Looking 
+  if(alAnalogId == eAnalogType_Look) 
+  {  
+   if(avAmount.z > 5754.5f && avAmount.z < 5755.5f)
+   {
+    mfHPL3VRDirectSpeed = avAmount.x;
+    mbHPL3VRDirectSpeed = true;
+    return false;
+   }
+   cVector2f vAmount(avAmount.x, avAmount.y); 
+   if(cLux_GetInputHandler().IsYAxisInverted()) vAmount.y = -vAmount.y; 
+   if (cLux_GetInputHandler().WasAnalogueInputFromPad()) 
+    vAmount*=mfSlidePadMultiplier; 
+   mvMoveAdd += vAmount; 
+    
+   return false; 
+  } 
+  /////////////////////////////////// 
+  // Moving 
+  else if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove) 
+  { 
+   if (avAmount.SqrLength() < 0.01) return true; 
+    
+   cVector2f vAmount(avAmount.x, avAmount.y*-1); 
+   mvMoveAdd += vAmount * mfMoveToMouseAddFactor; 
+   return true; 
+  } 
+   
+  return true; 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ bool OnExitPressed() 
+ { 
+  return true; 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // BODY CALLBACKS 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ bool AllowBuoyancy(iPhysicsBody @apBody) 
+ { 
+  if(apBody is cLux_ID_Body(mBodyID)) return false; 
+   
+  return true; 
+ } 
+ 
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // CHARACTER CALLBACK 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData) 
+ { 
+   
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel) 
+ { 
+   
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // HELPER METHODS 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+   
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // DEBUG 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+   
+ float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY) 
+ { 
+  apSet.DrawFont(tWString("SlideSpeed:"+mfSlideSpeed+" MoveAdd"+mvMoveAdd), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) ); 
+  afStartY += 14; 
+       
+  return afStartY; 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // PROPERTIES 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ cPidControllerVec3 mForcePid; 
+ tID mCurrentJointID; 
+  
+ //------------------------------------------------------------ 
+  
+ float mfSlideMaxSpeed; 
+ float mfSlideSlowDownFactor; 
+ float mfSlideSpeedFactor; 
+ tString msLockedSound; 
+ tString msGrabStartSound; 
+ tString msGrabEndSound; 
+ float mfSlidePadMultiplier = 1.0f; 
+  
+ //------------------------------------------------------------ 
+  
+ bool mbHasGravity; 
+ 
+ float mfMaxFocusPosDistance; 
+ cVector3f mvLocalInteractPos; 
+  
+ float mfMaxStartPosDistance; 
+ cVector3f mvStartInteractPos; 
+ 
+ cVector2f mvMoveAdd; 
+ cVector2f mvLastMouseAdd; 
+ cVector3f mvLastForce; 
+ 
+ float mfSlideSpeed; 
+ bool mbHPL3VRDirectSpeed;
+ float mfHPL3VRDirectSpeed;
+ 
+ float mfMoveToMouseAddFactor; 
+ float mfMaxForce; 
+  
+ bool mbLocked; 
+ float mfLockedSoundCount; 
+  
+ //------------------------------------------------------------ 
+   
+}

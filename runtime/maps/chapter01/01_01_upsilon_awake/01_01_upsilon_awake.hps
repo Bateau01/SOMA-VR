@@ -1,0 +1,5642 @@
+/*==================================================================================
+ * 
+ * -------------------
+ * Important map notes
+ * -------------------
+ * 
+ * Any juicy effects added upon wakeup, it's important to make sure that these
+ * are disabled not only through timers, but ensure that they are cleared inside the
+ * function DisableScreenEffects()
+ * 
+ * This will ensure that all effects are cleared when the player enters the observation
+ * tunnel and ensure that we have the correct mood for this and later maps.
+ * 
+ *==================================================================================*/
+
+
+#include "base/InputHandler_Types.hps"
+#include "interfaces/Map_Interface.hps"
+#include "helpers/helper_game.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_map.hps"
+#include "helpers/helper_areas.hps"
+#include "helpers/helper_props.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_sequences.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_modules.hps"
+#include "helpers/helper_ai.hps"
+#include "helpers/helper_player.hps"
+#include "custom_depth/helper_custom_depth_audio.hps"
+#include "helper_imgui_station.hps"
+#include "helper_imgui_station_app_error.hps"
+
+#include "helper_custom_depth.hps"
+#include "helper_custom_depth_ai.hps"
+
+//--------------------------------------------------
+ 
+/*Place any global values here. These must be const variables as they will not be saved*/
+/*This is also the place for enums and classes, but these should be avoided whenever possible*/
+
+enum eTechTerminalState
+{
+	eTechTerminalState_MainMenu,
+	eTechTerminalState_SystemStatus,
+	eTechTerminalState_WauText,
+	
+	eTechTerminalState_OmniToolMain,
+	eTechTerminalState_OmniToolChipSetup,
+	eTechTerminalState_OmniToolChipInstalling,
+	eTechTerminalState_OmniToolChipComplete,
+	eTechTerminalState_OmniToolBrainSetup,
+	eTechTerminalState_OmniToolOrientationVideo,
+	
+	eTechTerminalState_SuitStatus,
+}
+
+//--------------------------------------------------
+
+enum ePilotTerminalState
+{
+	ePilotTerminalState_MainMenu,
+	ePilotTerminalState_Controls,
+	ePilotTerminalState_WauText,
+	ePilotTerminalState_Reports,
+}
+ 
+//--------------------------------------------------
+	
+class cScrMap : iScrMap
+{
+	//--------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN CALLBACKS
+	// ==============
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Set up map environment
+	void Setup()
+	{
+						
+		///////////////////////////////
+		// Setup presets
+		{
+			// Settings from 1.2 used for transition
+			//Map_Preset_SetupColorGrading("Inside1_2", "textures/colorgrading/grading_01_02.dds");
+		}
+		
+		GetBase().SetDisplayNameEntry("01-01-upsilon-awake");
+		
+		Entity_SetVarBool("AreaInsertOmniTool_TechRoom", "IsOmniSlot", true);
+		Entity_SetVarBool("AreaInsertOmniTool_ObsTunnel", "IsOmniPanel", true);
+		
+		Effect_Bloom_FadeBrightPass(0.75f, 2);
+		Effect_Bloom_FadeBloomWidth(128, 2);
+		Effect_Bloom_FadeBloomFalloff(0.5f, 2);
+		Effect_Bloom_FadeBloomTint(1, 1, 1, 2);
+		
+		CathTool_ResetScreen(eCathToolVariant_HelperJane);
+		CathTool_SetChipBroken(true);
+	}
+	
+	//-------------------------------------------------------
+
+	void PreloadData()
+	{
+		/////////////////
+		// Preload gui
+		StationGui_PreloadDefault();
+		OmnitoolGui_Preload();
+		
+		ImGui_PreloadImage("omnivideo01.dds", eImGuiGfx_Texture);
+		ImGui_PreloadImage("omnivideo02.dds", eImGuiGfx_Texture);
+		ImGui_PreloadImage("omnivideo03.dds", eImGuiGfx_Texture);
+		ImGui_PreloadImage("omnivideo04.dds", eImGuiGfx_Texture);
+		ImGui_PreloadImage("omnivideo05.dds", eImGuiGfx_Texture);
+		ImGui_PreloadImage("omnivideo06.dds", eImGuiGfx_Texture);
+		ImGui_PreloadImage("omnivideo07.dds", eImGuiGfx_Texture);
+		
+		ImGui_PreloadImage("background/background_logo_pathOS");
+		ImGui_PreloadImage("stationV2/background/background_logo_pathOS_small");
+		ImGui_PreloadImage("background/background_logo_pathosstation");
+		ImGui_PreloadImage("station/scanlines/standard_tileable");
+		ImGui_PreloadImage("station/static/static_0");
+
+		///////////////
+		// Preload particles
+		ParticleSystem_Preload("01_01_break_window_damaged.ps");
+		ParticleSystem_Preload("01_01_break_window.ps");
+		ParticleSystem_Preload("dust_falling_fast_small_oneshot.ps");
+		ParticleSystem_Preload("steam_fast_loop.ps");
+		ParticleSystem_Preload("01_01_door_storage_scare.ps");
+		ParticleSystem_Preload("tunnel_flood.ps");
+		ParticleSystem_Preload("splash_continous_foam_waterfall_large.ps");
+		ParticleSystem_Preload("loop_waterbubbles_large_cloud.ps");
+		ParticleSystem_Preload("dust_falling_impact.ps");
+
+		///////////////
+		// Player hands
+		PlayerHands_PreloadHandModel_Human();
+	}
+	
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run first time starting map
+	void OnStart()
+	{
+		Player_SetClothing("default");
+		Player_SetFootWear("default");
+		bool bDoIntro = true;
+		Effect_Fade_Out(0);
+		////////////////////
+		//Audio
+		Sound_SetGlobalVolume(0.0f, eSoundEntryType_WorldAll);
+		Sound_SetGlobalVolume(0.0f, eSoundEntryType_GuiWorld);
+		Sound_PreloadProject("01_01_upsilon_awake");
+		Sound_PreloadGroup("Flashback/Level/01_01", true);
+		
+		/////////////////////////
+		// Debug
+		if(cLux_ScriptDebugOn())
+		{
+			//Add any debug stuff here
+			
+			cLux_SetDebugInfoWindowText("Text that should show up when pressing F1");
+			bDoIntro = false;
+			Effect_Fade_In(1);
+			Sound_FadeGlobalVolume(1.0f, 1.0f);
+			Sound_FadeGlobalVolume(1.0f, 1.0f, eSoundEntryType_GuiAll);
+		}
+		
+		Player_SetAmbientLight_None(true);
+		
+		
+		//////////////////////////////
+		// Setup various conditions for the robot
+		//SetupTechRoomWreck();
+		SetupHangingRobot();
+		SetupExitHatch();
+		SetupDoorMonster();
+		SetupVentSpooks();
+		SetupInfectedRobot();
+		SetupDoorSeals();
+		SetupToolChips();
+		
+		ParticleSystem_SetVisible("PS_techroom*",false);
+		
+		Entity_SetActive("tech_dynamic_6", false);
+		
+		if (bDoIntro) Map_AddTimer("timer_kickoffintro",0.01,"TimerKickoffIntro");
+		
+		PlayerEnergy_SetFlowerSwallows(false);
+		Player_SetFlashlightDisabled(true);
+		PlayerHands_SetHandModel_Human();
+		
+		// Turn off cath area effects for darkness
+		Entity_SetActive("cath_terminal_1",false);
+		Entity_SetActive("omnislot_inside_left_light_1",false);
+		Entity_SetActive("omnislot_inside_right_light_1",false);
+		Entity_SetActive("maintenance_infected_1",false);
+		
+		//Player_SetHealth(0.9f);
+		
+		LastOnSoma_SetText("01_01_upsilon_awake_1");
+		
+		/////////////////////////
+		// Eye tracking
+		EyeTracking_RegisterEntity("blockbox_hanging_robot_1");
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when entering map
+
+	// S26AQ: this legacy Trigger has no handler and no independent climb action.
+	// Retire only its false VR prompt; collision/story areas and working climbs stay active.
+	void VR_RemoveUnusedClimbPrompt()
+	{
+		cScript_SetGlobalReturnBool(false);
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		if (!cScript_GetGlobalReturnBool()) return;
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null || pMap.ScriptMethodExists("void HatchClimb_2_OnPlayerInteract(const tString &in)")) return;
+		Entity_SetPlayerInteractCallback("HatchClimb_2", "", false);
+	}
+
+	void OnEnter()
+	{
+        // S26BC: physical surface -> exact native tool-use target; refreshed on save entry.
+        Entity_SetVarString("AreaInsertOmniTool_ObsTunnel", "VRUseTarget", "ObservationTunnelTerm");
+
+		VR_RemoveUnusedClimbPrompt();
+		MainMenu_SetBGPhase(eMainMenuPhase_Initial_To_1_3);
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when leaving map
+	void OnLeave()
+	{
+		if(mlImageTrailID>=0)
+		{
+			cLux_AddDebugMessage("FadeOutImageTrail!");
+			Effect_ImageTrail_FadeOut(mlImageTrailID,10.0f);
+			mlImageTrailID=-1;
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		////////////////////////////
+		// Activate hanging robot scare on gaze
+		if (mbInfectedRobotReleased == false &&
+			mbInfectedRobotTwitched == false &&
+			EyeTracking_IsEnvironmentReactive() &&
+			EyeTracking_IsEntityBeingLookedAt("blockbox_hanging_robot_1"))
+		{
+			float fDist = (Map_GetEntity("blockbox_hanging_robot_1").GetPosition() - Player_GetPosition()).Length();
+			if (fDist > 4.0f) return;
+			RobotTwitch();
+		}
+	}
+	
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// The player has died.
+	void OnPlayerKilled(int alRecentDeaths, const tString&in asSource)
+	{
+		cLux_AddTodoMessage("SCRIPT: Conditions for player having died.. SOURCE: " + asSource);
+		
+		if (asSource == "infected_robot")
+		{
+			mbKilledByRobot = true;
+		}
+		
+	}
+
+	//-------------------------------------------------------
+	
+	void DebugMyParticle(const tString &in asPSName, const tString &in asEntityName)
+	{
+		array<cParticleSystem@> vParticleSystems;
+		Map_GetParticleSystemArray(asPSName, vParticleSystems);
+		
+		if(vParticleSystems.length() == 0)
+		{
+			Error("Could not find particle system "+asPSName+" for ParticleSystem_SetBrightness.");
+			return;
+		}
+			
+		for(uint i=0; i<vParticleSystems.length(); ++i)
+		{
+			cParticleSystem@ pPS = vParticleSystems[i];
+			cLux_AddDebugMessage(""+asPSName + " has coord : " + pPS.GetWorldPosition());
+		}
+		
+		iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(asEntityName, eLuxEntityType_LastEnum, "");
+		if (pEntity is null)
+		{
+			Error("could not find entity " + asEntityName);
+			return;
+		}
+		cLux_AddDebugMessage(""+asEntityName + " has coord : " + pEntity.GetPosition());
+	}
+
+
+	////////////////////////////
+	// To get when player makes input (mostly used for debug)
+	void OnAction(int alAction, bool abPressed) 
+	{
+		if(abPressed==false) return;
+		
+		if(alAction == eAction_Test1)
+		{
+			
+			/*cLuxClosestEntityData pData;
+			if (!cLux_GetClosestEntity(cLux_GetPlayer().GetCamera().GetPosition(),cLux_GetPlayer().GetCamera().GetForward(),100, 0, false, pData))
+				return;
+				
+			tString sEntity = pData.mpEntity.GetName();
+
+			Button_SetLocked(sEntity, !Button_IsLocked(sEntity), true);
+			Lamp_SetLit(sEntity, !Lamp_GetLit(sEntity), true);
+			SlideDoor_SetClosed(sEntity, false, false);*/
+			
+			
+			ReleaseInfectedRobot();
+			//Entity_PlaceAtEntity("box_spare_fuses_1","ClimbArea_1");
+			//Effect_ToneMapping_FadeWhiteCut(3.5, 10);
+		}
+		
+		if(alAction == eAction_Test2)
+		{
+			Entity_CallEntityInteract("OmniTool");
+			//SequenceFenceBreak("");
+			//Sound_CreateAtEntity("RobotBehindDoor", "01_01_upsilon_awake/sfx/construct_behind_door", "RobotBehindDoorSoundSource");
+			//Lamp_SetLit("lamp_dynamic_*",true,true);
+			//Player_SetAmbientLight_None(true);
+			//Map_AddTimer("timer_openchipcontainer",1.05f,"TimerOpenChipContainer");
+			//Sound_CreateAtEntity("ChipDoorOpen", "01_01_upsilon_awake/sfx/omnitool/chip_door_open", "ChipContainer_Door");
+		}
+		
+		if (alAction == eAction_Test3)
+		{
+			Entity_CallEntityInteract("OmniTool_Configured");
+			mbOmniToolConfigured = true;
+			
+		}
+		
+		if (alAction == eAction_Test4)
+		{
+			RobotBreaksFences();
+		}
+		
+		if (alAction == eAction_Test5)
+		{
+			//Map_AddTimer("timer_doorbang",1.5f,"TimerRobotPoundsOnDoor");
+			//ReleaseInfectedRobot();
+			Map_AddTimer("OpenAquariumDoor", 2.0f, "OpenAquariumDoor");
+		}
+		if (alAction == eAction_Test6)
+		{
+			Player_EquipTool("OmniTool");	
+		}
+		if (alAction == eAction_Test7)
+		{
+			Player_UnequipTool();
+		}
+		if (alAction == eAction_Test8)
+		{
+			Map_ChangeMap("01_02_upsilon_inside.hpm", "machine_room", "", "");
+		}
+		
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// This only used for pure debug purposes when info needs to printed.
+	/*float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afY)
+	{
+		afY = cLux_DrawDebugText("My Debug value: "+..., afY);
+		return afY;
+	}*/
+	
+	//-------------------------------------------------------
+	
+	///////////////////////////////
+	// Checkpoints
+	///////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollideCheckpointStairwell(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Entity_SetActive("CheckpointStairwell",false);
+		CheckPoint_Setup("CheckpointStairs");
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void CheckpointStairs(int alRecentDeaths, const tString&in asDeathSource)
+	{
+		EnergySource_SetEnergy("wau_flower_talkingdoor",1.0f);
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END MAIN CALLBACKS
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN FUNCTIONS
+	// ==============
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	float mfPlayerSpeedOnWakeup = 1.0f;	// change this if we want the player to be a little slower at the start, but gradually return to normal
+	
+	bool mbPowerOn = false;
+	bool mbBlackoutOccurred = false;
+	
+	int mlImageTrailID = -1;
+	int mlDizziesRemaining = 20;
+	
+	bool mbDiscoveredDatamining = false;
+	bool mbInfectedRobotReleased = false;
+	bool mbInfectedRobotTwitched = false;
+	bool mbKilledByRobot = false;
+	bool mbPlayerEnteredTunnel = false;
+	
+	bool mbOmnitoolPlacedOnce = false;
+	
+	bool mbPlayerHurt = false;
+	
+	//-------------------------------------------------------
+	
+	void DisableScreenEffects()
+	{
+		///////////////////////////
+		// Clear lingering effects
+		Effect_ImageTrail_FadeOut(mlImageTrailID, 5.0f);
+		Effect_ImageTrail_FadeOut(mlCurrentImageTrailEffectID, 5.0f);
+		Effect_DoF_FadeOut(mlDoFEffectID, 5.0f);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSimonElectrocuted(const tString &in asTimer)
+	{
+		Voice_Play("SimonHurt");
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetPlayerAmbientLightOn()
+	{
+		cLux_AddDebugMessage("Ambient Light");
+		Player_SetAmbientLight(5.0f,2.5, 5.0f);	
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnDiscoverDatamining()
+	{
+		if (mbDiscoveredDatamining) return;
+		
+		Map_AddTimer("timer_dataminecomment",1.0f,"TimerDiscoverDatamine");
+		
+		mbDiscoveredDatamining = true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDiscoverDatamine(const tString &in asTimer)
+	{
+		Voice_PlayWhenPossible("FirstDatamine");
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// *Door Seals*
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+		
+	void SetupDoorSeals()
+	{
+		Entity_StopAnimation("DoorSeal_*");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnStateChangeDoorSeal(const tString &in asEntity, int alState)
+	{
+		if (alState==1)
+		{
+			tString sSeal = cString_Sub(asEntity,6);
+			cLux_AddDebugMessage("Opening Door Seal:"+sSeal);
+			Entity_PlayAnimation(sSeal, "door_lock_opening",0.1f,false,true,"OnDoorSealOpenCompleted");
+			Entity_SetAnimationPaused(sSeal, "door_lock_opening", false);
+			
+			//////////////////////////////////
+			// Turn off lamp to disable any connected lights and then finally, disable it.
+			cLux_AddTodoMessage("SCRIPT: Post beta polish on these, make the lights fade before disabling entity");
+			// suggestion : use timer
+			Lamp_SetLit(sSeal+"_Lamp",false,true);
+			Entity_SetActive(sSeal+"_Lamp",false);
+			Light_SetVisible(sSeal+"_Light*",false);
+			
+			/////////////////////////////////////
+			// Disable aux area
+			Entity_SetActive("AuxArea_"+sSeal,false);
+			
+			/////////////////////////////////////////////
+			// Trigger special event for Omnitool Storage (scroll down!)
+			if (asEntity == "HandleDoorSeal_OmnitoolStorage")
+			{
+				OnRemoveStorageSeal();
+			}
+			
+			if (asEntity == "HandleDoorSeal_TechRoom")
+			{
+				
+			}
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnDoorSealOpenCompleted(const tString &in asEntityName,  const tString &in asAnimName)
+	{
+		tString sPanel = Entity_GetVarString(asEntityName, "");
+		Button_SetLocked(sPanel, false);
+		Entity_SetActive(asEntityName,false);
+		Entity_SetActive("Handle"+asEntityName, false);
+		Entity_SetActive("Open"+asEntityName, true);
+	}
+
+	
+	
+	//-------------------------------------------------------
+	
+	void TimerTremors(const tString &in asTimer)
+	{
+		if (mbPlayerEnteredTunnel) return;
+		return;
+		
+		/* REMOVED
+		///////////////////////////////////////
+		// While player is in the first area before the tunnel, periodically shake the facility
+		Effect_Shake_Start(0.015f,2.0f,1.0f,1.0f);
+		Map_AddTimer("timer_tremor",cMath_RandRectf(17.0f,25.0f),"TimerTremors");
+		
+		cLux_AddTodoMessage("SOUND: Periodic tremors");
+		
+		if (Sound_Exists("snd_timedtremor"))
+			Sound_Stop("snd_timedtremor",0.0f);
+			
+		Sound_CreateAtEntity("snd_timedtremor","level_amb_shared_interior/amb/sfx/dust/small","Player",0.0f,false,1.0f);		*/
+	}
+	
+	//-------------------------------------------------------
+	
+	/*void TimerCheckPhone(const tString &in asTimer)
+	{
+		if (Voice_CharacterIsSpeaking("Player"))
+		{
+			Map_AddTimer("timer_checkphone", 4.0f, "TimerCheckPhone");
+			return;
+		}
+		
+		SimonLooksForPhone();
+	}*/
+	
+	//-------------------------------------------------------
+	
+	void Timer_RemoveImageTrail(const tString&in asTimer)
+	{
+		if(mlImageTrailID>=0)
+		{
+			cLux_AddDebugMessage("FadeOutImageTrail!");
+			Effect_ImageTrail_FadeOut(mlImageTrailID,10.0f);
+			mlImageTrailID=-1;
+		}
+	}
+
+	/*void TimerDizzy(const tString &in asName)
+	{
+		if (mbPowerOn)
+		{
+			cLux_AddDebugMessage("Dizzies Remaining : " + mlDizziesRemaining);
+			mlDizziesRemaining--;
+			if (mlDizziesRemaining <= 0)
+			{
+				Player_FadeMoveSpeedMulTo(1.0f,10.0f);
+				Player_FadeFOVMulTo(1.0f,0.05f);
+				Player_FadeRollTo(0,cMath_RandRectf(0.075f,0.35f),cMath_RandRectf(0.55f,1.15f));	
+				Effect_ImageTrail_FadeOut(mlImageTrailID,10.0f);
+				return;
+			}
+		}
+		
+		Player_FadeFOVMulTo(cMath_RandRectf(0.975f,1.025f),0.1f);
+		
+		Player_FadeRollTo(cMath_RandRectf(-13.0f,13.0f),cMath_RandRectf(0.025f,0.04f),cMath_RandRectf(0.1f,0.125f));
+		Map_AddTimer("timer_dizzy",4.0f,"TimerDizzy");
+	}*/
+	
+	//-------------------------------------------------------
+	
+	//} END MAIN FUNCTIONS
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 1 *WAKE UP*
+	// ==============
+	//{///////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbOmniToolInserted = false;
+	bool mbOmniToolConfigured = false;
+	bool mbConfigChipInserted = false;
+	bool mbRobotDestroyedTechRoom = false;
+
+	//-------------------------------------------------------
+
+	bool CollideAreaAutoSave(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		cLux_AddDebugMessage("Auto Save");
+		Game_AutoSave();
+		
+		return false;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event A *Wake up and stumble in the dark*
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	int mlCurrentImageTrailEffectID = 0;
+	int mlDoFEffectID = 0;
+	bool mbLookForPhonePlayed = false;
+	bool mbCalledOutForMunshi = false;
+	bool mbPlayerStoodUp = false;
+
+	//-------------------------------------------------------
+	
+	void TimerKickoffIntro(const tString &in asTimer)
+	{
+		SetupIntro();
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetTechroomExtraLights(bool abState)
+	{
+		Light_SetVisible("BoxLight_techroom",abState);
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetTechroomInteractions(bool abEnabled)
+	{
+		/////////////////////////////////
+		// Invert the enabled state because our helper wants to know if the item is DISABLED
+		abEnabled = !abEnabled;
+		
+		Entity_SetInteractionDisabled("PilotTerminal",abEnabled);
+		Entity_SetInteractionDisabled("TechTerminal",abEnabled);
+		Entity_SetInteractionDisabled("techroom_doorpanel_1",abEnabled);
+	}
+	
+	//-------------------------------------------------------
+
+	void SetupIntro()
+	{
+		///////////////////////////////////
+		// Set player start!
+		Player_Teleport("PlayerStartArea_1",true);
+		Entity_SetActive("SimonLegs",true);
+		Entity_SetActive("SimonHands",true);
+		Entity_PlayAnimation("SimonHands","chair_00_03_scan",0.0,true);
+		
+		///////////////////////////////////
+		// Lights must be OFF here aswell as interactions (Except for light switch)
+		SetTechroomExtraLights(false);
+		SetTechroomInteractions(false);
+		
+		///////////////////
+		// Visual setup
+		Effect_Fade_Out(0);
+		Player_FadeFOVMulTo(0.75f, 0);
+		mlCurrentImageTrailEffectID = Effect_ImageTrail_Start(0.8f, 0, 1500.0f, 15.0f);
+		mlDoFEffectID = Effect_DoF_Start(0.1f, 0.5f, 1, 0);
+		
+		///////////////////
+		// Animation
+		CameraAnimation_Begin("WakeupAnim", "", false);
+				
+		//////////////////////////////////////
+		// Start intro after a short delay
+		Map_AddTimer("", 0.1f, "SequenceIntro");
+		
+		mlImageTrailID = Effect_ImageTrail_Start(0.5f, 0, -1, 15.0f);
+		Map_AddTimer("RemoveImageTrail", 20, "Timer_RemoveImageTrail");
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INTRO SEQUENCE
+	//////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	bool mbHelmetPhaseTwoStarted = false;
+	//-------------------------------------------------------
+
+	cSequenceStatesData mIntroSequenceState;
+	
+	void SequenceIntro(const tString &in asName)
+	{
+		Sequence_Begin("SequenceIntro", mIntroSequenceState);
+
+		if (Sequence_DoStepAndWait(3.0f))
+		{
+			//////////////////////////////////
+			// Wakeup sounds and audio effects
+			Sound_PlayGui("01_01_upsilon_awake/sfx/wake_up/wake_up_event", 1.0f, eSoundEntryType_Gui);
+			
+			//////////////////////////////////
+			// Camera Effects
+			Player_FadeFOVMulTo(1.0f, 0.25f);
+			Effect_Fade_In(1.5f);
+			
+			// visual fx
+			mlDOFLightsOn = Effect_DoF_Start(0.2, 2,1, 0.01);
+			Effect_DoF_FadeFocus(mlDOFLightsOn,0.2,2,0.01);
+			
+			Effect_ImageTrail_Start(2, 0.001, 4, 6);
+		}
+		else if (Sequence_DoStepAndWait(1.5f))
+		{
+			///////////////////////////
+			// Start dialog
+			Voice_Play("1A_WakeUp");
+			cLux_AddTodoMessage("Vo guys to process sound as though inhelmet");
+			
+			Music_PlayExt("01_01_awakendrone", true, 0.25f, 1.0f, 9.0f, 0.0f, eMusicPrio_MinorEvent, false);
+		}
+		else if (Sequence_DoStepAndWait(2.5f))
+		{
+			/////////////////////////////////
+			// Low pass fade
+			Effect_Fade_Out(2.0f);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			///////////////////////////////
+			// Switch to the stand up animation
+			CameraAnimation_End();
+			
+			//cSound_FadeLowPassFilter(22000.0f, 0.0f, 12.0f, eSoundEntryType_World);
+			CameraAnimation_Begin("IntroAnim", "", true);
+			CameraAnimationNode_SetInteractiveMovement("IntroAnim_1", false);
+			Player_FadeMoveSpeedMulTo(mfPlayerSpeedOnWakeup,0.1f);
+			
+			/////////////////////////////
+			// Fade out DOF effects
+			Effect_DoF_FadeFalloff(mlDoFEffectID, 0, 2.5f);
+				
+			Effect_Fade_In(3.0f);
+			Map_AddTimer("timer_lostindark",2.75f,"TimerLostInDark");
+		}
+		else if (Sequence_DoStepAndWait(0.5f))
+		{
+			//////////////////////////////////////////
+			// Lift the helmet
+			Sound_FadeGlobalVolume(1.0f, 3.0f, eSoundEntryType_GuiWorld);
+			Sound_FadeGlobalVolume(1.0f, 6.0f, eSoundEntryType_WorldAll);
+			Prop_MoveLinearTo("chair_scan_helmet", "chair_scan_helmet_target_1", 0.35, 1, 0.25, true, "MoveTo_ScanHelmet1");
+			Prop_AlignRotation("chair_scan_helmet","chair_scan_helmet_target_1",0.35,1,0.25,true,"");
+		}
+		else if (Sequence_DoStepAndWait(1.5f))
+		{
+			Effect_DoF_FadeFalloff(mlDoFEffectID, 0, 6.f);
+		}
+		else if (Sequence_DoStepAndWait(0.0f))
+		{
+			CameraAnimationNode_SetInteractiveMovement("IntroAnim_1", true);
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void MoveTo_ScanHelmet1(const tString &in asProp)
+	{
+		if (mbHelmetPhaseTwoStarted) return;
+		
+		
+		Prop_MoveLinearTo("chair_scan_helmet", "chair_scan_helmet_target_2", 1, 1, 0.25, true, "MoveTo_ScanHelmet1");
+		Prop_AlignRotation("chair_scan_helmet","chair_scan_helmet_target_2",0.35,1,0.25,true,"");
+		mbHelmetPhaseTwoStarted = true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool EventGettingUp(const tString &in asEntity, int alDirection)
+	{
+		if (alDirection == 1)
+		{
+			cLux_AddDebugMessage("**EVENT GETTING UP**");
+			
+			/////////////////////////////////////
+			// When getting up, fade out the image trails and give the player some small dizzyness
+			if (Map_TimerExists("timer_dizzy")== false)
+			{
+				//Map_AddTimer("timer_dizzy",4.0f,"TimerDizzy");
+				Effect_ImageTrail_FadeOut(mlCurrentImageTrailEffectID, 6.0f);
+				Entity_SetActive("SimonLegs",false);
+				Entity_SetActive("SimonHands",false);
+			}
+			mbPlayerStoodUp = true;
+		}
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	bool mbStandUpSoundTriggered = false;
+	bool mbNervousBreathingPlaying = false;
+	bool StandUpSound(const tString &in asEntity, int alDirection)
+	{
+		if (asEntity == "IntroAnim_1" && alDirection == 1)
+		{
+			cLux_AddDebugMessage("Stand Up Animation Sound Start");
+			if(mbStandUpSoundTriggered==false)
+			{
+				Sound_CreateAtEntity("StandUpAnimation", "01_01_upsilon_awake/sfx/wake_up/stand_up_chair", "Player", 0.0f, false, 1.0f);	
+				mbStandUpSoundTriggered = true;
+			}
+			
+			if(mbNervousBreathingPlaying == false)
+			{
+				Emotion_PlayEventBreath("01_01_upsilon_awake/sfx/wake_up/nervous", 0);
+				Map_AddTimer("nervousbreathing", 12.7, "timer_nervousbreathing");
+				mbNervousBreathingPlaying = true;
+			}
+
+			return true;
+		}
+		
+		else if (asEntity == "IntroAnim_*" && alDirection == -1)
+		{
+			cLux_AddDebugMessage("Stand Up Animation Sound Stop");
+			Sound_Stop("StandUpAnimation", 0.25f);
+			mbStandUpSoundTriggered = false;
+			return true;
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void timer_nervousbreathing(const tString &in asTimer)
+	{
+		Map_AddTimer("nervousbreathing", 13.0, "timer_nervousbreathing");
+		Emotion_PlayEventBreath("01_01_upsilon_awake/sfx/wake_up/nervous", 0);
+	}
+		
+	//-------------------------------------------------------
+	
+	int mlMunshiLine = 0;
+	void TimerLostInDark(const tString &in asTimer)
+	{
+		//////////////////////////////////////
+		// Simon stumbles around in the dark
+		if (mbPowerOn == false)
+		{
+			if (Voice_CharacterIsSpeaking("Player"))
+			{
+				Map_AddTimer("timer_lostindark",cMath_RandRectf(5.25f,9.25f),"TimerLostInDark");	
+				return;
+			}
+					
+			Voice_Play("1A_StumblingInDark",mlMunshiLine);
+			mlMunshiLine++;
+			if (mlMunshiLine > 5) mlMunshiLine = 0;
+			
+			mbCalledOutForMunshi = true;
+			Map_AddTimer("timer_lostindark",cMath_RandRectf(5.25f,9.25f),"TimerLostInDark");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END SCENE 1 EVENT A
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event B *Press power button and turn on light*
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbTechRoomSwitchedOn = false;
+	int mlDOFLightsOn = -1;
+	
+	//-------------------------------------------------------
+	
+	void panel_techroom_power_OnConnectionStateChange(const tString &in asEntity, int alState)
+	{
+		cLux_AddDebugMessage("panel_techroom_power_OnConnectionStateChange "+ asEntity +" "+alState);
+		if (mbBlackoutOccurred) return;
+		
+		///////////////////////////////////////
+		// Play sequence the first time the room is lit
+		if (alState == 1)
+		{		
+			if (mbTechRoomSwitchedOn == false)
+			{
+				PowerOnSequence("");
+				Entity_SetActive("window_masker",false);
+				Entity_SetActive("tech_room_window_1",true);
+				Entity_SetActive("ZoomArea_1",true);
+				Entity_SetActive("ZoomArea_2",true);
+				
+				mbTechRoomSwitchedOn = true;
+				Entity_SetActive("AreaLookAtRoom",true);
+			}
+			
+			////////////////////////////////////////////
+			// Power comes back on, door should unlock
+			SetTechroomInteractions(true);
+			
+			SetTechroomExtraLights(true);
+			Lamp_SetLit("techroom_emergencylight_*",false,true);
+			
+			Lever_SetStuckState(asEntity,1,true);
+			Lever_SetInteractionDisablesStuck(asEntity,false);
+			Entity_SetInteractionDisabled(asEntity,true);
+			//Player_ChangeStateToNormal();
+		}
+	}
+	
+	void TechroomLightsOff()
+	{
+		if (mbTechRoomSwitchedOn == false)
+			return;
+			
+		Lamp_SetLit("techroom_lamp_*",false,true);
+		Lamp_SetLit("Lamp_suit_status_*",false,true);
+		Lamp_SetLit("Lamp_suit_rack_*",false,true);
+		SetTechroomExtraLights(false);
+		Lamp_SetLit("techroom_emergencylight_*",true,true);
+		Lamp_SetLit("server_data_*",false,true);
+		Map_RemoveTimer("timer_techroomPS");
+		ParticleSystem_SetActive("PS_techroom*",false);
+		ParticleSystem_SetVisible("PS_techroom*",false);
+	}
+	
+	void TimerActivateTechroomSmoke(const tString &in asTimer)
+	{
+		ParticleSystem_SetActive("PS_techroom*",true);
+		ParticleSystem_SetVisible("PS_techroom*",true);
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mPowerOnSequenceStates;
+	void PowerOnSequence(const tString &in asName)
+	{
+		Sequence_Begin("PowerOnSequence", mPowerOnSequenceStates);
+
+		if (Sequence_DoStepAndWait(2.0f))
+		{
+			// Enable Cath Area
+			Entity_SetActive("cath_terminal_1",true);
+			Entity_SetActive("omnislot_inside_left_light_1",true);
+			Entity_SetActive("omnislot_inside_right_light_1",true);
+			
+			Entity_SetActive("AreaStartCollapse_*",true);
+			cLux_AddTodoMessage("SOUND: This place is turning on...");
+			Sound_CreateAtEntity("PowerOn", "01_01_upsilon_awake/sfx/wake_up/lights_on", "Player", 0, false);
+			mbPowerOn = true;
+			
+			//Lifesupport set false initially to stop sound from leaking into room
+			Entity_SetActive("lifesupport_oxymixer_1", true);
+			Entity_SetActive("tech_dynamic_6", true);
+			Map_RemoveTimer("nervousbreathing");
+			Map_AddTimer("Timer_LightsOnMusic", 3.5f, "Timer_LightsOnMusic");
+			Music_Stop(2.0f, eMusicPrio_MinorEvent);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			// visual fx
+			Effect_DoF_FadeFocus(mlDOFLightsOn, 0.0, 0.1, 0.4);
+			Effect_ToneMapping_FadeWhiteCut(0.1, 0.0001f);
+			
+			Effect_ImageTrail_Start(0.8, 0.001, 4, 6);
+			
+			Entity_SetActive("AMB_StartRoom_Dark", false);
+			Entity_SetActive("AMB_StartRoom_Light", true);
+			
+			Entity_SetActive("window_masker",false);
+			Entity_SetActive("tech_room_window_1",true);
+			
+			Lamp_SetLit("techroom_lamp_*",true,true);
+			Lamp_SetFlickerActive("techroom_lamp_*",true);
+			Map_AddTimer("timer_techroomPS",0.1f,"TimerActivateTechroomSmoke");
+			
+			
+			
+			//Player_SetAmbientLight_Indoors(true);
+			//Player_SetAmbientLight(3, 0.1, abFade ? 5 : 0);
+			SetPlayerAmbientLightOn();
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			Lamp_SetLit("Lamp_suit_status_*",true,true);
+			Lamp_SetLit("Lamp_suit_rack_*",true,true);
+			Lamp_SetLit("server_data_*",true,true);
+			
+			///////////////////////////////////////
+			// Tech Terminal boots up
+			Lamp_SetLit("security_panel_lamp",true,true);
+			Terminal_SetGuiActive("TechTerminal",true,1.0f);
+			Terminal_SetGuiActive("PilotTerminal",true,1.0f);
+			Lamp_SetLit("ChipLamp_*",true,true);
+			
+			// visual fx
+			Effect_ToneMapping_FadeWhiteCut(0.7, 3);
+			
+		}
+		else if (Sequence_DoStepAndWait(0.5f))
+		{
+			///////////////////////////////////////
+			// Door unlocks
+			Lamp_SetFlickerActive("techroom_lamp_*",false);
+			Button_SetLocked("techroom_doorpanel_*",true,true);
+			Button_SetDisabled("techroom_doorpanel_*",false,true);
+			
+			Sound_CreateAtEntity("DoorFunctional", "Entities_Station/doors/upsilon/horizontal_auto/close_end", "techroom_doorpanel_1", 0.25f, false);
+			Sound_CreateAtEntity("CommRoomPanelUnlock", "Entities_Station/doors/upsilon/upsilon_button/upsilon_button_unlock", "techroom_doorpanel_1");	
+			
+			// visual fx
+			Effect_DoF_FadeFocus(mlDOFLightsOn, 0.2, 30, 8);
+			Effect_DoF_FadeOut(mlDOFLightsOn,7.0f);
+			Effect_ToneMapping_FadeWhiteCut(3.5, 7.0);
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------------
+
+	void Timer_LightsOnMusic(const tString &in asTimer)
+	{
+		LightsOnMusic();
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////
+	// Assist gamepad players when opening the hatch
+	/////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollideHatchOpen(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			cLux_AddDebugMessage("Aux area active");
+			Entity_SetActive("AuxAreaPowerboxLever",true);
+		}
+		else
+		{
+			cLux_AddDebugMessage("Aux area inactive");
+			Entity_SetActive("AuxAreaPowerboxLever",false);
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END SCENE 1 EVENT B
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////////////////////
+	// Scene 1 Event B2 *Simon Collapses*
+	//{//////////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	
+	
+	//-------------------------------------------------------
+	
+	bool CollideStartCollapse(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			SequenceReactToEnvironment("");
+			Entity_SetActive("AreaStartCollapse_*",false);
+			Entity_SetActive("AreaLookAtRoom",false);
+			Voice_Play("1B_PowerOn_BeforeCollapse");
+		}
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void AreaLookAtRoom_OnPlayerLookAt(const tString &in asEntity, int alState)
+	{
+		if (alState == 1)
+		{
+			Entity_SetActive("AreaLookAtRoom",false);
+			Entity_SetActive("AreaStartCollapse_*",false);
+			//Player_FadeMoveSpeedMulTo(1.0f,1.0f);
+			//CameraAnimation_Begin("CollapseAnim","",true);
+			//SequenceCollapse("");
+			SequenceReactToEnvironment("");
+			Voice_Play("1B_PowerOn_BeforeCollapse",-1,"OnCommentEnvironment");
+			
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnCommentEnvironment(const tString&in asScene, const tString&in asSubject)
+	{
+		Voice_PlayWhenPossible("1B_PowerOn_StandUp");
+	}
+
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mReactToEnvironmentSequenceStates;
+	void SequenceReactToEnvironment(const tString &in asName)
+	{
+		Sequence_Begin("SequenceReactToEnvironment", mReactToEnvironmentSequenceStates);
+		
+		if (Sequence_DoStepAndWait(1.5f))
+		{
+			//Voice_Play("1B_PowerOn_BeforeCollapse");
+			
+			////////////////////////////////////
+			// First signs of collapsing
+			/*Player_FadeMoveSpeedMulTo(0.1f,1.25f);
+			Player_FadeRollTo(2.0f,1.0f,1.0f);
+			Player_MoveHeadPos(cVector3f(0.0f,-0.5f,0.0f),1.0f,2.0f,0.1f);*/
+			
+			
+			
+		}
+		else if (Sequence_DoStepAndWait(0.25f))
+		{
+			///////////////////////////////////
+			// Staggers a bit
+			/*Player_StopLookAt(0.5f);
+			Player_SetCrouchDisabled(true);
+			Player_SetJumpDisabled(true);
+			Player_MoveHeadPos(cVector3f(0.0f,-0.3f,0.0f),3.0f,3.0f,0.1f);
+			Player_FadeRollTo(5.0f,1.0f,1.0f);*/
+		}
+		else if (Sequence_DoStepAndWait(5.0f))
+		{
+			///////////////////////////////////
+			// Drops to knees
+			/*cVector3f vCamTarget = Player_GetCrouching() ? cVector3f_Down*0.7 : cVector3f_Down*1.5;
+			vCamTarget = vCamTarget + cVector3f_Forward*0.1f;
+			Player_MoveHeadPos(vCamTarget, 9, 5, 0.1);
+			Player_FadeRollTo(25.0f,10.0f,10.0f);*/
+			
+			//////////////////////////////////
+			// Activate the omnitool pamphlet now
+			/*Prop_SetActiveAndFade("omnitool_pamphlet",true,1.0f);
+			Entity_SetInteractionDisabled("omnitool_pamphlet",false);*/
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			/*Player_FadeRollTo(5.0f,1.0f,1.0f);
+			 */
+			
+		}
+		else if (Sequence_DoStepAndWait(2.25f))
+		{
+			//Player_FadeRollTo(0.0f,1.0f,3.0f);
+		}
+		else if (Sequence_DoStepAndWait(5.0f))
+		{
+			/*
+			Player_FadeMoveSpeedMulTo(1.0f,1.25f);
+			Player_MoveHeadPos(cVector3f(0.0f,0.0f,0.0f),1.0f,2.0f,0.1f);
+			Player_SetCrouchDisabled(false);
+			Player_SetJumpDisabled(false);
+			Player_SetCrouching(false,false,false);
+			 */
+
+			///////////////////////////////
+			// Enable interaction entities that would otherwise mess with the sequence
+			Terminal_SetAllowInteraction("TechTerminal",true);
+			
+		}
+		else if (Sequence_DoStepAndWait(5.0f))
+		{
+			
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	bool RobotSparksHandler(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1)
+		{
+			Light_SetFlickerActive("PointLight_279", true);
+			cLux_AddDebugMessage("Turning on robot sparks");
+		}
+		else
+		{
+			Light_SetFlickerActive("PointLight_279", false);
+			cLux_AddDebugMessage("Turning off robot sparks");
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------------
+	
+	void InteractStartRoomButton(const tString &in asEntity)
+	{
+		cLux_AddDebugMessage("Starting broken window timer");
+		Map_AddTimer("Timer_CheckBrokenWindow", 45, "Timer_CheckBrokenWindow");
+	}
+	
+	//-------------------------------------------------------------
+	
+	void Timer_CheckBrokenWindow(const tString &in asTimer)
+	{
+		bool bCanSeeWindow = Entity_IsInPlayerFOV("WindowLookArea");
+		
+		///////////////////////
+		// If the player has already attempted to break the window, skip this
+		if (Entity_IsActive("tech_room_window_1")==false)
+		{
+			cLux_AddDebugMessage("Window already cracked");
+			return;
+		}
+		
+		///////////////////////
+		// If the player is looking at the window, reschedule timer
+		if (bCanSeeWindow)
+		{
+			Map_AddTimer("Timer_CheckBrokenWindow", 1, "Timer_CheckBrokenWindow");
+			return;
+		}
+		
+		Seq_WindowAutoBreakTremor("");
+	}
+	
+	//-------------------------------------------------------------
+
+	void WindowBreakQuake(const tString &in asTimer)
+	{
+		Sound_CreateAtEntity("WindowCrack", "01_01_upsilon_awake/sfx/window_smash/glass_smash", "WindowSoundSource");
+		Prop_SetHealth("tech_room_window_2", 0);
+	}
+	
+	//-------------------------------------------------------------
+	
+	cSequenceStatesData mWindowAutoBreakTremorSequence;
+		
+	void Seq_WindowAutoBreakTremor(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_WindowAutoBreakTremor", mWindowAutoBreakTremorSequence);
+			
+		if (Sequence_DoStepAndWait(1))
+		{
+			cLux_AddDebugMessage("Window not broken");
+			Effect_Shake_Start(0.05, 0, 2, 1);
+			Sound_CreateAtEntity("AutoBreakTremor", "01_02_upsilon_inside_02/sfx/medium_room/tremor", "Player");
+		}
+		else if (Sequence_DoStepAndWait(1))
+		{
+			if (Entity_IsActive("tech_room_window_1"))
+			{
+				cLux_AddDebugMessage("Window should crack now");
+				Prop_SetHealth("tech_room_window_1", 0);
+				//Prop_SetHealth("tech_room_window_2", 0);
+				Sound_CreateAtEntity("WindowCrackQuake", "01_01_upsilon_awake/sfx/window_smash/glass_quake_crack", "WindowSoundSource");
+				OpeningWindowSmashMusic();
+			}
+			else
+			{
+				Sequence_Stop();
+			}
+		}
+		else
+		{
+			Hint_ShowHint("Hints", "HintGrab_1", true, 1.5, false);
+		}
+		Sequence_End();
+	}
+	
+	//} END SCENE 1 EVENT B2
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event C *Interact with tech room terminal*
+	//{//////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	/* See terminals section */
+	
+	//-------------------------------------------------------
+	
+	//} END SCENE 1 EVENT C
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event D *Find Omni Tool Pamphlet*
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	/* Implemented in editor */
+	
+	//-------------------------------------------------------
+	
+	//} END SCENE 1 EVENT D
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event E *Interact with Pilot Chair Terminal*
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	/*variables for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	/*functions for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	//} END SCENE 1 EVENT E
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 1 - Break Window (and get hint)
+	//////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	int mlWindowBreaks = 0;
+	
+	//--------------------------------------------------------
+	
+	void OnBreakWindow(const tString &in asEntity)
+	{
+		++mlWindowBreaks;
+		cLux_AddDebugMessage("breaks : " + mlWindowBreaks);
+		if (mlWindowBreaks == 1)
+		{
+			
+			Entity_SetActive("tech_room_window_1",false);
+			Entity_SetActive("tech_room_window_indestructable",true);
+			ParticleSystem_CreateAtEntity("01_01_break_window_damaged","01_01_break_window_damaged.ps","WindowCrackEffectArea",false);
+			
+			DebugMyParticle("01_01_break_window_damaged", "tech_room_window_indestructable");
+			
+			Map_AddTimer("timer_swapwindow",0.75f,"TimerSwapWindow");
+			Sound_CreateAtEntity("WindowCrack", "01_01_upsilon_awake/sfx/window_smash/glass_crack", "WindowSoundSource");
+			OpeningWindowSmashMusic();
+			
+			
+		}
+		if (mlWindowBreaks == 2)
+		{
+			Entity_SetActive("tech_room_window_2",false);
+			Entity_SetActive("tech_room_window_3",true);
+			ParticleSystem_CreateAtEntity("01_01_break_window","01_01_break_window.ps","WindowCrackEffectArea",false);
+			Sound_CreateAtEntity("WindowCrack", "01_01_upsilon_awake/sfx/window_smash/glass_smash", "WindowSoundSource");
+			Entity_SetActive("AreaJumpHint",true);
+		}
+	}
+	
+	//--------------------------------------------------------
+	
+	void TimerSwapWindow(const tString &in asTimer)
+	{
+		Entity_SetActive("tech_room_window_indestructable",false);
+		Entity_SetActive("tech_room_window_2",true);
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaJumpHint(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		Hint_ShowHint("Hints","HintJump",true);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 1 - Misc Events and Scares    
+	//{//////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void SetupVentSpooks()
+	{
+		//////////////////////////////////////
+		// The vent that the construct escapes through
+		Entity_SetActive("robot_escape_hatch_closed",true);
+		Entity_SetActive("robot_escape_hatch_item_*",false);
+		Entity_PlayAnimation("robot_escape_hatch_closed","closed_state",0.0f,true);
+		
+		/////////////////////////////////////
+		// Turn off lights for the overhead vent event
+		//Light_SetVisible("LightVentFlicker",false);
+		Light_SetVisible("LightVentFlicker_2",false);
+		
+		////////////////////////////////////
+		//Disable sparks unless player enters area to stop sound from leaking
+		Light_SetFlickerActive("PointLight_247", false);
+		Light_SetFlickerActive("PointLight_243", false);
+		
+	}
+	
+	bool Trigger_RobotBehindStorageDoor(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Sound_CreateAtEntity("RobotBehindDoor", "01_01_upsilon_awake/sfx/construct_behind_door", "RobotBehindDoorSoundSource");
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void StartRoomDoorStateChange(const tString &in asEntity, int alState)
+	{
+		if(alState == 1)
+		{
+			Music_Stop(3.0f, eMusicPrio_MinorEvent);
+			Map_AddTimer("EndLightsOnMusicShort", 1.0f, "EndLightsOnMusic");
+			Map_RemoveTimer("EndLightsOnMusic");
+		}
+		cLux_AddDebugMessage("Start door state is "+alState);
+	}
+	
+	///////////////////////////////////
+	// Leaving the Tech Room
+	bool CollideAreaLeaveTechRoom(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		//Slight delay for players to get bearings
+		Map_AddTimer("LeaveStartRoomStinger", 1.0f, "LeaveStartRoomStinger");
+		Map_AddTimer("LeaveStartRoomMusicOver", cMath_RandRectf(33.5f,36.0f), "LeaveStartRoomMusic");
+		
+		/////////////////////////////////
+		// Activate necessary areas
+		//Entity_SetActive("AreaGlimpseFenceEvent",true);
+		
+		/////////////////////////
+		// Start Preload early
+		cLux_AddDebugMessage("Preloading begins here");
+		Preload();
+		
+		return false;
+	}
+	
+	void LeaveStartRoomStinger(const tString &in asTimer)
+	{
+		Music_Play("02_08_thetastart", 0.4f, false, eMusicPrio_BigEvent);
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////////
+	// Sounds in maintenance hatch
+	/////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaSpookVent(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (mbInfectedRobotReleased == false) return true;
+		
+		cLux_AddDebugMessage("SOUND: Something crawling in the vent..");
+		
+		Entity_SetActive("GlimpseMaintenanceVentBroken_Start",true);
+		Sound_CreateAtEntity("sfx_ventcrawl","01_01_upsilon_awake/sfx/construct_vent/construct_vent","sfx_ventcrawler");
+		
+		
+		Prop_AlignRotation("GlimpseMaintenanceVentBroken_Start","GlimpseMaintenanceVentBroken_Mid",2.0f,2.0f,0.0f,false,"");
+		Map_AddTimer("timer_ventlight",2.0f,"TimerVentLightDisappear");
+	
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerVentLightDisappear(const tString &in asTimer)
+	{
+		Prop_AlignRotation("GlimpseMaintenanceVentBroken_Start","GlimpseMaintenanceVentBroken_End",2.0f,2.0f,0.0f,false,"");	
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////////
+	// Collapsing Vent Event
+	////////////////////////////////
+	
+	//-------------------------------------------------------
+	bool mbVentScareAllowed = false;
+	bool mbVentCanHurt = true;
+	//-------------------------------------------------------
+	
+	bool BackAreaSparksHandler(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState == 1)
+		{
+			Light_SetFlickerActive("PointLight_247", true);
+			Light_SetFlickerActive("PointLight_243", true);
+			Sound_Stop("sparks_area_1", 1.0f);
+			cLux_AddDebugMessage("back area sparks active");
+		}
+		else
+		{
+			Light_SetFlickerActive("PointLight_247", false);
+			Light_SetFlickerActive("PointLight_243", false);
+			Sound_Play("sparks_area_1", 1.0f);
+			cLux_AddDebugMessage("back area sparks disabled");
+		}
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	
+	bool CollideAreaVentScare(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState < 1) return true;
+		if (mbVentScareAllowed == false) return true;
+		
+		cLux_AddTodoMessage("SCRIPT: Some event here to make this less monotonous");
+		
+		////////////////////////////////
+		// Begin Shaking
+		//Effect_Shake_Start(0.0125f,3.0f,0.0f,1.0f);
+		
+		ParticleSystem_CreateAtEntity("ps_ventdust_1","dust_falling_fast_small_oneshot.ps","VentEffectArea",true);
+			
+		Sound_CreateAtEntity("VentScare","01_01_upsilon_awake/sfx/vent_scare/vent_scare_event","AreaVentSoundSource",0.0f,false,1.0f);
+		Map_AddTimer("StopAmbientMusicQuickly", 1.0f, "AmbientMusicHandler");
+		Lamp_SetFlickerActive("Lamp_Hallway_OutsideKitchen",true);
+		
+		///////////////////////////////
+		// Activate blue lights
+		Entity_SetActive("GlimpseMaintenanceVent_Start",true);
+		
+		Light_SetVisible("LightVentFlicker",true);
+		Light_SetVisible("LightVentFlicker_2",true);
+		
+		//Map_AddTimer("timer_GlimpseMaintenanceVent",2.75f,"TimerSearchWithRobotLights");
+		Map_AddTimer("timer_ventfall",1.25f,"TimerVentFall");
+		Map_AddTimer("timer_GlimpseMaintenanceVent",2.75f,"SequenceSearchLight");
+		
+		////////////////////////////////
+		// Disable all areas related to this scare
+		Entity_SetActive("AreaVentScare*",false);
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerRemoveRobotLights(const tString &in asTimer)
+	{
+		//Entity_SetActive("GlimpseMaintenanceVent_Start",false);
+		Entity_SetActive("AreaRemoveVentLights",false);
+		Prop_MoveLinearTo("GlimpseMaintenanceVent_Start", "GlimpseMaintenanceVent_End", 5, 2, 0, true);
+
+		Light_FadeTo("LightVentFlicker",cColor(0,0,0,0),0.0f,1.5f);
+		Light_FadeTo("LightVentFlicker_2",cColor(0,0,0,0),0.0f,1.5f);
+		
+		Prop_AlignRotation("GlimpseMaintenanceVent_Lower","GlimpseMaintenanceVent_Lower_Left",5,2,0,false,"");
+		Prop_MoveLinearTo("GlimpseMaintenanceVent_Lower", "GlimpseMaintenanceVent_End", 5, 2, 0, true);
+		
+		///////////////////////////////////////
+		// Also fade out the lights from the robot
+		Entity_SetEffectsActive("GlimpseMaintenanceVent_Start",false,true);
+		Entity_SetEffectsActive("GlimpseMaintenanceVent_Lower",false,true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerVentFall(const tString &in asTimer)
+	{
+		Effect_Shake_Start(0.05f,0.75f,0.0f,0.25f);
+		Prop_SetStaticPhysics("hatch_scare_1",false);
+		ParticleSystem_CreateAtEntity("steam_fast_loop_vent","steam_fast_loop.ps","VentEffectArea",true);
+		ParticleSystem_CreateAtEntity("steam_fast_loop_vent","steam_fast_loop.ps","VentEffectArea_1",true);
+		Sound_Play("vent_scare_steam_*", 1.0f);
+		Map_AddTimer("timer_removeventhurt",0.75f,"RemoveVentDamage");
+		
+		//Audio
+		Map_AddTimer("VentScareMusic", 2.0f, "VentScareMusic");
+		Sound_FadeGlobalVolume(0.25, 0.1);
+		Map_AddTimer("FadeUpAfterVent", 5.0f, "FadeUpAfterVent");
+	}
+	
+	void FadeUpAfterVent (const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(1.0f, 11.0f);
+	}
+	
+	void VentScareMusic (const tString &in asTimer)
+	{
+		Music_Play("01_01_doorscare", 0.65f, false, eMusicPrio_BigEvent);
+		Depth_Audio_Fear_MediumIntensity(12.0f, 20.0f, 5, false, true);
+		Map_AddTimer("PostVentScareMusic", 6.0f, "PostVentScareMusic");
+	}
+	
+	void PostVentScareMusic (const tString &in asTimer)
+	{
+		Map_AddTimer("StartAmbient", cMath_RandRectf(5.0f,8.0f), "AmbientMusicHandler");
+		Music_Play("NPC_construct_react3", 0.45f, false, eMusicPrio_BigEvent);
+		Entity_SetActive("AreaPostVentScareSound", true);
+	}
+	
+	bool PostVentScareSound(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Sound_CreateAtEntity("PostVentScare","01_01_upsilon_awake/sfx/vent_scare/vent_scare_post_movement","AreaVentSoundSource",0.0f,false,1.0f);
+		return false;
+	}
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSearchlightSequence;
+	void SequenceSearchLight(const tString &in asName)
+	{
+		Sequence_Begin("SequenceSearchLight", mSearchlightSequence);
+
+
+		if (Sequence_DoStepAndWait(0.1f))
+		{
+			Prop_MoveLinearTo("GlimpseMaintenanceVent_Start", "GlimpseMaintenanceVent_Search_1", 5, 2, 0, true);
+			Entity_SetActive("GlimpseMaintenanceVent_Lower",true);
+		}
+		else if (Sequence_DoStepAndWait(1.0f))
+		{
+			Prop_AlignRotation("GlimpseMaintenanceVent_Lower","GlimpseMaintenanceVent_Lower_Left",5,2,0,false,"");
+		}
+		else if (Sequence_DoStepAndWait(0.75f))
+		{
+			Prop_MoveLinearTo("GlimpseMaintenanceVent_Start", "GlimpseMaintenanceVent_Search_2", 5, 2, 0, true);
+		}
+		else if (Sequence_DoStepAndWait(1.0f))
+		{
+			Prop_AlignRotation("GlimpseMaintenanceVent_Lower","GlimpseMaintenanceVent_Lower_Right",5,2,0,false,"");
+		}
+		else if (Sequence_DoStepAndWait(0.75f))
+		{
+			CollideAreaRemoveVentLights("","",1);
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void RemoveVentDamage(const tString &in asTimer)
+	{
+		////////////////////////////
+		// Disable area attached to vent so it no longer hurts the player when falling
+		mbVentCanHurt = false;
+		Entity_SetActive("AreaVentHurtPlayer",false);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaVentHurtPlayer(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1 && mbVentCanHurt && mbVentScareAllowed)
+		{
+			Player_GiveDamage(0.1f,0.1,eDamageType_Hit,"hatch_scare_1");
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaRemoveVentLights(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		///////////////////////////////////////////////
+		// Robot automatically retreats if the player gets too close so we dont see the trick
+		Map_RemoveTimer("timer_GlimpseMaintenanceVent");
+		
+		Map_AddTimer("GlimpseMaintenanceVent",0.1f,"TimerRemoveRobotLights");
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////////////////
+	// Items fall off the shelves in robot repair
+	/////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaSetupShelfScare(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			Entity_SetActive("AreaLookatShelfScare*",true);
+			return false;
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void AreaLookatShelfScare_OnPlayerLookAt(const tString &in asEntity, int alState)
+	{
+		Entity_SetActive("AreaLookatShelfScare*",false);
+		
+		/////////////////////////////
+		// Add forces to nearby grab objects
+		
+		Entity_AddImpulseFromEntity("maintenance_robot_part_arm_upper_5","ForceAreaShelfScare_2",50.0f,true);
+		Entity_AddImpulseFromEntity("maintenance_robot_part_arm_upper_4","ForceAreaShelfScare_2",50.0f,true);
+		Entity_AddImpulseFromEntity("maintenance_robot_part_head_2","ForceAreaShelfScare_2",50.0f,true);
+		Entity_AddImpulseFromEntity("maintenance_robot_part_head_1","ForceAreaShelfScare_2",50.0f,true);
+		
+		Entity_AddImpulseFromEntity("maintenance_robot_part_arm_lower_2","ForceAreaShelfScare_1",50.0f,true);
+		Entity_AddImpulseFromEntity("cable_roll_7","ForceAreaShelfScare_1",50.0f,true);
+		Entity_AddImpulseFromEntity("blowtorch_3","ForceAreaShelfScare_1",50.0f,true);
+		
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	
+	//-------------------------------------------------------
+	
+	//} END SCENE 1 MISC EVENTS
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 1 - Electric Puddle
+	//{//////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaHurtPlayerElectric(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("OUCH");
+		
+		
+		if (alState == 1)
+		{
+			Map_AddTimer("Timer_electrocuteplayer",0.1f,"TimerElectrocutePlayer");
+			Depth_Audio_PlayerTakeDamage();
+			Depth_Audio_SimonHurt_Damage();
+			
+		}
+		
+		if (alState == -1)
+		{
+			Map_RemoveTimer("Timer_electrocuteplayer");
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerElectrocutePlayer(const tString &in asTimer)
+	{
+		if (Entity_GetCollide("Player","AreaHurtPlayerElectric"))
+		{
+			Player_GiveDamage(0.05f,0.1,eDamageType_Electricity,"AreaHurtPlayerElectric");
+			if (mbPlayerHurt == false)
+			{
+				mbPlayerHurt = true;
+				Map_AddTimer("timer_electrocuted",1.0f,"TimerSimonElectrocuted");
+			
+			}
+		}
+	
+		Map_AddTimer("Timer_electrocuteplayer",cMath_RandRectf(0.75f,1.25f),"TimerElectrocutePlayer");
+	}
+	
+	//}------------------------------------------------------
+	
+	//-------------------------------------------------------
+	
+	//////////////////////////////////
+	// WAU FLOWER IN KITCHEN
+	//////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void wau_flower_kitchen_OnPlayerInteract(const tString &in asEntity)
+	{
+		Map_AddTimer("timer_kitchenflower",4.0f,"TimerDrainKitchenLights");
+	}
+	
+	void TimerDrainKitchenLights(const tString &in asTimer)
+	{
+		Lamp_SetLit("Lamp_Hallway_InsideKitchen",false,true);
+		Lamp_SetLit("Lamp_Hallway_OutsideKitchen",false,true);
+	}
+
+	//-------------------------------------------------------
+	
+	//} END SCENE 1
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 2 *Explore and Open Observation Tunnel*
+	// ==============
+	//{///////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbInfectedRobotAwakened = false;
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 *Enter Hall - Power Down*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	bool mbPowerDownSoundsPlayed = false;
+	//-------------------------------------------------------
+	
+	bool Trigger_EnterHall(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		/////////////////////////////////////////
+		// Power goes out suddenly
+		Lamp_SetLit("lamp_dynamic_*",false,true);
+		Entity_SetEffectsActive("tech_dynamic_*",false,true);
+		
+		TechroomLightsOff();
+		mbBlackoutOccurred = true;
+		
+		Map_AddTimer("", 2.0f, "Timer_HintSneak");
+		
+		//Button_SetSwitchedOn("panel_techroom_power",false,true);
+		//Button_SetDisabled("panel_techroom_power",true,true);
+		Player_SetAmbientLight_Indoors(true);
+		LensFlare_SetVisible("LensFlare_5",false);
+		
+		//////////////////////////////////////////
+		// Sounds and music
+		if (mbPowerDownSoundsPlayed == false)
+		{
+			Sound_CreateAtEntity("LightsOutEvent", "01_01_upsilon_awake/sfx/lights_out_event", "Player");
+			Sound_PreloadGroup("Player/UI", true);
+			Depth_Audio_Fear_MediumIntensity();
+			Entity_SetActive("AMB_HallSpace_1", false);
+			Entity_SetActive("AMB_HallSpace_NoGenerator", true);
+			
+			Map_AddTimer("PostLightsOutMusic", 0.5f, "PostLightsOutMusic");
+			Map_AddTimer("StopAmbientMusicQuickly", 1.0f, "AmbientMusicHandler");
+			Sound_Stop("generator_1", 0.15f);
+			Sound_Stop("generator_2", 0.15f);
+			mbAmbientSecondStage = true;
+			mbPowerDownSoundsPlayed = true;
+		}
+		
+		return false;
+	}
+	
+	void Timer_HintSneak(const tString &in asTimer)
+	{
+		Hint_ShowHint("Hints", "HintSneak", true);
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event B *Datamine airlock intercom*
+	/////////////////////////////////////////
+
+	//{-------------------------------------------------------
+	
+	/*DONE IN EDITOR*/
+	
+	//}-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event C *Datamine semi-infected maintenance robot*
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void DatamineArea_SemiInfectedRobot_SubjectOver(const tString &in asScene, const tString &in asSubject)
+	{
+		OnDiscoverDatamining();
+		Map_AddTimer("timer_robotescape",3.5f,"TimerRobotEscape");
+		//SlideDoor_SetClosed("robot_storage_door", false, true);
+		Entity_SetActive("AreaReleaseRobot", true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerRobotEscape(const tString &in asTimer)
+	{
+		ReleaseInfectedRobot();
+	}
+	
+	//}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event D *Turn on lights & awaken infected maintenance robot*
+	//{//////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void SetupHangingRobot()
+	{	
+		Entity_StopAnimation("infected_robot_hanging_1");
+		Entity_SetActive("infectedrobot_hanging_1",true);
+		
+		Entity_SetActive("construct_oil_*",false);
+		Entity_SetActive("sealedwall_door_broken",false);
+		Entity_SetActive("sealedwall_door",true);
+		
+		//flicker gets set to active when entering room to stop sound from leaking through walls
+		Light_SetFlickerActive("PointLight_279", false);
+	}	
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaRobotTwitches(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (mbInfectedRobotReleased) return false;
+		if (mbKilledByRobot) return false;
+		if (EyeTracking_IsActive()) return true;
+		
+		//////////////////////////////////////////
+		// Robot twitches slightly - is it alive??
+		if (alState == 1)
+		{	
+			RobotTwitch();
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void RobotTwitch()
+	{
+		if (mbInfectedRobotTwitched == true) return;
+		mbInfectedRobotTwitched = true;
+		
+		cLux_AddTodoMessage("SCRIPT: NEED ANIMATION FOR ROBOT HANGING TO REMOVE ENTITY SWAP AND POP");
+		tString sAnimName = "twitch";
+		
+		Entity_SetActive("infectedrobot_hanging_1",true);
+		Entity_SetEffectsActive("infectedrobot_hanging_1",true,true);
+		cLux_AddTodoMessage("SCRIPT/ART: Make robot twitch!!");
+		Sound_CreateAtEntity("RobotTwitch","01_01_upsilon_awake/sfx/construct_twitch_scare", "infectedrobot_hanging_1");
+		Entity_PlayAnimation("infectedrobot_hanging_1",sAnimName,0.1f,true,false,"");
+		Map_AddTimer("timer_notwitching",0.75f,"TimerStopRobotTwitching");
+		Music_Play("NPC_robotheadgirl_scare2", 0.85f, false, eMusicPrio_BigEvent);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerStopRobotTwitching(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive("infectedrobot_hanging_1",false,true);
+		tString sAnimName = "idle";
+		Entity_PlayAnimation("infectedrobot_hanging_1",sAnimName,0.1f,true,false,"");
+		Depth_Audio_Fear_MediumIntensity();
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaReleaseRobot(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		ReleaseInfectedRobot();
+		
+		/*if (alState == 1 && mbKilledByRobot == false)
+		{
+			Entity_PlaceAtEntity("infected_robot", "AreaRobotSpawn_Maintenance",cVector3f_Zero,true);
+			Entity_SetActive("infected_robot",true);
+			Entity_SetActive("AreaLeaveMaintenance",true);
+			ReleaseInfectedRobot();
+			return false;
+		}*/
+		
+		return false;
+	}
+	
+	bool CollideAreaLeaveMaintenance(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Map_AddTimer("", 1.0f, "Timer_ShowLeanHint");
+		
+		return false;
+	}
+	
+	void Timer_ShowLeanHint(const tString &in asTimer)
+	{
+		Hint_ShowHint("Hints", "HintLean", true);
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END SCENE 2 EVENT D
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event E *Infected Robot Encounters*
+	//{//////////////////////////////////////
+	
+	//-------------------------------------------------------
+	int mlFootstepCount = 0;
+	float mfFootstepVolume = 1.0f;
+	//-------------------------------------------------------
+	
+	void SetupInfectedRobot()
+	{
+		///////////////////////////
+		// Idle still animation
+		tString sAnimName = "idle";
+		Entity_PlayAnimation("infectedrobot_hanging_1",sAnimName,0.1f,true,false,"");
+		Entity_SetEffectsActive("infectedrobot_hanging_1",false,false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void ReleaseInfectedRobot()
+	{
+		if (mbInfectedRobotReleased) return;
+		
+		cLux_AddDebugMessage("Cosas are happening");
+		
+		/////////////////////////////////////////
+		// Release the robot from the tech room
+		mbInfectedRobotReleased = true;
+		cLux_AddTodoMessage("SOUND: Infected robot leaves the tech room...");
+		Entity_SetActive("infectedrobot_hanging_*",false);
+		Entity_SetActive("blockbox_hanging_robo*",false);
+		Entity_SetActive("DistortionArea_HangingRobot",false);
+		
+		/*///////////////////////////
+		// Infected robot may kill suit man
+		Entity_SetActive("AreaRobotKillsSuitMan",true);
+		*/
+		
+		////////////////////////////////
+		// Should the door be busted?
+		if (SlideDoor_GetOpenAmount("robot_storage_door") <= 0.1f)
+		{
+			Entity_SetActive("robot_storage_door",false);
+			Entity_SetActive("robot_storage_door_smashed",true);
+			Button_SetDisabled("robot_storage_doorpanel_*",true,true);
+		}
+		
+		///////////////////////////
+		// Associated sounds
+		Sound_CreateAtEntity("DoorSmash", "01_01_upsilon_awake/sfx/door_smash/door_smash", "DoorSmashSoundSource");
+		Entity_SetActive("Trigger_SmashedDoorMusic", true);
+		Entity_SetActive("AreaEndRobotScare_1", true);
+		Sound_FadeGlobalVolume(0.35f, 0.1f, eSoundEntryType_WorldAll);
+		Map_AddTimer("FadeUpFromSmash", 1.0f, "FadeUpFromSmash");
+		Map_AddTimer("DoorSmashPostLoop", 0.5f, "DoorSmashPostLoop");
+		Map_AddTimer("ConstructDoorSmashMusic", 1.0f, "ConstructDoorSmashMusic");
+		Depth_Audio_Fear_MediumIntensity();
+		Area_MoveLinearTo("RunningSoundSource","RunningSoundSource_Target",2.2f,5.0f);
+		Map_AddTimer("StopAmbientMusicQuickly", 1.0f, "AmbientMusicHandler");
+		
+		//////////////////////////
+		// Activate the oil and maintenance hatch
+		Entity_SetActive("construct_oil_*",true);
+		Entity_SetActive("robot_escape_hatch_closed",false);
+		Entity_SetActive("robot_escape_hatch_item_1",true);
+		Entity_SetActive("robot_escape_hatch_item_2",true);
+		Entity_SetActive("robot_escape_hatch_item_3",true);
+		
+		///////////////////////////
+		// And the broken door!
+		Entity_SetActive("sealedwall_door_broken",true);
+		Entity_SetActive("sealedwall_door",false);
+		
+		/////////////////////////////////////////////
+		// Disabling the door seal as the robot has kicked it out of the way on his frantic escape
+		Entity_SetActive("OpenDoorSeal_RobotRoom",false);
+		
+		/////////////////////////////////////////////
+		// Enable lean hint area
+		Entity_SetActive("AreaLeaveMaintenance",true);	
+		
+		/////////////////////////////////////////////
+		// Effects
+		Effect_Shake_Start(0.05f,0.2f,0.0f,0.2f);
+	}
+	
+	//-------------------------------------------------------
+	
+	void FadeUpFromSmash(const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(1.0f, 2.0f, eSoundEntryType_WorldAll);
+	}
+	
+	bool mbDoorSmashLoopSoundActive = false;
+	void DoorSmashPostLoop(const tString &in asTimer)
+	{
+		Sound_CreateAtEntity("DoorSmashPostLoop", "01_01_upsilon_awake/sfx/door_smash/door_smash_loop", "DoorSmashLoopEndSoundSource");
+		mbDoorSmashLoopSoundActive = true;
+	}
+		
+	//-------------------------------------------------------
+	
+	bool Trigger_EndRobotLoop(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (mbDoorSmashLoopSoundActive == false) return false;
+		
+		Sound_Stop("DoorSmashPostLoop", 1.0f);
+		Sound_CreateAtEntity("DoorSmashPostLoopEnd", "01_01_upsilon_awake/sfx/door_smash/door_smash_end", "DoorSmashLoopEndSoundSource");
+		Depth_Audio_Fear_MediumIntensity();
+		mbDoorSmashLoopSoundActive = false;
+		cLux_AddDebugMessage("Loop stopping");
+		ConstructDoorSmashMusicEnd();
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////////////////
+	// ENCOUNTER *OMNITOOL STORAGE ROBOT*
+	//{/////////////////////////////////////
+	
+	//-------------------------------------------------------
+	bool mbStorageRobotAttacked = false;
+	bool mbStorageSealRemoved = false;
+	bool mbStorageRobotDeparted = false;
+	//-------------------------------------------------------
+	
+	bool CollideAreaStorageDoorScare(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		/////////////////////////
+		// Build up sequence for robot trying to get out
+		StorageDoorSequence("");
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mStorageDoorSequence;
+	void StorageDoorSequence(const tString &in asName)
+	{
+		Sequence_Begin("StorageDoorSequence", mStorageDoorSequence);
+
+		if (Sequence_DoStepAndWait(1.25f))
+		{
+			/////////////////////////
+			// Create particles at door
+			ParticleSystem_CreateAtEntity("ps_dustbang_2","01_01_door_storage_scare.ps","AreaOmnistorageDoorEffect",true);
+			
+			
+			//////////////////////////////////////
+			// Panel registers an error...
+			SlideDoor_SetOpenAmount("storageroom_door",0.05f,false);
+			Entity_CallEntityInteract("storageroom_doorpanel_2");
+			
+			Effect_Shake_Start(0.1f,0.1f,0.0f,0.0f);
+		}
+		else if (Sequence_DoStepAndWait(1.25f))
+		{
+			cLux_AddDebugMessage("Close the door");
+			
+			Depth_Audio_Fear_HighIntensity(5.0f,8.0f,3,true,true);
+			Sound_FadeGlobalVolume(1.0f, 5.0f);
+			
+			/////////////////////////
+			// Door closes
+			Entity_CallEntityInteract("storageroom_doorpanel_2");
+			SlideDoor_SetClosed("storageroom_door",true,false);
+			Effect_Shake_Start(0.1f,0.1f,0.0f,0.0f);
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaBeginStorageScare(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		cLux_AddDebugMessage("Approaching Door");
+		
+		////////////////////////////////////
+		// Player goes near the storage door... we hear robot sounds, a timer is started..
+		
+		StorageScareBuildupMusic();
+		StorageBuildupSequence("");
+		
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaStorageScareMixer(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1)
+		{
+			cLux_AddDebugMessage("Enter Storage Mixer");
+			Sound_FadeGlobalVolume(0.45, 2.0f);
+		}
+		else
+		{
+			cLux_AddDebugMessage("Exit Storage Mixer");
+			Sound_FadeGlobalVolume(1.0, 2.0f);
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaDoorInteraction(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		/////////////////////////////////////
+		// Restrict ability to interact with the doorpanel unless the player is on the steps
+		bool bPanelDisabled = alState == 1 ? false : true;
+		Entity_SetInteractionDisabled("storageroom_doorpanel_2",bPanelDisabled);
+		Entity_SetInteractionDisabled("HandleDoorSeal_OmnitoolStorage",bPanelDisabled);
+		
+		
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+
+	bool mbStorageEventActive = false;
+	cSequenceStatesData mStorageBuildupSequence;
+	void StorageBuildupSequence(const tString &in asName)
+	{
+		Sequence_Begin("StorageBuildupSequence", mStorageBuildupSequence);
+
+		///////////////////////////////////////////////////////////////////////////////
+		// IMPORTANT : SEQUENCE MUST NOT LAST LONGER THAN THE ROBOT DEPARTURE SOUNDS //
+		///////////////////////////////////////////////////////////////////////////////
+		
+		if (Sequence_DoStepAndWait(.45f))
+		{
+			/////////////////////////
+			// Create particles at door
+			Sound_CreateAtEntity("RobotCommotionBehindDoor", "01_01_upsilon_awake/sfx/storage_room/suit_diver_kill", "StorageRoomRobotSoundSource");
+			Map_AddTimer("SuitDiverKillMusic", 15.0f, "SuitDiverKillMusic");
+			mbStorageEventActive = true;
+			Map_AddTimer("SuitDiverMusic", 1.0f, "SuitDiverMusic");
+			Map_AddTimer("timer_storagerobotdepart",15.0f,"TimerStorageRobotDeparture");
+			Music_Stop(0.25f, eMusicPrio_BigEvent);
+			
+			Sound_FadeGlobalVolume(0.05f, 0.20f);
+			Sound_PreloadGroup("Player/UI", true);
+			Map_AddTimer("StorageRoomAttackFadeUp1", 5.0f, "StorageRoomAttackFadeUp_1");
+			Map_AddTimer("StorageRoomAttackFadeUp2", 15.0f, "StorageRoomAttackFadeUp_2");
+			ParticleSystem_CreateAtEntity("ps_dustbang_2","01_01_door_storage_scare.ps","AreaOmnistorageDoorEffect",true);
+			
+			//////////////////////////////////////
+			// Panel registers an error...
+			SlideDoor_SetOpenAmount("storageroom_door",0.05f,false);
+			Entity_CallEntityInteract("storageroom_doorpanel_2");
+			
+			Effect_Shake_Start(0.1f,0.1f,0.0f,0.0f);
+		}
+		else if (Sequence_DoStepAndWait(1.25f))
+		{
+			cLux_AddDebugMessage("Close the door");
+			Sound_FadeGlobalVolume(1.0f, 5.0f);
+			
+			/////////////////////////
+			// Door closes
+			Entity_CallEntityInteract("storageroom_doorpanel_2");
+			SlideDoor_SetClosed("storageroom_door",true,false);
+			Effect_Shake_Start(0.1f,0.1f,0.0f,0.0f);
+		}
+		
+		Sequence_End();
+	}
+			
+	//-------------------------------------------------------
+	
+	void SuitDiverKillMusic(const tString &in asTimer)
+	{
+		if(mbStorageScareSoundControl==true)
+		{
+			Music_Play("01_01_door_smashed", 0.35f, false, eMusicPrio_BigEvent);
+		}
+	}
+	
+	void SuitDiverMusic(const tString &in asTimer)
+	{
+		Music_Play("01_01_construct_smashing_about", 0.45f, false, eMusicPrio_BigEvent);
+	}
+	
+	void StorageRoomAttackFadeUp_1(const tString &in asTimer)
+	{
+		if(mbStorageScareSoundControl==true)
+		{
+			Sound_FadeGlobalVolume(0.65f, 5.0f);
+		}
+	}
+	
+	void StorageRoomAttackFadeUp_2(const tString &in asTimer)
+	{
+		if(mbStorageScareSoundControl==true)
+		{
+			Sound_FadeGlobalVolume(1.0f, 5.0f);
+		}
+	}
+		
+	//-------------------------------------------------------
+	
+	bool mbStorageScareSoundControl = false;
+	bool CollideStorageScareSoundControl(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1)
+		{
+			if(mbStorageEventActive==true)
+			{
+				Sound_FadeGlobalVolume(0.65f, 3.0f);
+			}
+			
+			mbStorageScareSoundControl = true;
+		}
+		else
+		{
+			if(mbStorageEventActive==true)
+			{
+				Sound_FadeGlobalVolume(1.0f, 3.0f);
+			}
+			
+			mbStorageScareSoundControl = false;
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void storageroom_doorpanel_2_OnConnectionStateChange(const tString &in asEntity, int alState)
+	{
+		if (alState == 1 && mbStorageSealRemoved && mbStorageRobotDeparted == false)
+		{
+			///////////////////////////////////////
+			// Temporarily disable buttons
+			Button_SetDisabled("storageroom_doorpanel*",true,true);
+			Map_AddTimer("timer_activatestoragebuttons",6.0f,"TimerEnableStorageButtons");
+			
+			///////////////////////////////////////
+			// Robot attacks
+			Entity_SetActive("maintenance_infected_1",true);
+			Entity_PlaceAtEntity("maintenance_infected_1","maintenance_infected_2",cVector3f_Zero,true);
+			
+			Map_AddTimer("timer_robotattack",0.05f,"TimerPerformRobotAttack");
+		
+			Player_SetMoveSpeedMul(0.0f);
+		}
+	}
+	
+	//----------------------------------------------
+	
+	void TimerPerformRobotAttack(const tString &in asTimer)
+	{
+			mbStorageEventActive = false;
+			
+			////////////////////////////////////
+			// Force a lookat here (just this once!)
+			Player_StartLookAt("maintenance_infected_1",2.0f,2.0f,10.0f);
+			
+			//////////////////////////////////////
+			// Sounds and music
+			Music_FadeVolumeMul(1.0f, 0.5f);
+			Sound_CreateAtEntity("ConstructAttack", "01_01_upsilon_awake/sfx/storage_room/attack", "Player");
+			Map_AddTimer("StopRobotSounds", 0.05f, "StopRobotSounds");
+			Map_AddTimer("StopRobotSoundsTimer", 5.0f, "StopRobotSoundsTimer");
+			Sound_Stop("RobotStorage", 1.0f);
+			Sound_Stop("RobotCommotionBehindDoor", 2.0f);
+			Map_AddTimer("FadeOutConstructAttack", 1.0f, "FadeOutConstructAttack");
+			Music_PlayExt("01_01_robot_attack_event", false, 0.55f, 1.0f, 0.0f, 0.0f, eMusicPrio_OverrideAll, false);
+			
+			////////////////////////////////////////
+			// Set attack meter settings and enable the robot
+			Agent_SetSensesActive("maintenance_infected_1",true);
+			InfectedRobot_ForceHuntState("maintenance_infected_1");
+			mbStorageRobotAttacked = true;
+			
+			AttackMeter_SetAfterDamageCallback("PlayerHitByRobot");
+			Map_RemoveTimer("StorageRoomAttackFadeUp1");
+			Map_RemoveTimer("StorageRoomAttackFadeUp2");
+			Entity_SetEffectsActive("GlimpseRobot_Storage",false,true);
+			
+			Effect_Shake_Start(0.1f,0.5f,0.0f,0.5f);
+			Player_FadeMoveSpeedMulTo(1.0f,3.0f);
+			
+			Entity_AddImpulseFromEntity("DoorSeal_OmnitoolStorage","storageroom_door",50.0f,true);
+	}
+	
+	//----------------------------------------------
+	
+	void StopRobotSounds(const tString &in asTimer)
+	{
+		Map_AddTimer("StopRobotSounds", 0.01f, "StopRobotSounds");
+        
+        if(Sound_Exists("maintenance_infected_1_AnimEvent"))
+        {
+            Sound_Stop("maintenance_infected_1_AnimEvent", 0.01f);
+        }
+        
+        if(Sound_Exists("maintenance_infected_1_maintenance_infected_1_Bark"))
+        {
+            Sound_Stop("maintenance_infected_1_maintenance_infected_1_Bark", 0.01f);
+        }
+	}
+	
+	//----------------------------------------------
+	
+	void StopRobotSoundsTimer(const tString &in asTimer)
+	{
+		Map_RemoveTimer("StopRobotSounds");
+	}
+	
+	//----------------------------------------------
+	
+	void FadeOutConstructAttack(const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(0.0f, 0.05f, eSoundEntryType_WorldAll);
+		Sound_FadeGlobalVolume(0.0f, 0.05f, eSoundEntryType_GuiWorld);
+		Map_AddTimer("FadeUpConstructAttack", 3.0f, "FadeUpConstructAttack");
+	}
+	
+	//----------------------------------------------
+	
+	void FadeUpConstructAttack(const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(1.0f, 4.0f, eSoundEntryType_WorldAll);
+		Sound_FadeGlobalVolume(1.0f, 4.0f, eSoundEntryType_GuiWorld);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PlayerHitByRobot(const tString& in asSource)
+	{
+		if (asSource == "maintenance_infected_1")
+		{
+			cLux_AddDebugMessage("The robot got you!");
+			
+			
+			Map_RemoveTimer("timer_activatestoragebuttons");
+			TimerEnableStorageButtons("");
+			
+			Player_StopLookAt(99.0f);
+			Player_StartLookAt("RobotDeathLookat",99.0f,99.0f,99.0f);
+			Map_AddTimer("timer_robotdeath",3.0f,"TimerPostRobotDeath");
+			
+			////////////////////////////////
+			// Make sure gate is busted open again!
+			SwingDoor_SetOpenAmount("swingdoor_fencing_round_7",1.0f);
+			
+			Sound_PlayGui("Player/UI/blackout_hit", 1.0f, eSoundEntryType_Gui);
+			
+			Map_AddTimer("AfterRobotAttackHealing", 20, "Timer_AfterRobotAttackHealing");
+		}
+	}
+	
+	void Timer_AfterRobotAttackHealing(const tString&in asTimer)
+	{
+		Player_AddHealth(0.0025);
+
+		if(Player_GetHealth() < 0.6)
+			Map_RestartCurrentTimer(1);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerPostRobotDeath(const tString &in asTimer)
+	{
+		Entity_SetActive("maintenance_infected_1",false);
+		Entity_SetActive("maintenance_infected_2",false);
+		mbStorageRobotDeparted = true;
+		Entity_SetActive("DistortionArea_StorageRobot",false);
+		
+		Player_StopLookAt(99.0f);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerEnableStorageButtons(const tString &in asTimer)
+	{
+		Button_SetDisabled("storageroom_doorpanel*",false,true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnRemoveStorageSeal()
+	{
+		mbStorageSealRemoved = true;
+		Map_AddTimer("timer_activatestoragebuttons",6.0f,"TimerEnableStorageButtons");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerStorageScare(const tString &in asTimer)
+	{
+		///////////////////////////////////////
+		// Temporarily disable buttons
+		Button_SetSwitchedOn("storageroom_doorpanel_2",true,true);
+		SlideDoor_SetClosed("storageroom_door",false,false);
+		
+		Button_SetDisabled("storageroom_doorpanel*",true,true);
+			
+		///////////////////////////////////////
+		// Robot attacks
+		Entity_SetActive("maintenance_infected_1",true);
+		Entity_PlaceAtEntity("maintenance_infected_1","maintenance_infected_2",cVector3f_Zero,true);
+		
+		
+		Map_AddTimer("timer_robotattack",0.05f,"TimerPerformRobotAttack");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerStorageRobotDeparture(const tString &in asTimer)
+	{
+		mbStorageEventActive = false;
+		Sound_FadeGlobalVolume(1.0f, 3.0f, eSoundEntryType_WorldAll);
+		if (mbStorageRobotAttacked) return;
+		
+		Entity_SetActive("maintenance_infected_1", false);
+		mbStorageRobotDeparted = true;
+		Entity_SetEffectsActive("GlimpseRobot_Storage",false,true);
+		Entity_SetActive("DistortionArea_StorageRobot",false);
+	}
+	
+	//-------------------------------------------------------
+	
+	//}-end omnitool storage encounter----------------------
+	
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////////////////
+	// Robot throws boxes around
+	////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbThrowBoxesAllowed = false;
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_PrepareBoxScare(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//////////////////////////////////////
+		// When player is approaching this scare, if it can happen - prepare necessary elements
+		if (alState != 1) return true;
+		if (mbThrowBoxesAllowed == false) return true;
+		
+		cLux_AddDebugMessage("Enabling box scare areas");
+		Entity_SetActive("AreaRobotGlimpseStorageEvent",true);
+		Entity_SetActive("AreaRobotGlimpseStorageEvent_1",true);
+		Entity_SetActive("GlimpseRobot_BehindFenceStorage_Start",true);
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_DeactivateBoxScare(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//////////////////////////////////////
+		// If player goes back down the hall towards tech room, disable elements of this scare else it looks weird
+		if (alState != 1) return true;
+		if (mbThrowBoxesAllowed == false) return true;
+		
+		cLux_AddDebugMessage("Disabling box scare areas");
+		Entity_SetActive("AreaRobotGlimpseStorageEvent",false);
+		Entity_SetActive("AreaRobotGlimpseStorageEvent_1",false);
+		Entity_SetActive("GlimpseRobot_BehindFenceStorage_Start",false);
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_DisableBoxEvent(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		////////////////////////////////////////////
+		// If the player passes over this trigger, it will no longer make sense for the box scare to occur, so completely disable it
+		if (mbThrowBoxesAllowed == false) return true;
+		if (alState != 1) return true;
+		
+		Entity_SetActive("Trigger_DisableBoxEvent",false);
+		Entity_SetActive("Trigger_DeactivateBoxScare",false);
+		Entity_SetActive("Trigger_PrepareBoxScare",false);
+		mbThrowBoxesAllowed = false;
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaRobotGlimpseStorageEvent(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//////////////////////////////////////
+		// Throw boxes when we move past a certain point
+		if (alState != 1) return true;
+		if (!mbThrowBoxesAllowed) return true;
+		
+		Entity_SetActive("debris_robotscare_*",true);
+		
+		Prop_MoveLinearTo("GlimpseRobot_BehindFenceStorage_Start", "GlimpseRobot_BehindFenceStorage_End", 5, 2, 0, true);
+		Prop_AlignRotation("GlimpseRobot_BehindFenceStorage_Start","GlimpseRobot_BehindFenceStorage_End",5,2,0,false,"");
+		Map_AddTimer("timer_fadeboxscare",5.0f,"TimerFadeBoxScare");
+		
+		Sound_CreateAtEntity("HallScare", "01_01_upsilon_awake/sfx/hall_scare", "AreaRobotDebris", 0.0f, false, 1.0f);
+		Map_AddTimer("StopAmbientMusicQuickly", 1.0f, "AmbientMusicHandler");
+		Sound_FadeGlobalVolume(0.65f, 0.25f);
+		
+		Map_AddTimer("FadeUpAfterHallScare", 2.0f, "FadeUpAfterHallScare");
+		Map_AddTimer("HallScareMusic", 5.0f, "HallScareMusic");
+		
+		Prop_SetStaticPhysics("debris_robotscare*",false);
+		Entity_AddImpulseFromEntity("debris_robotscare_1","AreaRobotDebris",10.0f,false);
+		Entity_AddImpulseFromEntity("debris_robotscare_2","AreaRobotDebris",8.0f,false);
+		
+		Entity_SetActive("AreaRobotGlimpseStorageEvent*",false);
+		
+		mbThrowBoxesAllowed = false;
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void AreaRobotGlimpseStorageEvent_1_OnPlayerLookAt(const tString &in asEntity, int alState)
+	{
+		//////////////////////////////////////
+		// Lookat trigger for the box scare (preferable behaviour)
+		if (alState != 1) return;
+		if (!mbThrowBoxesAllowed) return;
+		
+		CollideAreaRobotGlimpseStorageEvent("","",1);
+		Entity_SetActive("AreaRobotGlimpseStorageEvent*",false);
+	}
+	
+	//-------------------------------------------------------
+		
+	void TimerFadeBoxScare(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive("GlimpseRobot_BehindFenceStorage_Start",false,true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void FadeUpAfterHallScare(const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(1.0f, 7.0f);
+	}
+	
+	void HallScareMusic(const tString &in asTimer)
+	{
+		Music_Play("03_02_machinehead", 0.45f, false, eMusicPrio_MinorEvent);
+		Map_AddTimer("StartAmbient", cMath_RandRectf(9.0f,14.0f), "AmbientMusicHandler");
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////////////////
+	// When returning to tech room with omnitool, we hear the robot moving around
+	////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaHearFootsteps(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		mfFootstepVolume = 1.0f;
+		Area_MoveLinearTo("RunningSoundSource_TechRoom","RunningSoundSource_TechRoomTarget",2.2f,5.0f);
+		Map_AddTimer("RunningSoundSource_TechRoom", 0.2f, "TimerTempStopFootSteps");
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END INFECTED ROBOT ENCOUNTERS
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event F *Infected Robot Wrecks Tech Room*
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool CollideAreaBreakFences(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		// Skipping techroom broken door for beta
+		cLux_AddTodoMessage("SOUND: Smash the door, tear the fences. Smash the door, tear the fences");
+		
+		/*Entity_SetActive("techroomwreck_door_busted",true);
+		Entity_SetActive("techroom_door",false);
+		Button_SetDisabled("techroom_doorpanel*",true,true);*/
+			
+		RobotBreaksFences();
+		return false;
+	}
+	
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event G *Infected Robot pounds on door*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	/* REMOVED */
+	
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event H *Turn on power/light - Window pounding starts*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	/*variables for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaCrackWindow(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		///////////////////////////////
+		// Cracks begin to appear in the window..
+		if (alState == 1)
+		{
+			SequenceWindowCrack("");
+			return false;
+		}
+		return true;
+	}
+	
+	//------------------------------------------------------
+	
+	cSequenceStatesData mWindowCrackSequenceState;
+	
+	void SequenceWindowCrack(const tString &in asName)
+	{
+		Sequence_Begin("SequenceWindowCrack", mWindowCrackSequenceState);
+
+		/* Time is set in the UserVar property of each glass pane as opposed to directly
+		 * in script to allow it to be editted from within the editor by an artist */
+		 
+		if (Sequence_DoStepAndWait(2.5f))
+		{
+			// Some delay before glass starts cracking if you need room for juice
+			cLux_AddTodoMessage("SOUND: Glass is about to crack..");
+		}
+		else if (Sequence_DoStepAndWait(Entity_GetVarFloat("observation_window_0","")))
+		{
+			Entity_SetActive("observation_window_*",false);
+			Entity_SetActive("observation_window_1",true);
+			cLux_AddTodoMessage("SOUND: Cracks on the window.. phase 1");
+			Sound_CreateAtEntity("snd_cracking","level_02_02/events/cabin_window/hit_hammer_break","observation_window_1",0.0f,false,1.0f);			
+		}
+		else if (Sequence_DoStepAndWait(Entity_GetVarFloat("observation_window_1","")))
+		{
+			Entity_SetActive("observation_window_*",false);
+			Entity_SetActive("observation_window_2",true);
+			cLux_AddTodoMessage("SOUND: Cracks on the window.. phase 2");
+			Sound_CreateAtEntity("snd_cracking","level_02_02/events/cabin_window/hit_hammer_break","observation_window_2",0.0f,false,1.0f);			
+		}
+		else if (Sequence_DoStepAndWait(Entity_GetVarFloat("observation_window_2","")))
+		{
+			Entity_SetActive("observation_window_*",false);
+			Entity_SetActive("observation_window_3",true);
+			cLux_AddTodoMessage("SOUND: Cracks on the window.. phase 2");
+			Sound_CreateAtEntity("snd_cracking","level_02_02/events/cabin_window/hit_hammer_break","observation_window_3",0.0f,false,1.0f);			
+		}
+		
+		Sequence_End();
+	}
+	
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event H *Turn on central corridor light*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	/* REMOVED */
+	
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event I *Find suit robot, try to talk to it*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	bool mbPlayerInStorageRoom = false;			// Player in the room with him
+	bool mbRobotCriedForHelp = false;			// Has he cried out when player leaves room at least once?
+	
+	//-------------------------------------------------------
+	
+	
+	bool CollideAreaStorage(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//////////////////////////////////////////////////
+		// Set up conditions when player enters storage
+		if (alState == 1)
+			EnterStorage();
+
+		/////////////////////////////////////////////////
+		// Set up conditions when player exits storage
+		if (alState == -1)
+			ExitStorage();
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	bool mbEnterStorageMusicPlayed = false;
+	void EnterStorage()
+	{
+		mbPlayerInStorageRoom = true;
+		
+		if(mbPlayerOpenedAquarium == false)
+		{
+			Map_AddTimer("StopAmbientMusic", 1.0f, "AmbientMusicHandler");
+		}
+		if(mbEnterStorageMusicPlayed==false)
+		{
+			Music_Play("02_04_graveyard", 0.9f, false, eMusicPrio_MinorEvent);
+			mbEnterStorageMusicPlayed = true;
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void ExitStorage()
+	{
+		mbPlayerInStorageRoom = false;
+		cLux_AddDebugMessage("Simon leaves storage..");
+		
+		if(mbPlayerOpenedAquarium == false && mbOmniToolPickedUp == true)
+		{
+			Map_AddTimer("StartAmbient", 1.0f, "AmbientMusicHandler");
+		}
+		
+		/////////////////////////////////////
+		// Robot calls out for help
+		if (mbRobotCriedForHelp == false)
+		{
+			//cLux_AddDebugMessage("Robot calls out to Simon");
+			//Voice_StopAll();
+			//Voice_Play("2I_SuitRobotCallsOut");
+			mbRobotCriedForHelp = true;
+		}
+	}
+		
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event J *Suit Man dies*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	/* REMOVED */
+	
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event J *Drain suit man*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	/* REMOVED */
+	
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event K *Pick up Omni Tool*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	//-------------------------------------------------------
+	bool mbOmniToolPickUpMusic = false;
+	bool mbOmniToolPickedUp = false;
+	bool OmniTool_OnPickUp(const tString &in asTool)
+	{
+		cLux_AddTodoMessage("SCRIPT: Anything to happen when Omnitool is picked up");
+		
+		if(mbOmniToolPickUpMusic == false)
+		{
+            if(Sound_Exists("RemoveCathtoolNonunderwater"))
+            {
+                Sound_Stop("RemoveCathtoolNonunderwater",0.1f);
+            }
+			
+			Map_AddTimer("StopOmnitoolPopoutSound", 0.01, "StopOmnitoolPopoutSound");
+			Map_AddTimer("StopOmnitoolPopoutSound", 2.0f, "StopOmnitoolPopoutSound_TimerStop");
+			Sound_CreateAtEntity("PickUpOmnitool", "01_01_upsilon_awake/sfx/omnitool/pickup_desk", "Player");
+			Map_AddTimer("OmniPickupMusic", 0.45f, "OmniPickupMusic");
+			Entity_SetActive("AreaStartRoomMusicHandler", true);
+			mbOmniToolPickUpMusic = true;
+		}
+		
+		
+		mbOmniToolPickedUp = true;
+		///////////////////////////////
+		// Enable footsteps area outside tech room
+		Entity_SetActive("AreaHearFootsteps",true);
+		Entity_SetActive("AreaOmniToolPopup",true);
+		
+		//////////////////////////////
+		// Enable the broken door event
+		Entity_SetActive("AreaBreakFences",true);
+		
+		mbVentScareAllowed = true;
+		
+		Map_AddTimer("timer_removeomnitool",5.0f,"TimerRemoveOmnitoolPickupArea");
+		Map_AddTimer("timer_showinventoryhint", 5.0f, "Timer_ShowInventoryHint");
+		
+		LastOnSoma_SetText("01_01_upsilon_awake_2");
+		
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	
+	void StopOmnitoolPopoutSound(const tString &in asTimer)
+	{
+        if(Sound_Exists("RemoveCathtoolNonunderwater"))
+        {
+            Sound_Stop("RemoveCathtoolNonunderwater",0.1f);
+        }
+		Map_AddTimer("StopOmnitoolPopoutSound", 0.01, "StopOmnitoolPopoutSound");
+	}
+	
+	void StopOmnitoolPopoutSound_TimerStop(const tString &in asTimer)
+	{
+		Map_RemoveTimer("StopOmnitoolPopoutSound");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerRemoveOmnitoolPickupArea(const tString &in asTimer)
+	{
+		Entity_SetActive("ToolAreaOmnitoolPickup",false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_ShowInventoryHint(const tString &in asTimer)
+	{
+		Hint_ShowHint("Hints", "HintInventory", true);
+	}
+		
+	//-------------------------------------------------------
+	
+	void OmniPickupMusic (const tString &in asTimer)
+	{
+		Music_Play("01_01_omnitoolpickup", 0.65f, false, eMusicPrio_BigEvent);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OmniTool_CanBeUsed(const tString &in asTool, const tString &in asEntity)
+	{
+		if (asEntity == "AreaInsertOmniTool_TechRoom") return true;
+		if (asEntity == "ObservationTunnelTerm") return true;
+		if (asEntity == "ObservationTunnelTerm_1") return true;
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OmniTool_OnUse(const tString &in asTool, const tString &in asEntity)
+	{
+		//////////////////////////////////////
+		// Placing tool in to the configuration terminal
+		if (asEntity == "AreaInsertOmniTool_TechRoom")
+		{
+			PlaceOmniToolInTerminal();
+			return true;
+		}
+		
+		////////////////////////////////////////////
+		// Player tries to open door with wrong omnitool
+		if (asEntity == "ObservationTunnelTerm")
+		{
+			cLux_AddTodoMessage("SCRIPT: Player cannot open this yet! Give feedback!!");
+			CathTool_UseOnPanel("OmniTool","ObservationTunnelTerm");
+			OmniPanel_AccessDenied("ObservationTunnelTerm");
+			//Voice_Play("2K_OmniToolNotConfigured");
+			return false;
+		}
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaOmniToolPopup(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		////////////////////////////////////
+		// When omnitool pops up for the first time
+		if (alState != 1) return true;
+		if (Player_ToolIsInInventory("OmniTool") == false && Player_ToolIsInInventory("OmniTool_Configured") == false) return true;
+		Sound_CreateAtEntity("OmnitoolDetect", "01_01_upsilon_awake/sfx/omnitool/omni_door_detect", "AreaInsertOmniTool_ObsTunnel");
+		
+		/*if (mbOmniToolConfigured == false)
+			Voice_Play("ReactingToOmnitool");*/
+			
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void AreaOmniToolPopup_OnPlayerInteract(const tString &in asEntity)
+	{
+	
+	}
+	
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event L *Put Chip into Omnitool*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	bool mbRealChipTaken = false;
+	
+	//-------------------------------------------------------
+	
+	void SetupToolChips()
+	{
+
+	}
+	
+	//-------------------------------------------------------
+	
+	void AreaInsertOmniTool_TechRoom_OnPlayerLookAt(const tString &in asEntity, int alState)
+	{
+		////////////////////////////
+		// Switch on the Omnitool area if player is looking at correct slot
+		if (alState > -1)
+		{
+			Entity_SetActive("ToolAreaOmniTool",true);
+			Entity_SetActive("ToolAreaConfigChip",false);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void AreaInsertConfigChip_OnPlayerLookAt(const tString &in asEntity, int alState)
+	{
+		///////////////////////////////
+		// Switch on the Config Chip area if player is looking at correct slot 
+		if (alState > -1)
+		{
+			Entity_SetActive("ToolAreaOmniTool",false);
+			Entity_SetActive("ToolAreaConfigChip",true);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void AreaGetToolChip_OnPlayerInteract(const tString &in asEntity)
+	{
+		if (mbRealChipTaken)
+		{
+			Entity_SetActive("AreaGetToolChip*",false);
+			return;
+		}
+		
+		////////////////////////////
+		// Disable appropriate chip
+		tString sChipName = Entity_GetVarString(asEntity,"");
+		Entity_SetActive(sChipName,false);
+		
+		////////////////////////////////
+		// Give player the tool and disable chip interaction areas
+		Entity_CallEntityInteract("ConfigChipTool");
+		Entity_SetActive("ConfigChipTool",false);
+		Entity_SetInteractionDisabled("securitychip_broken_*",false);
+		Entity_SetActive("AreaGetToolChip*",false);
+		
+		mbRealChipTaken = true;
+	}
+	
+	// H5756X_VR_UPSILON_PHYSICAL_TRAY_SELECTION
+	void OnInteractChip(const tString &in asEntity)
+	{
+		// Stock leaves this prop callback empty and uses AreaGetToolChip_1..4.
+		// In VR the hand is already physically interacting with the exact visible
+		// securitychip_broken_* prop, so ask PlayerToolHandler whether this authored
+		// story stage may use that prop as presentation carrier. With no live VR
+		// runtime the helper returns false and this function remains stock-empty.
+		if (mbRealChipTaken) return;
+		cScript_SetGlobalArgString(0, asEntity);
+		cScript_SetGlobalReturnBool(false);
+		cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRUpsilonSelectPhysicalToolChipCarrier");
+		if (!cScript_GetGlobalReturnBool()) return;
+
+		// Exact vanilla AreaGetToolChip_OnPlayerInteract logical transaction, except
+		// the selected visible prop stays active because it is the object in the VR hand.
+		Entity_CallEntityInteract("ConfigChipTool");
+		Entity_SetActive("ConfigChipTool", false);
+		Entity_SetInteractionDisabled("securitychip_broken_*", false);
+		Entity_SetActive("AreaGetToolChip*", false);
+		mbRealChipTaken = true;
+	}
+	
+	bool ConfigChipTool_OnPickUp(const tString &in asTool)
+	{
+		////////////////////////////
+		// Player picks up Config Chip
+		cLux_AddTodoMessage("SCRIPT: Anything to happen when config chip is picked up");
+		Sound_CreateAtEntity("PickupChip", "01_01_upsilon_awake/sfx/omnitool/chip_pickup", "Player");
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool ConfigChipTool_CanBeUsed(const tString &in asTool, const tString &in asEntity)
+	{
+		////////////////////////////
+		// Player is looking at config chip slot to insert it
+		if (asEntity == "AreaInsertConfigChip") return true;
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool ConfigChipTool_OnUse(const tString &in asTool, const tString &in asEntity)
+	{
+		////////////////////////////
+		// Player tries to insert the config chip
+		if (asEntity == "AreaInsertConfigChip")
+		{
+			PlaceConfigChipInSlot();
+			return true;
+		}
+
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void PlaceConfigChipInSlot()
+	{
+		///////////////////////////////
+		// Player inserts the chip in to the socket
+		cLux_AddTodoMessage("SCRIPT: Juice up the inserting a bit");
+		Entity_SetActive("ConfigChipToolInserted",true);
+		Entity_SetActive("AreaInsertConfigChip",false);
+		mbConfigChipInserted = true;
+		
+		/////////////////////////////
+		// Sound and movement effect
+		Sound_CreateAtEntity("InsertChip", "01_01_upsilon_awake/sfx/omnitool/chip_insert", "ConfigChipToolInserted");
+		Map_AddTimer("timer_slidechip",1.0f,"TimerSlideInChip");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSlideInChip(const tString &in asTimer)
+	{
+		Prop_MoveLinearTo("ConfigChipToolInserted","ConfigChipTarget",0.1f,2.0f,0.01f,true,"OnChipInserted");
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnChipInserted(const tString& in asPropName)
+	{
+		cLux_AddDebugMessage("Chip Inserted!");
+		
+		Map_AddTimer("timer_chipswitch",0.75f,"TimerChipSwitch");
+		//CathTool_AllowDetach("OmniTool_NotConfigured");
+		
+
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerChipSwitch(const tString &in asTimer)
+	{
+		Entity_SetActive("ConfigChipToolInserted",false);
+		Entity_SetActive("OmniTool_NotConfigured",false);
+		CathTool_Insert("OmniTool_Configured","cath_terminal_1",false);
+		CathTool_SetChipBroken(false);
+		
+		Map_AddTimer("timer_janeconfig",0.35f,"TimerJaneChip");
+		
+		LastOnSoma_SetText("01_01_upsilon_awake_3");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool mbToolChipAnnounced = false;
+	void TimerJaneChip(const tString &in asTimer)
+	{
+		///////////////////////////////////
+		// Onboard Jane Quips
+		cLux_AddDebugMessage("Jane Quip");
+		Voice_SetSource("HelperJane","cath_terminal_1",1.0f,12.0f,true);
+		Voice_Play("HelperJanePlugToolChipFound");
+		mbToolChipAnnounced = true;
+	}
+	
+	//-------------------------------------------------------
+	bool mbFirstTimeOmniLoad = false;
+	void PlaceOmniToolInTerminal()
+	{
+		////////////////////////////////////
+		// Plug in to the socket
+		mbOmnitoolPlacedOnce = true;
+		mbOmniToolInserted = true;
+		mbTerminalsUnlocked = true;
+		Entity_SetActive("AreaInsertOmniTool_TechRoom",false);
+		CathTool_Insert("OmniTool_NotConfigured","cath_terminal_1");
+		
+		///////////////////////////////////
+		// Enable door pounding event to be possible
+		Entity_SetActive("AreaDoorPound",true);
+		
+		if(mbFirstTimeOmniLoad == false)
+		{
+			Sound_CreateAtEntity("OmniFirstLoad", "01_01_upsilon_awake/sfx/omnitool/omni_firstload", "OmniPluggedInSoundSource");
+			mbFirstTimeOmniLoad = true;
+		}
+	}
+	
+	
+	//-------------------------------------------------------
+	
+	void TimerOpenChipContainer(const tString &in asTimer)
+	{
+		////////////////////////////////////
+		// Open security chip door
+		SlideDoor_SetClosed("ChipContainer_Door",false,false);
+		
+		////////////////////////////////////
+		// Enable tool area for chip to be inserted
+		Entity_SetActive("ToolAreaOmniTool",false);
+		Entity_SetActive("ToolAreaConfigChip",true);
+		
+		////////////////////////////////////
+		// Enable target area for chip tool to be used on once acquired
+		Entity_SetActive("AreaInsertOmniTool_TechRoom",false);
+		Entity_SetActive("AreaInsertConfigChip",true);
+		
+		///////////////////////////////////
+		// Enable custom interaction areas on tool chips
+		Entity_SetActive("AreaGetToolChip_*",true);
+		Entity_SetInteractionDisabled("securitychip_broken_*",true);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OmniTool_Configured_OnPickUp(const tString &in asTool)
+	{
+		/////////////////////////////////
+		// Player picks up the fully configured OmniTool
+		mbOmniToolInserted = false;
+		mbOmniToolConfigured = true;
+		Entity_SetActive("ConfigChipToolInserted",false);
+		
+		mbThrowBoxesAllowed = true;
+		
+		// Omnitool stays on screen a bit longer than usual so player can read the chip graphic
+		Map_AddTimer("timer_unequipomnitool",3.89f,"TimerUnequipOmnitool");
+		
+		return true;
+	}
+	
+	void TimerUnequipOmnitool(const tString &in asTimer)
+	{
+		Player_UnequipTool(false);
+	}
+	
+	//}------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event M *Open Observation Tunnel Door with Omni Tool*
+	/////////////////////////////////////////
+
+	//{------------------------------------------------------
+	
+	bool mbAquariumDoorActivated = false;
+	bool mbPlayerOpenedAquarium = false;
+	
+	//-------------------------------------------------------
+	
+	bool OmniTool_Configured_CanBeUsed(const tString &in asTool, const tString &in asEntity)
+	{
+		//if (asEntity == "ObservationTunnelTerm" && !mbAquariumDoorActivated) return true;
+		if (CathTool_CanUse("OmniTool_Configured","ObservationTunnelTerm")) return true;
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OmniTool_Configured_OnUse(const tString &in asTool, const tString &in asEntity)
+	{
+		/////////////////////////////////////
+		// Player Scans the Omni Tool to gain access to Obs Tunnel
+		if (asEntity == "ObservationTunnelTerm")
+		{
+			cLux_AddDebugMessage("Open the door");
+			mbAquariumDoorActivated = true;
+			CathTool_UseOnPanel("OmniTool_Configured", asEntity);
+			Entity_SetActive("ToolAreaOmniToolTunnel",false);
+		}
+		
+		return false;
+	}
+	
+	//}------------------------------------------------------
+	
+	void ObservationTunnelTerm_1_OnConnectionStateChange(const tString &in asEntity, int alState)
+	{
+		cLux_AddDebugMessage("Changed");
+		if (alState != 1) return;
+		OpenAquariumDoor("");
+	}
+	
+	//}------------------------------------------------------
+	
+	void OpenAquariumDoor (const tString &in asTimer)
+	{		
+		SlideDoor_SetClosed("SlideDoorObsTunnel",false,false);
+	
+		if(mbPlayerOpenedAquarium == false)
+		{
+			Sound_CreateAtEntity("AquariumDoorSweetener", "01_01_upsilon_awake/sfx/aquarium_door_opening", "SlideDoorObsTunnel");
+			Map_AddTimer("StopAmbientMusicQuickly", 1.0f, "AmbientMusicHandler");
+			Entity_SetActive("AreaStartRoomMusicHandler", false);
+			mbPlayerOpenedAquarium = true;
+		}
+	}
+	
+	//}------------------------------------------------------
+
+	//} END SCENE 2
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 3 *Enter Observation Tunnel and Escape*
+	// ==============
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 Event A *Enter Observation Tunnel (dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	/*variables for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaEnterTunnel(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		
+		Sound_FadeGlobalVolume(0.85f, 3.0f, eSoundEntryType_WorldAll);
+		Music_Play("01_01_reveal", 0.4f, false, eMusicPrio_BigEvent);
+		
+		Map_AddTimer("MusicAquariumActive", 32.0f, "SetAquariumMusicActive");
+		Map_AddTimer("FadeUpReveal", 12.0f, "FadeUpReveal");
+		//Map_AddTimer("CloseAquariumDoor", 3.0f, "CloseAquariumDoor");
+		mbPlayerEnteredTunnel = true;
+		
+		DisableScreenEffects();
+		
+			
+		return false;
+	}
+		
+	void SetAquariumMusicActive(const tString &in asTimer)
+	{
+		Entity_SetActive("MusicAquarium", true);
+	}
+
+	//-------------------------------------------------------
+	
+	void CloseAquariumDoor(const tString &in asTimer)
+	{
+		SlideDoor_SetClosed("SlideDoorObsTunnel", true, false);
+	}
+		
+	//-------------------------------------------------------
+	
+	void FadeUpReveal(const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(1.0f, 8.0f, eSoundEntryType_WorldAll);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaNoticeWater(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			cLux_AddDebugMessage("SCRIPT: Dialog, notice the water");
+			//Voice_Play("3A_EnterTunnel");
+			return false;
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	
+	cSequenceStatesData mFloodTunnelSequenceStates;
+	void SequenceFloodTunnel(const tString &in asName)
+	{
+		Sequence_Begin("SequenceFloodTunnel", mFloodTunnelSequenceStates);
+			
+		if (Sequence_DoStepAndWait(1.5f))
+		{	
+			///////////////////////////
+			// Close the door and play breach sounds
+			SlideDoor_SetClosed("SlideDoorObsTunnelFar",true,false);
+			
+			cLux_AddTodoMessage("SCRIPT: The tunnel begins to breach... water should begin coming in");
+			Sound_PlayGui("01_02_upsilon_inside_02/special/collapse_sequence/collapse_impact_01_debris",1.0f);
+		}
+		else if (Sequence_DoStepAndWait(1.75f))
+		{
+			cLux_AddTodoMessage("SCRIPT: The tunnel begins to breach... second phase");
+			Sound_PlayGui("01_02_upsilon_inside_02/special/collapse_sequence/collapse_impact_04_shake",1.0f);
+		}
+		else if (Sequence_DoStepAndWait(0.0f))
+		{
+			//////////////////////////////
+			// Water comes in and moves along the tunnel
+			cLux_AddTodoMessage("SCRIPT: The tunnel finally breaches");
+			Sound_PlayGui("01_02_upsilon_inside_02/special/collapse_sequence/collapse_final",1.0f);
+		
+			Prop_SetActiveAndFade("SideWaterSheet_*", true, 1.0f);
+			ParticleSystem_CreateAtEntity("SideFloodPS1","tunnel_flood.ps","SideFloodPS_1",true);
+			ParticleSystem_CreateAtEntity("SideFloodPS2","tunnel_flood.ps","SideFloodPS_2",true);
+			ParticleSystem_CreateAtEntity("SideFloodPS3","tunnel_flood.ps","SideFloodPS_3",true);
+			ParticleSystem_CreateAtEntity("SideFloodPS1B","splash_continous_foam_waterfall_large.ps","SideFloodPS_1",true);
+			ParticleSystem_CreateAtEntity("SideFloodPS2B","splash_continous_foam_waterfall_large.ps","SideFloodPS_2",true);
+			ParticleSystem_CreateAtEntity("SideFloodPS3B","splash_continous_foam_waterfall_large.ps","SideFloodPS_3",true);
+			Area_MoveLinearTo("SideFloodArea", "SideFloodTarget", 15.0f, 15.0f, 0.0f, false);
+			
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnFloodHalfway(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		////////////////////////////////////
+		// Flood has now reached the door and water is rising
+		cLux_AddTodoMessage("SOUND: Water is now rising past the door window");
+		
+		Entity_SetActive("LiquidPool",true);
+		LiquidArea_MoveLinearTo("LiquidPool", "LiquidPoolTarget", 5.15f, 1.15f, 0.5f, false);
+		Entity_SetActive("water_window",true);		
+		
+		Map_AddTimer("timer_spawn_froth",0.1f,"TimerCreateWindowFroth");
+		Map_AddTimer("timer_clear_froth",3.25f+cMath_RandRectf(-0.5f,0.5f),"TimerClearWindowFroth");
+		
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnFloodComplete(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Prop_SetActiveAndFade("SideWaterSheet_*", false, 1.0f);
+		Entity_SetActive("SideFloodWaterArea_*",true);
+		ParticleSystem_Destroy("SideFloodPS1");
+		ParticleSystem_Destroy("SideFloodPS2");
+		ParticleSystem_Destroy("SideFloodPS3");
+		ParticleSystem_Destroy("SideFloodPS1B");
+		ParticleSystem_Destroy("SideFloodPS2B");
+		ParticleSystem_Destroy("SideFloodPS3B");
+		
+		ParticleSystem_CreateAtEntity("WindowBubblePS","loop_waterbubbles_large_cloud.ps","WindowBubbleArea",true);
+	
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	int mlDestroyFrothParticle = 1;
+	int mlSpawnFrothParticle = 1;
+	
+	void TimerCreateWindowFroth(const tString &in asTimer)
+	{
+		ParticleSystem_CreateAtEntity("WindowFoamPS"+mlSpawnFrothParticle,"tunnel_flood.ps","WindowArea_"+mlSpawnFrothParticle,true);
+		++mlSpawnFrothParticle;
+		if (mlSpawnFrothParticle <= 14)
+		{
+			Map_AddTimer("timer_spawn_froth",cMath_RandRectf(0.1f,0.2f),"TimerCreateWindowFroth");
+		}
+	}
+	
+	void TimerClearWindowFroth(const tString &in asTimer)
+	{
+		float fRndMod = mlDestroyFrothParticle * 0.025f;
+		ParticleSystem_Destroy("WindowFoamPS"+mlDestroyFrothParticle);
+		++mlDestroyFrothParticle;
+		if (mlDestroyFrothParticle <= 14)
+		{
+			Map_AddTimer("timer_clear_froth",cMath_RandRectf(0.4f,0.75f)-fRndMod,"TimerClearWindowFroth");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 Event B *Datamine Intercom*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	/*variables for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	void intercom_airlock_SubjectOver(const tString &in asScene, const tString &in asSubject)
+	{
+		OnDiscoverDatamining();
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 Event C *Read Amy's Notes (Text&Dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbReadAmyNotes = false;
+	
+	//-------------------------------------------------------
+	
+	void AmyNote_OnClose(const tString &in asEntity)
+	{
+		/*if (mbReadAmyNotes) return;
+		
+		mbReadAmyNotes = true;
+		Voice_Play("3C_ReadAmyNotes");*/
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 Event D *Look at Amy's drawings*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	/*variables for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	/*functions for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 Event E *Pounding on door*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	/*variables for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	/*functions for this scene only*/
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 Event F *Enter talking door (dialog)
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbDoorTrappedPlayer = false;
+	bool mbBlinkingEffectsActive = true;
+	
+	//-------------------------------------------------------
+	
+	void SetupDoorMonster()
+	{
+		Light_SetBrightness("BoxLight_SentientDoorRoom_LightsOut",0.0f);
+		Map_AddTimer("timer_doorblink",cMath_RandRectf(1.5f,2.5f),"TimerDoorCameraBlinking");
+		Sound_CreateAtEntity("talkingdoornoise", "01_01_upsilon_awake/sfx/talking_door/noise", "TalkingDoorVoiceSource");
+		
+		Lamp_SetLit("SentientDoor_Speaker_*",false,true);
+		
+		Voice_SetCharacterSpeakingCallback("TalkingDoor","TalkingDoorSpeakingCallback");
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	bool TalkingDoorSpeakingCallback(const tString &in asCharacter, bool abStartedTalking)
+	{
+		if (mbDoorDrained) return false;
+		
+		Lamp_SetLit("SentientDoor_Speaker_*",abStartedTalking,true);
+		Lamp_SetFlickerActive("SentientDoor_Speaker_*",abStartedTalking);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDoorBreathing(const tString &in asTimer)
+	{
+		if (mbDoorDrained) return;
+		
+		Sound_CreateAtEntity("TalkingDoorRoomBreath", "01_01_upsilon_awake/sfx/talking_door/room_breathing", "Player");
+		Map_AddTimer("timer_doorbreath",7.0f,"TimerDoorBreathing");
+		
+		Lamp_SetLit("Lamp_WauFlowerEffects",false,true);
+		Map_AddTimer("timer_doorbreathout",0.6f,"TimerDoorExhale");
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDoorExhale(const tString &in asTimer)
+	{
+		if (mbDoorDrained) return;
+		
+		Lamp_SetLit("Lamp_WauFlowerEffects",true,true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDoorCameraBlinking(const tString &in asTimer)
+	{
+		
+		Entity_SetEffectsActive("camera_surveillance_headtrack_*",mbBlinkingEffectsActive,true);
+		mbBlinkingEffectsActive = !mbBlinkingEffectsActive;
+		
+		///////////////////////////////
+		// Light should not be off for too long, as this is more like a blink!
+		if (mbBlinkingEffectsActive)
+			Map_AddTimer("timer_doorblink",cMath_RandRectf(0.75f,1.25f),"TimerDoorCameraBlinking");
+		else
+			Map_AddTimer("timer_doorblink",cMath_RandRectf(2.75f,4.5f),"TimerDoorCameraBlinking");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaTalkingDoor(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		//////////////////////////////////
+		// Player approaches sentient door and it begins talking
+		Map_AddTimer("timer_talkingdoor",0.25f,"TimerTalkingDoor");
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool mbTalkingDoorMusic = false;
+	void TimerTalkingDoor(const tString &in asTimer)
+	{
+		if (mbDoorDrained) return;
+		
+		//First time hearing the talking door
+		if(mbTalkingDoorMusic==false)
+		{
+			Map_AddTimer("TalkingDoorMusic_Sting", 2.0f, "TalkingDoorMusic_Sting");
+			mbTalkingDoorMusic = true;
+		}
+		
+		/////////////////////////////////
+		// Talking door begs for help
+		if (mbDoorTrappedPlayer == false)
+		{
+			Voice_Play("3F_TalkingDoor");
+			Map_AddTimer("timer_talkingdoor",cMath_RandRectf(6.0f,12.0f),"TimerTalkingDoor");
+		}
+		
+		/////////////////////////////////
+		// Talking door has trapped player and just weeps
+		if (mbDoorTrappedPlayer == true)
+		{
+			Voice_Play("3F_TalkingDoorWeeps");
+			Map_AddTimer("timer_talkingdoor",cMath_RandRectf(6.0f,12.0f),"TimerTalkingDoor");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaTalkingDoorCloses(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		//////////////////////////////////////
+		// The door closes, angry and screaming at the player
+		Map_RemoveTimer("timer_talkingdoor");
+		Voice_StopAll();
+		
+		Voice_Play("3F_TalkingDoorCloses");
+		SlideDoor_SetClosed("SentientDoor",true,false);
+		
+		Lamp_SetFlickerActive("Lamp_SentientDoorRoom",true);
+		Map_AddTimer("timer_sentientdoorlights",0.5f,"TimerSentientDoorLights");
+		Map_AddTimer("TalkingDoorMusic", 0.15f, "TalkingDoorMusic");
+		//////////////////////////////
+		// Fade the light in this room so things aren't completely dark
+		Light_SetBrightness("BoxLight_SentientDoorRoom_LightsOut",0.8f);
+		
+		//turn off ext sparks and turn on interior ones to stop sound from leaking through
+		Light_SetFlickerActive("PointLight_storage_wau_flower_3", true);
+		Light_SetFlickerActive("PointLight_storage_wau_flower_2", true);
+		Light_SetFlickerActive("PointLight_storage_wau_flower_1", false);
+		
+		//////////////////////////////////////////
+		// Disable overhead particles
+		ParticleSystem_Destroy("ParticleSystem_55");
+		
+		PreloadPriorityHigh();
+		
+		///////////////////////////////////////////////////
+		// Disable oxymeter outside the room and start our breathing effect
+		Entity_SetActive("lifesupport_oxymixer_2",false);
+		Map_AddTimer("timer_doorbreath",1.0f,"TimerDoorBreathing");
+			
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSentientDoorLights(const tString &in asTimer)
+	{
+		/////////////////////////////////
+		// Talking door goes crazy, lights go out
+		Lamp_SetFlickerActive("Lamp_SentientDoorRoom",false);
+		Lamp_SetLit("Lamp_SentientDoorRoom",false,true);
+		Player_SetAmbientLight_Indoors(true);
+		Sound_CreateAtEntity("TalkingDoorClose", "01_01_upsilon_awake/sfx/talking_door_close_sweetener", "Player");
+
+		////////////////////////////////
+		// Talking door will begin weeping again
+		mbDoorTrappedPlayer = true;
+		Map_AddTimer("timer_talkingdoor",cMath_RandRectf(6.0f,12.0f),"TimerTalkingDoor");
+		
+		PreloadPreDeload();
+	}
+	
+	//-------------------------------------------------------
+	
+	void TalkingDoorMusic_Sting(const tString &in asTimer)
+	{
+		Music_Play("01_01_talking_door", 0.75f, false, eMusicPrio_MinorEvent);
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 Event G *Press door button (dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbPlayerZappedByDoor = false;
+	tString msTargetShockPoint = "";
+	tString msOffendingPanel = "";
+	
+	//-------------------------------------------------------
+	
+	void StorageDoor_Control_4_OnPlayerInteract(const tString &in asEntity)
+	{
+		if (mbDoorDrained) return;
+		
+
+		
+		///////////////////////////////////////
+		// When player interacts with the panel they will receive damage
+		//if (mbPlayerZappedByDoor == false)
+		//{
+			//mbPlayerZappedByDoor = true;
+			
+			cLux_AddDebugMessage("Bang! from:"+asEntity);
+			cLux_AddTodoMessage("SOUND: Player gets zapped!");
+			
+			Depth_Audio_PlayerTakeDamage();
+			Depth_Audio_SimonHurt_Damage();
+			
+			Player_AddBodyForceAwayFromEntity(asEntity,20000.0f);
+			Player_GiveDamage(0.4f,0.5f,eDamageType_Electricity,asEntity);
+			
+			
+			if (mbPlayerHurt == false)
+			{
+				mbPlayerHurt = true;
+				Map_AddTimer("timer_electrocuted",1.0f,"TimerSimonElectrocuted");
+			
+			}
+			
+			msOffendingPanel = asEntity;
+			if (msOffendingPanel == "exithatch_panel_locked")
+				msTargetShockPoint = "Area_DoorZap_1";
+			if (msOffendingPanel == "StorageDoor_Control_4")
+				msTargetShockPoint = "Area_DoorZap_2";
+				
+			
+				
+			//SequencePanelZap("");
+		//}
+		
+		
+		Voice_StopAll();
+		Voice_Play("3G_TalkingDoorButton");
+			
+		Map_RemoveTimer("timer_talkingdoor");
+		Map_AddTimer("timer_talkingdoor",cMath_RandRectf(6.0f,12.0f),"TimerTalkingDoor");
+		
+	}
+	
+	//-------------------------------------------------------
+		
+	cSequenceStatesData mPanelZapSequence;
+			
+	void SequencePanelZap(const tString &in asTimer)
+	{
+		Sequence_Begin("SequencePanelZap", mPanelZapSequence);
+			
+		if (Sequence_DoStepAndWait(0.5))
+		{
+			///////////////////////////
+			// Apply electric damage effect
+			Depth_Audio_PlayerTakeDamage();
+			Player_GiveDamage(0.05f, 0.1, eDamageType_Electricity, msOffendingPanel);
+		
+			//////////////////////////
+			// Move to position
+			Entity_PlaceAtEntity("Player", msTargetShockPoint);
+			
+			//////////////////////////
+			// Get position for players head
+			cVector3f vCamTarget = Player_GetCrouching() ? cVector3f_Down*0.7 : cVector3f_Down*1.5;
+			vCamTarget = vCamTarget + cVector3f_Back*0.5f;
+			Player_MoveHeadPos(vCamTarget, 9, 5, 0.1);
+			
+			//////////////////////////
+			// Roll camera and reduce input speeds
+			Player_FadeRollTo(75, 4, 360);
+			Player_SetMoveSpeedMul(0.3);
+			Player_SetLookSpeedMul(0.1);
+			Player_MoveForward(-50.0f);
+			
+			//////////////////
+			// Screen Effects
+			Effect_Shake_Start(0.1, 0.1, 0, 0.4);
+			Effect_VideoDistortion_Start(0.3, 0.5, 0.5,0.5,1.0f);
+		}
+		else if (Sequence_DoStepAndWait(1))
+		{
+			//////////////////////////
+			// On the ground unable to move too much
+			Player_SetMoveSpeedMul(0);
+			Player_SetLookSpeedMul(0.05);
+			
+		}
+		else if (Sequence_DoStepAndWait(1))
+		{
+			//////////////////////////////////
+			// Player stands up
+			Player_FadeLookSpeedMulTo(1, 1);
+			Player_FadeMoveSpeedMulTo(0.3, 1);
+			
+			Player_FadeRollTo(0, 1.5, 270);
+			Player_SetCrouching(false, false);
+			Player_MoveHeadPos(cVector3f_Down*0.5, 4.5, 5, 0.2);
+		}
+		else if (Sequence_DoStepAndWait(2))
+		{
+			Player_FadeMoveSpeedMulTo(1, 1);
+			Player_MoveHeadPos(cVector3f_Zero, 4.5, 5, 0.1);
+		}
+		else if (Sequence_DoStepAndWait(5))
+		{
+			Voice_StopAll();
+			Voice_Play("3G_TalkingDoorButton");
+		
+			Map_RemoveTimer("timer_talkingdoor");
+			Map_AddTimer("timer_talkingdoor",cMath_RandRectf(6.0f,12.0f),"TimerTalkingDoor");
+		}
+
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 Event H *Escape through maintenance tunnel*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbDoorDrained = false;
+	bool mbPlayerEscaped = false;
+	
+	//-------------------------------------------------------
+	
+	void SetupExitHatch()
+	{
+		Entity_PlayAnimation("exithatch","closed_state");
+	}
+	
+	//-------------------------------------------------------
+	
+	void wau_flower_hatch_Callback(const tString &in asEntity)
+	{
+		//////////////////////////////////////
+		// Player chooses the hatch instead of the talking door
+		Button_SetLocked("exithatch_panel",false,true);
+		EnergySource_SetEnergy("wau_flower_talkingdoor",0.0f);
+		//Entity_CallEntityInteract("exithatch_panel");
+	}
+	
+	//-------------------------------------------------------
+	
+	void wau_flower_talkingdoor_OnPlayerInteract(const tString &in asEntity)
+	{
+		Music_StopAll(3.0f);
+		Map_AddTimer("WauFlowerMusic", 1.0f, "WauFlowerMusic");
+		
+		Voice_StopAll();
+		Map_RemoveTimer("timer_talkingdoor");
+		mbDoorDrained = true;
+		
+		Map_AddTimer("timer_doorscream",0.5f,"TimerDoorScream");
+		
+		Sound_Stop("talkingdoornoise", 3.0f);
+		Light_SetFlickerActive("PointLight_storage_wau_flower_3", false);
+		Light_SetFlickerActive("PointLight_storage_wau_flower_2", false);
+		Light_SetFlickerActive("ButtonHatch_light", false);
+		
+		
+		
+		///////////////////////////////////////
+		// Stop camera tracking the player
+		Map_RemoveTimer("timer_doorblink");
+		HeadTracker_SetActive("camera_surveillance_headtrack_2", false);
+		Entity_SetEffectsActive("camera_surveillance_headtrack_*",false,true);
+		Light_FadeTo("PointLight_124",cColor(0,0,0,0),0.0f,3.0f);
+		
+		
+	}
+
+	void WauFlowerMusic(const tString &in asTimer)
+	{
+		Music_PlayOverlay("01_01_interact_wauflower", 0.45f);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDoorScream(const tString &in asTimer)
+	{
+		Voice_Play("3F_TalkingDoorDrains");
+		//Voice_PlayWhenPossible();
+	}
+	
+	//-------------------------------------------------------
+	
+	void wau_flower_talkingdoor_Callback(const tString &in asEntity)
+	{
+		////////////////////////////////
+		// Draining the wau flower here will swap out the door for a physics one and disable the panels
+		Button_SetDisabled("StorageDoor_Control_4",true,true);
+		Button_SetDisabled("StorageDoor_Control_2",true,true);
+		Entity_SetInteractionDisabled("StorageDoor_Control_4",true);
+		Entity_SetInteractionDisabled("StorageDoor_Control_2",true);
+		Entity_SetInteractionDisabled("SentientDoor",false);
+
+		//////////////////////////////////////
+		// Disable the doors ability to talk - it's dead now
+		Map_RemoveTimer("timer_talkingdoor");
+		mbDoorDrained = true;
+		
+		
+		
+		//////////////////////////////////////
+		// Activate the players ambient light (This will help with mood in the dark section)
+		cLux_AddTodoMessage("SCRIPT: Activate players ambient light to help with mood in dark section coming up..");
+		Player_SetAmbientLight_None(false);
+		
+		Entity_SetActive("DistortionArea_SentientDoor",false);
+		
+		//////////////////////////////
+		// Lights begin going out sequentially
+		cLux_AddDebugMessage("Flicker the lights.");
+		Lamp_SetFlickerActive("Lamp_WauFlowerEffects",true);
+		Map_AddTimer("timer_stopflicker",5.0f,"TimerStopFlickering");
+		SequenceDoorDrained("");
+		
+		//////////////////////////////
+		// Boxlight by fence should fade
+		Light_FadeTo("BoxLight_Pipe_Maintenance_2",cColor(0,0,0,0),0,3.0f);
+		
+		///////////////////////////////
+		// Disable steam particles and sounds
+		ParticleSystem_Destroy("ParticleSystem_69");
+		ParticleSystem_Destroy("ParticleSystem_56");
+		ParticleSystem_Destroy("ParticleSystem_67");
+		Sound_Fade("talkingdoor_steam*",0.0f,3.0f);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerStopFlickering(const tString &in asTimer)
+	{
+		Lamp_SetFlickerActive("Lamp_WauFlowerEffects",false);
+		Lamp_SetLit("Lamp_WauFlowerEffects",false,true);
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSequenceDoorDrained;
+	void SequenceDoorDrained(const tString &in asName)
+	{
+		Sequence_Begin("SequenceDoorDrained", mSequenceDoorDrained);
+		
+		tString sLampName = "";
+		
+		if (Sequence_DoStepAndWait(1.0f))
+		{
+			Entity_CallEntityInteract("exithatch_panel_locked");
+		
+			//Delay for sound 
+			
+			// activate blue robot light entity
+			//Entity_SetActive("GlimpseRobot_FinalHatch",true);
+			//Entity_SetEffectsActive("GlimpseRobot_FinalHatch",false,false);
+		}
+		else if (Sequence_DoStepAndWait(1.0f))
+		{
+			Entity_SetActive("exithatch_panel_locked",false);
+			Entity_SetActive("exithatch_panel",true);
+			
+			Sound_CreateAtEntity("talkingdoordeathsweet","01_01_upsilon_awake/sfx/talking_door/death_sweet","TalkingDoorVoiceSource");
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			sLampName = "electrical_lamp_small_64";
+			Lamp_SetLit(sLampName,false,true);
+			Sound_CreateAtEntity("talkingdoordeath","01_01_upsilon_awake/sfx/talking_door/death","TalkingDoorVoiceSource");
+			
+			Lamp_SetLit("SentientDoor_Speaker_*",false,true);
+			
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			sLampName = "electrical_lamp_small_66";
+			Lamp_SetLit(sLampName,false,true);
+			
+			Entity_SetEffectsActive("GlimpseRobot_FinalHatch",true,true);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			sLampName = "electrical_lamp_small_65";
+			Lamp_SetLit(sLampName,false,true);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			sLampName = "electrical_lamp_small_62";
+			Lamp_SetLit(sLampName,false,true);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			sLampName = "electrical_lamp_small_63";
+			Lamp_SetLit(sLampName,false,true);
+			Lamp_SetLit("SentientDoor_Speaker_2",false,true);
+			
+			
+		}
+		else if (Sequence_DoStepAndWait(1.5f))
+		{
+			//Entity_CallEntityInteract("exithatch_panel_locked");		
+		
+			
+		}
+		else if (Sequence_DoStepAndWait(3.0f))
+		{
+		
+		}
+		else if (Sequence_DoStepAndWait(0.5f))
+		{	
+			//Entity_SetEffectsActive("GlimpseRobot_FinalHatch",false,true);
+			//Prop_MoveLinearTo("GlimpseRobot_FinalHatch","GlimpseRobot_FinalHatch_1",2.0f,10.0f,0.1f,true,"");
+		}
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnUseHatchButton(const tString &in asEntity, int alState)
+	{
+		Entity_SetActive(Entity_GetVarString(asEntity, ""), (alState==1));
+	}
+	
+	//-------------------------------------------------------
+	
+	void HatchClimb_1_OnPlayerInteract(const tString &in asEntity)
+	{
+		////////////////////////
+		// Let the player climb if they're on the correct side of the vent, using a camera animation
+		if (Entity_GetCollide("Player","HatchClimbtestArea"))
+		{
+			Entity_SetActive("HatchClimbtestArea",false);
+			Entity_SetActive("HatchClimb_1",false);
+			CameraAnimation_Begin("ClimbAnim","",true);
+			mbPlayerEscaped = true;
+		}
+	}
+	
+	//-------------------------------------------------------
+		
+	bool CollidePlayerInVent(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("PLAYER IN VENT!");
+		
+		ClimbAnim_4_CameraNodePassed("",1);
+		ClimbAnim_7_CameraNodePassed("",1);
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool mbVentMusicTriggered = false;
+	bool ClimbAnim_4_CameraNodePassed(const tString &in asEntity, int alDirection)
+	{
+		if(mbVentMusicTriggered==false)
+		{
+			/////////////////////
+			//Begin ambient music in vents
+			Music_PlayExt("01_02_tunnel", true, 0.35, 1, 5, 0, eMusicPrio_BgAmb, false);
+		}
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool ClimbAnim_7_CameraNodePassed(const tString &in asEntity, int alDirection)
+	{
+		Entity_PlayAnimation("exithatch","close",0.0f,false,true,"");
+		
+		PreloadBeginChangeOfMap();
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 - Alternate route to maintenance hatch
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbRobotInVentsDone = false;
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaTunnelDoorBang(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		if (mbDoorDrained) return false;
+		
+		////////////////////////////////////
+		// Set up some apprehension to enter this door by hinting at something on the other side (We see lights of a monster in 1.2..)
+		SequenceTunnelDoorBang("");	
+
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mTunnelDoorBangSequenceStates;
+	
+	void SequenceTunnelDoorBang(const tString &in asName)
+	{
+		Sequence_Begin("SequenceTunnelDoorBang", mTunnelDoorBangSequenceStates);
+		
+		if (Sequence_DoStepAndWait(0.75f))
+		{
+			
+			cLux_AddTodoMessage("SOUND: Something banging on that door..");
+			Entity_PlaceAtEntity("GlimpseMaintenance","GlimpseMaintenanceStart",cVector3f_Zero,true);
+			Entity_SetActive("GlimpseMaintenance",true);
+			Light_SetVisible("Spotlight_RobotFlicker",true);
+			
+			
+			
+			/////////////////////////
+			// Start with door bang..
+			Sound_CreateAtEntity("snd_doorbang1","physics/metal/robust/impact","Player",0.0f,false,1.0f);
+			ParticleSystem_CreateAtEntity("ps_dustbang_1","dust_falling_impact.ps","AreaEffectDoorBang_1",true);
+			Effect_Shake_Start(0.15f,0.15f,0.1f,0.1f);
+			
+		}
+		else if (Sequence_DoStepAndWait(1.25f))
+		{
+			cLux_AddTodoMessage("SOUND: This thing is really pissed off!");
+			
+			Depth_Audio_Fear_HighIntensity(5.0f,8.0f,3,true,true);
+			
+			/////////////////////////
+			// On second bang the door opens slightly
+			Sound_CreateAtEntity("snd_doorbang1","physics/metal/robust/impact","Player",0.0f,false,1.0f);
+			ParticleSystem_CreateAtEntity("ps_dustbang_2","dust_falling_impact.ps","AreaEffectDoorBang_2",true);
+			
+			
+			//////////////////////////////////////
+			// Panel registers an error...
+			SlideDoor_SetOpenAmount("TunnelDoor",0.05f,false);
+			Entity_CallEntityInteract("TunnelDoor_Panel_1");
+			
+			///////////////////////////
+			// Place a robot
+			Entity_SetActive("infected_robot",true);
+			Entity_PlaceAtEntity("infected_robot","AreaRobotGlimpseSpawn",cVector3f_Zero,true);
+			Agent_SetSensesActive("infected_robot",false);
+		}
+		else if (Sequence_DoStepAndWait(1.25f))
+		{
+			//////////////////////////////////////
+			// Panel registers an error... door opens a little bit more
+			Entity_CallEntityInteract("TunnelDoor_Panel_1");
+			SlideDoor_SetOpenAmount("TunnelDoor",0.0f,false);
+		}
+		else if (Sequence_DoStepAndWait(1.25f))
+		{
+			//////////////////////////////////////
+			// Panel registers an error... door opens a little bit more
+			Entity_CallEntityInteract("TunnelDoor_Panel_1");
+			SlideDoor_SetOpenAmount("TunnelDoor",0.125f,false);
+		}
+		else if (Sequence_DoStepAndWait(0.75f))
+		{
+			cLux_AddTodoMessage("SOUND: There's something on the other side moving away... probably coming to get you later..");
+			
+			/////////////////////////
+			// The enemy on the other side gives up..
+			Light_SetVisible("Spotlight_RobotFlicker",false);
+			Prop_MoveLinearTo("GlimpseMaintenance", "GlimpseMaintenanceTarget", 5, 2, 0, true);
+			Sound_CreateAtEntity("GlimpseMaintenance", "01_02_upsilon_inside_02/sfx/vent/construct/flee", "GlimpseMaintenance", 0.0f, false, 1.0f);
+		}
+		else if (Sequence_DoStepAndWait(0.75f))
+		{
+			cLux_AddTodoMessage("4");
+			//////////////////////////////////////
+			// Panel corrects the error
+			Entity_CallEntityInteract("TunnelDoor_Panel_1");
+			SlideDoor_SetOpenAmount("TunnelDoor",0.0f,false);
+		}
+		else if (Sequence_DoStepAndWait(0.75f))
+		{
+			cLux_AddTodoMessage("5");
+			
+			//////////////////////////////////////
+			// Remove the glimpse of the light now
+			Entity_SetActive("GlimpseMaintenance",false);
+			Entity_SetActive("infected_robot",false);
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaGlimpseRunAway(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		///////////////////////////////
+		// Glimpse of robot lights retreating building up to 1.2
+		Prop_MoveLinearTo("GlimpseMaintenance", "GlimpseMaintenance2_Target", 5, 1, 0, true, "GlimpseDissapear");
+		Prop_AlignRotation("GlimpseMaintenance","GlimpseMaintenance2_Target",5,2,0,false,"GlimpseDissapear");
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void GlimpseDissapear(const tString& in asPropName)
+	{
+		/////////////////////////////////
+		// Light moves in to the tunnel..
+		//Entity_PlaceAtEntity("GlimpseMaintenance","GlimpseMaintenance3_Start",cVector3f_Zero,true);
+		Entity_SetActive("GlimpseMaintenance",false);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaMoveTunnelRobot(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		//////////////////////////////////
+		// Infected robot sighting at the bottom of the stairs, moving away from the player
+		Pathfinder_MoveToEntity("infected_robot","TunnelDoor","",0,true,cVector3f_Zero,"");
+		
+		cLux_AddTodoMessage("MUSIC: Construct stalking music should be maintained here...");
+		//Music_Play("NPC_Construct_Stalk.ogg",1.0f,true,eMusicPrio_BgAmb);
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaDespawnInfectedRobot(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		////////////////////////////////
+		// Despawn the infected robot - player should not reach it
+		if (alState != 1) return true;
+		
+		Entity_SetActive("infected_robot",false);
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void AreaInfectedRobotSounds_OnPlayerLookAt(const tString &in asEntity, int alState)
+	{
+		/////////////////////////////////
+		// Call the collide function if the player looks here..
+		//CollideAreaInfectedRobotSounds("Player","Player",1);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollideAreaInfectedRobotSounds(const tString &in asParent, const tString &in asChild, int alState)	
+	{
+		if (alState != 1) return true;
+		if (mbRobotInVentsDone) return false;
+		
+		cLux_AddTodoMessage("SOUND: The robot is ahead...");
+		Sound_CreateAtEntity("GlimpseMaintenance", "01_02_upsilon_inside_02/sfx/vent/construct/flee", "HatchClimbtestArea_Alt", 0.0f, false, 1.0f);
+		Prop_MoveLinearTo("GlimpseMaintenance3_Start", "GlimpseMaintenance3_Target", 4, 1, 0, true, "GlimpseDissapearFinal");
+		Prop_AlignRotation("GlimpseMaintenance3_Start","GlimpseMaintenance3_Target",1,1,0,false,"");
+		mbRobotInVentsDone = true;
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void GlimpseDissapearFinal(const tString& in asPropName)
+	{
+		/////////////////////////////////
+		// Light disappears in the tunnel..
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 3 EXIT LEVEL
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool CollideLoadNextLevel(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		PreloadLastResort();
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+
+	//} END SCENE 3
+	
+	//-------------------------------------------------------
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MISC SCARES AND EVENTS
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbFencesBroken = false;
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Robot breaks down fences when player has returned to tech room
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void RobotBreaksFences()
+	{
+		////////////////////////////
+		// Prevent this from running multiple times (it can be triggered in a few ways)
+		if (mbFencesBroken) return;
+		mbFencesBroken = true;
+		
+		Entity_SetActive("RobotLights_Fences",true);
+		Entity_SetEffectsActive("RobotLights_Fences",false,false);
+		
+		
+		
+		SequenceFenceBreak("");
+	}
+	
+	
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mFenceBreakSequence;
+	
+	void SequenceFenceBreak(const tString &in asName)
+	{
+		Sequence_Begin("SequenceFenceBreak", mFenceBreakSequence);
+
+		if (Sequence_DoStepAndWait(0.5f))
+		{
+			//cLux_AddTodoMessage("SOUND: Robot monster is breaking down the fence doors! (May happen in a few locations)");
+			Sound_CreateAtEntity("sfx_fencesmash","01_01_upsilon_awake/sfx/fence_smash/construct_fence_smash","AreaDoorPoundEffect");
+			Map_AddTimer("StopAmbientMusicQuickly",1.0f, "AmbientMusicHandler");
+			Entity_SetEffectsActive("RobotLights_Fences",true,true);
+			Entity_SetActive("fencedoor_breakdown_*",false);
+			Entity_SetActive("fencedoor_busted_*",true);
+		}
+		else if (Sequence_DoStepAndWait(0.5f))
+		{
+			Sound_FadeGlobalVolume(0.65f, 0.1f);
+		}
+		else if (Sequence_DoStepAndWait(5.0f))
+		{
+			Prop_AlignRotation("RobotLights_Fences", "RobotLights_Fences_End",0.5,0.5,0.25f,true);
+			Prop_MoveLinearTo("RobotLights_Fences", "RobotLights_Fences_End", 1, 1, 0.25, true, "");	
+			Sound_FadeGlobalVolume(1.0f, 4.0f);
+			Music_Play("01_01_construct_smashing_about", 0.45f, false, eMusicPrio_BigEvent);
+		}
+		else if (Sequence_DoStepAndWait(1.0f))
+		{
+			Entity_SetEffectsActive("RobotLights_Fences",false,true);
+			Entity_SetActive("DoorSmashMusicStinger_*", true);
+			Map_AddTimer("StartAmbient", cMath_RandRectf(3.0f,8.0f), "AmbientMusicHandler");
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PRELOADING
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool PreloadDisabled(bool abCheckIfPreloading = true)
+	{
+		if(cLux_ScriptDebugOn())
+		{
+			cLux_AddDebugMessage("PRELOAD DISABLED!"); 
+			
+			return true;
+		}
+		
+		if(abCheckIfPreloading && Map_IsPreloading() == false)
+			return true;
+			
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Begin preload.
+	void Preload()
+	{
+		if(PreloadDisabled(false))
+		{
+			cLux_AddDebugMessage("Preload is disabled");
+			return;	
+		}
+		
+		Map_Preload("01_02_upsilon_inside.hpm");
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Change preload prio to high
+	void PreloadPriorityHigh()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_SetPreloadPriority(eWorldStreamPriority_High);
+	}
+		
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Deload rest of level except end room and maintenence access
+	void PreloadPreDeload()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_Deload("PreTransfer0102");
+	}
+			
+	//-------------------------------------------------------
+	
+	////////////////////////
+	//Fade presets and begin final deload and fade of globals from next level.
+	void PreloadBeginChangeOfMap()
+	{
+		if(PreloadDisabled()) 
+		{
+			PreloadManualChangeMap();
+			return;
+		}
+		
+		//////////////////////
+		// Prevent the player from jumping out from vent while level is unloading
+		Entity_CreateAtEntity("VentBlocker","block_box_static.ent","ClimbArea_1",false);
+		
+		Map_Preset_Fade("Inside1_2", 2);
+		Map_AddTimer("PrioChange", 2, "PreloadTimer");
+		Map_AddTimer("FadeGlobal", 2.1, "PreloadTimer");
+		Map_AddTimer("ChangeMap", 5, "PreloadTimer");
+	}
+	
+	//-------------------------------------------------------
+	bool mbGlobalCopyCompleted = false;
+	
+	void PreloadTimer(const tString &in asTimer)
+	{
+		////////////////////////////
+		//Preload - Deload all but last area and up stream prio further.
+		if(asTimer == "PrioChange") Map_Deload("Transfer0102");
+		
+		////////////////////////////
+		//Preload - Change map globals when possible.
+		if(asTimer == "FadeGlobal")
+		{
+			if(mbGlobalCopyCompleted) return;
+			
+			mbGlobalCopyCompleted = Map_CopyGlobalSettings(Map_GetPreloadMap(), 0.5);
+			
+			Map_AddTimer("FadeGlobal", 0.6, "PreloadTimer");
+		}
+		
+		////////////////////////////
+		//Preload - Change map when possible
+		if(asTimer == "ChangeMap")
+		{
+			if(Map_IsPreloadCompleted())
+			{
+				Description_SetForceFading(true);
+				Map_ChangeMap("01_02_upsilon_inside.hpm", "", "Transfer0102", "", "");
+			}
+			else Map_AddTimer("ChangeMap", 0.5f, "PreloadTimer");
+		}
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	///////////////////
+	//Lock player if he gets this far. Either because slow computer or loaded a saved game or ran here very fast or a combination.
+	void PreloadLastResort()
+	{
+		if(PreloadDisabled())
+		{
+			cLux_AddDebugMessage("LOADING USING NO TRANSITION AT LOCATION WHERE TRANSITION WOULD AT THE LATEST NORMALY OCCUR3."); 
+			
+			PreloadManualChangeMap();
+			
+			return;
+		}
+		
+		if(Map_IsPreloadCompleted()) return;
+		
+		Player_SetMoveSpeedMul(0);
+		Description_Add("02_05_theta_inside", "ScanRoom_Legacy_Loading", 20, false);
+		
+		Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Manually load next level if preload fails,  preload disabled.
+	void PreloadManualChangeMap()
+	{
+		Map_ChangeMap("01_02_upsilon_inside.hpm", "PlayerStartArea_1", "", "");
+	}
+	
+	//-------------------------------------------------------
+
+	//} END PRELOADING
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ==============
+	// TERMINALS
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Terminal *TECH ROOM TERMINAL*
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbTerminalsUnlocked = false;
+	bool mbOrientationVideoPlaying = false;
+	int mlOrientationSlide = 1;
+	int mlOrientationGraphic = 0;
+
+	//-------------------------------------------------------
+
+	void TechTerminal_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("01_01_upsilon_awake");
+		
+		///////////////
+		// Data
+		cImGuiButtonData buttonData = StationGui_CreateDefaultButtonData();
+		ImGui_SetDefaultButton(buttonData);
+		
+		cImGuiLabelData labelData;
+		labelData.mFont.mvSize = cVector2f(20);
+		ImGui_SetDefaultLabel(labelData);
+		
+		cImGuiTextFrameData textFrame = ImGui_GetDefaultTextFrame();
+		textFrame.mColorBase = cColor(0,0,0,0);
+		ImGui_SetDefaultTextFrame(textFrame);
+		
+		///////////////
+		// Ornaments
+		StationGuiBG_Backdrop("background/background_logo_pathosstation", cVector2f(0.05, 0.05), 0.75);
+		StationGuiBG_Scanlines();
+		
+		////////////////////////////////
+		// Terminal locked message
+		if (mbTerminalsUnlocked == false && mbOmniToolInserted == false)
+		{
+			StationGui_BigStatusMessage_Old("TechTermLocked", gStationGuiColor_Warning, 0.875);
+			return;
+		}
+		
+		////////////////////////////////
+		// Show loading bar for configuration chip
+		if (mbOmniToolInserted == true && ImGui_GetStateBool("Unlocked",false) == false)
+		{
+			if (StationGui_LoadingWindow("ScanningWindow", "ScanningWindow", "ScanningTool", 7.0f, true))
+			{
+				ImGui_SetStateBool("Unlocked", true);
+				mbTerminalsUnlocked = true;
+				
+				///////////////////////////////////
+				// Onboard Jane Quips
+				cLux_AddDebugMessage("Jane Quip");
+				Voice_SetSource("HelperJane","cath_terminal_1",1.0f,12.0f,true);
+				Voice_Play("HelperJanePlugin");
+			}
+			return;
+		}
+		
+		if (StationGui_DrawAndCheckErrors()) return;
+		
+		tString sSystemStatusButtonText = "SystemStatus";
+		tString sSuitStatusButtonText = "SuitStatusButton";		
+		/*if (mbRobotDestroyedTechRoom)
+		{
+			sSystemStatusButtonText = "CorruptSystemStatus";
+			sSuitStatusButtonText = "CorruptSuitStatus";
+		}*/
+		
+		bool bBackButtonEnabled = true;
+		int lBackState = eTechTerminalState_MainMenu;
+		int lActiveApp = StationGui_GetActiveApp(eTechTerminalState_MainMenu);
+		int lSecuritySelection = -1;
+		switch(lActiveApp)
+		{
+			
+			case eTechTerminalState_MainMenu:
+			StationGui_AddApp(sSystemStatusButtonText, true, eTechTerminalState_SystemStatus);
+			StationGui_AddApp("CorruptWauButton", true, eTechTerminalState_WauText);
+			StationGui_AddApp("OmniToolButton", true, eTechTerminalState_OmniToolMain);
+			StationGui_AddApp(sSuitStatusButtonText, true, eTechTerminalState_SuitStatus);
+			StationGui_MainMenu();
+			
+			bBackButtonEnabled = false;
+			break;
+			
+			case eTechTerminalState_SystemStatus:
+			StationGui_TextReaderSingle(sSystemStatusButtonText, "TechTermSystemStatus");
+			break;
+			
+			case eTechTerminalState_WauText:
+			StationGui_TextReaderSingle("CorruptWauButton", "UikadsScanas");
+			break;
+			
+			case eTechTerminalState_OmniToolMain:
+			StationGui_AddApp("ButtonToolChipSetup", true, eTechTerminalState_OmniToolChipSetup);
+			StationGui_AddApp("ButtonBrainChipSetup", true, eTechTerminalState_OmniToolBrainSetup);
+			StationGui_AddApp("ButtonChipContainer_Open", ImGui_GetStateBool("ChipContainerClosed", true), false);
+			StationGui_AddApp("ButtonOrientationVideo", true, eTechTerminalState_OmniToolOrientationVideo);
+			lSecuritySelection = StationGui_MainMenu();
+			if (lSecuritySelection==2)
+			{
+				ImGui_SetStateBool("ChipContainerClosed", false);
+				
+				/////////////////////////////////////
+				// Security chip door should open now
+				Map_AddTimer("timer_openchipcontainer",1.05f,"TimerOpenChipContainer");
+				Sound_CreateAtEntity("ChipDoorOpen", "01_01_upsilon_awake/sfx/omnitool/chip_door_open", "ChipContainer_Door");
+			}
+			else if (lSecuritySelection==3)
+			{
+				BeginOrientationSlideShow();
+				ImGui_SetStateInt("CurrentSlide",1);
+				ImGui_SetStateFloat("SlideTimer", 0.0f);
+			}
+			
+			break;
+			
+			case eTechTerminalState_OmniToolChipSetup:
+			TechRoomTerminalOmniToolRegularSetup();
+			lBackState = eTechTerminalState_OmniToolMain;
+			break;
+			
+			case eTechTerminalState_OmniToolChipInstalling:
+			TechRoomTerminalInstallChip();
+			bBackButtonEnabled = false;
+			break;
+			
+			case eTechTerminalState_OmniToolBrainSetup:
+			TechRoomTerminalOmniToolBrainSetup();
+			lBackState = eTechTerminalState_OmniToolMain;
+			break;
+			
+			case eTechTerminalState_SuitStatus:
+			StationGui_TextReaderSingle(sSystemStatusButtonText, "SuitStatus");
+			break;
+			
+			case eTechTerminalState_OmniToolOrientationVideo:
+			TechRoomTerminalOrientationVideo(afTimeStep);
+			lBackState = eTechTerminalState_OmniToolMain;
+			break;
+		}
+		
+		StationGuiBG_Taskbar("upsilon");
+		if (StationGui_BackButton(bBackButtonEnabled, lBackState))
+		{
+			mbOrientationVideoPlaying = false;
+			Sound_CreateAtEntity("OrientationVideoLoopStop", "01_01_upsilon_awake/sfx/omnitool_orientation/stop", "OrientationVideoSoundSource");
+			Sound_Stop("OrientationVideoLoop", 0.25f);
+			Sound_Stop("OrientationVideoFoley", 0.25f);
+			Voice_Stop(Voice_GetSubjectSceneName("OrientationVideo_1"));
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void TechRoomTerminalOmniToolRegularSetup()
+	{
+		cImGuiTextFrameData textData;
+		textData.mFont.mvSize = cVector2f(20);
+		textData.mColorBase.a = 0;
+		
+		cImGuiWindowData window = StationGui_CreateDefaultWindowData();
+		ImGui_DoWindowStart("ButtonToolChipSetup", window, ImGui_NrmPosGroup(0.05, 0.02, 1), ImGui_NrmSizeGroup(0.9, 0.775));
+		
+		cImGuiTextFrameData frame = StationGui_CreateDefaultTextFrameData();
+		
+		///////////////////////////////////
+		// Display Status of Omni Tool
+		tString sOmniToolStatus = mbOmniToolInserted ? "Inserted" : "NotInserted";
+		if (mbOmniToolInserted)
+			sOmniToolStatus += mbConfigChipInserted ? "WithChip" : "WithoutChip";
+		ImGui_DoTextFrameExt("OmniTool"+sOmniToolStatus, cVector2f(3,3), 3.0f, 0, frame, ImGui_NrmPosGroup(cVector3f(0.05, 0.05, 1)), ImGui_NrmSizeGroup(cVector2f(0.9, 0.8f)));
+
+		//////////////////////////////////
+		// Display Status of Config Chip
+		tString sConfigChipStatus = (mbConfigChipInserted&&mbOmniToolInserted) ? "Inserted" : "NotInserted";
+		ImGui_DoTextFrameExt("ConfigChip"+sConfigChipStatus, 0, 0, 0, frame, ImGui_NrmPosGroup(cVector3f(0.05, 0.8, 1)), ImGui_NrmSizeGroup(cVector2f(0.5, 1)));		
+
+		//////////////////////////////////
+		// Configuration/Install button is greyed out until both components are inserted (above)
+		ImGui_SetModUseInput(mbOmniToolInserted && mbConfigChipInserted && mbToolChipAnnounced);
+		
+		if (ImGui_DoButton("ButtonConfigure","ButtonConfigure", ImGui_NrmPos(cVector3f(0.55, 0.55, 2)), ImGui_NrmSize(cVector2f(0.3, 0.125))))
+		{
+			cLux_AddTodoMessage("SOUND: BEGIN OMNITOOL CONFIGURATION HERE");
+			Sound_PlayGui("Entities_Station/tech/terminal_beeps/terminal_forward",1.0);
+			Sound_CreateAtEntity("OmnitoolConfig", "01_01_upsilon_awake/sfx/omnitool/chip_calibrate", "OmniPluggedInSoundSource");
+			StationGui_SetActiveApp(eTechTerminalState_OmniToolChipInstalling);
+		}
+		
+		ImGui_SetModUseInput(true);
+		
+		ImGui_DoWindowEnd();
+	}
+	
+	//-------------------------------------------------------
+	
+	void TechRoomTerminalOmniToolBrainSetup()
+	{
+		cImGuiTextFrameData textData;
+		textData.mFont.mvSize = cVector2f(20);
+		textData.mColorBase.a = 0;
+		
+		cImGuiWindowData window = StationGui_CreateDefaultWindowData();
+		ImGui_DoWindowStart("ButtonBrainChipSetup", window, ImGui_NrmPosGroup(0.05, 0.02, 1), ImGui_NrmSizeGroup(0.9, 0.775));
+		
+		cImGuiTextFrameData frame = StationGui_CreateDefaultTextFrameData();	
+		
+		///////////////////////////////////
+		// Display Status of Omni Tool
+		tString sOmniToolStatus = mbOmniToolInserted ? "Inserted" : "NotInserted";
+		ImGui_DoTextFrameExt("OmniToolBrain"+sOmniToolStatus, cVector2f(3,3), 3.0f, 0, frame, ImGui_NrmPosGroup(cVector3f(0.05, 0.05, 1)), ImGui_NrmSizeGroup(cVector2f(0.9, 0.8f)));
+
+		//////////////////////////////////
+		// Display Status of Brain Chip
+		ImGui_DoTextFrameExt("BrainChip", 0, 0, 0, frame, ImGui_NrmPosGroup(cVector3f(0.05, 0.8, 1)), ImGui_NrmSizeGroup(cVector2f(0.5, 1)));
+		
+		//////////////////////////////////
+		// Configure button ALWAYS greyed out for the brain setup!
+		ImGui_SetModUseInput(false);
+		ImGui_DoButton("ButtonConfigure","ButtonConfigure", ImGui_NrmPos(cVector3f(0.55, 0.55, 2)), ImGui_NrmSize(cVector2f(0.3, 0.125)));
+		ImGui_SetModUseInput(true);
+		
+		ImGui_DoWindowEnd();
+	}
+	
+	//-------------------------------------------------------
+	
+	void TechRoomTerminalInstallChip()
+	{
+		float fProgress = Depth_ImGui_GetLoadingValue("ConfiguringWindow");
+		
+		////////////////////////////////
+		// Show result for configuration chip
+		if (fProgress >= 1.0f)
+		{
+			//cLux_AddTodoMessage("SOUND: END OMNITOOL CONFIGURATION HERE!! (Avoid re-entry with a bool etc as usual - i.e mbSoundPlayed");
+			
+			StationGui_DialogBox_Start("", "ConfigChipComplete");
+			StationGui_DialogBox_End();	
+			
+			if (ImGui_GetStateBool("ChipEjected",false) == false)
+			{
+				CathTool_AllowDetach("OmniTool_Configured");
+				ImGui_SetStateBool("ChipEjected",true);
+				
+				///////////////////////////////////
+				// Onboard Jane Quips
+				cLux_AddDebugMessage("Jane Quip");
+				Voice_SetSource("HelperJane","cath_terminal_1",1.0f,12.0f,true);
+				Voice_Play("HelperJaneUpdateToolChip");
+			}
+			
+			if (mbOmniToolInserted==false)
+			{
+				StationGui_SetActiveApp(eTechTerminalState_OmniToolMain);
+			}
+		}
+		
+		////////////////////////////////
+		// Show loading bar for configuration chip
+		else
+		{
+			StationGui_LoadingWindow("ConfiguringWindow", "ConfiguringWindow", "ConfiguringTool", 5.0f, false);
+		}
+	}
+	
+	
+	//---------------------------------------------------------
+	
+	void TechRoomTerminalOrientationVideo(float afTimeStep)
+	{
+		int lSlide = mlOrientationSlide;
+		
+		ImGui_DoImage(cImGuiGfx("omnivideo0"+mlOrientationGraphic, eImGuiGfx_Texture), ImGui_NrmPos(0, 0, 2), ImGui_NrmSizeGroup(1, 1.275));
+		
+		/*if (lSlide > 5)
+		{
+			//lSlide = 1;
+			ImGui_SetStateInt("State",eTechTerminalState_OmniToolMain);
+			return;
+		}
+		
+		
+		if (lSlide > 0)
+		{
+			
+		}*/
+		
+		ImGui_SetStateInt("CurrentSlide",lSlide);
+	}
+	
+	//-------------------------------------------------------
+	
+	void BeginOrientationSlideShow()
+	{
+		//////////////////////////////
+		// Kick off the slide show
+		mbOrientationVideoPlaying = true;
+		mlOrientationSlide = 1;
+		mlOrientationGraphic = 0;
+		Sound_CreateAtEntity("OrientationVideoLoopStart", "01_01_upsilon_awake/sfx/omnitool_orientation/start", "OrientationVideoSoundSource");
+		Sound_CreateAtEntity("OrientationVideoLoop", "01_01_upsilon_awake/sfx/omnitool_orientation/noise_loop", "OrientationVideoSoundSource");
+		Sound_CreateAtEntity("OrientationVideoFoley", "01_01_upsilon_awake/sfx/omnitool_orientation/foley_loop", "OrientationVideoSoundSource");
+		Voice_Stop(Voice_GetSubjectSceneName("OrientationVideo_1"));
+		Voice_Play("OrientationVideo_1",-1,"NextOrientationSlide");
+	}
+	
+	//-------------------------------------------------------
+	
+	void NextOrientationSlide(const tString&in asScene, const tString&in asSubject)
+	{
+		
+		
+		//////////////////////////////
+		// Cycle through each part of the orientation slideshow
+		if (mbOrientationVideoPlaying)
+		{
+			mlOrientationSlide++;
+			cLux_AddTodoMessage(":SlideShow:" + mlOrientationSlide);
+			if (mlOrientationSlide <= 5)
+			{
+				Map_AddTimer("timer_nextslide",1.0f,"TimerNextSlide");
+			}
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerNextSlide(const tString &in asTimer)
+	{
+		if (mbOrientationVideoPlaying)
+		{
+			Voice_Play("OrientationVideo_"+mlOrientationSlide,-1,"NextOrientationSlide");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void NextOrientationGraphic(const tString &in asScene, const tString &in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (abStartOfLine == false) return;
+		mlOrientationGraphic++;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TechRoomTerminalSuitStatus()
+	{
+		ImGui_GroupBegin(ImGui_NrmPos(cVector3f(0.25, 0.15, 1)), ImGui_NrmSize(cVector2f(0.5, 0.7)));
+		ImGui_SetTransCategory("01_01_upsilon_awake");
+		
+		cImGuiTextFrameData textData;
+		textData.mFont.mvSize = cVector2f(20);
+		textData.mColorBase.a = 0;
+		ImGui_DoTextFrameExt("SuitStatus",cVector2f_Zero,4.0f,0,textData, ImGui_NrmPosGroup(cVector3f(0.05, 0.15, 1)), ImGui_NrmSizeGroup(cVector2f(0.8, 0.8)));
+		
+		ImGui_GroupEnd();
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END TECH ROOM TERMINAL
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Terminal *PILOT CHAIR TERMINAL*
+	//{//////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbWauTextSoundPlayed = false;
+	
+	//-------------------------------------------------------
+	
+	void StartWauTextSound()
+	{
+		if (mbWauTextSoundPlayed) return;
+		
+		Sound_CreateAtEntity("WauText", "01_01_upsilon_awake/amb/spot/scrolling_text_terminal", "ScanChairTerminalSoundSource");
+		mbWauTextSoundPlayed = true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void StopWauTextSound()
+	{
+		if (!mbWauTextSoundPlayed) return;
+		
+		Sound_Stop("WauText", 0.15f);
+		mbWauTextSoundPlayed = false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void PilotTerminal_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("01_01_upsilon_awake");
+		
+		StationGuiBG_Backdrop("background/background_logo_pathOS", cVector2f(0.01, 0.45));
+		StationGuiBG_Scanlines();
+		
+		//////////////////////////////////////
+		// Terminals must be unlocked with the omnitool first
+		if (mbTerminalsUnlocked == false)
+		{
+			StationGui_BigStatusMessage_Old("PilotTermLocked", gStationGuiColor_Warning, 0.75);	
+			return;
+		}
+		
+		/*if (mbRobotDestroyedTechRoom)
+		{
+			return;
+		}*/
+		
+		if (StationGui_DrawAndCheckErrors()) return;
+		
+		bool bBackButtonEnabled = true;
+		int lBackState = ePilotTerminalState_MainMenu;
+		int lActiveApp = StationGui_GetActiveApp(ePilotTerminalState_MainMenu);
+		int lMainMenuSelection;
+		switch(lActiveApp)
+		{
+			case ePilotTerminalState_MainMenu:		
+				StationGui_AddApp("PilotControls", true, ePilotTerminalState_Controls);
+				StationGui_AddApp("PilotReports", true, ePilotTerminalState_Reports);
+				StationGui_MainMenu();
+				
+				StopWauTextSound();
+				bBackButtonEnabled = false;
+			break;
+			
+			case ePilotTerminalState_Controls:
+				StationGui_AddApp("PilotControlStatus", true, ePilotTerminalState_WauText); 			//1. status	- show some creepy wau text
+				StationGui_AddApp("PilotControlConnect", true, false); 									//2. connect to robot - error message
+				StationGui_AddApp("PilotControlPilotStatus", true, false); 								//3. pilot status - no user in place message
+				StationGui_AddApp("PilotControlNeocortex", true, false); 								//4. neocortex connection - no user in place message
+				StationGui_AddApp("PilotControlConnectStatus", true, false); 							//5. connection status - error message
+				lMainMenuSelection = StationGui_MainMenu();
+				if (lMainMenuSelection == 1 || lMainMenuSelection == 4)
+				{
+					StationGui_SetError("PilotError");
+				}
+				else if (lMainMenuSelection > 0)
+				{
+					StationGui_SetError("PilotNoUser");
+				}
+				StopWauTextSound();
+			break;
+			
+			case ePilotTerminalState_Reports:
+				////////////////////
+				// Reports
+				// 1. text - carl feels dizzy during a mission controlling a robot
+				// 2. text - a report written by amy that people are starting to refuse to use the pilot seats
+				Depth_ImGui_AddTextFile("PilotTerminalFileName_1", "PilotTerminalFile_1");
+				Depth_ImGui_AddTextFile("PilotTerminalFileName_2", "PilotTerminalFile_2");
+				StationGui_TextReaderMulti();
+			break;
+			
+			case ePilotTerminalState_WauText:
+				PilotTerminalWauButton(afTimeStep);
+				lBackState = ePilotTerminalState_Controls;
+				StartWauTextSound();
+			break;
+		}
+		
+		StationGuiBG_Taskbar("upsilon");
+		StationGui_BackButton(bBackButtonEnabled, lBackState);
+	}
+	
+	//-------------------------------------------------------
+	
+	
+	
+	void PilotTerminalWauButton(float afTimeStep)
+	{		
+		//////////////////////////////
+		// Widget data
+		cImGuiWindowData window = StationGui_CreateDefaultWindowData();
+		
+		cImGuiTextFrameData textData = StationGui_CreateDefaultTextFrameData();
+		textData.mFont.mvSize = ImGui_NrmSizeKeepRatio(0.035);
+		
+		//////////////////
+		// Draw static
+		int lStaticFrames = ImGui_GetStateInt("Static",0);
+		if (lStaticFrames > 0)
+		{
+			ImGui_DoImage(cImGuiGfx("station/static/static_0"), ImGui_NrmPos(cVector3f(-0.5+cMath_RandRectf(-0.05f,0.05f),-0.2+cMath_RandRectf(-0.05f,0.05f),7.0)),ImGui_NrmSize(cVector2f(2.0,2.0)));
+			--lStaticFrames;
+		}
+		
+		//////////////////
+		// Text
+		ImGui_DoWindowStart("PilotControlStatus", window, ImGui_NrmPosGroup(0.05, 0.02, 1), ImGui_NrmSizeGroup(0.9, 0.775));
+			float fOffs = Depth_ImGui_GetScrollValue("MonitorGibberish");
+			float fOverlap = ImGui_DoTextFrameExt("MonitorGibberish_1", ImGui_NrmSizeGroup(cVector2f(0.075, 0.05)), 5, int(fOffs), textData, 
+													ImGui_NrmPosGroup(cVector3f(0, 0, 0)), ImGui_NrmSizeGroup(cVector2f(1,1)));
+			
+			if (fOverlap>0.0f)
+			{
+				fOffs += afTimeStep*10;
+				
+				if (fOffs>58)
+				{
+					lStaticFrames = 10;
+					fOffs = 0;
+					
+					PlayStaticAudioBurst();
+				}
+				
+				Depth_ImGui_SetScrollValue("MonitorGibberish", fOffs);
+			}
+		ImGui_DoWindowEnd();
+		
+		ImGui_SetStateInt("Static",lStaticFrames);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PlayStaticAudioBurst()
+	{
+		cLux_AddTodoMessage("SOUND: Static burst happens here");
+	}
+
+	//-------------------------------------------------------
+	
+	//} END PILOT CHAIR TERMINAL
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// OBSERVATION TUNNEL TERMINAL
+	//{//////////////////////////////////////
+	
+	//--------------------------------------------------------
+	
+	void ObservationTunnelTerm_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+	}
+	
+	//--------------------------------------------------------
+	
+	//} END OBS TUNNEL TERMINAL
+	
+	//--------------------------------------------------------
+	
+	//////////////////////////////////////////////////////////////////////////////////////////
+	// ==============
+	// AUDIO
+	// ==============
+	//{//////////////////////////////////////////////////////////////////////////////////////
+	
+	
+	//Music
+	bool mbIsLightsOnMusicPlaying = false;
+	void LightsOnMusic()
+	{
+		Music_Play("01_01_passage", 0.45f, false, eMusicPrio_BgAmb);
+		Map_AddTimer("EndLightsOnMusic", 75.0f, "EndLightsOnMusic");
+		Map_AddTimer("LivingArea_FridgeCompressor_SoundStart", cMath_RandRectf(30, 45), "LivingArea_FridgeCompressor_SoundStart");
+		mbIsLightsOnMusicPlaying = true;
+	}
+			
+	//---------------------------------------------------------------------
+	//Construct door smash music
+	
+	void ConstructDoorSmashMusic(const tString &in asTimer)
+	{
+		Music_PlayOverlay("01_01_construct_smash_door", 0.35f);
+		Map_AddTimer("ConstructDoorSmashMusic_Loop", 4.0f, "ConstructDoorSmashMusic_Loop");
+	}
+	
+	void ConstructDoorSmashMusic_Loop(const tString &in asTimer)
+	{
+		Music_PlayExt("01_01_construct_smash_drone", true, 0.35f, 1.0f, 3.0f, 0.0f, eMusicPrio_MinorEvent, false);
+	}
+	
+	void ConstructDoorSmashMusicEnd()
+	{
+		Map_RemoveTimer("ConstructDoorSmashMusic_Loop");
+		Music_Stop(1.0f, eMusicPrio_MinorEvent);
+		Music_Play("01_01_construct_smash_end", 0.55f, false, eMusicPrio_BigEvent);
+	}
+		
+	//---------------------------------------------------------------------
+	
+	void EndLightsOnMusic(const tString &in asTimer)
+	{
+		mbIsLightsOnMusicPlaying = false;
+	}
+			
+	//---------------------------------------------------------------------
+	//Headless Robot Music
+	bool CollideHeadlessRobot(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Music_Play("01_01_dead_diver", 0.7f, false, eMusicPrio_BigEvent);
+		Emotion_StartBackgroundBreath(eBreathType_Normal, 0.6f, 3, 8, 0, 3);
+		return false;
+	}
+				
+	//---------------------------------------------------------------------
+	
+	bool WindowSmashMusic = false;
+	void OpeningWindowSmashMusic()
+	{
+		if(WindowSmashMusic == false)
+		{
+			Music_Stop(1.0f, eMusicPrio_BgAmb);
+			Music_Play("04_02_robot_arm_talking", 0.55f, false, eMusicPrio_MinorEvent);
+			WindowSmashMusic = true;
+		}
+	}
+	
+	//---------------------------------------------------------------------
+	
+	void TalkingDoorMusic(const tString &in asTimer)
+	{
+		Music_Play("04_02_robot_arm_talking", 0.75f, false, eMusicPrio_BigEvent);
+		Map_AddTimer("StopAmbientMusicQuickly",1.0f, "AmbientMusicHandler");
+	}
+		
+	//---------------------------------------------------------------------
+	
+	void LeaveStartRoomMusic(const tString &in asTimer)
+	{
+		if(mbIsLightsOnMusicPlaying == true && mbAmbientMusicPlaying == false)
+		{
+			Map_AddTimer("LeaveStartRoomMusic", cMath_RandRectf(4.0f,6.0f), "LeaveStartRoomMusic");
+		}
+		else if (mbAmbientMusicPlaying == false)
+		{
+			Map_AddTimer("StartAmbient", cMath_RandRectf(2.0f,4.0f), "AmbientMusicHandler");
+		}
+	}
+	
+	void PostLightsOutMusic(const tString &in asTimer)
+	{
+		Music_Play("01_01_lightsout", 0.55f, false, eMusicPrio_BigEvent);
+	}
+		
+	//---------------------------------------------------------------------
+	
+	bool SmashedDoorSting(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//removed due to lights off event
+		//Music_Play("05_01_backinbody", 0.45f, false, eMusicPrio_BigEvent);
+		return false;
+	}
+	
+	//---------------------------------------------------------------------
+	
+	// Storage scare buildup music
+	void StorageScareBuildupMusic()
+	{
+		//Music_PlayOverlay("01_01_construct_smash_door", 0.35f);
+	}
+	
+	//---------------------------------------------------------------------
+
+	/**
+	*Simple ambient music player that fades the ambience randomly whilst playing to stop it from getting repetitive
+	**/
+	
+	bool mbAmbientMusicPlaying = false;
+	bool mbAmbientSecondStage = false;
+	void AmbientMusicHandler(const tString &in asTimer)
+	{
+		cLux_AddDebugMessage("Ambient Music Playing is "+mbAmbientMusicPlaying);
+		if (asTimer=="StartAmbient" && mbAmbientMusicPlaying==false && mbAmbientSecondStage==false)
+		{
+			cLux_AddDebugMessage("Ambient music triggering");
+			Music_PlayExt("01_01_ambiencepart1", true, 0.4f, 1.0f, cMath_RandRectf(3.f,5.f), 0.0f, eMusicPrio_BgAmb, true);
+			Music_FadeVolumeMul(1.0f, 3.0f);
+			mbAmbientMusicPlaying = true;
+			
+			//Dynamic fades
+			Map_AddTimer("RandomFadeRider", cMath_RandRectf(15.f,30.f), "AmbientMusicFade");
+			Map_AddTimer("FadeOut", cMath_RandRectf(35.f,65.f), "AmbientMusicFade");
+			Map_RemoveTimer("StopAmbientMusic");
+			Map_RemoveTimer("StopAmbientMusicQuickly");
+		}
+		
+		if (asTimer=="StartAmbient" && mbAmbientMusicPlaying==false && mbAmbientSecondStage==true)
+		{
+			cLux_AddDebugMessage("Ambient music second stage triggering");
+			Music_PlayExt("01_01_somethingwrong", true, 0.65f, 1.0f, cMath_RandRectf(3.f,5.f), 0.0f, eMusicPrio_BgAmb, true);
+			Music_FadeVolumeMul(1.0f, 3.0f);
+			mbAmbientMusicPlaying = true;
+			
+			//Dynamic fades
+			Map_AddTimer("RandomFadeRider", cMath_RandRectf(15.f,30.f), "AmbientMusicFade");
+			Map_AddTimer("FadeOut", cMath_RandRectf(35.f,65.f), "AmbientMusicFade");
+			Map_RemoveTimer("StopAmbientMusic");
+			Map_RemoveTimer("StopAmbientMusicQuickly");
+		}
+		
+		//Fade Music back up
+		else if (asTimer=="AmbientMusicFadeBackIn" && mbAmbientMusicPlaying==true)
+		{
+			Music_FadeVolumeMul(1.0f, cMath_RandRectf(12.f,15.f));
+			Map_AddTimer("FadeOut", cMath_RandRectf(35.f,65.f), "AmbientMusicFade");
+		}
+		else if (asTimer=="StopAmbientMusic" && mbAmbientMusicPlaying==true)
+		{
+			Music_Stop(4.5f, eMusicPrio_BgAmb);
+			Map_RemoveTimer("RandomFadeRider");
+			Map_RemoveTimer("FadeOut");
+			Map_RemoveTimer("StartAmbient");
+			Music_FadeVolumeMul(1.0f,1.0f);
+			mbAmbientMusicPlaying = false;
+		}
+		  else if (asTimer=="StopAmbientMusicQuickly" && mbAmbientMusicPlaying==true)
+		{
+			cLux_AddDebugMessage("Stop Ambient Music Quickly Triggered");
+			Music_Stop(1.5f, eMusicPrio_BgAmb);
+			Map_RemoveTimer("StartAmbient");
+			Map_RemoveTimer("RandomFadeRider");
+			Map_RemoveTimer("FadeOut");
+			Music_FadeVolumeMul(1.0f,1.0f);
+			mbAmbientMusicPlaying = false;
+		}
+	}
+	
+	void AmbientMusicFade(const tString &in asTimer)
+	{
+		if(asTimer=="FadeOut")
+		{	
+			Map_RemoveTimer("RandomFadeRider");
+			cLux_AddDebugMessage("Ambient Music Fading Out");
+			Music_FadeVolumeMul(0.0f, cMath_RandRectf(12.0f,15.0f));
+			Map_AddTimer("AmbientMusicFadeBackIn", cMath_RandRectf(25.f,45.f), "AmbientMusicHandler");
+		}
+		if(asTimer=="RandomFadeRider")
+		{
+			cLux_AddDebugMessage("Ambient Music Fading");
+			Map_AddTimer("RandomFadeRider", cMath_RandRectf(10.f,15.f), "AmbientMusicFade");
+			Music_FadeVolumeMul(cMath_RandRectf(0.65f, 1.2f), cMath_RandRectf(5.0f,8.0f));
+		}
+	}
+			
+	//--------------------------------------------------------------------	
+	//Aquarium ambient music
+	bool CollideAreaAquariumMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1)
+		{
+			Music_PlayExt("01_01_aquarium_ambience", true, 0.75, 1.0f, cMath_RandRectf(5, 8), 0.0f, eMusicPrio_BgAmb, true);
+		}
+		else
+		{
+			Music_Stop(cMath_RandRectf(5, 8), eMusicPrio_BgAmb);
+		}
+		return true;
+	}
+		
+	//--------------------------------------------------------------------	
+	
+	bool mbDatamineCompleteMusicTriggered = false;
+	void DatamineCompleteMusic(const tString &in asEntity)
+	{
+		if(mbDatamineCompleteMusicTriggered == false)
+		{
+			Music_Stop(5.0f, eMusicPrio_MinorEvent);
+			Music_Play("01_01_awaken", 0.45f, false, eMusicPrio_BigEvent);
+			
+			Map_AddTimer("StopAmbientMusicQuickly",1.0f, "AmbientMusicHandler");
+			//ambient start timer slightly delayed to stop from "stopambientmusicquickly" call from killing the timer
+			Map_AddTimer("StartAmbientTimerPostDatamine", 3.0f, "StartAmbientTimerPostDatamine");
+			Map_RemoveTimer("LeaveStartRoomMusic");
+			
+			mbIsLightsOnMusicPlaying = false;
+			mbDatamineCompleteMusicTriggered = true;
+			
+			cLux_AddDebugMessage("Ambient Music State is "+mbAmbientMusicPlaying);
+			
+		}
+	}
+	
+	//--------------------------------------------------------------------	
+	
+	bool Trigger_VentMusicStart(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		return false;
+	}
+			
+	//--------------------------------------------------------------------	
+	
+	void StartAmbientTimerPostDatamine(const tString &in asTimer)
+	{
+		Map_AddTimer("StartAmbient", 15.0f, "AmbientMusicHandler");
+	}
+		
+	//--------------------------------------------------------------------	
+	
+	bool StartRoomMusic_OmnitoolPickedUp(const tString &in asParent, const tString &in asChild, int alState)
+	{
+
+		if (alState == 1)
+		{
+			Map_AddTimer("StopAmbientMusicQuickly", 1.0f, "AmbientMusicHandler");	
+		}
+
+		else if (alState == -1)
+		{
+			Map_AddTimer("StartAmbient", 1.0f, "AmbientMusicHandler");
+		}
+		return true;
+	}
+	
+	//--------------------------------------------------------------------	
+	
+		
+	//Kitchen area fridge compressor
+	bool mbFridgeCompressorSoundActive = false;
+	void LivingArea_FridgeCompressor_SoundStart(const tString &in asTimer)
+	{
+		if(mbFridgeCompressorSoundActive == false)
+		{
+			Map_RemoveTimer("LivingArea_FridgeCompressor_SoundStart");
+			Sound_CreateAtEntity("CompressorStart", "Entities_Station/object/sliding_fridge/compressor/start", "FridgeCompSoundSource", 0.0f, true, 1.0f);
+			Sound_CreateAtEntity("CompressorLoop", "Entities_Station/object/sliding_fridge/compressor/loop", "FridgeCompSoundSource", 1.0f, true, 1.0f);
+			Map_AddTimer("LivingArea_FridgeCompressor_SoundStop", cMath_RandRectf(18, 30), "LivingArea_FridgeCompressor_SoundStop");
+			mbFridgeCompressorSoundActive = true;
+		}
+	}
+	
+	void LivingArea_FridgeCompressor_SoundStop(const tString &in asTimer)
+	{
+		if(mbFridgeCompressorSoundActive == true)
+		{
+			Map_RemoveTimer("LivingArea_FridgeCompressor_SoundStop");
+			Sound_CreateAtEntity("CompressorStop", "Entities_Station/object/sliding_fridge/compressor/stop", "FridgeCompSoundSource", 0.0f, true, 1.0f);
+			Sound_Stop("CompressorLoop", 1.0f);
+			Map_AddTimer("LivingArea_FridgeCompressor_SoundStart", cMath_RandRectf(30, 45), "LivingArea_FridgeCompressor_SoundStart");
+			mbFridgeCompressorSoundActive = false;
+		}
+
+	}
+	
+	//---------------------------------------------------------------------
+	
+	//Aquarium Spot logic
+	bool mbIsPlayerInAquarium = false;
+	bool Trigger_IsPlayerInAquarium(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1)
+		{
+			mbIsPlayerInAquarium = true;
+		}
+		else 
+		{
+			mbIsPlayerInAquarium = false;
+		}
+		cLux_AddDebugMessage("Player is in aquarium is "+mbIsPlayerInAquarium);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool AquariumFrontDoorState(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1 && mbIsPlayerInAquarium == false)
+		{
+			Sound_Stop("aquarium_water_1", 3.0f);
+		}
+		else if(mbIsPlayerInAquarium == false)
+		{
+			Sound_Play("aquarium_water_1", 3.0f);
+		}
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	//Talking door gloop logic
+	bool TalkingDoorState(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1 && mbIsPlayerInTalkingDoorRoom == true)
+		{
+			Sound_Stop("talking_door_hall_gloop_*", 3.0f);
+		}
+		else if(mbIsPlayerInTalkingDoorRoom == true)
+		{
+			Sound_Play("talking_door_hall_gloop_*", 3.0f);
+		}
+		return true;
+	}
+	
+	bool mbIsPlayerInTalkingDoorRoom = false;
+	bool TalkingDoorRoomState(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1)
+		{
+			mbIsPlayerInTalkingDoorRoom = true;
+		}
+		else 
+		{
+			mbIsPlayerInTalkingDoorRoom = false;
+		}
+		cLux_AddDebugMessage("Is player in talking door room "+mbIsPlayerInTalkingDoorRoom);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+    
+    bool HatchSoundControl(const tString &in asParent, const tString &in asChild, int alState)
+    {
+        if(alState==1)
+        {
+            Map_AddTimer("HatchSoundControl", 0.05f, "HatchSoundControl");
+        }
+        else
+        {
+            Map_RemoveTimer("HatchSoundControl");
+        }
+        return true;
+    }
+    
+    void HatchSoundControl(const tString &in asTimer)
+    {
+        Map_AddTimer("HatchSoundControl", 0.05f, "HatchSoundControl");
+        
+        if(Sound_Exists("robot_escape_hatch_item_1_AnimEvent"))
+        {
+            Sound_Stop("robot_escape_hatch_item_1_AnimEvent", 0.05f);
+        }
+    }
+	
+	//} END AUDIO
+}

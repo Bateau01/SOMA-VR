@@ -1,0 +1,469 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+#include "helpers/helper_modules.hps"
+#include "base/HeroStatsHandler_Types.hps"
+#include "helpers/helper_game.hps"
+#include "helpers/helper_audio.hps"
+
+bool _HPL3VR_ReadableActive()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+class cScrPropReadable : iScrProp, iScrProp_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		///////////////////////////////////
+		// Type vars
+		msTextCategory = apVars.GetVarString("TextCategory", "");
+		msFrontTextEntry = apVars.GetVarString("FrontTextEntry", "");
+		msBackTextEntry = apVars.GetVarString("BackTextEntry", "");
+		msTitleEntry = apVars.GetVarString("TitleEntry", "");
+		msOpenEntityFile = apVars.GetVarString("OpenEntityFile", "");
+		if (msOpenEntityFile == "") 
+			msOpenEntityFile = GetBase().GetFileName();
+		mfDistanceFromCamera = apVars.GetVarFloat("DistanceFromCamera", 0.3f);
+		mfYStartOffset = apVars.GetVarFloat("YStartOffset", -0.5f);
+		msOpenSound = apVars.GetVarString("OpenSound", "");
+		msCloseSound = apVars.GetVarString("CloseSound", "");
+		msPageTurnSound = apVars.GetVarString("PageTurnSound", "");
+
+		///////////////////////////////////
+		// Instance vars
+		
+		mfFOV = cMath_ToRad(apInstanceVars.GetVarFloat("VerticalFOV", 70));
+
+		//Overwrites the LoadVariables if these have values.
+		if(apInstanceVars.GetVarString("TextCategory", "") != "")
+			msTextCategory = apInstanceVars.GetVarString("TextCategory", "");
+			
+		if(apInstanceVars.GetVarString("FrontTextEntry", "") != "")
+			msFrontTextEntry = apInstanceVars.GetVarString("FrontTextEntry", "");
+
+		if(apInstanceVars.GetVarString("BackTextEntry", "") != "")
+			msBackTextEntry = apInstanceVars.GetVarString("BackTextEntry", "");
+			
+		if(apInstanceVars.GetVarString("TitleEntry", "") != "")
+			msTitleEntry = apInstanceVars.GetVarString("TitleEntry", "");
+
+		if(apInstanceVars.GetVarString("OpenEntityFile", "") != "")
+			msOpenEntityFile = apInstanceVars.GetVarString("OpenEntityFile", GetBase().GetFileName());
+			
+		msCloseCallback = apInstanceVars.GetVarString("CloseCallback", "");
+		
+		// Turn off any effects. This is to remove illumination which might have
+		// been added in the .mat file. It's turned on again when the prop is
+		// popped up to be read, and turned off when put back in-level.
+		mBaseObj.SetEffectsActive(false,false);
+
+		if(mBaseObj.GetBaseMaterial().GetForceFullScaleTextures() == false)
+		{
+			//////
+			// Readables should use materials that force fullscale textures
+			Warning("Prop_Readable '"+mBaseObj.GetName()+"' with base material '"+mBaseObj.GetBaseMaterial().GetName()+"' doesn't force full scale textures");
+		}
+
+		/////////////
+		// Preload open file
+		cLux_PreloadEntity(msOpenEntityFile);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnPostUpdate(float afTimeStep)
+	{
+		VR_RestoreSavedPhysicalRead();
+		if (mbVRReading && mpOpenEntity !is null) mpOpenEntity.SetMatrix(mBaseObj.GetMatrix());
+	}
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+		
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+
+	bool mbVRReading = false;
+	[nosave] bool mbVRReadRestoreDone = false;
+	void VR_RestoreSavedPhysicalRead()
+	{
+		if (mbVRReadRestoreDone) return;
+		// Saved script fields can outlive OnAfterWorldLoad. Resolve this once
+		// after restoration, not on every frame of a new live tracked grip.
+		mbVRReadRestoreDone = VR_CloseSavedPhysicalRead();
+	}
+	bool VR_CloseSavedPhysicalRead()
+	{
+		if (!mbVRReading) return true;
+		cLuxMap@ map=cLux_GetCurrentMap();
+		if (map is null) return false;
+		iPhysicsBody@ body=mBaseObj.GetMainBody();
+		if (body is null) return false;
+		@mpOpenEntity = map.GetEntityByName(GetBase().GetName()+"_open", eLuxEntityType_LastEnum, "");
+		body.SetGravity(true); body.SetCollideCharacter(false); mBaseObj.WakeUp();
+		_Global_VRClosePhysicalRead();
+		mBaseObj.SetSaveDataIsUpdated(true);
+		return true;
+	}
+	void OnAfterWorldLoad()
+	{
+		// A save cannot restore a live tracked grip; restore the physical source.
+		VR_CloseSavedPhysicalRead();
+	}
+	bool VR_BeginPhysicalRead(iPhysicsBody@ apBody, const cVector3f &in avFocusPos)
+	{
+		VR_RestoreSavedPhysicalRead();
+		if (apBody is null || !CanInteract(0,apBody) || mbVRReading) return false;
+		if (mpOpenEntity is null && msOpenEntityFile != GetBase().GetFileName())
+		{
+			cLux_GetCurrentMap().CreateEntity(GetBase().GetName()+"_open", msOpenEntityFile, mBaseObj.GetMatrix(), cVector3f(1));
+			@mpOpenEntity = cLux_GetCurrentMap().GetLatestEntity();
+			if (mpOpenEntity is null || mpOpenEntity.GetName()!=GetBase().GetName()+"_open") { @mpOpenEntity=null; return false; }
+			for (int i=0; i<mpOpenEntity.GetBodyNum(); ++i)
+			{
+				iPhysicsBody@ pBody = mpOpenEntity.GetBody(i);
+				pBody.SetCollideCharacter(false); pBody.SetCollide(false);
+				pBody.SetCollideRagDoll(false); pBody.SetMass(0);
+			}
+			cLux_ToProp(mpOpenEntity).SetAllowMapTransfer(false);
+			// Presentation only; the original owns callbacks and the grip body.
+			mpOpenEntity.SetInteractionDisabled(true);
+		}
+        // Remove BOTH sides of the native prop attachment. Clearing only the
+        // child's parent pointer leaves the drawer's update record alive.
+        cLuxProp@ parent=mBaseObj.GetAttachmentParent();
+        if(parent !is null) { parent.RemoveAttachedProp(mBaseObj); parent.SetSaveDataIsUpdated(true); }
+        mBaseObj.RemoveEntityAttachment();
+		mBaseObj.SetStaticPhysics(false);
+		if (apBody.GetMass() < 0.05f) apBody.SetMass(0.20f);
+		apBody.SetCollideCharacter(false); apBody.SetGravity(true);
+        apBody.SetUseSurfaceEffects(false); // Paper physics events are absent; retain scripted open/close sounds.
+		mBaseObj.SetSaveDataIsUpdated(true);
+		cScript_SetGlobalArgID(0,mBaseObj.GetID());
+		cScript_SetGlobalArgInt(1,apBody.GetUniqueID());
+		cScript_SetGlobalArgVector3f(2,avFocusPos);
+		cScript_SetGlobalArgBool(3,false);
+		cScript_SetGlobalArgVector3f(4,cVector3f_Zero);
+		cScript_SetGlobalArgVector3f(5,cVector3f_Zero);
+		cScript_SetGlobalArgBool(6,false);
+		cScript_SetGlobalArgFloat(7,0.3f);
+		cScript_SetGlobalArgFloat(8,1.0f);
+		cScript_SetGlobalArgFloat(9,0.1f);
+		cScript_SetGlobalArgFloat(10,2.0f);
+		cScript_SetGlobalArgFloat(11,1.0f);
+		cScript_SetGlobalArgFloat(12,1.0f);
+		cScript_SetGlobalArgFloat(13,1.0f);
+		cScript_SetGlobalArgBool(14,false);
+		cScript_SetGlobalArgBool(15,false);
+		cScript_RunGlobalFunc("State_Interact_Grab","","SetupGrab");
+		cScript_SetGlobalArgString(0,msTextCategory);
+		cScript_SetGlobalArgString(1,msFrontTextEntry);
+		cScript_SetGlobalArgString(2,msBackTextEntry);
+		cScript_SetGlobalArgFloat(3,0);
+		cScript_RunGlobalFunc("State_Interact_Grab","","SetupReading");
+		cLux_GetPlayer().ChangeState(ePlayerState_Grab);
+		cScript_SetGlobalArgString(0,GetBase().GetName());
+		cScript_RunGlobalFunc("State_Interact_Grab","","_Global_VRSetReadableOwner");
+		mbVRReading = true;
+		if (mpOpenEntity !is null)
+		{
+			mpOpenEntity.SetMatrix(mBaseObj.GetMatrix()); mpOpenEntity.SetActive(true);
+			mBaseObj.GetMeshEntity().SetVisible(false);
+		}
+		if (!mbIsRead) HeroStat_IncreaseAmount(eHeroStats_ReadDocuments,1);
+		if (msOpenSound != "") Sound_PlayGui(msOpenSound,1.0f);
+        cScript_RunGlobalFunc("VRREAD","","P"); // Suppress this exact grip's redundant gaze click.
+		return true;
+	}
+	void _Global_VRClosePhysicalRead()
+	{
+		if (!mbVRReading) return;
+		mbVRReading = false; // clear before a callback that may change maps
+		mbIsRead = true;
+		mBaseObj.GetMeshEntity().SetVisible(true);
+		if (mpOpenEntity !is null) mpOpenEntity.SetActive(false);
+		if (msCloseSound != "") Sound_PlayGui(msCloseSound,1.0f);
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (msCloseCallback != "" && pMap !is null && pMap.ScriptPrepare("void "+msCloseCallback+"(const tString &in asEntity)"))
+		{
+			tString sReadableName=GetBase().GetName();
+			pMap.SetArgString(0,sReadableName); pMap.ScriptExecute();
+		}
+	}
+
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		if(ToolHandler_GetPlayerCarriesHeavyTool()) return false;
+		
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		return pCharBody.IsOnGround();
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		if (_HPL3VR_ReadableActive()) return VR_BeginPhysicalRead(apBody,avFocusPos);	
+		if ( !mbIsRead ) HeroStat_IncreaseAmount(eHeroStats_ReadDocuments,1);
+	
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		if(pCharBody.IsOnGround() == false) return false;
+	
+		//////////////////////////////////
+		// Set up the created entity
+		if (mpOpenEntity is null)
+		{
+			cLux_GetCurrentMap().CreateEntity(GetBase().GetName() + "_open", msOpenEntityFile, cMatrixf_Identity, cVector3f(1));
+			@mpOpenEntity = cLux_GetCurrentMap().GetLatestEntity();
+			for (int i = 0; i < mpOpenEntity.GetBodyNum(); i++)
+			{
+				iPhysicsBody@ pBody = mpOpenEntity.GetBody(i);
+				pBody.SetCollideCharacter(false);
+				pBody.SetCollide(false);
+				pBody.SetCollideRagDoll(false);
+				pBody.SetMass(0);
+			}
+			mpOpenEntity.SetActive(false);
+			cLux_ToProp(mpOpenEntity).SetAllowMapTransfer(false);
+		}
+
+		/////////////////////
+		// Fade fov		
+		cLux_GetPlayer().FadeCameraFOVTo(mfFOV, 1.0f);
+		
+		//////////////////////////////////
+		// Set up the creted entity
+		cScript_RunGlobalFunc(mpOpenEntity.GetName(), "", "_Global_SetIsHudVersion");
+		
+		//////////////////////////////////
+		// Set up and call the interact state
+		cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+		cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+		cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
+		cScript_SetGlobalArgID(3, mpOpenEntity.GetID()); //Open entity object ID
+		cScript_SetGlobalArgString(4, msTextCategory); //Contents categories
+		cScript_SetGlobalArgString(5, msFrontTextEntry); //Contents entries
+		cScript_SetGlobalArgString(6, msBackTextEntry); //Contents entries
+		cScript_SetGlobalArgString(7, msTitleEntry); //Title entry
+		cScript_SetGlobalArgFloat(8, mfDistanceFromCamera); //Target prop distance from camera
+		cScript_SetGlobalArgFloat(9, mfYStartOffset); //Start offset along the camera's Y axis.
+		cScript_SetGlobalArgString(10, msOpenSound); //Sound played when interaction starts
+		cScript_SetGlobalArgString(11, msCloseSound); //Sound played when interaction ends
+		cScript_SetGlobalArgString(12, msCloseCallback); //Callback called when interaction ends.
+		
+		cScript_RunGlobalFunc("State_Interact_Read", "", "SetupReading");
+	
+		cLux_GetPlayer().ChangeState(ePlayerState_Read);	
+		
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_Read;
+	}
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	// Callback from Readable state
+	void _Global_OnItemRead()
+	{
+		Log ( "cScrPropReadable::_Global_OnItemRead" );
+		mbIsRead = true;
+	}
+		
+	//------------------------------------------------------------
+	
+	void _Global_SetCloseCallback()
+	{
+		msCloseCallback = cScript_GetGlobalArgString(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetOpenEntityFile()
+	{
+		tString sNewEntityFile = cScript_GetGlobalArgString(0);
+		if (msOpenEntityFile == sNewEntityFile)
+			return;
+		
+		if (mpOpenEntity != null)
+		{
+			cLux_GetCurrentMap().DestroyEntity(mpOpenEntity);
+			@mpOpenEntity = null;
+		}
+		
+		msOpenEntityFile = sNewEntityFile;
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_CanBeHighlighted()
+	{
+		cScript_SetGlobalReturnBool(mbIsRead ==false && mBaseObj.IsInteractedWith()==false && mbIsHudVersion==false);
+		cScript_SetGlobalArgID(0,mBaseObj.GetID());
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	void _Global_SetIsHudVersion()
+	{
+		mbIsHudVersion = true;
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	[nosave] tString msTextCategory;
+	[nosave] tString msFrontTextEntry;
+	[nosave] tString msBackTextEntry;
+	[nosave] tString msTitleEntry;
+	[nosave] float mfDistanceFromCamera;
+	[nosave] float mfYStartOffset;
+	[nosave] tString msOpenSound;
+	[nosave] tString msCloseSound;
+	[nosave] tString msPageTurnSound;
+	[nosave] tString msCloseCallback;
+	[nosave] float mfFOV;
+	
+	[nosave] iLuxEntity@ mpOpenEntity;
+	
+	bool mbIsRead=false;
+	bool mbIsHudVersion=false;
+	
+	tString msOpenEntityFile;
+	
+	//------------------------------------------------------------
+	
+		
+}	

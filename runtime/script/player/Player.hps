@@ -1,0 +1,2066 @@
+#include "interfaces/Player_Interface.hps"
+#include "base/InputHandler_Types.hps"
+#include "base/Base_Types.hps"
+#include "player/Player_Types.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_modules.hps"
+#include "helpers/helper_imgui.hps"
+#include "helpers/helper_game.hps"
+
+/////////////////////////////////////////
+// INTERNAL SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+bool _HPL3VR_RuntimeActive_Player()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+const cColor gFlashlightColor = cColor(1.4,1.6,1.7,0.7f);
+const float gfFlashlightFadeInSpeed = 4;
+const float gfFlashlightFadeOutSpeed = 1.5;
+const float gfFlashlightNearClip = 0.2f;
+const float gfFlashlightFOV=65;
+const bool gbFlashlightAffectEnvParticles = true;
+const cVector3f gvFlashlightOffset = cVector3f(0.03,-0.03,0);
+const float gfFlashlightSoundEventRadius=5;	
+const float glFlashlightSoundEventPrio=-1;	
+
+const cColor gAmbientLightColor = cColor(0.2f,0.2f, 0.25f,0.0f);
+
+const bool gbDrawCrosshair =true;
+const bool gbDrawDefaultCrosshair = true;
+
+//------------------------------------------------------------
+
+class cPlayerHideArea
+{
+	tID m_idArea;
+	int mlPrio;
+	bool mbRequiresCrouch;
+	float mfVisibilityRange;
+	bool mbRelativeVisRange;
+}
+
+//------------------------------------------------------------
+
+class cScrPlayer : iScrPlayerBase, iScrPlayer_Interface
+{
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		///////////////////////////////
+		// Internal variables
+		mBaseObj.SetBaseCameraPosAdd( cVector3f(0,-0.1f, 0) );
+		
+		///////////////////////////////
+		// Add States
+		mBaseObj.AddState("State_Normal", ePlayerState_Normal, "player/PlayerState_Normal.hps", "cScrPlayerState_Normal");
+		mBaseObj.AddState("State_Interact_Grab", ePlayerState_Grab, "player/PlayerState_Interact_Grab.hps", "cScrPlayerState_Interact_Grab");
+		mBaseObj.AddState("State_Interact_Push", ePlayerState_Push, "player/PlayerState_Interact_Push.hps", "cScrPlayerState_Interact_Push");
+		mBaseObj.AddState("State_Interact_Wheel", ePlayerState_Wheel, "player/PlayerState_Interact_Wheel.hps", "cScrPlayerState_Interact_Wheel");
+		mBaseObj.AddState("State_Interact_Slide", ePlayerState_Slide, "player/PlayerState_Interact_Slide.hps", "cScrPlayerState_Interact_Slide");
+		mBaseObj.AddState("State_Interact_SwingDoor", ePlayerState_SwingDoor, "player/PlayerState_Interact_SwingDoor.hps", "cScrPlayerState_Interact_SwingDoor");
+		mBaseObj.AddState("State_Interact_Lever", ePlayerState_Lever, "player/PlayerState_Interact_Lever.hps", "cScrPlayerState_Interact_Lever");
+		mBaseObj.AddState("State_Interact_Tear", ePlayerState_Tear, "player/PlayerState_Interact_Tear.hps", "cScrPlayerState_Interact_Tear");
+		mBaseObj.AddState("State_Interact_Terminal", ePlayerState_Terminal, "player/PlayerState_Interact_Terminal.hps", "cScrPlayerState_Interact_Terminal");
+		mBaseObj.AddState("State_Interact_HandheldTerminal", ePlayerState_HandheldTerminal, "player/PlayerState_Interact_HandheldTerminal.hps", "cScrPlayerState_Interact_HandheldTerminal");
+		mBaseObj.AddState("State_Interact_Read", ePlayerState_Read, "player/PlayerState_Interact_Read.hps", "cScrPlayerState_Interact_Read");
+		mBaseObj.AddState("State_Interact_MovingButton", ePlayerState_MovingButton, "player/PlayerState_Interact_MovingButton.hps", "cScrPlayerState_Interact_MovingButton");
+		mBaseObj.AddState("State_Ladder", ePlayerState_Ladder, "player/PlayerState_Ladder.hps", "cScrPlayerState_Ladder");
+		mBaseObj.AddState("State_ClimbLedge", ePlayerState_ClimbLedge, "player/PlayerState_ClimbLedge.hps", "cScrPlayerState_ClimbLedge");
+		mBaseObj.AddState("State_InteractiveCameraAnimation", ePlayerState_InteractiveCameraAnimation, "player/PlayerState_InteractiveCameraAnimation.hps", "cScrPlayerState_InteractiveCameraAnimation");
+		mBaseObj.AddState("State_Sit", ePlayerState_Sit, "player/PlayerState_Sit.hps", "cScrPlayerState_Sit");
+		mBaseObj.AddState("State_Conversation", ePlayerState_Conversation, "player/PlayerState_Conversation.hps", "cScrPlayerState_Conversation");
+		mBaseObj.AddState("State_Dead", ePlayerState_Dead, "player/PlayerState_Dead.hps", "cScrPlayerState_Dead");
+		mBaseObj.AddState("State_Interact_ZoomArea", ePlayerState_ZoomArea, "player/PlayerState_Interact_ZoomArea.hps", "cScrPlayerState_Interact_ZoomArea");
+		mBaseObj.AddState("State_CustomControls", ePlayerState_CustomControls, "player/PlayerState_CustomControls.hps", "cScrPlayerState_CustomControls");
+		mBaseObj.AddState("State_Null", ePlayerState_Null, "player/PlayerState_Null.hps", "cScrPlayerState_Null");
+		
+		///////////////////////////////
+		// Add Move States
+		mBaseObj.AddMoveState("MoveState_Normal", eMoveState_Normal, "main/MoveState_Normal.hps", "cScrMoveState_Normal");
+		mBaseObj.AddMoveState("MoveState_Climb", eMoveState_Climb, "main/MoveState_Climb.hps", "cScrMoveState_Climb");
+		mBaseObj.AddMoveState("MoveState_Dead", eMoveState_Dead, "main/MoveState_Dead.hps", "cScrMoveState_Dead");
+		
+		///////////////////////////////
+		// Create Graphics
+		mvCrossHairGfx.resize(eCrossHairState_LastEnum);
+		
+		@mvCrossHairGfx[eCrossHairState_None] = null;
+		@mvCrossHairGfx[eCrossHairState_Default] = cGui_CreateGfxImage("hud/crosshair_default.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_CarryOneHanded] = cGui_CreateGfxImage("hud/crosshair_carry_one_handed.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_CarryTwoHanded] = cGui_CreateGfxImage("hud/crosshair_carry_two_handed.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Push] = cGui_CreateGfxImage("hud/crosshair_push.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PullLever] = cGui_CreateGfxImage("hud/crosshair_pull_lever.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PullLeverSmall] = cGui_CreateGfxImage("hud/crosshair_pull_lever_small.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PullSideways] = cGui_CreateGfxImage("hud/crosshair_pull_sideways.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PullVertical] = cGui_CreateGfxImage("hud/crosshair_pull_vertical.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PullOut] = cGui_CreateGfxImage("hud/crosshair_pull_out.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PullDoor] = cGui_CreateGfxImage("hud/crosshair_pull_door.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PullDoorHatch] = cGui_CreateGfxImage("hud/crosshair_pull_door_hatch.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Rotate] = cGui_CreateGfxImage("hud/crosshair_rotate.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_RotateOneHanded] = cGui_CreateGfxImage("hud/crosshair_rotate_one_handed.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PushButton] = cGui_CreateGfxImage("hud/crosshair_push_button.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_PickUp] = cGui_CreateGfxImage("hud/crosshair_pick_up.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_UseTool_Insert] = cGui_CreateGfxImage("hud/crosshair_use_tool_insert.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_UseTool_Action] = cGui_CreateGfxImage("hud/crosshair_use_tool_action.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Terminal] = cGui_CreateGfxImage("hud/crosshair_terminal.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Datamine] = cGui_CreateGfxImage("hud/crosshair_datamine.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_ClimbLadder] = cGui_CreateGfxImage("hud/crosshair_climb_ladder.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Talk] = cGui_CreateGfxImage("hud/crosshair_talk.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_TalkBusy] = cGui_CreateGfxImage("hud/crosshair_talk_busy.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Eat] = cGui_CreateGfxImage("hud/crosshair_eat.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Read] = cGui_CreateGfxImage("hud/crosshair_read.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_ExitLevel] = cGui_CreateGfxImage("hud/crosshair_exit_level.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_ClimbLedge] = cGui_CreateGfxImage("hud/crosshair_climb_ledge.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_SitDown] = cGui_CreateGfxImage("hud/crosshair_sit_down.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_DefaultLarge] = cGui_CreateGfxImage("hud/crosshair_default_large.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_DefaultLargeClear] = cGui_CreateGfxImage("hud/crosshair_default_large_clear.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Examine] = cGui_CreateGfxImage("hud/crosshair_magnify.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_Recharge] = cGui_CreateGfxImage("hud/crosshair_recharge.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_RechargeBad] = cGui_CreateGfxImage("hud/crosshair_recharge_bad.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_FireGun] = cGui_CreateGfxImage("hud/crosshair_shock.tga",eGuiMaterial_Alpha);
+		@mvCrossHairGfx[eCrossHairState_NoHints] = cGui_CreateGfxImage("hud/crosshair_nohints.tga",eGuiMaterial_Alpha);
+
+		///////////////////////////////
+		// Setup
+		LoadUserConfig();
+		
+		///////////////////////////////
+		// Setup Flashlight
+	}
+
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+		cConfigFile@ pConfig = cLux_GetUserConfig();
+		if (Platform_IsPS4())
+		{
+			mbUseLargeDefaultCursor = true;
+		}
+		else
+		{
+			mbUseLargeDefaultCursor = pConfig.GetBool("Gameplay", "UseLargeDefaultCursor", false);
+		}
+		mbUseNoHintsCursor = pConfig.GetBool("Gameplay", "CrossHairStyleSimple", false);
+		mfExtendedViewAngle = pConfig.GetFloat("Input", "ExtendedMaxAngle", 0.5f);
+		mbEyeTrackingBiggerCrosshair = pConfig.GetBool("Input", "BiggerCrosshair", false);
+	}
+	
+	void SaveUserConfig()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnEnterContainer(const tString&in asOldContainer)
+	{
+		FlashlightOnEnter();
+	}
+	
+	void OnLeaveContainer(const tString&in asNewContainer)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{		
+		////////////////////////////
+		// Under water in liquid check
+		if(cScript_GetGlobalVarBool("MapUnderwater")==false)
+		{
+			bool bUnderwater = false;
+			if (mBaseObj.IsInLiquid())
+			{
+				// Is head underwater? If so, make sure gravity is lowered.
+				float fWaterHeight = mBaseObj.GetLiquidHeight();
+				float fEyeline = mBaseObj.GetCharacterBody().GetSize().y + mBaseObj.GetBaseCameraPosAdd().y;
+				bUnderwater = (fWaterHeight>=fEyeline);
+			}
+			
+			if (Player_GetUnderwater()!=bUnderwater)
+			{
+				Player_SetUnderwater(bUnderwater);
+			}
+		}
+		
+		////////////////////////////
+		// Physical action icon
+		{
+			if(	cScript_GetGlobalVarInt("PlayerPhysicalAction")!=-1 )
+			{
+				mfPhysicalActionIconAlpha += afTimeStep*3;
+				if(mfPhysicalActionIconAlpha >1) mfPhysicalActionIconAlpha =1;
+			}
+			else
+			{
+				mfPhysicalActionIconAlpha -= afTimeStep*3;
+				if(mfPhysicalActionIconAlpha <0) mfPhysicalActionIconAlpha = 0;
+			}
+		}
+		
+		////////////////////////////
+		// Reset variables
+		{
+			meCrossHairState = eCrossHairState_Default;
+			cScript_SetGlobalVarInt("PlayerPhysicalAction", -1);
+		}
+		
+		////////////////////////////
+		// Update the foot force
+		{
+			cForceField@ pForceField = cLux_ID_ForceField(mFootForceField);
+			iCharacterBody@ pBody = mBaseObj.GetCharacterBody();
+
+			if(pForceField !is null && pBody !is null)
+			{
+				pForceField.SetPosition( pBody.GetFeetPosition() + cVector3f(0, 0.3f, 0) );
+			}
+		}
+		
+		/////////////////////////////////////
+		// Update Health Regen
+		UpdateHealthRegeneration(afTimeStep);
+		
+		/////////////////////////////////////
+		// Update Fall damage
+		UpdateFallDamage(afTimeStep);
+		
+		/////////////////////////////////////
+		// Update Ambient Light
+		UpdateAmbientLight(afTimeStep);
+		
+		/////////////////////////////////////
+		// Player is moving, see if stopped
+		{
+			iCharacterBody@ pCharBody = mBaseObj.GetCharacterBody();
+			float fSpeed = pCharBody.GetVelocity(afTimeStep).Length();
+			
+			if(mbMovingWithForce && fSpeed < 0.10f)
+			{
+				cLux_ID_ForceField(mFootForceField).FadeOut(4);
+				mbMovingWithForce = false;
+			}
+			/////////////////////////////////
+			// Player has stopped, see if moving
+			else if(mbMovingWithForce==false && fSpeed > 0.30f)
+			{
+				cLux_ID_ForceField(mFootForceField).FadeTo(1, 1);
+				mbMovingWithForce = true;
+			}
+		}
+		
+		/////////////////////////////////////
+		// Update Lean
+		UpdateLean(afTimeStep);
+		
+		/////////////////////////////////////
+		// Update headmove events
+		UpdateHeadMoveEvents(afTimeStep);
+		
+		/////////////////////////////////////
+		// Update speed multipliers
+		UpdateSpeedMultipliers(afTimeStep);
+		
+		/////////////////////////////////////
+		// Update Hide Area Status & Effect
+		UpdateHidden(afTimeStep);
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+		cScript_SetGlobalVarBool("PlayerWasDamaged", false);
+		
+		/////////////////////////////////////
+		// Update Flashlight
+		UpdateFlashLight(afTimeStep);
+	}
+	
+	void VariableUpdate(float afTimeStep)
+	{
+		/////////////////////////
+		// Update extended view
+		{
+			cCamera @pCam = mBaseObj.GetCamera();
+			pCam.SetExtendedPitch(EyeTracking_GetExtendedViewRotation().y);
+			pCam.SetExtendedYaw(-EyeTracking_GetExtendedViewRotation().x);
+		}
+		
+		/////////////////////////
+		// Update check shining on an NPC
+		UpdateFlashLightLOS(afTimeStep);	
+
+		///////////////////////////////////
+		// Update Hiding in the dark
+		UpdateHidingInTheDark(afTimeStep);
+	}
+	
+	//------------------------------------------------------------
+		
+	void Reset()
+	{
+		mbMovingWithForce = false;
+		mbFallDamageAllowed = true;
+		
+		mfPhysicalActionIconAlpha = 0;
+		mfLookSpeedMul = 1.0f;
+		mfLookSpeedMulTarget = mfLookSpeedMul;
+		mfMoveSpeedMul = 1.0f;
+		mfMoveSpeedMulTarget = mfMoveSpeedMul;
+		mfRunSpeedMul = 1.0f;
+		mfRunSpeedMulTarget = mfRunSpeedMul;
+		
+		mbShowCrosshair = gbDrawCrosshair;
+		meCrossHairState = eCrossHairState_Default;
+		
+		mbHidden = false;
+		mfHiddenAlpha=0;
+		mfHiddenT=0;
+
+		mBaseObj.ChangeState(ePlayerState_Normal);
+		mBaseObj.ChangeMoveState(eMoveState_Normal);
+		
+		ResetFlashlight();
+		
+		ResetLean();
+		
+		ResetHeadMoveEvents();
+		
+		ResetAmbientLight();
+		
+		ResetFallDamage();
+		
+		///////////////////////////
+		//Global variables
+		cScript_SetGlobalVarFloat("InteractionMoveSpeedMul", 1.0f);
+		
+		cScript_SetGlobalVarBool("Climb_Allowed", true);
+		cScript_SetGlobalVarBool("PlayerWasDamaged", false);
+		
+		// Used to disable screen shake etc. when reading a terminal / readable.
+		cScript_SetGlobalVarBool("ShakesEnabled", true);
+		cScript_SetGlobalVarBool("DistortionEnabled",true);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DRAWING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+
+
+	void OnDraw(float afFrameTime)
+	{
+		if (!_HPL3VR_RuntimeActive_Player())
+		{
+				//if(mbShowCrossHair==false && meCrossHairState == eCrossHairState_Default) return;
+				
+				/////////////////////////////////////////
+				// Crosshair
+				if(	mbShowCrosshair &&
+					meCrossHairState != eCrossHairState_None &&
+					cLux_GetPlayer().IsActive() &&
+					cLux_GetGamePaused()==false &&
+					cLux_GetPlayer().GetCamera() is cLux_GetViewport().GetCamera())
+				{
+					cGuiGfxElement @pCross = mvCrossHairGfx[meCrossHairState];
+					
+					if (mbUseLargeDefaultCursor && meCrossHairState == eCrossHairState_Default)
+						@pCross = mvCrossHairGfx[eCrossHairState_DefaultLarge];
+					else if (EyeTracking_IsActive() && mbEyeTrackingBiggerCrosshair && meCrossHairState == eCrossHairState_Default)
+						@pCross = mvCrossHairGfx[eCrossHairState_DefaultLargeClear];
+						
+					// Simple cursor wins
+					if (mbUseNoHintsCursor)
+					{
+						if (meCrossHairState != eCrossHairState_Default)
+							@pCross = mvCrossHairGfx[eCrossHairState_NoHints];
+					}
+						
+					if(pCross is null) cLux_AddDebugMessage("CURSOR IS NULL!");
+					
+					cVector3f vCrosshairPos = cVector3f(cLux_GetHudVirtualCenterSize().x/2, cLux_GetHudVirtualCenterSize().y/2, 0);
+					vCrosshairPos.x += EyeTracking_GetExtendedViewCrosshairOffset().x;
+					vCrosshairPos.y += EyeTracking_GetExtendedViewCrosshairOffset().y;
+					vCrosshairPos.x -= pCross.GetImageSize().x/2;
+					vCrosshairPos.y -= pCross.GetImageSize().y/2;
+						
+					// Only draw if non-default OR if we've decided we want to draw default
+					if ((meCrossHairState != eCrossHairState_Default) || gbDrawDefaultCrosshair)
+					{
+						cLux_GetGameHudSet().DrawGfx(pCross, vCrosshairPos);
+					}
+				}
+			return;
+		}
+		// H57.55DD VR HUD policy: retain every authored crosshair/interact state
+		// update for gameplay semantics, but do not draw desktop center-dot or
+		// Carry/Push/Button/Pickup/Tool/Terminal/Read/Recharge cursor graphics.
+		// Physical VR hands are the interaction affordance.
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnGui(float afTimeStep)
+	{
+		if(cLux_ScriptDebugOn())
+		{
+			ImGui_SetTransCategory("");
+			
+			ImGui_GroupBegin(cLux_GetHudVirtualCenterScreenStartPos(), cLux_GetHudVirtualCenterScreenSize());
+				
+			cImGuiLabelData labelData;
+			labelData.mColorBase = cColor(1.0f,1.0f,0.0f);
+			tString sText;
+			
+			sText += "Health: ";
+			if (cLux_GetGodModeActivated())
+				sText += "!!GOD!!";
+			else
+				sText += cString_ToString(Player_GetHealth(),2);
+			
+			sText += " VisRangeMul: "+int(cLux_GetPlayer().GetVisibilityRangeMul()*100)+"% ";
+			
+			if(cLux_GetPlayer().GetVisibilityMaxRange()<0)
+				sText += "VisMaxRange: Inf";
+			else
+				sText += "VisMaxRange: "+cString_ToString(cLux_GetPlayer().GetVisibilityMaxRange(),2)+"m ";;
+				
+			sText += " AvgSpeed: "+cString_ToString(cLux_GetPlayer().GetAverageMoveSpeed(), 2);
+			
+			ImGui_DoLabelExt(sText, labelData, cVector3f(230.0f,ImGui_GetSize().y-20.0f,100.0f), -1,1.0f);
+			ImGui_GroupEnd();
+			
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetShowCrosshair()
+	{
+		mbShowCrosshair = cScript_GetGlobalArgBool(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetCrosshairState()
+	{
+		meCrossHairState = eCrossHairState(cScript_GetGlobalArgInt(0));
+	}
+			
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbVRMapControlsPending=true;
+	void HPL3VR_RecoverMapControls()
+	{
+		if (!mbVRMapControlsPending || mBaseObj.GetCurrentStateId()!=ePlayerState_Normal || !_HPL3VR_RuntimeActive_Player()) return;
+		cLuxMoveState@ pMove=mBaseObj.GetCurrentMoveState();
+		if (pMove is null || mBaseObj.GetCamera() is null) return;
+		pMove.SetAutoUpdateSpeedSettings(true);
+		cScript_RunGlobalFunc("State_Interact_Push","","_Global_VRRecoverMapState");
+		mbVRMapControlsPending=false;
+	}
+
+	void OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+		// Save loading replaces these objects before input delivery has stopped.
+		if(mBaseObj.GetCharacterBody() is null || mBaseObj.GetCamera() is null) return;
+		////////////////////////////////////
+		// Look
+		if(alAnalogId == eAnalogType_Look)
+		{
+			iCharacterBody@ pCharBody = mBaseObj.GetCharacterBody();
+			float fLookSpeedMul = mfLookSpeedMul*PlayerEnergy_GetLookMul();
+			pCharBody.AddYaw(avAmount.x*-1*fLookSpeedMul);
+			mBaseObj.GetCamera().AddPitch(avAmount.y*-1*fLookSpeedMul);
+		}
+		////////////////////////////////////
+		// Move
+		else if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove)
+		{
+			iCharacterBody@ pCharBody = mBaseObj.GetCharacterBody();
+			// S26BT: only native Push owns manual speed limits. Its temporary
+			// setting must not survive into Normal after a streamed map/save.
+			// The z tags are produced only by our VR movement dispatcher.
+			if (mbVRMapControlsPending && (avAmount.z==1.0f || avAmount.z==1.25f)) HPL3VR_RecoverMapControls();
+			float fLength = avAmount.Length();
+			
+			if(fLength > 0.1f)
+			{
+				//////////////////////////////
+				// Lean
+				if(mbAnalogLeanPressed)
+				{
+					Lean(avAmount.x);		
+				}
+				//////////////////////////////
+				// Movement
+				else
+				{
+					                    // S26BW: 1.25 marks direction-resolved VR locomotion in all modes.
+                    // Keep the current speed magnitude and authored acceleration.
+                    if(avAmount.z>1.2f && avAmount.z<1.3f &&
+                       mBaseObj.GetCurrentStateId()==ePlayerState_Normal && _HPL3VR_RuntimeActive_Player())
+                    {
+                        float inputLength=cMath_Sqrt(avAmount.x*avAmount.x+avAmount.y*avAmount.y);
+                        if(inputLength>0.1f)
+                        {
+                            float forward=pCharBody.GetMoveSpeed(eCharDir_Forward);
+                            float right=pCharBody.GetMoveSpeed(eCharDir_Right);
+                            float speed=cMath_Sqrt(forward*forward+right*right);
+                            float x=avAmount.x/inputLength, y=avAmount.y/inputLength;
+                            float maxForward=y>=0 ? pCharBody.GetMaxPositiveMoveSpeed(eCharDir_Forward) : cMath_Abs(pCharBody.GetMaxNegativeMoveSpeed(eCharDir_Forward));
+                            float maxRight=x>=0 ? pCharBody.GetMaxPositiveMoveSpeed(eCharDir_Right) : cMath_Abs(pCharBody.GetMaxNegativeMoveSpeed(eCharDir_Right));
+                            if(cMath_Abs(y)>0.001f) speed=cMath_Min(speed,maxForward/cMath_Abs(y));
+                            if(cMath_Abs(x)>0.001f) speed=cMath_Min(speed,maxRight/cMath_Abs(x));
+                            pCharBody.SetMoveSpeed(eCharDir_Forward,speed*y);
+                            pCharBody.SetMoveSpeed(eCharDir_Right,speed*x);
+                        }
+                    }
+if(cMath_Abs(avAmount.y) > 0.001f)
+						pCharBody.Move(eCharDir_Forward, avAmount.y);
+				
+					if(cMath_Abs(avAmount.x) > 0.001f)
+						pCharBody.Move(eCharDir_Right, avAmount.x);
+				}
+			}
+		}
+		////////////////////////////////////
+		// Lean
+		else if(alAnalogId == eAnalogType_Lean)
+		{
+			Lean(avAmount.x);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnAction(int alAction, bool abPressed)
+	{	
+		///////////////////////////////////
+		// Flashlight
+		if(abPressed && alAction==eAction_Flashlight)
+		{
+			
+			SetFlashlightOn(!mbFlashlightOn);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnExitPressed()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnUnderwaterEffectActive(bool abX, bool abUseStartAndEndEffects)
+	{
+		if(abUseStartAndEndEffects==false) return;
+		
+		if(abX)
+		{
+		//	cLux_AddTodoMessage("Sound: Player enters water sound File: Player.hps");
+			//Emotion_PlayEventBreath("SoundEffect Here!")
+		}
+		else
+		{
+			//cLux_AddTodoMessage("Sound: Player enters water sound File: Player.hps");
+			//Emotion_PlayEventBreath("SoundEffect Here!")
+		}
+		
+	}
+	
+	//------------------------------------------------------------
+
+	void OnRevive()
+	{
+		mBaseObj.ChangeState(ePlayerState_Normal);
+		mBaseObj.ChangeMoveState(eMoveState_Normal);
+	}
+
+	//------------------------------------------------------------
+
+	void OnPlayerDead(int aType, const tString&in asSource)
+	{
+		GameOver_Start(asSource);
+	}
+	
+	//------------------------------------------------------------
+
+	void OnDamageTaken(float afAmount, int aType, const tString&in asSource)
+	{
+		cScript_SetGlobalVarBool("PlayerWasDamaged", true);
+		
+		////////////////
+		// Rumble
+		{
+			float fAmount = 0.7;
+			float fTime = 0.5;
+			if(afAmount > 0.5)
+			{
+				fAmount = 0.9f;
+				fTime = 0.7f;
+			}
+			
+			Effect_Rumble_Start(fAmount, fTime);
+		}
+		
+		////////////////
+		// Steam or Electricity
+		if(aType == eDamageType_None)
+		{
+			//DO Nothing...
+		}
+		////////////////
+		// Steam or Electricity
+		else if(aType == eDamageType_Steam || aType == eDamageType_Electricity)
+		{
+			Effect_Shake_Start(0.025, 0.25, 0.05, 0.1);
+			Effect_Flash_Start(0.2f, 0, 0.2f);
+			Effect_Screen_Start("damage_steam_screen.mat", cVector2f(0.5, 0.5), cVector2f(1.8, 1.8), 1, 0, 0.25f, 3.f);
+			Effect_ImageTrail_Start(2, 0, 0, 3);
+			Effect_ChromaticAberration_StartAnim(1.5, 0.05, 1.5, cVector2f(0, 0));
+		}
+		////////////////
+		// Hit
+		else if(aType == eDamageType_Hit)
+		{
+			Effect_Shake_Start(0.25, 0.25, 0.05, 0.1);
+			Effect_Screen_Start("damage_steam_screen.mat", cVector2f(0.5, 0.5), cVector2f(1.8, 1.8), 1, 0, 0.25f, 3.f);
+			Effect_ImageTrail_Start(1, 0, 0, 1);
+			Effect_ChromaticAberration_StartAnim(1.0, 0.05, 1.5, cVector2f(0, 0));
+		}
+		//////////////////////////
+		//Todo: add more types here
+		else
+		{
+			// Use a default one
+			Effect_Shake_Start(0.025, 0.25, 0.05, 0.1);
+			Effect_Flash_Start(0.2f, 0, 0.2f);
+			Effect_ImageTrail_Start(1, 0, 0, 2);
+			Effect_ChromaticAberration_StartAnim(1.5, 0.05, 1.5, cVector2f(0, 0));
+
+			cLux_AddTodoMessage("No player damage effect for DamageType '" + aType + "' from the source '"+asSource+"'");
+		}
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MAP LOAD
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mbVRMapControlsPending=true;
+		// Recover on the first tagged VR movement packet after save restoration,
+		// not here: native saved fields may still be applied after OnMapEnter.
+		//Reset the movement check
+		mbMovingWithForce = false;
+		
+		cScript_SetGlobalVarBool("MapUnderwater", false);
+		//Player_SetUnderwater(false);
+		
+		mvHideAreas.resize(0);
+	}
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		mvHideAreas.resize(0);//Not taking any cahnces, having this twice :P
+	}
+	
+	//------------------------------------------------------------
+
+	void SetCharacterBodyDefaults()
+	{
+		iCharacterBody@ pCharBody = mBaseObj.GetCharacterBody();
+		if(pCharBody is null) return;
+		pCharBody.SetCustomGravity(mbGravityEnabled ? mvGravity : cVector3f(0,0,0));
+		pCharBody.SetCustomGravityActive(true);
+		pCharBody.SetMass(gfPlayer_BodyDefaultMass);
+
+		pCharBody.SetAccurateClimbing(true);
+		pCharBody.SetMaxNoSlideSlopeAngle(cMath_ToRad(46) );
+		pCharBody.SetMaxPushMass(10);
+		pCharBody.SetMaxPushForce(300);
+		pCharBody.SetPushImpulse(100);
+		pCharBody.SetCharacterMaxPushMass(10);
+		pCharBody.SetCharacterPushForce(100);
+		pCharBody.SetMaxStepSize(0.4f);
+		pCharBody.SetMaxStepSizeInAir(0.1f);
+		pCharBody.SetStepClimbSpeed(3.5f);
+		pCharBody.SetGroundAngleMin(cMath_ToRad(50.0f)); //angle between (0, 1, 0) and ground normal to be considered on the ground
+
+		pCharBody.SetCamera( mBaseObj.GetCamera() );
+		pCharBody.SetCameraSmoothPosNum(10);
+		
+		pCharBody.SetGravityActive(true);
+		pCharBody.SetStickToSlope(false);
+		pCharBody.SetDeaccelerateMoveSpeedInAir(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	void PreloadData(cLuxMap@ apMap)
+	{
+		apMap.PreloadMaterial("damage_steam_screen.mat");
+		apMap.PreloadParticleSystem("underwater_footstep_sand_oneshot.ps");
+	}
+
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap@ apMap)
+	{
+		/////////////////////////////////////////////////
+		// Create Character Body
+		iCharacterBody@ pCharBody = apMap.GetWorld().GetPhysicsWorld().CreateCharacterBody("Player",  gvBodySize);
+		mBaseObj.SetCharacterBody(pCharBody);
+		
+		SetCharacterBodyDefaults();
+
+		//Create extra sizes
+		pCharBody.AddExtraSize(gvBodyCrouchSize);
+		pCharBody.AddExtraSize(cVector3f(gvBodySize.x*0.7, gvBodySize.y*1.1,gvBodySize.z*0.7)); //This is a special climb size
+		pCharBody.AddExtraSize(cVector3f(0.7));
+		
+		pCharBody.Update(0);
+		
+		/////////////////////////////////////////////////
+		// Foot force field 
+		CreateForceField(apMap);
+		
+		/////////////////////////////////////////////////
+		// Lean
+		CreateLean(apMap);
+		
+		/////////////////////////////////////////////////
+		// Flash light spotlight
+		CreateFlashlight(apMap);
+		
+		/////////////////////////////////////////////////
+		// Ambient light
+		CreateAmbientLight(apMap);
+	}
+	
+	//------------------------------------------------------------
+	
+
+	void CreateForceField(cLuxMap@ apMap)
+	{
+		/////////////////////////////////////////////////
+		// Foot force field 
+		cForceField@ pFootForceField = apMap.GetWorld().CreateForceField("PlayerFootForceField", false, false);
+		pFootForceField.SetForce(3);
+		pFootForceField.SetRadius(1.1f);
+		pFootForceField.SetFreq(2.4f);
+		pFootForceField.FadeOut(0.001f);
+		pFootForceField.SetScriptableIsSaved(false);
+		mFootForceField = pFootForceField.GetID();
+	}
+	
+	//------------------------------------------------------------
+	
+	void DestroyWorldEntities(cLuxMap@ apMap)
+	{
+		//NOTE: No need to destroy character body, done automatically!
+		
+		DestroyLean(apMap);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetCharacterBodyDefaults()
+	{
+		SetCharacterBodyDefaults();
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetGravity()
+	{
+		mvGravity = cScript_GetGlobalArgVector3f(0);
+		
+		// Map setup can request gravity before the replacement body exists.
+		// Keep mvGravity for CreateWorldEntities/SetCharacterBodyDefaults.
+		if(mbGravityEnabled && mBaseObj.GetCharacterBody() !is null)
+			mBaseObj.GetCharacterBody().SetCustomGravity(mvGravity);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetGravityEnabled()
+	{
+		mbGravityEnabled = cScript_GetGlobalArgBool(0);
+		if(mBaseObj.GetCharacterBody() is null) return;
+		if (!mbGravityEnabled)
+		{
+			mBaseObj.GetCharacterBody().SetCustomGravity(cVector3f(0,0,0));
+		}
+		else
+		{
+			mBaseObj.GetCharacterBody().SetCustomGravity(mvGravity);
+		}
+	}
+
+	//------------------------------------------------------------
+	
+	void SetupStartPos(const cVector3f&in avPos, float afAngle, bool abCrouching)
+	{
+		iCharacterBody@ pCharBody = mBaseObj.GetCharacterBody();
+		pCharBody.SetFeetPosition(avPos, false);
+		pCharBody.SetYaw(afAngle);
+		
+		if(abCrouching)
+		{
+			cScript_SetGlobalArgBool(0, true);
+			cScript_SetGlobalArgBool(1, true);
+			cScript_SetGlobalArgBool(2, true);
+			cScript_SetGlobalArgBool(3, true);
+			cScript_RunGlobalFunc("MoveState_Normal","","_Global_SetCrouching");			
+		}
+		
+		pCharBody.Update(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MISC
+	/////////////////////////////////////////
+		
+	//------------------------------------------------------------
+	
+	int GetCharacterState()
+	{
+		cScript_RunGlobalFunc("MoveState_Normal", "", "_Global_GetCrouching");
+		return cScript_GetGlobalReturnBool() ? 1 : 0;		
+	}
+	
+	void SetCharacterState(int alState)
+	{
+		cScript_SetGlobalArgBool(0, alState>0);
+		cScript_SetGlobalArgBool(1, false);
+		cScript_SetGlobalArgBool(2, false);
+		cScript_SetGlobalArgBool(3, false);
+		cScript_RunGlobalFunc("MoveState_Normal","","_Global_SetCrouching");
+	}	
+	
+	/////////////////////////////////////////
+	// AREA HIDING
+	/////////////////////////////////////////
+		
+	//------------------------------------------------------------
+	
+	void AddHideArea(tID a_idArea, int alPrio, bool abRequiresCrouch, float afVisibilityRange, bool abRelativeVisRange)
+	{
+		//////////////////
+		// Check if exists
+		for(int i=0; i<mvHideAreas.size(); ++i)
+		{
+			if(mvHideAreas[i].m_idArea == a_idArea) return;
+		}
+		
+		//////////////////
+		// Add the area
+		cPlayerHideArea hideArea;
+		hideArea.m_idArea = a_idArea;
+		hideArea.mlPrio = alPrio;
+		hideArea.mbRequiresCrouch = abRequiresCrouch;
+		hideArea.mfVisibilityRange = afVisibilityRange;
+		hideArea.mbRelativeVisRange = abRelativeVisRange;
+		
+		mvHideAreas.push_back(hideArea);
+	}
+	
+	//------------------------------------------------------------
+	
+	void RemoveHideArea(tID a_idArea)
+	{
+		for(int i=0; i<mvHideAreas.size(); ++i)
+		{
+			if(mvHideAreas[i].m_idArea == a_idArea)
+			{
+				mvHideAreas[i] = mvHideAreas[mvHideAreas.size()-1];
+				mvHideAreas.pop_back();
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateHidden(float afTimeStep)
+	{
+		////////////////////////////
+		// Update effects
+		mfHiddenT+=afTimeStep;
+		
+		if(mbHidden)
+		{
+			mfHiddenAlpha += afTimeStep*0.5f;
+			mfHiddenAlpha = cMath_Min(mfHiddenAlpha, 1.0f);
+		}
+		else
+		{
+			mfHiddenAlpha -= afTimeStep;
+			mfHiddenAlpha = cMath_Max(mfHiddenAlpha, 0.0f);			
+		}
+		
+		////////////////////////////
+		// Check if areas
+		if(mvHideAreas.size()==0)
+		{
+			mBaseObj.SetVisibilityMaxRange(eVisibilityType_Area, -1);
+			mBaseObj.SetVisibilityRangeMul(eVisibilityType_Area, 1.0f);
+			mbHidden =false;
+			return;
+		}
+		
+		int lPrio=-10000;
+		int lIdx = -1;
+		
+		bool bCrouching = Player_GetCrouching();
+		
+		//////////////////////////////////////
+		// Find the right area
+		for(int i=0;i<mvHideAreas.size(); ++i)
+		{
+			cPlayerHideArea@ pHideArea = mvHideAreas[i];
+			
+			if(pHideArea.mbRequiresCrouch && bCrouching==false) continue;
+			
+			if(pHideArea.mlPrio > lPrio)
+			{
+				lPrio = pHideArea.mlPrio;
+				lIdx = i;
+			}
+		}
+		
+		//////////////////////////////////////
+		// No area found
+		if(lIdx<0)
+		{
+			mBaseObj.SetVisibilityMaxRange(eVisibilityType_Area, -1);
+			mBaseObj.SetVisibilityRangeMul(eVisibilityType_Area, 1.0f);
+			mbHidden =false;
+			return;
+		}
+		
+		//////////////////////////////////////
+		// Set up variables
+		cPlayerHideArea@ pHideArea = mvHideAreas[lIdx];
+		
+		mbHidden = true;
+		
+		if(pHideArea.mbRelativeVisRange)
+		{
+			mBaseObj.SetVisibilityMaxRange(eVisibilityType_Area, -1);
+			mBaseObj.SetVisibilityRangeMul(eVisibilityType_Area, pHideArea.mfVisibilityRange);
+		}
+		else
+		{
+			mBaseObj.SetVisibilityMaxRange(eVisibilityType_Area, pHideArea.mfVisibilityRange);
+			mBaseObj.SetVisibilityRangeMul(eVisibilityType_Area, 1.0f);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_AddHideArea()
+	{
+		AddHideArea(cScript_GetGlobalArgID(0), cScript_GetGlobalArgInt(1), cScript_GetGlobalArgBool(2),
+					cScript_GetGlobalArgFloat(3), cScript_GetGlobalArgBool(4));
+	}
+	
+	void _Global_RemoveHideArea()
+	{
+		RemoveHideArea(cScript_GetGlobalArgID(0));
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetLookSpeedMul()
+	{
+		float fMul = cScript_GetGlobalArgFloat(0);
+		mfLookSpeedMul = fMul;
+		mfLookSpeedMulTarget = mfLookSpeedMul;
+	}
+	
+	void _Global_FadeLookSpeedMulTo()
+	{
+		float fTarget = cScript_GetGlobalArgFloat(0);
+		float fTime = cScript_GetGlobalArgFloat(1);
+		
+		if (fTime == 0) fTime = 0.0001f;
+		
+		mfLookSpeedMulTarget = fTarget;
+		mfLookSpeedMulFadeSpeed = cMath_Abs(mfLookSpeedMulTarget - mfLookSpeedMul)/fTime;
+	}
+	
+	void _Global_GetLookSpeedMul()
+	{
+		cScript_SetGlobalReturnFloat(mfLookSpeedMul * PlayerEnergy_GetLookMul());
+	}
+	
+	void _Global_SetMoveSpeedMul()
+	{
+		float fMul = cScript_GetGlobalArgFloat(0);
+		mfMoveSpeedMul = fMul;
+		mfMoveSpeedMulTarget = mfMoveSpeedMul;
+	}
+	
+	void _Global_FadeMoveSpeedMulTo()
+	{
+		float fTarget = cScript_GetGlobalArgFloat(0);
+		float fTime = cScript_GetGlobalArgFloat(1);
+		
+		if (fTime == 0) fTime = 0.0001f;
+		
+		mfMoveSpeedMulTarget = fTarget;
+		mfMoveSpeedMulFadeSpeed = cMath_Abs(mfMoveSpeedMulTarget - mfMoveSpeedMul)/fTime;
+	}
+	
+	void _Global_GetMoveSpeedMul()
+	{
+		cScript_SetGlobalReturnFloat(mfMoveSpeedMul * PlayerEnergy_GetMoveMul());
+	}
+	
+	void _Global_SetRunSpeedMul()
+	{
+		float fMul = cScript_GetGlobalArgFloat(0);
+		mfRunSpeedMul = fMul;
+		mfRunSpeedMulTarget = mfRunSpeedMul;
+	}
+	
+	void _Global_FadeRunSpeedMulTo()
+	{
+		float fTarget = cScript_GetGlobalArgFloat(0);
+		float fTime = cScript_GetGlobalArgFloat(1);
+		
+		if (fTime == 0) fTime = 0.0001f;
+		
+		mfRunSpeedMulTarget = fTarget;
+		mfRunSpeedMulFadeSpeed = cMath_Abs(mfRunSpeedMulTarget - mfRunSpeedMul)/fTime;
+	}
+	
+	void _Global_GetRunSpeedMul()
+	{
+		cScript_SetGlobalReturnFloat(mfRunSpeedMul);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+		
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+	
+	}
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HEAVE MOVE EVENTS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void ResetHeadMoveEvents()
+	{
+		mfHeadMoveEventUpdateCount =0;
+	}
+	
+	//------------------------------------------------------------
+		
+	void UpdateHeadMoveEvents(float afTimeStep)
+	{
+		//NOT CURRENTLY USED!		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPEED MULTIPLIERS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void UpdateSpeedMultipliers(float afTimeStep)
+	{
+		if (mfLookSpeedMul != mfLookSpeedMulTarget)
+			mfLookSpeedMul = cMath_IncreaseTo(mfLookSpeedMul, mfLookSpeedMulFadeSpeed * afTimeStep, mfLookSpeedMulTarget);
+			
+		if (mfMoveSpeedMul != mfMoveSpeedMulTarget)
+			mfMoveSpeedMul = cMath_IncreaseTo(mfMoveSpeedMul, mfMoveSpeedMulFadeSpeed * afTimeStep, mfMoveSpeedMulTarget);
+			
+		if (mfRunSpeedMul != mfRunSpeedMulTarget)
+			mfRunSpeedMul = cMath_IncreaseTo(mfRunSpeedMul, mfRunSpeedMulFadeSpeed * afTimeStep, mfRunSpeedMulTarget);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// FALL DAMAGE
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	float mfTotalFallDistance=0;
+	bool mbFallDamageAllowed=true;
+	
+	//------------------------------------------------------------
+	
+	void ResetFallDamage()
+	{
+		 mfTotalFallDistance=0;
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetFallDamageAllowed()
+	{
+		mbFallDamageAllowed = cScript_GetGlobalArgBool(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateFallDamage(float afTimeStep)
+	{
+		if(mBaseObj.IsDead()) return;
+		
+		iCharacterBody @pCharBody = mBaseObj.GetCharacterBody();
+		
+		int lState = mBaseObj.GetCurrentStateId();
+		
+		/////////////////////////////
+		// Check if we should discard any falling
+		if( cLux_GetGodModeActivated() ||
+			mbFallDamageAllowed==false ||
+			cScript_GetGlobalVarBool("PlayerUnderwater") ||
+			pCharBody.IsActive()==false || 
+			pCharBody.GravityIsActive()==false ||
+			pCharBody.GetTestCollision()==false ||
+			lState == ePlayerState_InteractiveCameraAnimation)
+		{
+			mfTotalFallDistance=0;
+			return;
+		}
+		
+		/////////////////////////////
+		// Check if player is hurt.
+		if(pCharBody.IsOnGround())
+		{
+			if(mfTotalFallDistance>3.5f)
+			{
+				float fAmount = mfTotalFallDistance>5.5f ? 0.3 : 0.1;
+					
+				mBaseObj.GiveDamage(fAmount, 0, eDamageType_Hit, 0.1f, "");
+					
+				Sound_PlayGui("player/landing/damage",1);
+			}
+			mfTotalFallDistance =0;
+			
+			return;
+		}
+		
+		
+		/////////////////////////////
+		// Change fallspeed
+		if(pCharBody.GetForceVelocity().y>=0)
+		{
+			mfTotalFallDistance=0;
+		}
+		else
+		{
+			mfTotalFallDistance += cMath_Abs(pCharBody.GetForceVelocity().y)*afTimeStep;
+		}
+	}
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HEALTH REGEN
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void UpdateHealthRegeneration(float afTimeStep)
+	{
+		if(mBaseObj.IsDead()) return;
+		
+		float fHealth = mBaseObj.GetHealth();
+		if(fHealth>0 && fHealth<0.45f)
+		{
+			float fSpeed = fHealth<0.17 ? (0.35f / 90.0f) : (0.35f / 140.0f);
+			if(fHealth > 0.4) fSpeed *= 0.75f;
+			
+			fHealth = cMath_IncreaseTo(fHealth, fSpeed*afTimeStep, 0.45f);
+			mBaseObj.SetHealth(fHealth);
+		}
+	}
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LEAN
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	iCollideShape@ mpLean_HeadShape;
+	float mfLean_Dir;
+	float mfLean_Movement;
+	float mfLean_Rotation;
+	bool mbLean_Intersect;
+	bool mbLean_Pressed;
+	
+	float mfLean_MaxMovement = 0.5f;
+	float mfLean_MaxRotation = 0.26; //15 deg.
+	
+	bool mbAnalogLeanPressed=false;
+		
+	//------------------------------------------------------------
+	
+	void CreateLean(cLuxMap@ apMap)
+	{
+		float fRadius = gvBodySize.x/2 * 0.68f;
+		float fHeight = 0.1f;
+		cMatrixf mtxOffset = cMath_MatrixRotateZ(cMath_PiDiv2); 
+		@mpLean_HeadShape = apMap.GetPhysicsWorld().CreateCylinderShape(fRadius,fHeight, mtxOffset);
+	}
+	
+	void DestroyLean(cLuxMap@ apMap)
+	{
+		//Dont delete it, it might have been created on another submap, iPhysicsWorld takes care of the destruction automatically
+		@mpLean_HeadShape = null;
+	}
+	//------------------------------------------------------------
+	
+	void ResetLean()
+	{
+		mfLean_Dir = 0;
+		mfLean_Movement = 0;
+		mfLean_Rotation =0;
+		mbLean_Pressed = false;
+		@mpLean_HeadShape = null;
+	}
+	
+	//------------------------------------------------------------
+	
+	void Lean(float afDir)
+	{
+		mbLean_Pressed = true;
+		mfLean_Dir = afDir;
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateLean(float afTimeStep)
+	{
+		if(mBaseObj.IsDead())
+		{
+			mbAnalogLeanPressed = false;
+			return;
+		}
+		
+		////////////////////////////////
+		//Check if analog lean is pressed
+		mbAnalogLeanPressed = cInput_IsTriggered(eAction_AnalogLean);
+
+		////////////////////////////////
+		//If pressed move in direction
+		if(mbLean_Pressed)
+		{
+			mbLean_Pressed = false;
+
+			float fGoalPos = mfLean_MaxMovement * mfLean_Dir;
+			float fGoalRot = mfLean_MaxRotation * -mfLean_Dir;
+
+			const float fMaxMoveSpeed = 0.1f*2;
+			const float fMaxRotSpeed = 0.13f*2;
+			
+			//////////////
+			//Position
+			float fPrevMovement = mfLean_Movement;
+			float fMoveSpeed = (fGoalPos - mfLean_Movement);
+			if(cMath_Abs(fMoveSpeed) <fMaxMoveSpeed) fMoveSpeed = fMaxMoveSpeed * mfLean_Dir;
+			mfLean_Movement += fMoveSpeed * afTimeStep * 3;
+
+			if(fGoalPos < 0 && mfLean_Movement < fGoalPos) mfLean_Movement =fGoalPos;
+			if(fGoalPos > 0 && mfLean_Movement > fGoalPos) mfLean_Movement =fGoalPos;
+
+			//////////////
+			//Rotation
+			float fPrevRotation = mfLean_Rotation;
+			float fRotSpeed = fGoalRot - mfLean_Rotation;
+			if(cMath_Abs(fRotSpeed) <fMaxRotSpeed) fRotSpeed = fMaxRotSpeed * -mfLean_Dir;
+
+			mfLean_Rotation += fRotSpeed * afTimeStep * 2;
+
+			if(fGoalRot < 0 && mfLean_Rotation < fGoalRot) mfLean_Rotation = fGoalRot;
+			if(fGoalRot > 0 && mfLean_Rotation > fGoalRot) mfLean_Rotation = fGoalRot;
+
+			////////////////////
+			//Check collision
+			cCamera@ pCam = mBaseObj.GetCamera();
+			cLuxMap@ pMap = cLux_GetCurrentMap();
+			iPhysicsWorld@ pPhysicsWorld = pMap.GetPhysicsWorld();
+
+			float fReverseMov = fPrevMovement - mfLean_Movement;
+			float fReverseRot = fPrevRotation - mfLean_Rotation;
+
+			iCharacterBody@ pCharBody = mBaseObj.GetCharacterBody();
+			float fHeightAdd = pCharBody.GetSize().y + mBaseObj.GetCameraPosAddSum().y;
+			cVector3f vStartPos = pCharBody.GetFeetPosition() + cVector3f(0,fHeightAdd,0);
+
+			cVector3f vPos = vStartPos + pCam.GetRight() * mfLean_Movement;
+
+			int lCount = 0;
+			cVector3f vPush;
+			while(pPhysicsWorld.CheckShapeWorldCollision(	vPush,mpLean_HeadShape, cMath_MatrixTranslate(vPos),
+															null,false, true,false))
+			{
+				mfLean_Movement += fReverseMov;
+				mfLean_Rotation += fReverseRot;
+
+				if(fReverseMov < 0 && mfLean_Movement <0)
+				{
+					mfLean_Movement =0;
+					mfLean_Rotation =0;
+					break;
+				}
+				if(fReverseMov > 0 && mfLean_Movement >0)
+				{
+					mfLean_Movement =0;
+					mfLean_Rotation =0;
+					break;
+				}
+
+				vPos = vStartPos + pCam.GetRight() * mfLean_Movement;
+				lCount++;
+				if(lCount >10){
+					mfLean_Movement =0;
+					mfLean_Rotation =0;
+					break;
+				}
+			}
+
+			mBaseObj.FadeCameraRollTo(ePlayerRoll_Lean, mfLean_Rotation, 5,3);
+			mBaseObj.MoveCameraPosAdd(eCameraAddType_Lean, cVector3f(mfLean_Movement,0,0),2, 2,0.05f);
+		}
+		////////////////////////////
+		// Not pressed move back
+		else if(mfLean_Movement !=0 || mfLean_Rotation != 0)
+		{
+			mfLean_Rotation =0;
+			mfLean_Movement =0;
+
+			mBaseObj.FadeCameraRollTo(ePlayerRoll_Lean,0, 4,2);
+			mBaseObj.MoveCameraPosAdd(eCameraAddType_Lean, cVector3f(0,0,0), 2, 1.3f, 0.1);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HIDE IN THE DARK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void UpdateHidingInTheDark(float afTimeStep)
+	{
+		mfHidingInDarkUpdateCount-=afTimeStep;
+		if(mfHidingInDarkUpdateCount>0) return;
+		
+		if(mBaseObj.GetCharacterBody() is null) return;
+		
+		mfHidingInDarkUpdateCount = cMath_RandRectf(0.25f, 0.35f);
+		
+		const float fLimit = 0.05f;
+
+		cLightPoint@ pAmbientLight_Light = cast<cLightPoint>(cLux_ID_Light(m_idAmbientLight_Light));
+		float fLightLevel = cLux_GetLightLevelAtPos(mBaseObj.GetCharacterBody().GetPosition(), pAmbientLight_Light, 0.5f);			
+		if(mbFlashlightOn) fLightLevel += 1;
+		
+		float fMul =1;
+		if(fLightLevel<=fLimit)
+		{
+			float fT = cMath_Easing(eEasing_CubicIn,1-fLightLevel/fLimit);
+			
+			if(Player_GetCrouching())			
+				fMul = 0.4 - 0.25*fT;
+			else
+				fMul = 0.7 - 0.15*fT;
+		}
+		
+		cLux_GetPlayer().SetVisibilityRangeMul(eVisibilityType_HidingInTheDark, fMul);
+	}
+	
+	/////////////////////////////////////////
+	// FLASHLIGHT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] tID mFlashlight_Light;
+	bool mbFlashlightOn;
+	float mfFlashlightAmount;
+	float mfFlashlightRadius = 10.0f;
+	float mfFlashlightEnvParticleMul = 16.0f;
+	float mfFlashlightCheckAgentSeesGoboCount=0;
+	bool mbFlashlightCheckAgentSeesGoboRaysFired=false;
+	array<cVector3f> mvFlashlightGoboPositions;
+	
+	tString msFlashlightOnOffCallback;
+	bool mbFlashlightDisabled;
+	
+	//------------------------------------------------------------
+	
+	void CreateFlashlight(cLuxMap@ apMap)
+	{
+		cLightSpot @pFlashlight_Light = apMap.GetWorld().CreateLightSpot("Flashlight", "player_flashlight.dds", false);
+		pFlashlight_Light.SetDiffuseColor(gFlashlightColor * mfFlashlightAmount);
+		pFlashlight_Light.SetRadius(mfFlashlightRadius);
+		pFlashlight_Light.SetFOV(cMath_ToRad(gfFlashlightFOV));
+		pFlashlight_Light.SetCastShadows(false); //todo: setting for this?
+		pFlashlight_Light.SetVisible(mbFlashlightOn || mfFlashlightAmount>0);
+		pFlashlight_Light.SetNearClipPlane(gfFlashlightNearClip);
+		pFlashlight_Light.SetScriptableIsSaved(false);
+		mFlashlight_Light = pFlashlight_Light.GetID();
+
+		if(gbFlashlightAffectEnvParticles) Map_SetEnvironmentParticlesSpotLight("*", pFlashlight_Light, mfFlashlightEnvParticleMul);
+	}
+
+	void SetFlashLightEnvParticleMul(float afX)
+	{
+		mfFlashlightEnvParticleMul = afX;
+		cLightSpot@ pFlashlight_Light = cast<cLightSpot>(cLux_ID_Light(mFlashlight_Light));
+
+		if(pFlashlight_Light !is null) Map_SetEnvironmentParticlesSpotLight("*", pFlashlight_Light, mfFlashlightEnvParticleMul);
+	}
+	
+	//------------------------------------------------------------
+	
+	void FlashlightOnEnter()
+	{
+	}
+	
+	void ResetFlashlight()
+	{
+		mbFlashlightOn = false;
+		mfFlashlightAmount = 0;
+		mbFlashlightDisabled = false;
+		msFlashlightOnOffCallback = "";
+		mfFlashlightFadeOutSpeed = gfFlashlightFadeOutSpeed;
+		mfFlashlightFadeInSpeed = gfFlashlightFadeInSpeed;
+		mFlashlightEaseIn = eEasing_Linear;
+		mFlashlightEaseOut = eEasing_Linear;
+		mfFlashLightPower=1;
+		mbFlashlightCheckAgentSeesGoboRaysFired=false;
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateFlashLight(float afTimeStep)
+	{
+		//////////////////////////////////
+		// Power
+		if(mbFlashlightOn)
+		{
+			mfFlashLightPower = cMath_IncreaseTo(mfFlashLightPower, afTimeStep*0.0025,0);
+			if(mfFlashLightPower<=0) SetFlashlightOn(false);
+		}
+		else
+		{
+			mfFlashLightPower = cMath_IncreaseTo(mfFlashLightPower, afTimeStep*0.1,1);
+		}
+		
+		//////////////////////////////////
+		// Visibility
+		cLux_GetPlayer().SetVisibilityRangeMul(eVisibilityType_Flashlight, mbFlashlightOn ? 2.0f : 1.0f);
+		
+		//////////////////////////////////
+		// Is flashlight worth updating? 	
+		if(mbFlashlightOn==false && mfFlashlightAmount<=0)
+		{
+			return;
+		}
+							
+		//////////////////////////////////
+		// Update color
+		float fAmount;
+			
+		if(mbFlashlightOn)
+		{
+			mfFlashlightAmount += mfFlashlightFadeInSpeed * afTimeStep;
+			
+			if(mfFlashlightAmount>1)
+				mfFlashlightAmount = 1;
+			
+			fAmount = cMath_Easing(mFlashlightEaseIn, mfFlashlightAmount);
+		}
+		else
+		{
+			mfFlashlightAmount -= mfFlashlightFadeOutSpeed * afTimeStep;
+			
+			if (mfFlashlightAmount<0.0f)
+				mfFlashlightAmount=0.0f;
+				
+			fAmount = cMath_Easing(mFlashlightEaseOut, mfFlashlightAmount);
+		}
+		
+		fAmount = cMath_Clamp(fAmount, 0.0f, 1.0f);
+		cLightSpot@ pFlashlight_Light = cast<cLightSpot>(cLux_ID_Light(mFlashlight_Light));
+
+		if(pFlashlight_Light is null)
+		{
+			CreateFlashlight(cLux_GetCurrentMap());
+			@pFlashlight_Light = cast<cLightSpot>(cLux_ID_Light(mFlashlight_Light));
+		}
+
+		pFlashlight_Light.SetVisible((fAmount>0.0f));
+		
+		fAmount *= cMath_Easing(eEasing_QuartOut, mfFlashLightPower);
+		
+		fAmount *= 1.0f - cMath_Easing(eEasing_QuartOut, Effect_VideoDistortion_GetAmount()*Effect_VideoDistortion_GetEffectAmount());
+		
+		pFlashlight_Light.SetDiffuseColor(gFlashlightColor * fAmount);
+		
+		//////////////////////////////////
+		// Update the rotation
+		UpdateFlashlightRotation();	
+	}
+
+	void UpdateFlashLightLOS(float afTimeStep)
+	{
+		if(mbFlashlightOn==false && mfFlashlightAmount<=0)
+		{
+			return;
+		}
+		cLightSpot@ pFlashlight_Light = cast<cLightSpot>(cLux_ID_Light(mFlashlight_Light));
+
+		if(pFlashlight_Light is null)
+		{
+			CreateFlashlight(cLux_GetCurrentMap());
+			@pFlashlight_Light = cast<cLightSpot>(cLux_ID_Light(mFlashlight_Light));
+		}
+
+		/////////////////////////
+		// Update check shining on an NPC
+		mfFlashLightUpdateShineOnAgentCount-=afTimeStep;
+		if(mfFlashLightUpdateShineOnAgentCount<=0)
+		{
+			mfFlashLightUpdateShineOnAgentCount = cMath_RandRectf(0.45f, 0.55f);
+			
+			cLuxEntityComponentIterator @pIt = cLux_GetCurrentMap().GetEntityComponentIterator(eLuxEntityComponentType_LightSensor);
+			while(pIt.HasNext())
+			{
+				iLuxEntityComponent @pComp = pIt.Next();
+				cLuxLightSensor @pSensor = cast<cLuxLightSensor>(pComp);
+				if(pSensor.IsSensoring()==false) continue;
+				
+				iLuxEntity @pEnt = pComp.GetEntity();
+				
+				iPhysicsBody @pBody = pEnt.GetMainBody();
+				
+				eCollision coll = pFlashlight_Light.GetFrustum().CollideAABB(pBody.GetBoundingVolume().GetMin(), 
+																			pBody.GetBoundingVolume().GetMax(),6);
+				if(coll == eCollision_Outside) continue;
+				
+				bool bLOS = cLux_CheckLineOfSight(pFlashlight_Light.GetWorldPosition(), pBody.GetLocalPosition(),true, false);				
+				if(bLOS==false) continue;
+				
+				pEnt.BroadcastMessage(eCustomEntityMessage_HitByFlashlight, null, 0,0);
+			}
+		}
+		
+		//////////////////////////////////////
+		// Update Agent sees gobo Rays
+		mfFlashlightCheckAgentSeesGoboCount-=afTimeStep;
+		if(mfFlashlightCheckAgentSeesGoboCount<=0)
+		{
+			mfFlashlightCheckAgentSeesGoboCount = cMath_RandRectf(0.25f, 0.35f);
+			
+			cCamera @pCam = mBaseObj.GetCamera();
+						
+			///////////////////////////////
+			// Get the flashlight hit position
+			mvFlashlightGoboPositions.resize(0);
+			
+			for(int i=0; i<3; i++)
+			{
+				cVector3f vRot;
+				
+				float fAngle = pFlashlight_Light.GetFOV()*0.5 * 0.5;
+				
+				vRot.x = pCam.GetPitch() + cMath_RandRectf(-fAngle, fAngle);
+				vRot.y = pCam.GetYaw() + cMath_RandRectf(-fAngle, fAngle);
+				vRot.z = pCam.GetRoll();
+				
+				cVector3f vFwd = cMath_MatrixMul(cMath_MatrixRotateZXY(vRot), cVector3f(0,0,-1));
+				
+				float fDistance=0;
+				cVector3f vSurfaceNormal;
+				if(cLux_GetClosestBody(pCam.GetPosition(), vFwd, pFlashlight_Light.GetRadius()*0.8f, fDistance,vSurfaceNormal) !is null)
+				{
+					mbFlashlightCheckAgentSeesGoboRaysFired = true;
+					
+					cVector3f vPos = pCam.GetPosition() + vFwd * (fDistance- 0.3f);
+					mvFlashlightGoboPositions.push_back(vPos);
+				}
+			}
+		}
+		
+		//////////////////////////////////////
+		// Update Agent see gobo LOS check
+		if(mbFlashlightCheckAgentSeesGoboRaysFired)
+		{
+			mbFlashlightCheckAgentSeesGoboRaysFired=false;
+			
+			///////////////////////////////
+			// Go through all light sensors!
+			cLuxEntityComponentIterator @pIt = cLux_GetCurrentMap().GetEntityComponentIterator(eLuxEntityComponentType_LightSensor);
+			while(pIt.HasNext())
+			{
+				iLuxEntityComponent @pComp = pIt.Next();
+				cLuxLightSensor @pSensor = cast<cLuxLightSensor>(pComp);
+				if(pSensor.IsSensoring()==false)
+					continue;
+				
+				iLuxEntity @pEnt = pComp.GetEntity();
+				if(pEnt.GetEntityType() != eLuxEntityType_Agent)
+					continue;
+				
+				cLuxAgent @pAgent = cLux_ToAgent(pEnt);
+				
+				cVector3f vEyePos = pAgent.GetEyePostion();
+				
+				for(int i=0; i<mvFlashlightGoboPositions.size(); ++i)
+				{
+					cVector3f vPos = mvFlashlightGoboPositions[i];
+					
+					/////////////////////
+					// Distance
+					if(cMath_Vector3Dist(vPos, pAgent.GetEyePostion())> pAgent.GetSightRange() *pAgent.GetSightRangeMul())
+					{
+						continue;
+					}
+					
+					/////////////////////
+					// FOV
+					if(pAgent.GetPointIsInFOV(vPos, pAgent.GetFOV()*pAgent.GetFOVMul(), pAgent.GetCharBody().GetForward())==false)
+					{
+						continue;
+					}
+					
+					/////////////////////
+					// Line of Sight
+					if(cLux_CheckLineOfSight(vEyePos, vPos, false, false))
+					{
+						pEnt.BroadcastMessage(eCustomEntityMessage_SeeFlashlightGobo, null, vPos,0);
+						break;
+					}
+				}
+			}
+			
+		}
+	}
+
+	//------------------------------------------------------------
+		
+	void UpdateFlashlightRotation()
+	{
+		cCamera @pCam = mBaseObj.GetCamera();
+				
+		//////////////////////////////////////
+		// Get the rotation and offset
+		cVector3f vFlashlightRot(5, 0, 0);
+		if (EyeTracking_IsActive() && (!_HPL3VR_RuntimeActive_Player() || cScript_RunGlobalFunc("VREYES","","FLASH")))
+		{
+			vFlashlightRot.x = EyeTracking_GetFlashlightGaze().y * (40.0f + (mfExtendedViewAngle * 8.0f));
+			vFlashlightRot.y = EyeTracking_GetFlashlightGaze().x * -(60.0f + (mfExtendedViewAngle * 14.0f));
+		}
+		
+		cMatrixf mtxOffset = cMath_MatrixRotateXYZ(cMath_Vector3ToRad(vFlashlightRot));
+		mtxOffset.SetTranslation(gvFlashlightOffset - mBaseObj.GetCameraPosAdd(eCameraAddType_Bob));
+		
+		//////////////////////////////////////
+		// Final light rotation
+		cMatrixf mtxLightRotate = pCam.GetMatrix().GetRotation();
+		mtxLightRotate.SetTranslation(pCam.GetPosition());
+		
+		mtxLightRotate = cMath_MatrixMul(mtxLightRotate, mtxOffset);
+		
+		cLux_ID_Light(mFlashlight_Light).SetMatrix(mtxLightRotate);
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetFlashlightOn(bool abX, bool abSuppressSound = false)
+	{
+		if (mbFlashlightDisabled) return;
+		
+		iLight@ pLight = cLux_ID_Light(mFlashlight_Light);
+
+		if(pLight is null)
+		{
+			cLux_AddDebugMessage("Create light!");
+			CreateFlashlight(cLux_GetCurrentMap());
+			@pLight = cLux_ID_Light(mFlashlight_Light);
+		}
+
+		bool bChanged = (mbFlashlightOn!=abX);
+		
+		mbFlashlightOn = abX;
+		
+		if (bChanged && (msFlashlightOnOffCallback != "") )
+		{
+			cLuxMap @pMap = cLux_GetCurrentMap();
+			if(pMap.ScriptPrepare("void " + msFlashlightOnOffCallback + "(bool abLit)") )
+			{
+				pMap.SetArgBool(0, abX);
+				pMap.ScriptExecute();
+			}
+		}
+		
+		if(mbFlashlightOn && pLight !is null)
+		{
+			pLight.SetVisible(true); //If turning off, we want to fade before setting visible to false!
+			UpdateFlashlightRotation();
+		}
+		
+		if (bChanged && !abSuppressSound)
+		{
+			tString sSuffix = Player_GetUnderwater()? "_uw" : "";
+			
+			if(mbFlashlightOn)
+				Sound_PlayGui("player/gear/flashlight_on"+sSuffix, 1);
+			else 
+				Sound_PlayGui("player/gear/flashlight_off"+sSuffix, 1);
+				
+			cLux_GetCurrentMap().BroadcastSoundHeardEvent(	"Flashlight On/Off",
+															mBaseObj.GetCharacterBody().GetPosition(), 
+															gfFlashlightSoundEventRadius, 
+															glFlashlightSoundEventPrio); 
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetFlashlightOn()
+	{
+		SetFlashlightOn(cScript_GetGlobalArgBool(0), cScript_GetGlobalArgBool(1));
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_GetFlashlightOn()
+	{
+		cScript_SetGlobalReturnBool(mbFlashlightOn);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_GetFlashlightRange()
+	{
+		cScript_SetGlobalReturnFloat(mfFlashlightRadius);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetFlashlightFadeOut()
+	{
+		mFlashlightEaseOut = eEasing(cScript_GetGlobalArgInt(0));
+		mfFlashlightFadeOutSpeed = cScript_GetGlobalArgFloat(1);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetFlashlightFadeIn()
+	{
+		mFlashlightEaseIn = eEasing(cScript_GetGlobalArgInt(0));
+		mfFlashlightFadeInSpeed = cScript_GetGlobalArgFloat(1);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetFlashlightDisabled()
+	{
+		mbFlashlightDisabled = cScript_GetGlobalArgBool(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetFlashlightOnOffCallback()
+	{
+		msFlashlightOnOffCallback = cScript_GetGlobalArgString(0);
+	}
+	
+	//------------------------------------------------------------
+
+	void _Global_SetFlashLightEnvParticleMul()
+	{
+		SetFlashLightEnvParticleMul(cScript_GetGlobalArgFloat(0));
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// AMBIENT LIGHT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] tID m_idAmbientLight_Light;
+	float mfAmbientLight_Radius;
+	float mfAmbientLight_Brightness;
+	
+	float mfAmbientLight_GoalRadius;
+	float mfAmbientLight_GoalBrightness;
+	
+	float mfAmbientLight_RadiusChangeSpeed;
+	float mfAmbientLight_BrightnessChangeSpeed;
+	
+	//------------------------------------------------------------
+	
+	void CreateAmbientLight(cLuxMap@ apMap)
+	{
+		cLightPoint@ pAmbientLight = apMap.GetWorld().CreateLightPoint("AmbientLight","", false);
+
+		pAmbientLight.SetDiffuseColor(gAmbientLightColor);
+		pAmbientLight.SetRadius(1);
+		pAmbientLight.SetFalloffPow(1.0f);
+		pAmbientLight.SetScriptableIsSaved(false);
+		m_idAmbientLight_Light = pAmbientLight.GetID();
+	}
+	
+	//------------------------------------------------------------
+	
+	void ResetAmbientLight()
+	{
+		mfAmbientLight_Radius=6;
+		mfAmbientLight_Brightness=1.0f;
+		
+		mfAmbientLight_GoalRadius = mfAmbientLight_Radius;
+		mfAmbientLight_GoalBrightness = mfAmbientLight_Brightness;
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateAmbientLight(float afTimeStep)
+	{
+		/////////////////////////////////////////
+		// Fade the values
+		if(mfAmbientLight_GoalBrightness != mfAmbientLight_Brightness)
+		{
+			mfAmbientLight_Brightness = cMath_IncreaseTo(mfAmbientLight_Brightness, 
+														mfAmbientLight_BrightnessChangeSpeed*afTimeStep,
+														mfAmbientLight_GoalBrightness);
+		}
+		
+		if(mfAmbientLight_GoalRadius != mfAmbientLight_Radius)
+		{
+			mfAmbientLight_Radius = cMath_IncreaseTo(mfAmbientLight_Radius, 
+														mfAmbientLight_RadiusChangeSpeed*afTimeStep,
+														mfAmbientLight_GoalRadius);
+		}
+		
+		/////////////////////////////////////////
+		// Update the light
+		float fExpBrightness = Effect_ToneMapping_GetExposureBrightness();
+		
+		float fAmount = 1;
+		if(fExpBrightness>2.82)
+		{
+			fAmount *= cMath_Easing(eEasing_QuadOut, cMath_Min(fExpBrightness-2.82f, 4.0f)/4.0f, 1,0);
+		}
+
+		cLightPoint@ pAmbientLight_Light = cast<cLightPoint>(cLux_ID_Light(m_idAmbientLight_Light));
+		
+		if(pAmbientLight_Light is null) return;
+
+		pAmbientLight_Light.SetBrightness((mfAmbientLight_Brightness*0.08) * fAmount);
+		pAmbientLight_Light.SetRadius(mfAmbientLight_Radius);
+		pAmbientLight_Light.SetPosition(mBaseObj.GetCamera().GetPosition());		
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetAmbientLightBrightness()
+	{
+		mfAmbientLight_Brightness = cScript_GetGlobalArgFloat(0);
+		mfAmbientLight_GoalBrightness = mfAmbientLight_Brightness;
+	}
+	
+	void _Global_SetAmbientLightRadius()
+	{
+		mfAmbientLight_Radius = cScript_GetGlobalArgFloat(0);
+		mfAmbientLight_GoalRadius = mfAmbientLight_Radius;
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_FadeAmbientLightBrightness()
+	{
+		mfAmbientLight_GoalBrightness = cScript_GetGlobalArgFloat(0);
+		float fTime = cScript_GetGlobalArgFloat(1);
+		
+		if(fTime <0.00001) fTime = 0.00001f;
+		
+		mfAmbientLight_BrightnessChangeSpeed = cMath_Abs(mfAmbientLight_GoalBrightness - mfAmbientLight_Brightness)/fTime;
+	}
+	
+	void _Global_FadeAmbientLightRadius()
+	{
+		mfAmbientLight_GoalRadius = cScript_GetGlobalArgFloat(0);
+		float fTime = cScript_GetGlobalArgFloat(1);
+		
+		if(fTime <0.00001) fTime = 0.00001f;
+		
+		mfAmbientLight_RadiusChangeSpeed = cMath_Abs(mfAmbientLight_GoalRadius - mfAmbientLight_Radius)/fTime;
+	}
+
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		//apSet.DrawFont(tWString("Player pos: "+cLux_GetPlayer().GetCharacterBody().GetFeetPosition()), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		//apSet.DrawFont(tWString("IsInLiquid: "+cLux_GetPlayer().IsInLiquid()), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		
+		afStartY = cLux_DrawDebugText("IsInLiquid: "+cLux_GetPlayer().IsInLiquid(),afStartY);
+		afStartY = cLux_DrawDebugText("LiquidHeight: "+cLux_GetPlayer().GetLiquidHeight(),afStartY);
+		afStartY = cLux_DrawDebugText("HeadAddTotal: "+cLux_GetPlayer().GetCameraPosAddSum(),afStartY);
+		
+		//afStartY += 14;
+		return afStartY;
+	}
+	
+	/*void OnRenderSolid(cRendererCallbackFunctions@ apFunctions)
+	{
+		for(int i=0; i< mvFlashlightGoboPositions.size(); ++i)
+		{
+			apFunctions.GetLowLevelGfx().DrawLine(mBaseObj.GetCamera().GetPosition(), mvFlashlightGoboPositions[i], cColor(5,0,5,1));
+		}		
+	}*/
+	
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// VARIABLES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] array<cGuiGfxElement@> mvCrossHairGfx;
+	
+	[nosave] tID mFootForceField;
+	bool mbMovingWithForce;
+	
+	bool mbHidden;
+	[nosave]cGuiGfxElement@ mpHiddenGfx;
+	float mfHiddenAlpha=0;
+	float mfHiddenT=0;
+	
+	float mfPhysicalActionIconAlpha;
+	tWString msPhysicalActionIcon;
+	
+	float mfLookSpeedMul;
+	float mfMoveSpeedMul;
+	float mfRunSpeedMul;
+	
+	float mfLookSpeedMulTarget;
+	float mfLookSpeedMulFadeSpeed;
+	float mfMoveSpeedMulTarget;
+	float mfMoveSpeedMulFadeSpeed;
+	float mfRunSpeedMulTarget;
+	float mfRunSpeedMulFadeSpeed;
+	
+	float mfHeadMoveEventUpdateCount;
+	
+	array<cPlayerHideArea> mvHideAreas;
+	
+	eCrossHairState meCrossHairState;
+	bool mbShowCrosshair;
+	bool mbGravityEnabled = true;
+	cVector3f mvGravity = cVector3f(0,-12,0);
+	float mfFlashlightFadeOutSpeed;
+	float mfFlashlightFadeInSpeed;
+	eEasing mFlashlightEaseOut;
+	eEasing mFlashlightEaseIn;
+	float mfFlashLightPower=1;
+	float mfFlashLightUpdateShineOnAgentCount=0;
+	
+	float mfHidingInDarkUpdateCount=0;
+	bool mbUseLargeDefaultCursor = false;
+	bool mbEyeTrackingBiggerCrosshair = false;
+	bool mbUseNoHintsCursor = false;
+	
+	float mfExtendedViewAngle;
+	
+	//------------------------------------------------------------
+	
+}

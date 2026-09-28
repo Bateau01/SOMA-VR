@@ -1,0 +1,336 @@
+#include "interfaces/UserModule_Interface.hps"
+#include "modules/ModuleInterfaces.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_modules.hps"
+
+//------------------------------------------------------------
+
+bool _VREyeDistortionActiveS()
+{
+    cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    if(!cScript_GetGlobalReturnBool()) return true;
+    return cScript_RunGlobalFunc("VREYES","","DISTORT");
+}
+
+const float gfEyeTrackingAddDistortionAmount = 0.5f;
+
+//------------------------------------------------------------
+
+class cScrDistortionInstance
+{
+	tID m_idEntity;
+	float mfMaxDistance;
+	float mfMinDistance;
+	float mfMaxAmount;
+	eEasing mEasing;
+}
+
+//------------------------------------------------------------
+
+
+class cScrDistortionEffectsHandler : iScrUserModule, iScrDistortionEffectsHandler_Interface, iScrUserModule_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mvInstances.resize(0);
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void PreloadData(cLuxMap @apMap)
+	{
+	}
+
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void AddInstance(tID a_idEntity, float afMaxDistance, float afMinDistance, float afMaxAmount, eEasing aEasing = eEasing_Linear)
+	{
+		for(int i=0; i<mvInstances.size();++i)
+		{
+			if(mvInstances[i].m_idEntity == a_idEntity)
+			{
+				mvInstances[i].mfMaxDistance = afMaxDistance;
+				mvInstances[i].mfMinDistance = afMinDistance;
+				mvInstances[i].mEasing = aEasing;
+				mvInstances[i].mfMaxAmount = afMaxAmount;
+				return;
+			}
+		}
+		
+		cScrDistortionInstance instance;
+		instance.m_idEntity = a_idEntity;
+		instance.mfMaxDistance = afMaxDistance;
+		instance.mfMinDistance = afMinDistance;
+		instance.mEasing = aEasing;
+		instance.mfMaxAmount = afMaxAmount;
+		
+		mvInstances.push_back(instance);
+		
+		EyeTracking_RegisterEntity(a_idEntity);
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	void RemoveInstance(tID a_idEntity)
+	{
+		for(int i=0; i<mvInstances.size();++i)
+		{
+			if(mvInstances[i].m_idEntity == a_idEntity)
+			{
+				mvInstances[i] = mvInstances[mvInstances.size()-1];
+				mvInstances.pop_back();
+				
+				EyeTracking_UnregisterEntity(a_idEntity);
+			}
+		}
+	}
+			
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		mvInstances.resize(0);
+		
+		mlEffectId=-1;
+		
+		mfDirectAmount=0;
+		mfDirectAmountGoal=0;
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetActive(bool abX)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+
+	void Update(float afTimeStep)
+	{	
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null || pMap.IsActive() == false)
+			return;
+			
+		/////////////////////////
+		// Fade Direct amount
+		if(mfDirectAmount != mfDirectAmountGoal)
+		{
+			mfDirectAmount = cMath_IncreaseTo(mfDirectAmount, (1.0f/ mfDirectAmountFadeTime)*afTimeStep, mfDirectAmountGoal );
+		}
+		
+		/////////////////////////
+		// Check to see if any needs to be removed.
+		for(int i=0; i<mvInstances.size();)
+		{
+			cScrDistortionInstance @pInstance = mvInstances[i];
+			
+			iLuxEntity@ pEntity = cLux_ID_Entity(pInstance.m_idEntity);
+			
+			if(pInstance.m_idEntity != tID_Invalid && (pEntity is null || pEntity.IsActive()==false))
+			{
+				mvInstances[i] = mvInstances[mvInstances.size()-1];
+				mvInstances.pop_back();
+			}
+			else
+			{
+				++i;
+			}
+		}
+		
+		if(mvInstances.size()==0 || AttackMeter_GetPlayerIsRecovering())
+		{ 
+			if(mlEffectId>=0)
+			{
+				Effect_VideoDistortion_FadeOut(mlEffectId,0.1f);
+				mlEffectId =-1;
+			}
+		}
+		
+		
+		cVector3f vPlayerPos = cLux_GetPlayer().GetCharacterBody().GetPosition();
+		float fFinalAmount =0;
+		
+		if(cLux_GetPlayer().IsDead()==false)
+		{
+			/////////////////////////
+			// Get the current effect amount
+			for(int i=0; i<mvInstances.size();++i)
+			{
+				cScrDistortionInstance@ pInstance = mvInstances[i];
+				iLuxEntity@ pEntity = cLux_ID_Entity(pInstance.m_idEntity);
+			
+				float fDist = cMath_Vector3Dist(vPlayerPos, pEntity.GetPosition());
+				
+				if(fDist > pInstance.mfMaxDistance) continue;
+				fDist = cMath_Max(fDist, pInstance.mfMinDistance);
+				
+				float fX = 1.0f - (fDist - pInstance.mfMinDistance) / (pInstance.mfMaxDistance - pInstance.mfMinDistance);
+				
+				fX = cMath_Easing(pInstance.mEasing, fX);
+				fX *= pInstance.mfMaxAmount;
+				
+				if(fX > fFinalAmount) fFinalAmount = fX;
+				if(_VREyeDistortionActiveS() && EyeTracking_IsAiReactive() && EyeTracking_IsEntityBeingLookedAt(pEntity.GetID()) == true) fFinalAmount += gfEyeTrackingAddDistortionAmount;
+			}
+			
+			fFinalAmount = cMath_Max(fFinalAmount, mfDirectAmount);
+		}
+		
+		if(cLux_GetGodModeActivated()) fFinalAmount=0;
+				
+		if(fFinalAmount>0)
+		{
+			fFinalAmount = 0.1 + fFinalAmount*0.9;
+			
+			if(mlEffectId<0)
+				mlEffectId = Effect_VideoDistortion_Start(fFinalAmount, -1, 1,0);
+			Effect_VideoDistortion_SetMaxAmount(mlEffectId, fFinalAmount);
+		}
+		else if(mlEffectId>=0)
+		{
+			Effect_VideoDistortion_FadeOut(mlEffectId,1);
+			mlEffectId =-1;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+	}
+	
+	void VariableUpdate(float afDeltaTime)
+	{
+	}
+	//------------------------------------------------------------
+	
+	void OnDraw(float){}
+	void OnPostRender(float){}
+	void OnEnterContainer(const tString&in){}
+	void OnLeaveContainer(const tString&in){}
+	void AppGotInputFocus(){}
+	void AppLostInputFocus(){}	
+	void OnAction(int alAction, bool abPressed){}
+	void OnAnalogInput(int alAnalogId, const cVector3f &in avAmount){}
+	void OnExitPressed(){}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetDirectAmount()
+	{
+		mfDirectAmountGoal = cScript_GetGlobalArgFloat(0);
+		mfDirectAmountFadeTime = cScript_GetGlobalArgFloat(1);
+		if(mfDirectAmountFadeTime<=0) mfDirectAmount = mfDirectAmountGoal;
+		
+		if(mfDirectAmountFadeTime<=0) mfDirectAmountFadeTime=0.0001f;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	array<cScrDistortionInstance> mvInstances;
+	
+	int mlEffectId=-1;
+	
+	float mfDirectAmount=0;
+	float mfDirectAmountGoal=0;
+	float mfDirectAmountFadeTime;
+	
+	//------------------------------------------------------------
+}

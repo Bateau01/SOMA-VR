@@ -1,0 +1,3305 @@
+#include "custom_depth/vr_omni_authored_callbacks.hps"
+#include "interfaces/UserModule_Interface.hps"
+#include "modules/ModuleInterfaces.hps"
+#include "base/InputHandler_Types.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_modules.hps"
+#include "utilities/Utility_PickBasics.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+// H5756BF_VR_MAP_TRANSITION_LIFETIME: exact PlayerToolHandler map leave/enter tokens fence world-bound VR pointers before normal Map_ChangeMap teardown; destination scripts restore their authored inventory.
+// H5756BH_VR_STREAM_MAP_READY: same-world streamed transfers publish delayed local readiness; physical VR helpers remain quarantined until destination maturity.
+bool _HPL3VR_RuntimeActive_ToolHandler()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+enum eToolState
+{
+	eToolState_Hide,
+	eToolState_Unhide,
+	eToolState_Idle,
+	eToolState_CustomAnimation,
+}
+
+//------------------------------------------------------------
+
+/////////////////////////////////////////
+// HELPER CLASS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+class cToolData
+{
+	tID m_idHudObject;
+	
+	tString msPickedEntityName;
+	tString msHudObjFile;
+	tString msUseCallback;
+	tString msDropCallback;
+	tString msCanBeUsedCallback;
+	tString msInventoryIcon;
+	tString msHandAnimationSuffix;
+	bool mbIsHeavy = false;
+	int mlCustomUseIcon;
+
+	// H5756AA_VR_LEFT_SHOULDER_KEY_INVENTORY
+	// H5756AF_VR_SHOULDER_ROUNDTRIP_OMICRON
+	// H5756AG_VR_SHOULDER_SAVE_LIFETIME
+	// These are presentation/lifetime fields only. SOMA's existing tool record and
+	// map callbacks remain the story authority.
+	tString msVRPhysicalCarrierName;
+	bool mbVRShoulderEligible = false;
+	bool mbVRShoulderStowed = false;
+	int mlVRShoulderOrder = 0;
+}
+
+//------------------------------------------------------------
+
+// H5756K_VR_OMNITOOL_PHYSICAL_UPGRADE_CHIPS
+// H5756P_VR_OMNITOOL_UPGRADE_POLL_INDEPENDENT
+// H5756T_VR_OMNITOOL_STOCK_FOCUS_TARGET: physical chip contact polling is inventory-owned, not legacy current/equipped-tool owned.
+// H5756U_VR_OMNITOOL_AUTHORED_CORTEX_AREA: Lambda/Curie map proves CortexChip_CanBeUsed accepts only Area_PutCortexOnOmniTool; use SOMA's active Trigger overlap and pass that exact focus target.
+// H5756V_VR_OMNITOOL_UPSILON_TOOLCHIP_AREAS: 01_01_upsilon_awake authors stock Omni insertion at AreaInsertOmniTool_TechRoom and ConfigChipTool insertion at AreaInsertConfigChip; both use exact map callbacks.
+// H5756BG_VR_UPSILON_INSERT_SCOPE: tech-room AreaInsertOmniTool_TechRoom polling exists only while exact pre-configuration 'OmniTool' is the physical carrier; later CathTool maps perform ZERO lookup of this Upsilon-Awake-only area.
+// H5756W_VR_OMNITOOL_UPSILON_SOURCE_RETIREMENT: after successful stock Omni -> OmniTool_NotConfigured authored replacement, retire the old physical inventory carrier so it cannot become a duplicate or steal INSERTED authority.
+// H5756X_VR_UPSILON_VISIBLE_TOOLCHIP_CARRIER: the physical tray prop selected by hand remains the held carrier; hidden ConfigChipTool remains the exact stock callback/inventory authority.
+// H5756Z_VR_DELTA_REPLACEMENT_TOOLCHIP: historical first Delta physical-carrier pass; AA supersedes its manual-old-chip branch.
+ // H5756AA_VR_DELTA_VANILLA_REPLACEMENT_TRIGGER: physical KateChip/GoyaChip contact launches stock OnUseChip -> SequenceInsertCatherineChip unchanged.
+ // H5756AA_VR_LEFT_SHOULDER_KEY_INVENTORY: owned physical story Tools may be stowed/retrieved over the left shoulder; logical inventory + map callbacks remain authoritative.
+// H5756Q_VR_OMNITOOL_DOCKED_UPGRADE_TARGET: capture the exact current Catherine GetMainBody separately so an authored-slot-owned INSERTED Omni-Tool is a valid physical upgrade target without re-adopting it into hand/H26 authority.
+class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlayerToolHandler_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mbActive = false;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+			
+			return;
+		}
+		// H57.56BF: exact normal-map lifecycle token. Native side retires only
+		// world-bound VR pointers; logical inventory/storage survives the transfer.
+		cScript_RunGlobalFunc("VROMNIMAP", "", "E");
+		mbVRStreamMapReady = false;
+		mbVRStreamMapReadyTokenSent = false;
+		mfVRStreamMapReadyTimer = 1.00f;
+		mfVRStreamPhysicalDelay = 0.0f;
+		mbVRPhysicalOmniEnsured = false;
+		mfVRPhysicalOmniEnsureTimer = 0.75f;
+		msVRPhysicalOmniPanelCandidate = "";
+		mfVRPhysicalOmniPanelCooldown = 0.0f;
+		mbVROmniPanelAreasLoaded=false; mvVROmniPanelAreas.resize(0);
+		msVRPhysicalUpgradeChipCandidate = "";
+		msVRPhysicalUpgradeFocusTarget = "";
+		msVRUpsilonToolChipCarrierName = "";
+		mfVRPhysicalUpgradeChipCooldown = 0.0f;
+		msVROmniPhysicalInsertTarget = "";
+		mfVROmniPhysicalInsertCooldown = 0.0f;
+		msVRShoulderUseTool = "";
+		msVRShoulderUseTarget = "";
+		msVRShoulderRetrievePending = "";
+		mfVRShoulderUseCooldown = 0.0f;
+		mbVRShoulderReconciled = false;
+        mvVRReconciledCarriers.resize(0);
+        mlBVChipRepair=0;
+		mfVRShoulderReconcileTimer = 0.60f;
+		VR_RestoreShoulderRuntimeAliases();
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		if (mpVRBatonTipShape !is null) apMap.GetPhysicsWorld().DestroyShape(mpVRBatonTipShape);
+		@mpVRBatonTipShape = null;
+		mbVRBatonContact = false;
+		msVRBatonTarget = "";
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				mbPlayerCarriesHeavyTool = false;
+				RemoveAllTools();
+			return;
+		}
+		// H57.56BF: must execute before RemoveAllTools / map teardown so native
+		// world-bound Catherine/hand/subtitle refs cannot outlive this map.
+		cScript_RunGlobalFunc("VROMNIMAP", "", "L");
+        msVRInsertedOmniName="";msVRInsertedOmniSlot="";
+		mbVRPhysicalOmniEnsured = false;
+		mfVRPhysicalOmniEnsureTimer = 0.75f;
+		msVRPhysicalOmniPanelCandidate = "";
+		mfVRPhysicalOmniPanelCooldown = 0.0f;
+		mbVROmniPanelAreasLoaded=false; mvVROmniPanelAreas.resize(0);
+		msVRPhysicalUpgradeChipCandidate = "";
+		msVRPhysicalUpgradeFocusTarget = "";
+		msVRUpsilonToolChipCarrierName = "";
+		mfVRPhysicalUpgradeChipCooldown = 0.0f;
+		msVROmniPhysicalInsertTarget = "";
+		mfVROmniPhysicalInsertCooldown = 0.0f;
+		mbPlayerCarriesHeavyTool = false;
+		RemoveAllTools();
+		mvVRShoulderRegisteredNames.resize(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void PreloadData(cLuxMap@ apMap)
+	{
+		//Preload in the tool prop
+	}
+
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+			
+			return;
+		}
+		mbVRStreamMapReady = false;
+		mbVRStreamMapReadyTokenSent = false;
+		mfVRStreamMapReadyTimer = 1.00f;
+		mfVRStreamPhysicalDelay = 0.0f;
+		mbVRPhysicalOmniEnsured = false;
+		mfVRPhysicalOmniEnsureTimer = 0.25f;
+		msVRPhysicalOmniPanelCandidate = "";
+		mfVRPhysicalOmniPanelCooldown = 0.0f;
+		mbVROmniPanelAreasLoaded=false; mvVROmniPanelAreas.resize(0);
+		msVRPhysicalUpgradeChipCandidate = "";
+		msVRPhysicalUpgradeFocusTarget = "";
+		msVRUpsilonToolChipCarrierName = "";
+		mfVRPhysicalUpgradeChipCooldown = 0.0f;
+		msVROmniPhysicalInsertTarget = "";
+		mfVROmniPhysicalInsertCooldown = 0.0f;
+		msVRShoulderUseTool = "";
+		msVRShoulderUseTarget = "";
+		msVRShoulderRetrievePending = "";
+		mfVRShoulderUseCooldown = 0.0f;
+		mbVRShoulderReconciled = false;
+        mvVRReconciledCarriers.resize(0);
+        mlBVChipRepair=0;
+		mfVRShoulderReconcileTimer = 0.60f;
+		VR_RestoreShoulderRuntimeAliases();
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	
+	//------------------------------------------------------------
+	
+	bool VR_IsPhysicalOmni(cToolData@ apTool)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		if (apTool is null) return false;
+		return apTool.msHandAnimationSuffix == "omnitool" || apTool.msHandAnimationSuffix == "omnitool_cortex";
+	}
+
+	bool VR_IsPhysicalUpgradeChip(cToolData@ apTool)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		if (apTool is null) return false;
+		return apTool.msHandAnimationSuffix == "securitychip" ||
+			apTool.msHandAnimationSuffix == "brainchip" ||
+			apTool.msPickedEntityName == "KateChip" ||
+			apTool.msPickedEntityName == "GoyaChip";
+	}
+
+	bool VR_IsKnownShoulderKeyItemName(const tString &in asName)
+	{
+		// H57.56AA: exact small progression-Tool identities recovered from the full
+		// shipped maps archive. This is deliberately a whitelist: SOMA also uses
+		// Prop_Tool for Catherine/Omni and CathBox has separate ownership.
+		// S26N: ARK uses shoulder storage but dedicated authored placement cleanup.
+		return asName == "powerpack_1" || asName == "ARK" || asName == "Tracer_Fluid" || asName == "StunRod" || asName == "CortexChipTool" ||
+			asName == "ConfigChipTool" ||
+			asName == "KateChip" ||
+			asName == "GoyaChip" ||
+			asName == "BrainScanChip" ||
+			asName == "EnvironmentChip" ||
+			asName == "chip_unformatted" ||
+			asName == "door_panel_chip_formatted" ||
+			asName == "ChipTool_Damaged" ||
+			asName == "ChipTool_Repaired" ||
+			asName == "StructureGelTool" ||
+			asName == "BrokenRobotBrain" ||
+			asName == "PowerCubeTool" ||
+			asName == "PowerCube_Inserted";
+	}
+
+	bool VR_IsRegisteredShoulderKeyItemName(const tString &in asName)
+	{
+		if (VR_IsKnownShoulderKeyItemName(asName)) return true;
+		for (uint i = 0; i < mvVRShoulderRegisteredNames.length(); ++i)
+			if (mvVRShoulderRegisteredNames[i] == asName) return true;
+		return false;
+	}
+
+	bool VR_IsShoulderKeyItem(cToolData@ apTool)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		if (apTool is null) return false;
+		return apTool.mbVRShoulderEligible || VR_IsRegisteredShoulderKeyItemName(apTool.msPickedEntityName);
+	}
+
+	void VR_RestoreShoulderRuntimeAliases()
+	{
+		msVRUpsilonToolChipCarrierName = "";
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			cToolData@ pTool = mvInventory[i];
+			if (pTool.msPickedEntityName == "ConfigChipTool" && pTool.msVRPhysicalCarrierName != "")
+			{
+				msVRUpsilonToolChipCarrierName = pTool.msVRPhysicalCarrierName;
+				break;
+			}
+		}
+	}
+
+	// H57.56AF: the inventory record owns the durable logical->physical carrier
+	// mapping. Upsilon is the nontrivial case because stock ConfigChipTool is an
+	// invisible logical Tool while one selected securitychip_broken_N remains the
+	// physical object. The [nosave] runtime alias is only a cache of this field.
+	tString VR_GetPhysicalCarrierName(cToolData@ apTool)
+	{
+		if (apTool is null) return "";
+		tString sName = apTool.msPickedEntityName;
+		tString sCarrier = apTool.msVRPhysicalCarrierName;
+		if (sName == "ConfigChipTool")
+		{
+			if ((sCarrier == "" || sCarrier == sName) && msVRUpsilonToolChipCarrierName != "")
+			{
+				sCarrier = msVRUpsilonToolChipCarrierName;
+				apTool.msVRPhysicalCarrierName = sCarrier;
+			}
+			else if (sCarrier != "" && sCarrier != sName)
+			{
+				msVRUpsilonToolChipCarrierName = sCarrier;
+			}
+		}
+		if (sCarrier == "") sCarrier = sName;
+		return sCarrier;
+	}
+
+	bool VR_IsPhysicalWorldTool(cToolData@ apTool)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		return VR_IsPhysicalOmni(apTool) || VR_IsPhysicalUpgradeChip(apTool) || VR_IsShoulderKeyItem(apTool);
+	}
+
+	// H5756AT_VR_STORY_ITEM_SOCKET_CONTINUITY
+	// Stock SOMA often swaps a Tool for a separate static presentation entity while
+	// it is inserted, then later calls Tool_PickUp / Entity_CallEntityInteract on the
+	// original Tool. Preserve that stock story ownership, but park the hidden physical
+	// carrier at the authored socket so its next VR reactivation occurs in-place.
+    bool VR_RunCarrierMethod(const tString &in name,const tString &in declaration)
+    {
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null) return false;
+        iLuxEntity@ entity=map.GetEntityByName(name,eLuxEntityType_Prop,"");
+        return entity !is null && entity.ScriptPrepare(declaration) && entity.ScriptExecute();
+    }
+	void VR_ParkPhysicalStoryCarrierAtSocket(const tString &in asName, const tString &in asCarrier, const tString &in asTarget)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler() || asCarrier == "") return;
+
+		if (asName == "BrainScanChip" || asName == "EnvironmentChip")
+		{
+			if (asTarget == "SimulationSlot_Right_Interact") Entity_PlaceAtEntity(asCarrier, "SimulationSlot_Right_InPos");
+			else if (asTarget == "SimulationSlot_Left_Interact") Entity_PlaceAtEntity(asCarrier, "SimulationSlot_Left_InPos");
+			else if (asTarget == "ScanRoomSlot_Interact") Entity_PlaceAtEntity(asCarrier, "ScanRoomSlot_InPos");
+		}
+		else if (asName == "chip_unformatted")
+		{
+			if (asTarget == "Area_InsertUnformattedChip") Entity_PlaceAtEntity(asCarrier, "security_chip_unformatted");
+			else if (asTarget == "Area_Broken_Panel") Entity_PlaceAtEntity(asCarrier, "Replaced_Chip_Target");
+		}
+		else if (asName == "door_panel_chip_formatted" && asTarget == "Area_Broken_Panel")
+		{
+			Entity_PlaceAtEntity(asCarrier, "Replaced_Chip_Target");
+		}
+	}
+
+    // S26BG: spatial deload must not discard an owned, hidden shoulder carrier
+    // left at the last pickup/stow position. Retain its exact script/save identity.
+    void _Global_VRPreserveOmniForDeload()
+    {
+        tString areaName=cScript_GetGlobalArgString(0);
+        if(!_HPL3VR_RuntimeActive_ToolHandler() || areaName=="") return;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null) return;
+        tString name=VR_GetOwnedPhysicalOmniName();if(name=="") return;
+        iLuxEntity@ area=map.GetEntityByName(areaName,eLuxEntityType_Area,"cScrAreaMapTransfer");
+        if(area is null) return;
+        iLuxEntity@ entity=map.GetEntityByName(name,eLuxEntityType_Prop,"");
+        if(entity is null) return;
+        cVector3f retained=area.GetMatrix().GetTranslation();
+        if(!entity.ScriptPrepare("bool VR_PreserveShoulderCarrierForDeload(float, float, float)")) return;
+        entity.SetArgFloat(0,retained.x);entity.SetArgFloat(1,retained.y);entity.SetArgFloat(2,retained.z);
+        if(entity.ScriptExecute() && entity.GetReturnBool())
+            LogNewLine("S26BG_OMNI_DELOAD_PRESERVED map="+map.GetName()+" entity="+name+" area="+areaName);
+    }
+
+    void VR_PreserveInactiveKeyCarrier(cLuxMap@ map, const tString &in name, const cVector3f &in retained)
+    {
+        if(name=="") return;
+        iLuxEntity@ entity=map.GetEntityByName(name,eLuxEntityType_Prop,"");
+        if(entity is null || entity.IsActive()) return;
+        cMatrixf transform=entity.GetMatrix();
+        transform.SetTranslation(retained);
+        entity.SetMatrix(transform);
+        entity.SetSaveDataIsUpdated(true);
+    }
+
+    void _Global_VRPreserveKeysForDeload()
+    {
+        tString areaName=cScript_GetGlobalArgString(0);
+        if(!_HPL3VR_RuntimeActive_ToolHandler() || areaName=="") return;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null) return;
+        iLuxEntity@ area=map.GetEntityByName(areaName,eLuxEntityType_Area,"cScrAreaMapTransfer");
+        if(area is null) return;
+        cVector3f retained=area.GetMatrix().GetTranslation();
+        // Inventory membership is the authority. Consumed/slotted displays and
+        // unowned props are excluded. Active held/loose carriers never move.
+        // Inactive legacy-save carriers are included before reconciliation runs.
+        for(uint i=0;i<mvInventory.length();++i)
+        {
+            cToolData@ tool=mvInventory[i];
+            if(!VR_IsShoulderKeyItem(tool)) continue;
+            tString carrier=VR_GetPhysicalCarrierName(tool);
+            VR_PreserveInactiveKeyCarrier(map,carrier,retained);
+            // ConfigChipTool owns callbacks while a tray chip is its visible
+            // carrier. Retain the inactive logical prop as well as that alias.
+            if(carrier!=tool.msPickedEntityName)
+                VR_PreserveInactiveKeyCarrier(map,tool.msPickedEntityName,retained);
+        }
+    }
+
+    // Resolve the owned entity in the actual current map, independent of the
+    // global script-object lookup group while another map preloads.
+    bool VR_ExecuteOwnedOmniStorage(bool draw)
+    {
+        if(!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null) return false;
+        tString name=VR_GetOwnedPhysicalOmniName();if(name=="") return false;
+        iLuxEntity@ entity=map.GetEntityByName(name,eLuxEntityType_Prop,"");
+        if(entity is null) return false;
+        tString method=draw ? "bool VR_TryShoulderDraw()" : "bool VR_TryShoulderStore()";
+        if(!entity.ScriptPrepare(method) || !entity.ScriptExecute()) return false;
+        return entity.GetReturnBool();
+    }
+    void _Global_VROmniShoulderDrawOwned(){bool ok=VR_ExecuteOwnedOmniStorage(true);cScript_SetGlobalReturnBool(ok);}
+    void _Global_VROmniShoulderStoreOwned(){bool ok=VR_ExecuteOwnedOmniStorage(false);cScript_SetGlobalReturnBool(ok);}
+
+    void _Global_VRGetOwnedPhysicalOmniName()
+    {
+        tString name="";
+        if(_HPL3VR_RuntimeActive_ToolHandler()) name=VR_GetOwnedPhysicalOmniName();
+        cScript_SetGlobalReturnString(name);
+    }
+
+    // S26BX: a restored inserted replacement is also an ownership authority.
+    // Validate the current-map instance, never a stale name or nearest prop.
+    void _Global_VRGetInsertedPhysicalOmniName()
+    {
+        tString name="";
+        if(_HPL3VR_RuntimeActive_ToolHandler() && msVRInsertedOmniName!="")
+        {
+            cLuxMap@ map=cLux_GetCurrentMap();
+            if(map !is null)
+            {
+                iLuxEntity@ entity=map.GetEntityByName(msVRInsertedOmniName,eLuxEntityType_Prop,"");
+                if(entity !is null && entity.ScriptPrepare("bool VR_IsInsertedPhysicalOmni()") &&
+                   entity.ScriptExecute() && entity.GetReturnBool()) name=msVRInsertedOmniName;
+            }
+        }
+        cScript_SetGlobalReturnString(name);
+    }
+
+	tString VR_GetOwnedPhysicalOmniName()
+	{
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (VR_IsPhysicalOmni(mvInventory[i])) return mvInventory[i].msPickedEntityName;
+		}
+		return "";
+	}
+
+	tString VR_GetPhysicalOmniWorldFile(cToolData@ apTool)
+	{
+		if (apTool is null) return "";
+		if (apTool.msHudObjFile == "omnitool_hud.ent") return "omnitool.ent";
+		if (apTool.msHudObjFile == "omnitool_with_securitychip_hud.ent") return "omnitool_with_securitychip.ent";
+		if (apTool.msHudObjFile == "omnitool_with_cortexchip_hud.ent") return "omnitool_with_cortexchip.ent";
+		if (apTool.msHudObjFile == "omnitool_with_securitychip_cortexchip_hud.ent") return "omnitool_with_securitychip_cortexchip.ent";
+		if (apTool.msHandAnimationSuffix == "omnitool_cortex") return "omnitool_with_cortexchip.ent";
+		if (apTool.msHandAnimationSuffix == "omnitool") return "omnitool.ent";
+		return "";
+	}
+
+	cMatrixf VR_GetPhysicalOmniFallbackMatrix()
+	{
+		float fYaw = cLux_GetPlayer().GetCharacterBody().GetYaw();
+		cMatrixf mtxYaw = cMath_MatrixRotateY(fYaw);
+		cVector3f vOffset = cMath_MatrixMul(mtxYaw.GetRotation(), cVector3f(0.28f, -0.45f, -0.04f));
+		cMatrixf mtx = cMath_MatrixMul(mtxYaw, cMath_MatrixRotateX(cMath_PiDiv2));
+		mtx.SetTranslation(cLux_GetPlayer().GetCharacterBody().GetPosition() + vOffset);
+		return mtx;
+	}
+
+	void VR_RepairSavedDeltaDuplicate(cLuxMap@ pMap)
+	{
+		// BJ: two reported Delta saves contain both the display and real tool.
+		// Remove only the proven redundant, non-inserted display record.
+		if (pMap.GetName()!="02_03_delta") return;
+		int display=-1,real=-1;
+		for(uint i=0;i<mvInventory.length();i++)
+		{
+			if(mvInventory[i].msPickedEntityName=="CathTool_Crashed") display=int(i);
+			if(mvInventory[i].msPickedEntityName=="CathTool") real=int(i);
+		}
+		if(display<0 || real<0) return;
+		iLuxEntity@ e=pMap.GetEntityByName("CathTool_Crashed",eLuxEntityType_Prop,"");
+		if(e !is null)
+		{
+			if(!e.ScriptPrepare("bool VR_RetireDeltaCrashDuplicate()") || !e.ScriptExecute() || !e.GetReturnBool()) return;
+		}
+		RemoveTool(display);
+	}
+
+	void VR_EnsurePhysicalOmniWorldEntity(float afTimeStep)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		if (mbVRPhysicalOmniEnsured) return;
+		if (mfVRPhysicalOmniEnsureTimer > 0.0f)
+		{
+			mfVRPhysicalOmniEnsureTimer -= afTimeStep;
+			if (mfVRPhysicalOmniEnsureTimer > 0.0f) return;
+		}
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return;
+		VR_RepairSavedDeltaDuplicate(pMap);
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			cToolData@ pTool = mvInventory[i];
+			if (!VR_IsPhysicalOmni(pTool)) continue;
+			iLuxEntity@ pExisting = pMap.GetEntityByName(pTool.msPickedEntityName, eLuxEntityType_LastEnum, "");
+			if (pExisting is null)
+			{
+				tString sWorldFile = VR_GetPhysicalOmniWorldFile(pTool);
+				if (sWorldFile == "") return;
+				cLux_PreloadEntity(sWorldFile);
+				pMap.CreateEntity(pTool.msPickedEntityName, sWorldFile, VR_GetPhysicalOmniFallbackMatrix(), cVector3f(1));
+				// A returned entity is not assumed script/physics-mature in this frame.
+				mfVRPhysicalOmniEnsureTimer = 0.25f;
+				return;
+			}
+
+            // A missing world carrier may have been recreated from its .ent file.
+            // That resource has no map-instance callbacks. Restore the owned
+            // inventory's use/drop/eligibility routes before any later detach
+            // re-adds this carrier to inventory; otherwise that round trip loses
+            // its map routing. Existing valid pickup callbacks remain untouched.
+            tString authoredPickup=VR_AuthoredOmniPickup(pMap.GetName(),pTool.msPickedEntityName);
+            if(!pExisting.ScriptPrepare("bool VR_RestoreOwnedToolCallbacks()"))
+            { mfVRPhysicalOmniEnsureTimer=0.25f; return; }
+            cScript_SetGlobalArgString(0,pTool.msUseCallback);
+            cScript_SetGlobalArgString(1,pTool.msDropCallback);
+            cScript_SetGlobalArgString(2,pTool.msCanBeUsedCallback);
+            cScript_SetGlobalArgString(3,authoredPickup);
+            if(!pExisting.ScriptExecute() || !pExisting.GetReturnBool())
+            { mfVRPhysicalOmniEnsureTimer=0.25f; return; }
+
+			// Existing-by-name is not enough. Ask the Catherine instance itself to
+			// prove logical ownership and enter the physical holster state.
+			cScript_SetGlobalReturnBool(false);
+			// S26BV: dispatch on the current-map instance, not the ambient script-object group.
+            if (pExisting.ScriptPrepare("void _Global_VREnsureOwnedPhysicalCarrier()")) pExisting.ScriptExecute();
+			if (!cScript_GetGlobalReturnBool())
+			{
+				mfVRPhysicalOmniEnsureTimer = 0.25f;
+				return;
+			}
+			mbVRPhysicalOmniEnsured = true;
+			return;
+		}
+	}
+
+	void _Global_VRGetCanonicalOmniName()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		cScript_SetGlobalReturnString("");
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (!VR_IsPhysicalOmni(mvInventory[i])) continue;
+			cScript_SetGlobalReturnString(mvInventory[i].msPickedEntityName);
+			return;
+		}
+	}
+
+    // S26BH: these authored aliases are needed on restored checkpoints too.
+    // OnEnter-only custom variables are not a save-restoration authority.
+    tString VR_AuthoredOmniTarget(const tString &in map, const tString &in surface)
+    {
+        if(map=="02_02_ms_curie_inside" && surface=="cath_terminal_escapepod_3") return "Area_PlaceCatherine_Pod";
+        if(map=="01_01_upsilon_awake" && surface=="AreaInsertOmniTool_ObsTunnel") return "ObservationTunnelTerm";
+        if(map=="01_03_upsilon_outside" && surface=="AirlockPanel_1") return "AirlockPanelArea_1";
+        if(map=="03_02_omicron_inside" && surface=="Panel_Airlock_Omnitool_7994") return "Area_OmniTool";
+        if(map=="04_01_tau_outside" && surface=="LiftExitPanel") return "Elevator";
+        return "";
+    }
+
+    // S26BC: explicit map-authored routing only; no nearest-name/area guessing.
+    tString VR_ResolveOmniUseTarget(iLuxEntity@ apSurface)
+    {
+        if(apSurface is null || !apSurface.IsActive()) return "";
+        // S26BU: Omni panels intentionally disable ordinary hand interaction.
+        // Their tool eligibility is governed by CathTool_CanUse (and custom map
+        // callbacks), not the ordinary Interact flag. Keep other target gates.
+        if(apSurface.GetInteractionDisabled() && !apSurface.GetVarBool("IsOmniPanel")) return "";
+        if(apSurface.GetVarBool("VRPhysicalOmniDisabled")) return "";
+        cLuxMap@ map=cLux_GetCurrentMap(); if(map is null) return "";
+        tString mapName=map.GetName();
+        tString surface=apSurface.GetName();
+        if(mapName=="03_02_omicron_inside" && surface=="SideAirlockButton") return "";
+        tString gate=apSurface.GetVarString("VRUseGateArea");
+        if(mapName=="04_01_tau_outside" && surface=="LiftExitPanel") gate="LiftExitPanelToolArea";
+        if(gate!="")
+        {
+            iLuxEntity@ area=map.GetEntityByName(gate,eLuxEntityType_LastEnum,"");
+            if(area is null || !area.IsActive()) return "";
+        }
+        tString target=VR_AuthoredOmniTarget(mapName,surface);
+        if(target=="") target=apSurface.GetVarString("VRUseTarget");
+        if(target=="") return apSurface.GetName();
+        iLuxEntity@ entity=map.GetEntityByName(target,eLuxEntityType_LastEnum,"");
+        if(entity is null || !entity.IsActive()) return "";
+        return target;
+    }
+
+	void _Global_VRPhysicalOmniUseSlot()
+    {
+        // S26BC: nested native/global callbacks must not own this result.
+        bool committed=VR_TryPhysicalOmniUseSlot();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_TryPhysicalOmniUseSlot()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		
+		tString sSlotName = cScript_GetGlobalArgString(0);
+		if (sSlotName == "") return false;
+		cToolData@ pPhysicalOmni = null;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (!VR_IsPhysicalOmni(mvInventory[i])) continue;
+			@pPhysicalOmni = mvInventory[i];
+			break;
+		}
+		if (pPhysicalOmni is null || pPhysicalOmni.msUseCallback == "" || pPhysicalOmni.msCanBeUsedCallback == "") return false;
+
+		// Physical slot alignment supplies the exact focus entity. Everything after
+		// that is the same authored tool-use callback/removal transaction as OnAction.
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return false;
+		if (!cScript_RunGlobalFunc("VROMNIHELD",pPhysicalOmni.msPickedEntityName,"Q")) return false;
+		iLuxEntity@ pSlot=pMap.GetEntityByName(sSlotName,eLuxEntityType_LastEnum,"");
+		if(pSlot is null || !pSlot.IsActive() || !pSlot.GetVarBool("IsOmniSlot")) return false;
+        tString sUseTarget=VR_ResolveOmniUseTarget(pSlot);
+        if(sUseTarget=="") return false;
+		if(!pMap.ScriptPrepare("bool "+pPhysicalOmni.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		tString sEligibilityToolName=pPhysicalOmni.msPickedEntityName;
+		pMap.SetArgString(0,sEligibilityToolName);pMap.SetArgString(1,sUseTarget);
+		if(!pMap.ScriptExecute() || !pMap.GetReturnBool()) return false;
+
+		if (!pMap.ScriptPrepare("bool "+pPhysicalOmni.msUseCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		tString sToolName = pPhysicalOmni.msPickedEntityName;
+        tString previousInserted=msVRInsertedOmniName;
+		pMap.SetArgString(0, sToolName);
+		pMap.SetArgString(1, sUseTarget);
+		if (!pMap.ScriptExecute()) return false;
+		if (!pMap.GetReturnBool()) return false;
+		// A native callback may insert a replacement Catherine carrier (Omicron).
+        if(msVRInsertedOmniName!="" && msVRInsertedOmniName!=sToolName && msVRInsertedOmniName!=previousInserted)
+            VR_RunCarrierMethod(sToolName,"void _Global_VRRetireReplacedCarrier()");
+        RemoveTool(sToolName);
+		return true;
+	}
+
+	[nosave] array<tString> mvVROmniPanelAreas;
+	[nosave] bool mbVROmniPanelAreasLoaded=false;
+	[nosave] float mfVROmniAreaPoll=0;
+	void VR_UpdateOmniPanelAreas(float dt)
+	{
+		mfVROmniAreaPoll-=dt; if(mfVROmniAreaPoll>0) return; mfVROmniAreaPoll=0.05f;
+		if(mfVRPhysicalOmniPanelCooldown>0) return;
+		tString tool=VR_GetOwnedPhysicalOmniName();
+		if(tool=="" || !cScript_RunGlobalFunc("VROMNIHELD",tool,"Q")) return;
+		cLuxMap@ map=cLux_GetCurrentMap();if(map is null) return;
+		if(!mbVROmniPanelAreasLoaded)
+		{
+			mvVROmniPanelAreas.resize(0);
+			array<tString> names={"AreaInsertOmniTool_ObsTunnel","AirlockPanelArea_1"};
+			for(uint i=0;i<names.length();++i)
+			{
+				iLuxEntity@ area=map.GetEntityByName(names[i],eLuxEntityType_LastEnum,"");
+				if(area !is null && area.GetVarBool("IsOmniPanel")) mvVROmniPanelAreas.push_back(names[i]);
+			}
+			mbVROmniPanelAreasLoaded=true;
+		}
+		for(uint i=0;i<mvVROmniPanelAreas.length();++i)
+		{
+			tString target=mvVROmniPanelAreas[i];
+			if(!Entity_IsActive(target) || !Entity_GetCollide(tool,target)) continue;
+			msVRPhysicalOmniPanelCandidate=target;
+			_Global_VRPhysicalOmniCommitPanel();
+			msVRPhysicalOmniPanelCandidate="";
+			if(mfVRPhysicalOmniPanelCooldown>0) return;
+		}
+	}
+
+	void _Global_VRProbeOmniPanel()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler() || mfVRPhysicalOmniPanelCooldown > 0) return;
+		tString sPanel = cScript_GetGlobalArgString(0);
+		tString sTool = VR_GetOwnedPhysicalOmniName();
+		if (sPanel == "" || sTool == "" || !mbVRStreamMapReady) return;
+		if (!cScript_RunGlobalFunc("VROMNIHELD",sTool,"Q")) return;
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return;
+		iLuxEntity@ pPanel = pMap.GetEntityByName(sPanel,eLuxEntityType_Prop,"");
+		iLuxEntity@ pTool = pMap.GetEntityByName(sTool,eLuxEntityType_LastEnum,"");
+		if (pPanel is null || pTool is null || !pPanel.IsActive() || !pTool.IsActive()) return;
+		if (!pPanel.GetVarBool("IsOmniPanel")) return;
+		if (cMath_Vector3Dist(pPanel.GetPosition(),pTool.GetPosition()) > 2.0f) return;
+		msVRPhysicalOmniPanelCandidate = sPanel;
+		cScript_RunGlobalFunc("VROMNIPANEL",sPanel,"B");
+		iPhysicsBody@ pBody = pPanel.GetMainBody();
+		cScript_RunGlobalFunc("VROMNIPANEL",sPanel,"E");
+		if (pBody !is null) cScript_RunGlobalFunc("VROMNIPANEL",sPanel,"Q");
+		msVRPhysicalOmniPanelCandidate = "";
+	}
+
+	void _Global_VRPhysicalOmniCommitPanel()
+    {
+        // S26BC: nested native/global callbacks must not own this result.
+        bool committed=VR_TryPhysicalOmniCommitPanel();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_TryPhysicalOmniCommitPanel()
+	{
+		
+		if (!_HPL3VR_RuntimeActive_ToolHandler() || !mbVRStreamMapReady || mfVRPhysicalOmniPanelCooldown>0) return false;
+		if (msVRPhysicalOmniPanelCandidate == "") return false;
+		cToolData@ pPhysicalOmni = null;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (!VR_IsPhysicalOmni(mvInventory[i])) continue;
+			@pPhysicalOmni = mvInventory[i];
+			break;
+		}
+		if (pPhysicalOmni is null || pPhysicalOmni.msUseCallback == "" || pPhysicalOmni.msCanBeUsedCallback == "") return false;
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return false;
+		tString sPanel = msVRPhysicalOmniPanelCandidate;
+		iLuxEntity@ pPanelEntity = pMap.GetEntityByName(sPanel, eLuxEntityType_LastEnum, "");
+		if (pPanelEntity is null || !pPanelEntity.IsActive() || !pPanelEntity.GetVarBool("IsOmniPanel")) return false;
+		if (!cScript_RunGlobalFunc("VROMNIHELD",pPhysicalOmni.msPickedEntityName,"Q")) return false;
+        tString sUseTarget=VR_ResolveOmniUseTarget(pPanelEntity);
+        if(sUseTarget=="") return false;
+        // Native CanUse callbacks sometimes accept an area/elevator without
+        // consulting the physical button's busy/disabled state.
+        if(pMap.GetEntityByName(sPanel,eLuxEntityType_Prop,"") !is null)
+        {
+            if(Button_IsDisabled(sPanel) || Button_IsSwitchedOn(sPanel) || pPanelEntity.GetVarBool("InUse")) return false;
+        }
+
+
+		// Re-run SOMA's stock eligibility at the instant of physical contact.
+		if (!pMap.ScriptPrepare("bool "+pPhysicalOmni.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		tString sToolName = pPhysicalOmni.msPickedEntityName;
+		pMap.SetArgString(0, sToolName);
+		pMap.SetArgString(1, sUseTarget);
+		if (!pMap.ScriptExecute() || !pMap.GetReturnBool()) return false;
+
+		// Same authored use transaction as OnAction, now initiated by exact physical
+		// Catherine->panel Newton contact instead of eAction_Interact.
+		if (!pMap.ScriptPrepare("bool "+pPhysicalOmni.msUseCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		pMap.SetArgString(0, sToolName);
+		pMap.SetArgString(1, sUseTarget);
+		if (!pMap.ScriptExecute()) return false;
+		bool bRemoveTool = pMap.GetReturnBool();
+		msVRPhysicalOmniPanelCandidate = "";
+		mfVRPhysicalOmniPanelCooldown = 0.35f;
+        // S26BX: a swipe is non-consuming. Several native map callbacks return
+        // true for an unhandled target, meaning "remove the inventory tool",
+        // not "panel use succeeded". Slot insertion has its own transaction;
+        // never let a panel fallthrough discard the owned physical carrier.
+        if (bRemoveTool) return false;
+		cScript_RunGlobalFunc("VROMNIPANEL",sPanel,"A");
+		return true;
+	}
+
+
+	void _Global_VRPhysicalOmniUseAuthoredInsert()
+    {
+        // S26BC: nested native/global callbacks must not own this result.
+        bool committed=VR_TryPhysicalOmniUseAuthoredInsert();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_TryPhysicalOmniUseAuthoredInsert()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		
+		if (msVROmniPhysicalInsertTarget == "") return false;
+
+		cToolData@ pPhysicalOmni = null;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (!VR_IsPhysicalOmni(mvInventory[i])) continue;
+			@pPhysicalOmni = mvInventory[i];
+			break;
+		}
+		if (pPhysicalOmni is null || pPhysicalOmni.msUseCallback == "" || pPhysicalOmni.msCanBeUsedCallback == "") return false;
+
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return false;
+		tString sTarget = msVROmniPhysicalInsertTarget;
+		if (!Entity_IsActive(sTarget)) return false;
+		tString sToolName = pPhysicalOmni.msPickedEntityName;
+
+		if (!pMap.ScriptPrepare("bool "+pPhysicalOmni.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		pMap.SetArgString(0, sToolName);
+		pMap.SetArgString(1, sTarget);
+		if (!pMap.ScriptExecute() || !pMap.GetReturnBool()) return false;
+
+		if (!pMap.ScriptPrepare("bool "+pPhysicalOmni.msUseCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		pMap.SetArgString(0, sToolName);
+		pMap.SetArgString(1, sTarget);
+		if (!pMap.ScriptExecute() || !pMap.GetReturnBool()) return false;
+
+		// W: the Upsilon map activates/inserts a different pre-placed Catherine entity
+		// (OmniTool_NotConfigured). Vanilla can discard the old HUD/inventory presentation,
+		// but VR kept the source OmniTool alive as the physical carrier. Mark that exact
+		// source as retired NOW so it cannot be picked again and steal INSERTED authority;
+		// its Catherine script hides it only after a short delay, after the queued Newton
+		// hand-release boundary has safely dropped the old body references.
+		VR_RunCarrierMethod(sToolName,"void _Global_VRRetireReplacedCarrier()");
+		RemoveTool(sToolName);
+		msVROmniPhysicalInsertTarget = "";
+		mfVROmniPhysicalInsertCooldown = 0.35f;
+		return true;
+	}
+
+	void VR_UpdatePhysicalOmniAuthoredInsert(float afTimeStep)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		if (mfVROmniPhysicalInsertCooldown > 0.0f)
+		{
+			mfVROmniPhysicalInsertCooldown -= afTimeStep;
+			if (mfVROmniPhysicalInsertCooldown > 0.0f) return;
+		}
+		if (msVRInsertedOmniName != "") return;
+
+		// BG: this authored target exists only for the exact unconfigured OmniTool
+		// in 01_01 Upsilon Awake. Resolve the semantic carrier FIRST; later CathTool
+		// ownership must never query a missing Upsilon-only entity during map streaming.
+		cToolData@ pOmni = null;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (!VR_IsPhysicalOmni(mvInventory[i])) continue;
+			if (mvInventory[i].msPickedEntityName != "OmniTool") continue;
+			@pOmni = mvInventory[i];
+			break;
+		}
+		if (pOmni is null) return;
+
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return;
+		tString sTarget = "AreaInsertOmniTool_TechRoom";
+		if (!Entity_IsActive(sTarget)) return;
+
+		if (Entity_GetCollide(pOmni.msPickedEntityName, sTarget))
+		{
+			msVROmniPhysicalInsertTarget = sTarget;
+			cScript_RunGlobalFunc("VROMNITECH", pOmni.msPickedEntityName, "X");
+		}
+		else
+		{
+			msVROmniPhysicalInsertTarget = "";
+			cScript_RunGlobalFunc("VROMNITECH", pOmni.msPickedEntityName, "M");
+		}
+		mfVROmniPhysicalInsertCooldown = 0.05f;
+	}
+
+	void _Global_VRUpsilonSelectPhysicalToolChipCarrier()
+    {
+        bool committed=VR_Try_UpsilonSelectPhysicalToolChipCarrier();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_UpsilonSelectPhysicalToolChipCarrier()
+    {
+		cScript_SetGlobalReturnBool(false);
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		if (msVRInsertedOmniName != "OmniTool_NotConfigured") return false;
+		if (!Entity_IsActive("AreaInsertConfigChip")) return false;
+
+		tString sCarrier = cScript_GetGlobalArgString(0);
+		if (sCarrier != "securitychip_broken_1" &&
+			sCarrier != "securitychip_broken_2" &&
+			sCarrier != "securitychip_broken_3" &&
+			sCarrier != "securitychip_broken_4") return false;
+		if (!Entity_IsActive(sCarrier)) return false;
+
+		msVRUpsilonToolChipCarrierName = sCarrier;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (mvInventory[i].msPickedEntityName != "ConfigChipTool") continue;
+			mvInventory[i].msVRPhysicalCarrierName = sCarrier;
+			mvInventory[i].mbVRShoulderEligible = true;
+			break;
+		}
+		cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "R");
+		return true;
+	}
+
+	void _Global_VRRegisterShoulderKeyItem()
+    {
+        bool committed=VR_Try_RegisterShoulderKeyItem();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_RegisterShoulderKeyItem()
+    {
+		cScript_SetGlobalReturnBool(false);
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		tString sName = cScript_GetGlobalArgString(0);
+		if (sName == "") return false;
+		for (uint i = 0; i < mvVRShoulderRegisteredNames.length(); ++i)
+		{
+			if (mvVRShoulderRegisteredNames[i] == sName)
+			{
+				return true;
+			}
+		}
+		mvVRShoulderRegisteredNames.push_back(sName);
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (mvInventory[i].msPickedEntityName == sName)
+			{
+				mvInventory[i].mbVRShoulderEligible = true;
+				if (mvInventory[i].msVRPhysicalCarrierName == "") mvInventory[i].msVRPhysicalCarrierName = sName;
+			}
+		}
+		return true;
+	}
+
+	void _Global_VRShoulderNameEligible()
+	{
+		cScript_SetGlobalReturnBool(false);
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		cScript_SetGlobalReturnBool(VR_IsRegisteredShoulderKeyItemName(cScript_GetGlobalArgString(0)));
+	}
+
+    void _Global_VRShoulderStoreSelected()
+    {
+        if(!_HPL3VR_RuntimeActive_ToolHandler()) return;
+        // Called only during native storage of one exact registered body.
+        // Q is a read-only match, not an instruction to consume or pick up.
+        for(uint i=0;i<mvInventory.length();++i)
+        {
+            cToolData@ tool=mvInventory[i];
+            if(!VR_IsShoulderKeyItem(tool)||tool.mbVRShoulderStowed) continue;
+            tString name=tool.msPickedEntityName;
+            if(!cScript_RunGlobalFunc("VROMNISTOW",name,"Q")) continue;
+            cScript_SetGlobalArgString(0,name);
+            bool committed=VR_Try_ShoulderStoreTool();
+            cScript_SetGlobalReturnBool(committed);
+            return;
+        }
+        cScript_SetGlobalReturnBool(false);
+    }
+	void _Global_VRShoulderStoreTool()
+    {
+        bool committed=VR_Try_ShoulderStoreTool();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_ShoulderStoreTool()
+    {
+		cScript_SetGlobalReturnBool(false);
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		tString sName = cScript_GetGlobalArgString(0);
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			cToolData@ pTool = mvInventory[i];
+			if (pTool.msPickedEntityName != sName || !VR_IsShoulderKeyItem(pTool) || pTool.mbVRShoulderStowed) continue;
+			tString sCarrier = VR_GetPhysicalCarrierName(pTool);
+			pTool.msVRPhysicalCarrierName = sCarrier;
+			if (sName == "ConfigChipTool" && sCarrier != sName) msVRUpsilonToolChipCarrierName = sCarrier;
+			pTool.mbVRShoulderStowed = true;
+			pTool.mlVRShoulderOrder = ++mlVRShoulderNextOrder;
+			if (sCarrier != "")
+            {
+                // Confirmed shoulder storage ends the just-detached socket
+                // exclusion, including when no use poll saw the journey out.
+                Entity_SetVarString(sCarrier,"VRReturnSlot","");
+                Entity_SetVarString(sCarrier,"VRReturnArea","");
+                Entity_SetActive(sCarrier, false);
+            }
+			if (msVRPhysicalUpgradeChipCandidate == sName)
+			{
+				msVRPhysicalUpgradeChipCandidate = "";
+				msVRPhysicalUpgradeFocusTarget = "";
+			}
+			cScript_RunGlobalFunc("VROMNIINV", sName, "S");
+			return true;
+		}
+	
+        return false;
+}
+
+	void _Global_VRShoulderRetrieve()
+    {
+        bool committed=VR_Try_ShoulderRetrieve();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_ShoulderRetrieve()
+    {
+		cScript_SetGlobalReturnBool(false);
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+        mbVRShoulderRetrieveBodyAccepted=false;
+		// H57.56AG: retrieval is a two-phase transaction. The logical Tool remains
+		// STOWED until its already-selected physical carrier has an exact main body.
+		// This lets a save-restored/just-reactivated carrier mature over a bounded
+		// Newton continuation without granting physical or story authority to a name.
+		if (msVRShoulderRetrievePending == "")
+		{
+			// Rotating FIFO, not a strict stack. The oldest stored item comes out first;
+			// re-stowing it assigns a new order at the back.
+			int lBest = -1;
+			int lBestOrder = 2147483647;
+			for (uint i = 0; i < mvInventory.length(); ++i)
+			{
+				cToolData@ pTool = mvInventory[i];
+				if (!VR_IsShoulderKeyItem(pTool) || !pTool.mbVRShoulderStowed) continue;
+				if (pTool.mlVRShoulderOrder > 0 && pTool.mlVRShoulderOrder < lBestOrder)
+				{
+					lBest = int(i);
+					lBestOrder = pTool.mlVRShoulderOrder;
+				}
+			}
+			if (lBest < 0) return false;
+			msVRShoulderRetrievePending = mvInventory[uint(lBest)].msPickedEntityName;
+			// B publishes selection only. Native may keep the fresh-inside-shoulder Grip
+			// transaction alive for <=12 Newton steps, but B carries NO body/story authority.
+			cScript_RunGlobalFunc("VROMNIINV", msVRShoulderRetrievePending, "B");
+		}
+
+		cToolData@ pRetrieve = null;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (mvInventory[i].msPickedEntityName == msVRShoulderRetrievePending &&
+				VR_IsShoulderKeyItem(mvInventory[i]) && mvInventory[i].mbVRShoulderStowed)
+			{
+				@pRetrieve = mvInventory[i];
+				break;
+			}
+		}
+		if (pRetrieve is null) { msVRShoulderRetrievePending = ""; return false; }
+
+		tString sName = pRetrieve.msPickedEntityName;
+		tString sCarrier = VR_GetPhysicalCarrierName(pRetrieve);
+		pRetrieve.msVRPhysicalCarrierName = sCarrier;
+		if (sName == "ConfigChipTool" && sCarrier != sName) msVRUpsilonToolChipCarrierName = sCarrier;
+
+		if (sName == "ConfigChipTool" && sCarrier != sName)
+		{
+			// X's visible tray prop is the physical carrier. Keep it active if GetMainBody
+			// is transiently null so HPL/Newton can finish recreating it on a later step.
+			Entity_SetActive(sCarrier, true);
+			cLuxMap@ pMap = cLux_GetCurrentMap();
+			if (pMap is null) return false;
+			iLuxEntity@ pEntity = pMap.GetEntityByName(sCarrier, eLuxEntityType_LastEnum, "");
+			cLuxProp@ pProp = cast<cLuxProp>(pEntity);
+			if (pProp is null) return false;
+			pProp.SetStaticPhysics(false);
+			cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "B");
+			iPhysicsBody@ pBody = pProp.GetMainBody();
+			cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "E");
+			if (pBody is null) return false;
+			pBody.SetCollide(true);
+			pBody.SetCollideCharacter(false);
+			if (pBody.GetMass() < 0.05f) pBody.SetMass(0.50f);
+			pBody.SetGravity(true);
+			pBody.SetAutoDisable(false);
+			pProp.WakeUp();
+			cScript_RunGlobalFunc("VROMNIINV", sName, "R");
+            if(!mbVRShoulderRetrieveBodyAccepted) return false;
+			pRetrieve.mbVRShoulderStowed = false;
+			msVRShoulderRetrievePending = "";
+			return true;
+		}
+
+		// Generic Prop_Tool path likewise leaves the logical Tool stowed while its
+		// activated carrier has no exact body. Prop_Tool emits R only after GetMainBody.
+		cScript_SetGlobalReturnBool(false);
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+        if(pMap is null) return false;
+        iLuxEntity@ pEntity=pMap.GetEntityByName(sCarrier,eLuxEntityType_Prop,"");
+        if(pEntity is null) return false;
+        if (!pEntity.ScriptPrepare("bool VR_Try_ShoulderRetrievePhysical()") ||
+            !pEntity.ScriptExecute() || !pEntity.GetReturnBool()) return false;
+        if(!mbVRShoulderRetrieveBodyAccepted) return false;
+		pRetrieve.mbVRShoulderStowed = false;
+		msVRShoulderRetrievePending = "";
+		return true;
+	}
+
+    // S26BW: native R can be recognized but reject its captured body. A successful
+    // script physicalization is not a native handoff acknowledgement. R calls
+    // this only after matching the current selection and accepting the body.
+    void _Global_VRShoulderRetrieveBodyAccepted()
+    {
+        if(msVRShoulderRetrievePending!="") mbVRShoulderRetrieveBodyAccepted=true;
+    }
+	void _Global_VRShoulderRetrieveCancel()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		if (msVRShoulderRetrievePending == "") return;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			cToolData@ pTool = mvInventory[i];
+			if (pTool.msPickedEntityName != msVRShoulderRetrievePending || !VR_IsShoulderKeyItem(pTool)) continue;
+			pTool.mbVRShoulderStowed = true;
+			tString sCarrier = VR_GetPhysicalCarrierName(pTool);
+			if (sCarrier != "" && Entity_IsActive(sCarrier)) Entity_SetActive(sCarrier, false);
+            // I/R may already have registered a body during a failed attempt.
+            // Return its native queue record to storage as well as the script.
+            cScript_RunGlobalFunc("VROMNIINV",pTool.msPickedEntityName,"S");
+			break;
+		}
+		msVRShoulderRetrievePending = "";
+        mbVRShoulderRetrieveBodyAccepted=false;
+	}
+
+
+
+
+	[nosave] float mfVRTracerPoll = 0;
+	[nosave] float mfVRTracerDwell = 0;
+	[nosave] bool mbVRTracerNearFace = false;
+	void _Global_VRTracerCapAuthorize() { cScript_SetGlobalReturnBool(_HPL3VR_RuntimeActive_ToolHandler()); }
+	void _Global_VRTracerNearFace() { mbVRTracerNearFace = true; }
+	void VR_UpdateTracer(float afTimeStep)
+	{
+		mfVRTracerPoll-=afTimeStep;
+		if (mfVRTracerPoll>0 || !_HPL3VR_RuntimeActive_ToolHandler()) return;
+		mfVRTracerPoll=0.05f;
+		cToolData@ pTool=null;
+		for (uint i=0;i<mvInventory.length();++i) if(mvInventory[i].msPickedEntityName=="Tracer_Fluid") { @pTool=mvInventory[i]; break; }
+		if (pTool is null) { mfVRTracerDwell=0; return; }
+		cLuxMap@ pMap=cLux_GetCurrentMap();
+		iLuxEntity@ pBottle=pMap.GetEntityByName(VR_GetPhysicalCarrierName(pTool),eLuxEntityType_LastEnum,"");
+		if (pBottle is null) { mfVRTracerDwell=0; return; }
+		// S26D: retire the S26C split cap, including one restored from a save.
+		iLuxEntity@ pCap=pMap.GetEntityByName("VR_TracerCap",eLuxEntityType_LastEnum,"");
+		if(pCap !is null && pCap.IsActive()) pCap.SetActive(false);
+		cSubMeshEntity@ pOriginalCap=pBottle.GetMeshEntity().GetSubMeshEntityName("cap");
+		if(pOriginalCap !is null) pOriginalCap.SetVisible(true);
+		if(pTool.mbVRShoulderStowed || !pBottle.IsActive()) { mfVRTracerDwell=0; return; }
+		mbVRTracerNearFace=false;
+		cScript_RunGlobalFunc("VROMNIINV","Tracer_Fluid","D");
+		if (!mbVRTracerNearFace) { mfVRTracerDwell=0; return; }
+		mfVRTracerDwell+=0.05f;
+		if (mfVRTracerDwell<0.6f) return;
+		mfVRTracerDwell=0;
+		if (pTool.msCanBeUsedCallback=="" || pTool.msUseCallback=="") return;
+		if (!pMap.ScriptPrepare("bool "+pTool.msCanBeUsedCallback+"(const tString &in asTool, const tString &in asEntity)")) return;
+		// BK: keep callback argument storage alive through ScriptExecute.
+		tString sTracerName="Tracer_Fluid"; tString sTracerTarget="TriggerArea_UseTracer";
+		pMap.SetArgString(0,sTracerName);pMap.SetArgString(1,sTracerTarget);
+		if (!pMap.ScriptExecute() || !pMap.GetReturnBool()) return;
+		if (!pMap.ScriptPrepare("bool "+pTool.msUseCallback+"(const tString &in asTool, const tString &in asEntity)")) return;
+		pMap.SetArgString(0,sTracerName);pMap.SetArgString(1,sTracerTarget);pMap.ScriptExecute();
+	}
+
+	// S26C: one cached tip sphere, three authored targets, 20 Hz while carried.
+	[nosave] iCollideShape@ mpVRBatonTipShape;
+	[nosave] float mfVRBatonProbeWait = 0;
+	[nosave] bool mbVRBatonContact = false;
+	[nosave] tString msVRBatonTarget;
+	cToolData@ VR_GetBaton()
+	{
+		for (uint i=0; i<mvInventory.length(); ++i)
+			if (mvInventory[i].msPickedEntityName == "StunRod" && !mvInventory[i].mbVRShoulderStowed) return mvInventory[i];
+		return null;
+	}
+	bool VR_BatonTouches(cToolData@ apTool, const tString &in asTarget)
+	{
+		if (apTool is null || apTool.mbVRShoulderStowed) return false;
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return false;
+		tString sCarrier = VR_GetPhysicalCarrierName(apTool);
+		iLuxEntity@ pCarrier = pMap.GetEntityByName(sCarrier, eLuxEntityType_LastEnum, "");
+		iLuxEntity@ pTarget = pMap.GetEntityByName(asTarget, eLuxEntityType_LastEnum, "");
+		if (pCarrier is null || pTarget is null || !Entity_IsActive(sCarrier) || !Entity_IsActive(asTarget)) return false;
+		iPhysicsBody@ pBody = pCarrier.GetMainBody();
+		if (pBody is null) return false;
+		if (mpVRBatonTipShape is null) @mpVRBatonTipShape = pMap.GetPhysicsWorld().CreateSphereShape(0.025f, cMatrixf_Identity);
+		if (mpVRBatonTipShape is null) return false;
+		// Thin shaft Shape_2 minus main-body origin in the shipped stunrod.ent.
+		cMatrixf mtx = cMatrixf_Identity;
+		mtx.SetTranslation(cMath_MatrixMul(pBody.GetWorldMatrix(), cVector3f(-0.199f,-0.00282334f,0)));
+		return pTarget.CheckShapeCollision(mpVRBatonTipShape, mtx, pMap);
+	}
+	void VR_UpdateBaton(float afTimeStep)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		mfVRBatonProbeWait -= afTimeStep;
+		if (mfVRBatonProbeWait > 0) return;
+		mfVRBatonProbeWait = 0.05f;
+		cToolData@ pTool = VR_GetBaton();
+		tString sTarget = "";
+		if (pTool !is null)
+		{
+			if (VR_BatonTouches(pTool,"Kate")) sTarget = "Kate";
+			else if (VR_BatonTouches(pTool,"KateCrashed")) sTarget = "KateCrashed";
+			else if (VR_BatonTouches(pTool,"Goya")) sTarget = "Goya";
+		}
+		bool bNewContact = sTarget != "" && !mbVRBatonContact;
+		mbVRBatonContact = sTarget != "";
+		msVRBatonTarget = sTarget;
+		if (bNewContact) cScript_RunGlobalFunc("VROMNIINV", "StunRod", "T");
+	}
+	void _Global_VRBatonCommit()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		cToolData@ pTool = VR_GetBaton();
+		if (pTool is null || msVRBatonTarget == "" || !VR_BatonTouches(pTool,msVRBatonTarget)) return;
+		if (pTool.msCanBeUsedCallback == "" || pTool.msUseCallback == "") return;
+		// BJ: SetArgString retains argument storage until ScriptExecute.
+		// Literal/member conversions here reached the map as empty strings.
+		tString sToolName="StunRod";
+		tString sTargetName=msVRBatonTarget;
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (!pMap.ScriptPrepare("bool "+pTool.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return;
+		pMap.SetArgString(0,sToolName); pMap.SetArgString(1,sTargetName);
+		if (!pMap.ScriptExecute() || !pMap.GetReturnBool()) return;
+		if (!pMap.ScriptPrepare("bool "+pTool.msUseCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return;
+		pMap.SetArgString(0,sToolName); pMap.SetArgString(1,sTargetName);
+		pMap.ScriptExecute(); // FALSE intentionally means reusable, not rejected.
+	}
+
+	bool VR_IsGenericShoulderUseItem(cToolData@ apTool)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler() || apTool is null) return false;
+		if (!VR_IsShoulderKeyItem(apTool) || apTool.mbVRShoulderStowed) return false;
+		// These four retain their already-hardware-proven dedicated socket paths.
+		tString sName = apTool.msPickedEntityName;
+		if (sName == "ConfigChipTool" || sName == "CortexChipTool" ||
+			sName == "KateChip" || sName == "GoyaChip" || sName == "StunRod" || sName == "Tracer_Fluid") return false;
+		return true;
+	}
+
+    bool VR_ReturnedCarrierHasClearedSocket(const tString &in asCarrier)
+    {
+        // Entity-owned state survives the zero-delay pickup and a save/load.
+        tString sSlot=Entity_GetVarString(asCarrier,"VRReturnSlot");
+        tString sArea=Entity_GetVarString(asCarrier,"VRReturnArea");
+        if (sArea=="" && sSlot!="") sArea=sSlot+"_Interact";
+        if (sArea=="") return true;
+        if (Entity_GetCollide(asCarrier,sArea)) return false;
+        Entity_SetVarString(asCarrier,"VRReturnSlot","");
+        Entity_SetVarString(asCarrier,"VRReturnArea","");
+        return true;
+    }
+
+	bool VR_TryPhysicalShoulderTarget(cToolData@ apTool, const tString &in asTarget)
+	{
+		if (!VR_IsGenericShoulderUseItem(apTool) || asTarget == "") return false;
+		if (apTool.msCanBeUsedCallback == "" || apTool.msUseCallback == "") return false;
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return false;
+		iLuxEntity@ pTarget = pMap.GetEntityByName(asTarget, eLuxEntityType_LastEnum, "");
+		if (pTarget is null || !Entity_IsActive(asTarget) || pTarget.GetInteractionDisabled()) return false;
+		tString sCarrier = VR_GetPhysicalCarrierName(apTool);
+		iLuxEntity@ pCarrier = pMap.GetEntityByName(sCarrier, eLuxEntityType_LastEnum, "");
+		if (pCarrier is null || !Entity_IsActive(sCarrier)) return false;
+        if (!VR_ReturnedCarrierHasClearedSocket(sCarrier)) return false;
+		if (!Entity_GetCollide(sCarrier, asTarget)) return false;
+
+		msVRShoulderUseTool = apTool.msPickedEntityName;
+		msVRShoulderUseTarget = asTarget;
+		// Native U proves the exact registered physical body is CURRENTLY HELD before
+		// it synchronously invokes _Global_VRShoulderUseCommit. An overlap alone can
+		// never advance a story callback.
+		cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("VROMNIINV", msVRShoulderUseTool, "U");
+        // Only the synchronous commit's final true means a target consumed
+        // this item. A rejected neighbour must not starve the correct socket.
+        return cScript_GetGlobalReturnBool();
+	}
+
+	void VR_UpdatePhysicalShoulderKeyItemUse(float afTimeStep)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		if (mfVRShoulderUseCooldown > 0.0f)
+		{
+			mfVRShoulderUseCooldown -= afTimeStep;
+			if (mfVRShoulderUseCooldown > 0.0f) return;
+		}
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			cToolData@ pTool = mvInventory[i];
+			if (!VR_IsGenericShoulderUseItem(pTool)) continue;
+			tString sName = pTool.msPickedEntityName;
+
+			// Omicron exact targets recovered from stock 03_02_omicron_inside.hps.
+			if(sName=="powerpack_1")
+			{
+				if(VR_TryPhysicalShoulderTarget(pTool,"PowerpackSocketInteract_Lights") ||
+					VR_TryPhysicalShoulderTarget(pTool,"PowerpackSocketInteract_Cargo") ||
+					VR_TryPhysicalShoulderTarget(pTool,"PowerpackSocketInteract_SatFrameRoom"))
+				{ mfVRShoulderUseCooldown=0.35f; return; }
+				continue;
+			}
+			if (sName == "ARK")
+			{
+				if (VR_TryPhysicalShoulderTarget(pTool,"ArkPlacementArea") ||
+					VR_TryPhysicalShoulderTarget(pTool,"CargoElevatorArea_1") ||
+					VR_TryPhysicalShoulderTarget(pTool,"CargoElevatorArea_2") ||
+					VR_TryPhysicalShoulderTarget(pTool,"CargoElevatorArea_3") ||
+					VR_TryPhysicalShoulderTarget(pTool,"SatFrame_Interact"))
+				{ mfVRShoulderUseCooldown=0.35f; return; }
+				continue;
+			}
+			if (sName == "BrokenRobotBrain")
+			{
+				// The stock CanBeUsed callback accepts DiveSuitArea by name, while the
+				// authored build ORDER is enforced by ToolArea_ComputerBrain. Preserve
+				// both authorities so physical overlap cannot skip directly to the suit.
+				cLuxMap@ pMap = cLux_GetCurrentMap();
+				iLuxEntity@ pBrainStep = null;
+				if (pMap !is null) @pBrainStep = pMap.GetEntityByName("ToolArea_ComputerBrain", eLuxEntityType_LastEnum, "");
+				if (pBrainStep !is null && Entity_IsActive("ToolArea_ComputerBrain") &&
+					VR_TryPhysicalShoulderTarget(pTool, "DiveSuitArea")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+			else if (sName == "PowerCubeTool")
+			{
+				if (VR_TryPhysicalShoulderTarget(pTool, "Area_PowerCubeInsert")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+			else if (sName == "PowerCube_Inserted")
+			{
+				cLuxMap@ pMap = cLux_GetCurrentMap();
+				iLuxEntity@ pPowerStep = null;
+				if (pMap !is null) @pPowerStep = pMap.GetEntityByName("ToolArea_PowerSource", eLuxEntityType_LastEnum, "");
+				if (pPowerStep !is null && Entity_IsActive("ToolArea_PowerSource") && VR_TryPhysicalShoulderTarget(pTool, "DiveSuitArea")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+			else if (sName == "StructureGelTool")
+			{
+				cLuxMap@ pMap = cLux_GetCurrentMap();
+				iLuxEntity@ pGelStep = null;
+				if (pMap !is null) @pGelStep = pMap.GetEntityByName("ToolArea_StructureGel", eLuxEntityType_LastEnum, "");
+				if (pGelStep !is null && Entity_IsActive("ToolArea_StructureGel") && VR_TryPhysicalShoulderTarget(pTool, "DiveSuitArea")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+			else if (sName == "ChipTool_Damaged")
+			{
+				if (VR_TryPhysicalShoulderTarget(pTool, "Area_PlaceBrokenChip")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+			else if (sName == "ChipTool_Repaired")
+			{
+				if (VR_TryPhysicalShoulderTarget(pTool, "Area_InsertRepairedChip")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+			// Theta tunnels exact targets are unambiguous in 02_06_theta_tunnels.
+			else if (sName == "chip_unformatted")
+			{
+				if (VR_TryPhysicalShoulderTarget(pTool, "Area_InsertUnformattedChip") ||
+					VR_TryPhysicalShoulderTarget(pTool, "Area_Broken_Panel")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+			else if (sName == "door_panel_chip_formatted")
+			{
+				if (VR_TryPhysicalShoulderTarget(pTool, "Area_Broken_Panel")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+			else if (sName == "BrainScanChip" || sName == "EnvironmentChip")
+			{
+				// Theta's stock CanUseChip/OnUseChip explicitly normalizes the authored
+				// *_Interact trigger name through ChipGetInteractName(). We therefore use
+				// those exact physical Trigger volumes and pass the exact same name stock
+				// camera Tool use would have passed; the callback still rejects wrong slots.
+				if (VR_TryPhysicalShoulderTarget(pTool, "SimulationSlot_Right_Interact") ||
+					VR_TryPhysicalShoulderTarget(pTool, "SimulationSlot_Left_Interact") ||
+					VR_TryPhysicalShoulderTarget(pTool, "ScanRoomSlot_Interact")) { mfVRShoulderUseCooldown = 0.08f; return; }
+			}
+		}
+	}
+
+	void _Global_VRShoulderUseCommit()
+    {
+        bool committed=VR_Try_ShoulderUseCommit();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_ShoulderUseCommit()
+    {
+		cScript_SetGlobalReturnBool(false);
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		if (msVRShoulderUseTool == "" || msVRShoulderUseTarget == "") return false;
+
+		cToolData@ pTool = null;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+			if (mvInventory[i].msPickedEntityName == msVRShoulderUseTool && VR_IsGenericShoulderUseItem(mvInventory[i])) { @pTool = mvInventory[i]; break; }
+		if (pTool is null || pTool.msCanBeUsedCallback == "" || pTool.msUseCallback == "") return false;
+
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return false;
+		tString sName = pTool.msPickedEntityName;
+		tString sTarget = msVRShoulderUseTarget;
+		tString sCarrier = VR_GetPhysicalCarrierName(pTool);
+		iLuxEntity@ pTarget = pMap.GetEntityByName(sTarget, eLuxEntityType_LastEnum, "");
+		iLuxEntity@ pCarrier = pMap.GetEntityByName(sCarrier, eLuxEntityType_LastEnum, "");
+		if (pTarget is null || pCarrier is null || !Entity_IsActive(sTarget) || !Entity_IsActive(sCarrier) || pTarget.GetInteractionDisabled()) return false;
+		if (!VR_ReturnedCarrierHasClearedSocket(sCarrier)) return false;
+		if (!Entity_GetCollide(sCarrier, sTarget)) return false;
+
+		if (!pMap.ScriptPrepare("bool "+pTool.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		pMap.SetArgString(0, sName);
+		pMap.SetArgString(1, sTarget);
+		if (!pMap.ScriptExecute() || !pMap.GetReturnBool()) { mfVRShoulderUseCooldown = 0.15f; return false; }
+
+		if (!pMap.ScriptPrepare("bool "+pTool.msUseCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		pMap.SetArgString(0, sName);
+		pMap.SetArgString(1, sTarget);
+		if (!pMap.ScriptExecute()) { mfVRShoulderUseCooldown = 0.15f; return false; }
+		bool bRemove = pMap.GetReturnBool();
+		if (sName == "ARK")
+		{
+			// Tau reuses the same world entity; Phi removes inventory inside its callback.
+			bool bStillOwned=false;
+			for (uint i=0;i<mvInventory.length();++i)
+				if (mvInventory[i].msPickedEntityName==sName) bStillOwned=true;
+			if (!bRemove && bStillOwned) { mfVRShoulderUseCooldown=0.15f; return false; }
+			cScript_RunGlobalFunc("VROMNIINV",sName,"C");
+			if (sTarget=="SatFrame_Interact")
+				{ if(pCarrier.ScriptPrepare("bool VR_Try_ConsumePhysicalUpgradeChip()")) pCarrier.ScriptExecute(); }
+			if (bStillOwned) RemoveTool(sName);
+			msVRShoulderUseTool=""; msVRShoulderUseTarget="";
+			mfVRShoulderUseCooldown=0.35f;
+			return true;
+		}
+		if (!bRemove) { mfVRShoulderUseCooldown=0.15f; return false; }
+
+		// Stock OnAction removes a Tool after a TRUE Use callback. Native C first
+		// drops the exact HQ hand anchor with zero velocity, then the Prop_Tool is
+		// hidden. The map's authored replacement/presentation is already running.
+		cScript_RunGlobalFunc("VROMNIINV", sName, "C");
+		VR_ParkPhysicalStoryCarrierAtSocket(sName, sCarrier, sTarget);
+		if(pCarrier.ScriptPrepare("bool VR_Try_ConsumePhysicalUpgradeChip()")) pCarrier.ScriptExecute();
+		RemoveTool(sName);
+		msVRShoulderUseTool = "";
+		msVRShoulderUseTarget = "";
+		mfVRShoulderUseCooldown = 0.35f;
+		return true;
+	}
+
+    void VR_ClearStaleItemInteractHooks(cLuxMap@ map)
+    {
+        // S26BI: saved native entity fields can restore these obsolete hooks
+        // after map OnEnter. Their separate Tool pickup/use callbacks are valid.
+        // Reapply the existing exact VR cleanup once during inventory recovery.
+        tString mapName=map.GetName(), item="";
+        if(mapName=="03_02_omicron_inside") item="PowerCube_Inserted";
+        else if(mapName=="04_02_tau_inside") item="ARK";
+        if(item=="") return;
+        iLuxEntity@ entity=map.GetEntityByName(item,eLuxEntityType_Prop,"");
+        if(entity is null || !entity.HasPlayerInteractCallback()) return;
+        entity.SetPlayerInteractCallback("",false);
+        entity.SetSaveDataIsUpdated(true);
+    }
+
+    // S26BV: the desktop-only PanelChip carrier is authored at twice model size.
+    // Recreate it once at map/load entry through HPL so mesh AND collision agree.
+    // This runs before physical inventory restoration, never during a live grip.
+    [nosave] int mlBVChipRepair=0;
+    [nosave] cMatrixf mBVChipMatrix;
+    [nosave] cVector3f mvBVChipScale;
+    [nosave] bool mbBVChipActive=false;
+    [nosave] tString msBVChipReturnArea;
+    bool VR_RepairElevatorChipCarrier()
+    {
+        if(cLux_IsChangingMap() || cLux_IsLoadingScreenVisible()) return false;
+        if(mlBVChipRepair==3) return true;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null) return false;
+        if(map.GetName()!="02_06_theta_tunnels") {mlBVChipRepair=3;return true;}
+        tString name="door_panel_chip_formatted";
+        iLuxEntity@ entity=map.GetEntityByName(name,eLuxEntityType_Prop,"");
+        if(mlBVChipRepair==0 || (mlBVChipRepair==1 && entity !is null))
+        {
+            if(entity is null) {mlBVChipRepair=3;return true;}
+            if(entity.GetOnLoadScale().x<1.1f) {mlBVChipRepair=3;return true;}
+            iLuxEntity@ display=map.GetEntityByName("security_chip_formatted",eLuxEntityType_Prop,"");
+            if(display is null) return false;
+            mBVChipMatrix=entity.GetMatrix();mvBVChipScale=display.GetOnLoadScale();
+            mbBVChipActive=entity.IsActive();msBVChipReturnArea=entity.GetVarString("VRReturnArea");
+            // Native implementation queues destruction; its registered bool
+            // return is not an acknowledgement. Observe disappearance next frame.
+            map.DestroyEntity(entity);
+            mlBVChipRepair=1;return false;
+        }
+        if(mlBVChipRepair==1)
+        {
+            if(entity !is null) return false;
+            map.CreateEntity(name,"entities/vr/PanelChip_Physical.ent",mBVChipMatrix,mvBVChipScale);
+            mlBVChipRepair=2;return false;
+        }
+        if(entity is null || entity.GetMainBody() is null) return false;
+        if(!entity.ScriptPrepare("bool VR_RestoreElevatorChipCallbacks()") ||
+           !entity.ScriptExecute() || !entity.GetReturnBool()) return false;
+        entity.SetVarString("VRReturnArea",msBVChipReturnArea);
+        entity.SetActive(mbBVChipActive);entity.SetSaveDataIsUpdated(true);
+        mlBVChipRepair=3;
+        LogNewLine("S26BV: rebuilt elevator chip at terminal display scale; native ownership retained.");
+        return true;
+    }
+
+	void VR_ReconcileShoulderInventory(float afTimeStep)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler() || mbVRShoulderReconciled) return;
+		if (mfVRShoulderReconcileTimer > 0.0f)
+		{
+			mfVRShoulderReconcileTimer -= afTimeStep;
+			if (mfVRShoulderReconcileTimer > 0.0f) return;
+		}
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) { mfVRShoulderReconcileTimer = 0.25f; return; }
+        VR_ClearStaleItemInteractHooks(pMap);
+        bool complete=true;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			cToolData@ pTool = mvInventory[i];
+			if (!VR_IsRegisteredShoulderKeyItemName(pTool.msPickedEntityName)) continue;
+			pTool.mbVRShoulderEligible = true;
+			tString sCarrier = VR_GetPhysicalCarrierName(pTool);
+			pTool.msVRPhysicalCarrierName = sCarrier;
+            // S26BW: do not declare a missing saved carrier recovered. Retry
+            // unresolved records only; re-enabling a completed held carrier on
+            // every retry would reset its gravity underneath the hand owner.
+            tString recoveryKey=pTool.msPickedEntityName+"|"+sCarrier;
+            bool recovered=false;
+            for(uint j=0;j<mvVRReconciledCarriers.length();++j)
+                if(mvVRReconciledCarriers[j]==recoveryKey){recovered=true;break;}
+            if(recovered) continue;
+			iLuxEntity@ pEntity = pMap.GetEntityByName(sCarrier, eLuxEntityType_LastEnum, "");
+			if (pEntity is null) {complete=false;continue;}
+
+			if (pTool.mbVRShoulderStowed)
+			{
+				if (pTool.mlVRShoulderOrder <= 0) pTool.mlVRShoulderOrder = ++mlVRShoulderNextOrder;
+				if (Entity_IsActive(sCarrier)) Entity_SetActive(sCarrier, false);
+				// AG: native inventory is cleared on world teardown while this saved script
+				// bit survives. Republish a BODYLESS placeholder: shoulder READY may use it,
+				// but no hand/story path can act until an exact body is reacquired through R.
+				cScript_RunGlobalFunc("VROMNIINV", pTool.msPickedEntityName, "A");
+                mvVRReconciledCarriers.push_back(recoveryKey);
+				continue;
+			}
+
+			if (!Entity_IsActive(sCarrier))
+			{
+				// Compatibility with stock/pre-AA saves: a logically-owned Tool whose
+				// exact world carrier is inactive is interpreted as being in the shoulder
+				// inventory, never silently respawned into the world.
+				pTool.mbVRShoulderStowed = true;
+				pTool.mlVRShoulderOrder = ++mlVRShoulderNextOrder;
+				cScript_RunGlobalFunc("VROMNIINV", pTool.msPickedEntityName, "A");
+			}
+			else if (pTool.msPickedEntityName == "ConfigChipTool" && sCarrier != pTool.msPickedEntityName)
+            {
+                // The visible Upsilon tray chip is an ordinary prop, not Prop_Tool.
+                // Restore its saved held-body state once without a pickup/use callback.
+                cLuxProp@ pAliasProp=cast<cLuxProp>(pEntity);
+                if(pAliasProp is null){complete=false;continue;}
+                pAliasProp.SetStaticPhysics(false);
+                cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "B");
+                iPhysicsBody@ pAliasBody=pEntity.GetMainBody();
+                cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "E");
+                if(pAliasBody is null){complete=false;continue;}
+                pAliasBody.SetCollide(true);pAliasBody.SetCollideCharacter(false);
+                if(pAliasBody.GetMass()<0.05f)pAliasBody.SetMass(0.50f);
+                pAliasBody.SetGravity(true);pAliasBody.SetAutoDisable(false);pAliasProp.WakeUp();
+                cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "I");
+            }
+            else
+			{
+				// World-active exact carriers need their native physical identity restored
+				// after world/load teardown so later shoulder release and semantic bypass
+				// recognize the body without granting any pickup authority.
+				// A saved held body can have gravity disabled. Retry until its exact
+                // loaded script has restored physical ownership, before marking reconciliation complete.
+                if (!pEntity.ScriptPrepare("bool VR_Try_EnsurePhysicalUpgradeChip()") ||
+                    !pEntity.ScriptExecute() || !pEntity.GetReturnBool())
+                { complete=false;continue; }
+			}
+            mvVRReconciledCarriers.push_back(recoveryKey);
+		}
+		mbVRShoulderReconciled = complete;
+        if(!complete) mfVRShoulderReconcileTimer=0.25f;
+	}
+
+	void _Global_VRPhysicalUpgradeChipCommit()
+    {
+        bool committed=VR_Try_PhysicalUpgradeChipCommit();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_PhysicalUpgradeChipCommit()
+    {
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return false;
+		cScript_SetGlobalReturnBool(false);
+		if (msVRPhysicalUpgradeChipCandidate == "") return false;
+
+		cToolData@ pChip = null;
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			if (mvInventory[i].msPickedEntityName == msVRPhysicalUpgradeChipCandidate && VR_IsPhysicalUpgradeChip(mvInventory[i])) @pChip = mvInventory[i];
+		}
+		if (pChip is null || msVRInsertedOmniName == "" || msVRPhysicalUpgradeFocusTarget == "") return false;
+		if (pChip.msCanBeUsedCallback == "" || pChip.msUseCallback == "") return false;
+
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null) return false;
+		tString sChipName = pChip.msPickedEntityName;
+		tString sOmniName = msVRInsertedOmniName;
+		tString sFocusTarget = msVRPhysicalUpgradeFocusTarget;
+        if(sChipName=="KateChip" || sChipName=="GoyaChip")
+        {
+            tString authored=VR_AuthoredUpgradeFocus(pMap.GetName(),sChipName,sOmniName,msVRInsertedOmniSlot);
+            if(authored=="" || sFocusTarget!=authored) return false;
+        }
+		iLuxEntity@ pOmniEntity = pMap.GetEntityByName(sOmniName, eLuxEntityType_LastEnum, "");
+		if (pOmniEntity is null || !Entity_IsActive(sFocusTarget)) return false;
+
+		// Re-run the exact map-supplied eligibility callback that vanilla tool use
+		// would query. Physical chip contact cannot bypass story/upgrade order.
+		if (!pMap.ScriptPrepare("bool "+pChip.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		pMap.SetArgString(0, sChipName);
+		pMap.SetArgString(1, sFocusTarget);
+		if (!pMap.ScriptExecute() || !pMap.GetReturnBool()) return false;
+
+		// Exact authored completion callback. Consumption happens only when it returns
+		// true, matching stock OnAction semantics. C releases the live physics body
+		// synchronously before the world chip is hidden.
+		if (!pMap.ScriptPrepare("bool "+pChip.msUseCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
+		pMap.SetArgString(0, sChipName);
+		pMap.SetArgString(1, sFocusTarget);
+		if (!pMap.ScriptExecute() || !pMap.GetReturnBool()) return false;
+
+		if (sChipName == "ConfigChipTool")
+		{
+			// AF: release the exact durable visible carrier recorded on ConfigChipTool.
+			// The transient alias is reconstructed from this record after shoulder retrieval.
+			tString sCarrier = VR_GetPhysicalCarrierName(pChip);
+			if (sCarrier != "" && sCarrier != sChipName)
+			{
+				cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "D");
+				Entity_SetActive(sCarrier, false);
+			}
+			else cScript_RunGlobalFunc("VROMNICHIP", sChipName, "C");
+			msVRUpsilonToolChipCarrierName = "";
+		}
+		else
+		{
+			cScript_RunGlobalFunc("VROMNICHIP", sChipName, "C");
+		}
+		RemoveTool(sChipName);
+		VR_RunCarrierMethod(sChipName,"bool VR_Try_ConsumePhysicalUpgradeChip()");
+		msVRPhysicalUpgradeChipCandidate = "";
+		msVRPhysicalUpgradeFocusTarget = "";
+		msVRUpsilonToolChipCarrierName = "";
+		mfVRPhysicalUpgradeChipCooldown = 0.35f;
+		return true;
+	}
+
+
+
+    void _Global_VRClearInsertedOmniContext()
+    {
+        if(!_HPL3VR_RuntimeActive_ToolHandler()) return;
+        if(msVRInsertedOmniName!=cScript_GetGlobalArgString(0)) return;
+        msVRInsertedOmniName="";msVRInsertedOmniSlot="";
+    }
+
+	void _Global_VRSetInsertedOmniContext()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		msVRInsertedOmniName = cScript_GetGlobalArgString(0);
+		msVRInsertedOmniSlot = cScript_GetGlobalArgString(1);
+	}
+
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_AddTool()
+	{		
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				////////////////////////////////
+				// Get tool properties
+				cToolData toolData;
+				toolData.msPickedEntityName = cScript_GetGlobalArgString(0);
+				toolData.msHudObjFile = cScript_GetGlobalArgString(1);
+				toolData.msUseCallback = cScript_GetGlobalArgString(2);
+				toolData.msDropCallback = cScript_GetGlobalArgString(3);
+				toolData.msCanBeUsedCallback = cScript_GetGlobalArgString(4);
+				bool bEquip = cScript_GetGlobalArgBool(5);
+				bool bAutoHide = cScript_GetGlobalArgBool(6);		
+				toolData.msInventoryIcon = cScript_GetGlobalArgString(7);
+				toolData.msHandAnimationSuffix = cScript_GetGlobalArgString(8);
+				toolData.mbIsHeavy = cScript_GetGlobalArgBool(9);
+				toolData.m_idHudObject = tID_Invalid;
+				toolData.mlCustomUseIcon = cScript_GetGlobalArgInt(10);
+				
+				////////////////////////////////
+				//Check if proper
+				if(toolData.msHudObjFile == "")
+				{
+					Error("Hud object string for tool prop is empty!");
+					return;
+				}
+				
+				////////////////////////////////
+				// Check if we've already got it
+				for (uint i = 0; i < mvInventory.length(); i++)
+				{			
+					if (mvInventory[i].msPickedEntityName == toolData.msPickedEntityName)
+					{
+						Error("Trying to add tool to inventory that we already have in inventory! '"+toolData.msPickedEntityName+"'");
+						return;
+					}
+				}
+				
+				////////////////////////////////
+				// Remove existing
+				if (mlCurrentToolIndex >= 0)
+				{
+					//cLux_ID_Prop(mvInventory[mlCurrentToolIndex].m_idHudObject).SetActive(false);
+					
+					// Handle equipping new tool while current one is being removed
+					if (mState == eToolState_Hide && mbRemoveToolWhenHidden)
+					{		
+						RemoveTool(mlCurrentToolIndex);
+					}
+				}
+				
+				////////////////////////////////
+				//Add to inventory
+				mvInventory.push_back(toolData);
+				
+				////////////////////////////////
+				// Init and equip
+				if (bEquip)
+				{
+					EquipTool(toolData.msPickedEntityName);
+					mfAutoHideTimer = bAutoHide ? 2.25f : -1.f;
+				}
+				
+				////////////////////////////////
+				// Create Entity
+				CreateHudObject(toolData);
+				
+			return;
+		}
+		////////////////////////////////
+		// Get tool properties
+		cToolData toolData;
+		toolData.msPickedEntityName = cScript_GetGlobalArgString(0);
+		toolData.msHudObjFile = cScript_GetGlobalArgString(1);
+		toolData.msUseCallback = cScript_GetGlobalArgString(2);
+		toolData.msDropCallback = cScript_GetGlobalArgString(3);
+		toolData.msCanBeUsedCallback = cScript_GetGlobalArgString(4);
+		bool bEquip = cScript_GetGlobalArgBool(5);
+		bool bAutoHide = cScript_GetGlobalArgBool(6);		
+		toolData.msInventoryIcon = cScript_GetGlobalArgString(7);
+		toolData.msHandAnimationSuffix = cScript_GetGlobalArgString(8);
+		if (VR_IsPhysicalUpgradeChip(toolData)) bAutoHide = false;
+		toolData.mbIsHeavy = cScript_GetGlobalArgBool(9);
+		toolData.m_idHudObject = tID_Invalid;
+		toolData.mlCustomUseIcon = cScript_GetGlobalArgInt(10);
+		toolData.mbVRShoulderEligible = VR_IsRegisteredShoulderKeyItemName(toolData.msPickedEntityName);
+		if (toolData.mbVRShoulderEligible)
+		{
+			toolData.msVRPhysicalCarrierName = toolData.msPickedEntityName;
+			// AF: Upsilon selects the visible tray carrier immediately BEFORE vanilla
+			// ConfigChipTool is added. Commit that already-authorized selection now,
+			// when the durable inventory record finally exists.
+			if (toolData.msPickedEntityName == "ConfigChipTool" && msVRUpsilonToolChipCarrierName != "")
+				toolData.msVRPhysicalCarrierName = msVRUpsilonToolChipCarrierName;
+			bAutoHide = false;
+		}
+		
+		////////////////////////////////
+		//Check if proper
+		if(toolData.msHudObjFile == "")
+		{
+			Error("Hud object string for tool prop is empty!");
+			return;
+		}
+		
+		////////////////////////////////
+		// Check if we've already got it
+		for (uint i = 0; i < mvInventory.length(); i++)
+		{			
+			if (mvInventory[i].msPickedEntityName == toolData.msPickedEntityName)
+			{
+				Error("Trying to add tool to inventory that we already have in inventory! '"+toolData.msPickedEntityName+"'");
+				return;
+			}
+		}
+		
+		////////////////////////////////
+		// Remove existing
+		if (mlCurrentToolIndex >= 0)
+		{
+			//cLux_ID_Prop(mvInventory[mlCurrentToolIndex].m_idHudObject).SetActive(false);
+			
+			// Handle equipping new tool while current one is being removed
+			if (mState == eToolState_Hide && mbRemoveToolWhenHidden)
+			{		
+				RemoveTool(mlCurrentToolIndex);
+			}
+		}
+		
+		////////////////////////////////
+		//Add to inventory
+		mvInventory.push_back(toolData);
+		if (VR_IsPhysicalOmni(toolData))
+		{
+			mbVRPhysicalOmniEnsured = false;
+			// H57.56BF: never force same-frame Catherine rehydration from OnEnter.
+			// Preserve the 0.75 s map-enter fence when present; otherwise require
+			// at least one 0.25 s script/physics maturation window.
+			if (mfVRPhysicalOmniEnsureTimer < 0.25f)
+				mfVRPhysicalOmniEnsureTimer = 0.25f;
+		}
+		
+		////////////////////////////////
+		// Init and equip
+		if (bEquip)
+		{
+			EquipTool(toolData.msPickedEntityName);
+			mfAutoHideTimer = bAutoHide ? 2.25f : -1.f;
+		}
+		
+		////////////////////////////////
+		// H57.56C: Catherine remains the live world prop. Logical inventory ownership
+		// is preserved, but no duplicate first-person HUD entity is created.
+		if (!VR_IsPhysicalWorldTool(toolData)) CreateHudObject(toolData);
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_PlayCustomAnimation()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				if(mbActive==false) return;
+				if(mState == eToolState_Hide) return;
+				
+				////////////////////////////////////
+				// Get arguments
+				msCustomAnim = cScript_GetGlobalArgString(0);
+				mbCustomAnim_RemoveToolWhenOver = cScript_GetGlobalArgBool(1);
+				msCustomAnim_Callback = cScript_GetGlobalArgString(2);
+				
+				////////////////////////////////////
+				// Set up variables
+				mbCustomAnim_HideToolWhenOver = false;
+				mState = eToolState_CustomAnimation;
+				
+				cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+				tString sEntity = cLux_ID_Entity(pCurrentTool.m_idHudObject).GetName();
+				
+				////////////////////////////////////
+				// Play animation
+				PlayerHands_PlayAnimation(msCustomAnim, false, false,0.2f, sEntity, false);		
+			return;
+		}
+		if(mbActive==false) return;
+		if(mState == eToolState_Hide) return;
+		
+		////////////////////////////////////
+		// Get arguments
+		msCustomAnim = cScript_GetGlobalArgString(0);
+		mbCustomAnim_RemoveToolWhenOver = cScript_GetGlobalArgBool(1);
+		msCustomAnim_Callback = cScript_GetGlobalArgString(2);
+		
+		////////////////////////////////////
+		// Set up variables
+		mbCustomAnim_HideToolWhenOver = false;
+		mState = eToolState_CustomAnimation;
+		
+		cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+		if (VR_IsPhysicalWorldTool(pCurrentTool)) return; // Physical world tools never use canned Simon-hand animations.
+		tString sEntity = cLux_ID_Entity(pCurrentTool.m_idHudObject).GetName();
+		
+		////////////////////////////////////
+		// Play animation
+		PlayerHands_PlayAnimation(msCustomAnim, false, false,0.2f, sEntity, false);		
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	void _Global_GetToolIsInInventory()
+	{		
+		tString sToolArg = cScript_GetGlobalArgString(0);
+		for (uint i = 0; i < mvInventory.length(); i++)
+		{			
+			if (mvInventory[i].msPickedEntityName == sToolArg)
+			{
+				cScript_SetGlobalReturnBool(true);
+				return;
+			}
+		}
+		cScript_SetGlobalReturnBool(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_GetCurrentEntityName()
+	{
+		cScript_SetGlobalReturnString(GetCurrentEntityName());
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_GetCurrentHudEntityName()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				if(mbActive==false || mlCurrentToolIndex < 0 || 
+				   mvInventory[mlCurrentToolIndex].m_idHudObject == tID_Invalid) 
+				{
+					cScript_SetGlobalReturnString("");
+				}
+				
+				cScript_SetGlobalReturnString(cLux_ID_Prop(mvInventory[mlCurrentToolIndex].m_idHudObject).GetName());
+			return;
+		}
+		if(mbActive==false || mlCurrentToolIndex < 0 || 
+		   mvInventory[mlCurrentToolIndex].m_idHudObject == tID_Invalid) 
+		{
+			cScript_SetGlobalReturnString("");
+			return;
+		}
+		
+		cScript_SetGlobalReturnString(cLux_ID_Prop(mvInventory[mlCurrentToolIndex].m_idHudObject).GetName());
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_UnequipCurrentTool()
+	{
+		UnequipCurrentTool(cScript_GetGlobalArgBool(0));
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_ReEquipTool()
+	{
+		bool bSuccess = EquipTool(msPreviousTool);
+		cScript_SetGlobalReturnBool(bSuccess);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_EquipTool()
+	{
+		bool bSuccess = EquipTool(cScript_GetGlobalArgString(0), cScript_GetGlobalArgString(1));
+		cScript_SetGlobalReturnBool(bSuccess);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_RemoveTool()
+	{
+		RemoveTool(cScript_GetGlobalArgString(0));
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_GetToolCount()
+	{
+		cScript_SetGlobalArgInt(0,mvInventory.length());
+	}
+	
+	//------------------------------------------------------------
+		
+	void _Global_GetToolIconList()
+	{
+		for (uint i = 0; i < mvInventory.length(); i++)
+		{
+			cScript_SetGlobalArgString(i,mvInventory[i].msInventoryIcon);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PUBLIC
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool CanPickOrUseTool()
+	{
+		if(mbActive && (mState == eToolState_Hide))
+			return false;
+			
+		if(mbActive==false && PlayerHands_IsActive()) return false;
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool CanEquipToolAreaTool()
+	{
+		if(mbActive && (mState == eToolState_Unhide))
+			return false;
+			
+		if(mbActive==false && PlayerHands_IsActive()) return false;
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool GetPlayerCarriesHeavyTool()
+	{
+		if(mbActive==false) return false;
+		
+		bool bHeavyTool = false;
+		cToolData@ pCurrentTool = null;
+		if (mlCurrentToolIndex >= 0 && mlCurrentToolIndex < mvInventory.length())
+		{
+			@pCurrentTool = mvInventory[mlCurrentToolIndex];
+			bHeavyTool = pCurrentTool.mbIsHeavy;
+		}
+		return bHeavyTool;
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				mbPlayerCarriesHeavyTool=false;
+				
+				msPreviousTool = "";
+				mlCurrentToolIndex = -1;
+				mvInventory.resize(0);
+				
+				mbActive = false;
+				mbCanInteract = false;
+				
+				mPickBasics.Reset();
+				
+				mState = eToolState_Idle;
+				mPrevState = eToolState_Idle;
+				
+				SetupMoveStateMultipliers();
+				
+				mbFadeInDrawAnim=false;
+			return;
+		}
+		mbPlayerCarriesHeavyTool=false;
+		
+		msPreviousTool = "";
+		mlCurrentToolIndex = -1;
+		mvInventory.resize(0);
+		
+		mbActive = false;
+		mbCanInteract = false;
+		
+		mPickBasics.Reset();
+		
+		mState = eToolState_Idle;
+		mPrevState = eToolState_Idle;
+		
+		SetupMoveStateMultipliers();
+		
+		mbFadeInDrawAnim=false;
+		mbVRPhysicalOmniEnsured = false;
+		mfVRPhysicalOmniEnsureTimer = 0.75f;
+		msVRPhysicalOmniPanelCandidate = "";
+		mfVRPhysicalOmniPanelCooldown = 0.0f;
+		mbVROmniPanelAreasLoaded=false; mvVROmniPanelAreas.resize(0);
+		msVRPhysicalUpgradeChipCandidate = "";
+		msVRPhysicalUpgradeFocusTarget = "";
+		msVRUpsilonToolChipCarrierName = "";
+		mfVRPhysicalUpgradeChipCooldown = 0.0f;
+		msVROmniPhysicalInsertTarget = "";
+		mfVROmniPhysicalInsertCooldown = 0.0f;
+		msVRShoulderUseTool = "";
+		msVRShoulderUseTarget = "";
+		msVRShoulderRetrievePending = "";
+		mfVRShoulderUseCooldown = 0.0f;
+		mbVRShoulderReconciled = false;
+        mvVRReconciledCarriers.resize(0);
+        mlBVChipRepair=0;
+		mfVRShoulderReconcileTimer = 0.60f;
+	}
+	
+	void SetActive(bool abX)
+	{
+		if(mbActive==abX) return;
+		
+		mbActive = abX;
+		if(mbActive==false)
+		{			
+			mState = eToolState_Idle;
+			mbCanInteract = false;
+			
+			PlayerHands_SetActive(false);
+			SetToolInteractionAllowed(true);
+		}		
+	}
+	
+	bool IsActive()
+	{
+		return mbActive;
+	}
+	
+	//------------------------------------------------------------
+
+    // BL: a displayed carrier name is not necessarily a map callback target.
+    // Delta accepts the authored zeppelin slot for either replacement chip,
+    // including saves that already have the legacy crash carrier inserted there.
+    tString VR_AuthoredUpgradeFocus(const tString &in map, const tString &in chip,
+                                  const tString &in omni, const tString &in slot)
+    {
+        if(chip=="KateChip" || chip=="GoyaChip")
+        {
+            if(map!="02_03_delta" || slot!="ZeppelinCathTerminal") return "";
+            if(omni!="CathTool" && omni!="CathTool_Crashed") return "";
+            return slot;
+        }
+        return omni;
+    }
+
+	void VR_UpdatePhysicalUpgradeChipContact(float afTimeStep)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler()) return;
+		if (mfVRPhysicalUpgradeChipCooldown > 0.0f)
+		{
+			mfVRPhysicalUpgradeChipCooldown -= afTimeStep;
+			if (mfVRPhysicalUpgradeChipCooldown > 0.0f) return;
+		}
+		if (msVRInsertedOmniName == "") { mfVRPhysicalUpgradeChipCooldown = 0.05f; return; }
+		cLuxMap@ pMapVR = cLux_GetCurrentMap();
+		if (pMapVR is null) { mfVRPhysicalUpgradeChipCooldown = 0.05f; return; }
+
+		for (uint i = 0; i < mvInventory.length(); ++i)
+		{
+			cToolData@ pChip = mvInventory[i];
+			if (!VR_IsPhysicalUpgradeChip(pChip) || pChip.mbVRShoulderStowed) continue;
+
+			// X: Upsilon's four visible tray chips are ordinary props. Vanilla uses an
+			// invisible AreaGetToolChip_* to award hidden ConfigChipTool. In VR the prop
+			// actually grabbed by the hand is retained as physical carrier while the
+			// ConfigChipTool record remains the exact stock CanBeUsed/Use authority.
+			if (pChip.msHandAnimationSuffix == "securitychip" && pChip.msPickedEntityName == "ConfigChipTool")
+			{
+				tString sCarrier = VR_GetPhysicalCarrierName(pChip);
+				if (sCarrier != "" && sCarrier != pChip.msPickedEntityName)
+				{
+					pChip.msVRPhysicalCarrierName = sCarrier;
+					msVRUpsilonToolChipCarrierName = sCarrier;
+					iLuxEntity@ pCarrierEntity = pMapVR.GetEntityByName(sCarrier, eLuxEntityType_LastEnum, "");
+					cLuxProp@ pCarrierProp = cast<cLuxProp>(pCarrierEntity);
+					if (pCarrierProp is null) break;
+
+					msVRPhysicalUpgradeChipCandidate = pChip.msPickedEntityName;
+					cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "B");
+					iPhysicsBody@ pCarrierBody = pCarrierProp.GetMainBody();
+					cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "E");
+					if (pCarrierBody !is null)
+					{
+						tString sToolChipTarget = "AreaInsertConfigChip";
+						if (Entity_IsActive(sToolChipTarget))
+						{
+							if (Entity_GetCollide(sCarrier, sToolChipTarget))
+							{
+								msVRPhysicalUpgradeFocusTarget = sToolChipTarget;
+								cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "Z");
+							}
+							else
+							{
+								msVRPhysicalUpgradeFocusTarget = "";
+								cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "N");
+							}
+						}
+						else msVRPhysicalUpgradeFocusTarget = "";
+					}
+					break;
+				}
+			}
+
+			iLuxEntity@ pChipEntity = pMapVR.GetEntityByName(pChip.msPickedEntityName, eLuxEntityType_LastEnum, "");
+			cLuxProp@ pChipProp = cast<cLuxProp>(pChipEntity);
+			if (pChipProp is null) continue;
+			cScript_SetGlobalReturnBool(false);
+			if (!pChipEntity.ScriptPrepare("bool VR_Try_EnsurePhysicalUpgradeChip()") ||
+                !pChipEntity.ScriptExecute() || !pChipEntity.GetReturnBool()) continue;
+			msVRPhysicalUpgradeChipCandidate = pChip.msPickedEntityName;
+			cScript_RunGlobalFunc("VROMNICHIP", msVRPhysicalUpgradeChipCandidate, "B");
+			iPhysicsBody@ pChipBody = pChipProp.GetMainBody();
+			cScript_RunGlobalFunc("VROMNICHIP", msVRPhysicalUpgradeChipCandidate, "E");
+			if (pChipBody !is null)
+			{
+				if (pChip.msHandAnimationSuffix == "brainchip")
+				{
+					tString sCortexTarget = "Area_PutCortexOnOmniTool";
+					if (Entity_IsActive(sCortexTarget))
+					{
+						if (Entity_GetCollide(msVRPhysicalUpgradeChipCandidate, sCortexTarget))
+						{
+							msVRPhysicalUpgradeFocusTarget = sCortexTarget;
+							cScript_RunGlobalFunc("VROMNICHIP", msVRPhysicalUpgradeChipCandidate, "X");
+						}
+						else
+						{
+							msVRPhysicalUpgradeFocusTarget = "";
+							cScript_RunGlobalFunc("VROMNICHIP", msVRPhysicalUpgradeChipCandidate, "A");
+						}
+					}
+					else msVRPhysicalUpgradeFocusTarget = "";
+				}
+				else if (pChip.msHandAnimationSuffix == "securitychip" && pChip.msPickedEntityName == "ConfigChipTool")
+				{
+					// Legacy V fallback retained only for saves/flows where ConfigChipTool itself
+					// is already the physical body and no visible tray carrier was registered.
+					tString sToolChipTarget = "AreaInsertConfigChip";
+					if (Entity_IsActive(sToolChipTarget))
+					{
+						if (Entity_GetCollide(msVRPhysicalUpgradeChipCandidate, sToolChipTarget))
+						{
+							msVRPhysicalUpgradeFocusTarget = sToolChipTarget;
+							cScript_RunGlobalFunc("VROMNICHIP", msVRPhysicalUpgradeChipCandidate, "Y");
+						}
+						else
+						{
+							msVRPhysicalUpgradeFocusTarget = "";
+							cScript_RunGlobalFunc("VROMNICHIP", msVRPhysicalUpgradeChipCandidate, "M");
+						}
+					}
+					else msVRPhysicalUpgradeFocusTarget = "";
+				}
+				else
+				{
+					msVRPhysicalUpgradeFocusTarget = VR_AuthoredUpgradeFocus(pMapVR.GetName(), msVRPhysicalUpgradeChipCandidate, msVRInsertedOmniName, msVRInsertedOmniSlot);
+					if(msVRPhysicalUpgradeFocusTarget!="") cScript_RunGlobalFunc("VROMNICHIP", msVRPhysicalUpgradeChipCandidate, "Q");
+				}
+			}
+			break;
+		}
+		mfVRPhysicalUpgradeChipCooldown = 0.05f;
+	}
+
+	//------------------------------------------------------------
+
+	bool VR_UpdateStreamMapReadiness(float afTimeStep)
+	{
+		if (mbVRStreamMapReady) return true;
+		cLuxMap @pVRMap = cLux_GetCurrentMap();
+		if (pVRMap is null)
+		{
+			mfVRStreamMapReadyTimer = 1.00f;
+			return false;
+		}
+		if (!mbVRStreamMapReadyTokenSent)
+		{
+			mfVRStreamMapReadyTimer -= afTimeStep;
+			if (mfVRStreamMapReadyTimer > 0.0f) return false;
+			cScript_RunGlobalFunc("VROMNIMAP", "", "R");
+			mbVRStreamMapReadyTokenSent = true;
+			mfVRStreamPhysicalDelay = 0.20f;
+			return false;
+		}
+		mfVRStreamPhysicalDelay -= afTimeStep;
+		if (mfVRStreamPhysicalDelay > 0.0f) return false;
+		mbVRStreamMapReady = true;
+		return true;
+	}
+
+	void Update(float afTimeStep)
+	{					
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				if(mbActive==false || mlCurrentToolIndex < 0) return;
+				
+				cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+				
+				////////////////////////////////////////////
+				// Check if tool has been displayed long enough
+				if (mfAutoHideTimer >= 0)
+				{
+					mfAutoHideTimer -= afTimeStep;
+					if (mfAutoHideTimer < 0)
+					{
+						mState = eToolState_Hide;
+					}
+				}
+				
+				//////////////////////////
+				//Check if if anything in focus can be used by tool
+				mbCanInteract = false;
+				if(CanPickOrUseTool() && pCurrentTool.msCanBeUsedCallback!="" && mfAutoHideTimer < 0)
+				{
+					cCamera @pCam = cLux_GetPlayer().GetCamera();
+					if(mPickBasics.UpdatePickCheck(pCam, false))
+					{
+						//iLuxEntity@ pPickedEntity = cLux_ID_Entity(mPickBasics.m_idFocusedEntity);
+						//if(pPickedEntity !is null && pPickedEntity.GetInteractionDisabled()==false)
+						{
+							cLuxMap@ pMap = cLux_GetCurrentMap();
+			
+							if(pMap.ScriptPrepare("bool "+pCurrentTool.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)" ) )
+							{
+								tString sTool = pCurrentTool.msPickedEntityName;
+								pMap.SetArgString(0, sTool);
+								tString sFocusedEntity = mPickBasics.msFocusedEntityName;
+								pMap.SetArgString(1, sFocusedEntity);
+								
+								if(pMap.ScriptExecute())
+								{
+									if(pMap.GetReturnBool())
+									{
+										Player_SetCrossHairState(eCrossHairState(pCurrentTool.mlCustomUseIcon));
+										mbCanInteract = true;
+									}
+								}
+							}
+						}
+					}
+				}
+				
+				//////////////////////////////////////////
+				//This set if the normal player state can use interactions.
+				SetToolInteractionAllowed(!mbCanInteract);
+				
+				/////////////////////////////////////////
+				// State var setup
+				eToolState lastState = mState;
+				tString sEntity = cLux_ID_Entity(pCurrentTool.m_idHudObject).GetName();
+				
+				/////////////////////////////////////////
+				// State: None
+				if(mState == eToolState_Idle)
+				{
+					/////////////////////////
+					// Enter state
+					if(mPrevState != eToolState_Idle)
+					{
+						PlayerHands_PlayAnimation("tool_"+pCurrentTool.msHandAnimationSuffix+"_idle", true,false,0.2f,sEntity, false);
+					}
+				}
+				/////////////////////////////////////////
+				// State: Unhide
+				else if(mState == eToolState_Unhide)
+				{
+					/////////////////////////
+					// Enter state
+					if(mPrevState != eToolState_Unhide)
+					{
+						PlayerHands_SetUseCustomPosition(false);
+						PlayerHands_SetUseCustomRotation(false);
+						
+						float fFadeTime = mbFadeInDrawAnim ? 0.2f : 0.0f;
+						PlayerHands_PlayAnimation("tool_"+pCurrentTool.msHandAnimationSuffix+"_draw", false,false,fFadeTime,sEntity, false);
+						
+						//cLux_AddDebugMessage("Enter Unhide");
+					}
+					
+					/////////////////////////
+					// Animation over
+					if(PlayerHands_GetAnimationPlaying()==false)
+					{
+						mState = eToolState_Idle;
+					}	
+				}
+				/////////////////////////////////////////
+				// State: Hide
+				else if(mState == eToolState_Hide)
+				{
+					/////////////////////////
+					// Enter state
+					if(mPrevState != eToolState_Hide)
+					{
+						PlayerHands_PlayAnimation("tool_"+pCurrentTool.msHandAnimationSuffix+"_holster", false,false,0.2f,sEntity, true);
+						//cLux_AddDebugMessage("Enter Hide");
+					}
+					
+					/////////////////////////
+					// Animation over
+					if(PlayerHands_GetAnimationPlaying()==false)
+					{
+						if(msPreviousTool!="") cScript_RunGlobalFunc(msPreviousTool, "", "_Global_OnUnequip");
+						
+						if (mbRemoveToolWhenHidden)
+						{
+							RemoveTool(mlCurrentToolIndex);
+						}
+						else 
+						{
+							mlCurrentToolIndex = -1;
+							SetupMoveStateMultipliers();
+						}
+						SetActive(false);
+					}	
+				}
+				/////////////////////////////////////////
+				// State: Custom animation
+				else if(mState == eToolState_CustomAnimation)
+				{
+					/////////////////////////
+					// Animation over
+					if(PlayerHands_GetAnimationPlaying()==false)
+					{
+						//////////////////////////
+						// Determine next state
+						if(mbCustomAnim_RemoveToolWhenOver)				
+						{
+							RemoveTool(mlCurrentToolIndex);
+							SetActive(false);
+						}
+						else if(mbCustomAnim_HideToolWhenOver)
+						{
+							mState = eToolState_Hide;
+						}
+						else
+						{
+							mState = eToolState_Idle;
+						}
+						
+						//////////////////////////
+						//Callback
+						if(msCustomAnim_Callback != "")
+						{
+							cLuxMap @pMap = cLux_GetCurrentMap();
+							if(pMap.ScriptPrepare("void "+msCustomAnim_Callback+"(const tString& in)"))
+							{
+								tString sAnim = msCustomAnim;
+								pMap.SetArgString(0, sAnim);
+								pMap.ScriptExecute();
+							}
+						}
+					}
+				}
+				mPrevState = lastState;
+				
+			return;
+		}
+		if (VR_UpdateStreamMapReadiness(afTimeStep))
+		{
+			if(!VR_RepairElevatorChipCarrier()) return;
+            VR_EnsurePhysicalOmniWorldEntity(afTimeStep);
+			VR_ReconcileShoulderInventory(afTimeStep);
+			VR_UpdatePhysicalOmniAuthoredInsert(afTimeStep);
+			VR_UpdateOmniPanelAreas(afTimeStep);
+			VR_UpdatePhysicalUpgradeChipContact(afTimeStep);
+			VR_UpdatePhysicalShoulderKeyItemUse(afTimeStep);
+			VR_UpdateBaton(afTimeStep);
+			VR_UpdateTracer(afTimeStep);
+		}
+		if(mbActive==false || mlCurrentToolIndex < 0) return;
+		
+		cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+		bool bVRPhysicalOmni = VR_IsPhysicalOmni(pCurrentTool);
+		bool bVRPhysicalUpgradeChip = VR_IsPhysicalUpgradeChip(pCurrentTool);
+		bool bVRPhysicalWorldTool = VR_IsPhysicalWorldTool(pCurrentTool);
+		if (mfVRPhysicalOmniPanelCooldown > 0.0f) mfVRPhysicalOmniPanelCooldown -= afTimeStep;
+		
+		////////////////////////////////////////////
+		// Check if tool has been displayed long enough
+		if (mfAutoHideTimer >= 0)
+		{
+			mfAutoHideTimer -= afTimeStep;
+			if (mfAutoHideTimer < 0)
+			{
+				mState = eToolState_Hide;
+			}
+		}
+		
+		//////////////////////////
+		//Check if if anything in focus can be used by tool
+		mbCanInteract = false;
+		if(!bVRPhysicalUpgradeChip && !VR_IsShoulderKeyItem(pCurrentTool) && CanPickOrUseTool() && pCurrentTool.msCanBeUsedCallback!="" && mfAutoHideTimer < 0)
+		{
+			cCamera @pCam = cLux_GetPlayer().GetCamera();
+			if(mPickBasics.UpdatePickCheck(pCam, false))
+			{
+				//iLuxEntity@ pPickedEntity = cLux_ID_Entity(mPickBasics.m_idFocusedEntity);
+				//if(pPickedEntity !is null && pPickedEntity.GetInteractionDisabled()==false)
+				{
+					cLuxMap@ pMap = cLux_GetCurrentMap();
+
+					if(pMap.ScriptPrepare("bool "+pCurrentTool.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)" ) )
+					{
+						tString sTool = pCurrentTool.msPickedEntityName;
+						pMap.SetArgString(0, sTool);
+						tString sFocusedEntity = mPickBasics.msFocusedEntityName;
+						pMap.SetArgString(1, sFocusedEntity);
+						
+						if(pMap.ScriptExecute())
+						{
+							bool bCanUse = pMap.GetReturnBool();
+							if(bCanUse)
+							{
+								Player_SetCrossHairState(eCrossHairState(pCurrentTool.mlCustomUseIcon));
+								mbCanInteract = true;
+							}
+
+						}
+					}
+				}
+			}
+		}
+		
+		//////////////////////////////////////////
+		//This set if the normal player state can use interactions.
+		SetToolInteractionAllowed(!mbCanInteract);
+		
+		/////////////////////////////////////////
+		// State var setup
+		eToolState lastState = mState;
+		tString sEntity = "";
+		if (!bVRPhysicalWorldTool && pCurrentTool.m_idHudObject != tID_Invalid)
+			sEntity = cLux_ID_Entity(pCurrentTool.m_idHudObject).GetName();
+		
+		/////////////////////////////////////////
+		// State: None
+		if(mState == eToolState_Idle)
+		{
+			/////////////////////////
+			// Enter state
+			if(mPrevState != eToolState_Idle)
+			{
+				if (!bVRPhysicalWorldTool) PlayerHands_PlayAnimation("tool_"+pCurrentTool.msHandAnimationSuffix+"_idle", true,false,0.2f,sEntity, false);
+			}
+		}
+		/////////////////////////////////////////
+		// State: Unhide
+		else if(mState == eToolState_Unhide)
+		{
+			/////////////////////////
+			// Enter state
+			if(mPrevState != eToolState_Unhide)
+			{
+				if (!bVRPhysicalWorldTool)
+				{
+					PlayerHands_SetUseCustomPosition(false);
+					PlayerHands_SetUseCustomRotation(false);
+					float fFadeTime = mbFadeInDrawAnim ? 0.2f : 0.0f;
+					PlayerHands_PlayAnimation("tool_"+pCurrentTool.msHandAnimationSuffix+"_draw", false,false,fFadeTime,sEntity, false);
+				}
+                else
+                {
+                    // Retiring a physical tool draw must also retire a stale
+                    // native tool-hand animation. Never cancel a story scene.
+                    tString sPhysicalName=pCurrentTool.msPickedEntityName;
+                    if(VR_IsShoulderKeyItem(pCurrentTool) && sPhysicalName!="ConfigChipTool" &&
+                       sPhysicalName!="CortexChipTool" && sPhysicalName!="KateChip" && sPhysicalName!="GoyaChip" &&
+                       cLux_GetPlayer().IsActive() && cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Normal &&
+                       !cScript_GetGlobalVarBool("UsingWauFlower")) PlayerHands_SetActive(false);
+                    mState = eToolState_Idle;
+                }
+				
+				//cLux_AddDebugMessage("Enter Unhide");
+			}
+			
+			/////////////////////////
+			// Animation over
+			if(bVRPhysicalWorldTool || PlayerHands_GetAnimationPlaying()==false)
+			{
+				mState = eToolState_Idle;
+			}	
+		}
+		/////////////////////////////////////////
+		// State: Hide
+		else if(mState == eToolState_Hide)
+		{
+			/////////////////////////
+			// Enter state
+			if(mPrevState != eToolState_Hide)
+			{
+				if (!bVRPhysicalWorldTool) PlayerHands_PlayAnimation("tool_"+pCurrentTool.msHandAnimationSuffix+"_holster", false,false,0.2f,sEntity, true);
+				//cLux_AddDebugMessage("Enter Hide");
+			}
+			
+			/////////////////////////
+			// Animation over
+			if(bVRPhysicalWorldTool || PlayerHands_GetAnimationPlaying()==false)
+			{
+				if(msPreviousTool!="") cScript_RunGlobalFunc(msPreviousTool, "", "_Global_OnUnequip");
+				
+				if (mbRemoveToolWhenHidden)
+				{
+					RemoveTool(mlCurrentToolIndex);
+				}
+				else 
+				{
+					mlCurrentToolIndex = -1;
+					SetupMoveStateMultipliers();
+				}
+				SetActive(false);
+			}	
+		}
+		/////////////////////////////////////////
+		// State: Custom animation
+		else if(mState == eToolState_CustomAnimation)
+		{
+			/////////////////////////
+			// Animation over
+			if(bVRPhysicalWorldTool || PlayerHands_GetAnimationPlaying()==false)
+			{
+				//////////////////////////
+				// Determine next state
+				if(mbCustomAnim_RemoveToolWhenOver)				
+				{
+					RemoveTool(mlCurrentToolIndex);
+					SetActive(false);
+				}
+				else if(mbCustomAnim_HideToolWhenOver)
+				{
+					mState = eToolState_Hide;
+				}
+				else
+				{
+					mState = eToolState_Idle;
+				}
+				
+				//////////////////////////
+				//Callback
+				if(msCustomAnim_Callback != "")
+				{
+					cLuxMap @pMap = cLux_GetCurrentMap();
+					if(pMap.ScriptPrepare("void "+msCustomAnim_Callback+"(const tString& in)"))
+					{
+						tString sAnim = msCustomAnim;
+						pMap.SetArgString(0, sAnim);
+						pMap.ScriptExecute();
+					}
+				}
+			}
+		}
+		mPrevState = lastState;
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void VariableUpdate(float afDeltaTime)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnDraw(float afFrameTime){}
+	void OnPostRender(float){}
+	void OnEnterContainer(const tString&in){}
+	void OnLeaveContainer(const tString&in){}
+	void AppGotInputFocus(){}
+	void AppLostInputFocus(){}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnAction(int alAction, bool abPressed)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				if(abPressed==false) return;
+				if(mlCurrentToolIndex < 0) return;
+				
+				cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+				if(pCurrentTool.m_idHudObject == tID_Invalid) return;
+				
+				////////////////////////////
+				// Use Tool
+				if(alAction == eAction_Interact)
+				{
+					/////////////////////////////////////
+					// Check if interaction possible
+					if(pCurrentTool.msUseCallback == "") return;
+			
+					tString sFocusEntity = mPickBasics.msFocusedEntityName;
+					if(sFocusEntity=="") return;
+								
+					if(mbCanInteract==false) return;
+								
+					/////////////////////////////////////
+					// Call callback
+					cLuxMap@ pMap = cLux_GetCurrentMap();
+					if(pMap.ScriptPrepare("bool "+pCurrentTool.msUseCallback+"(const tString &in asToolName, const tString &in asFocusEntity)" ) )
+					{
+						tString sToolName = pCurrentTool.msPickedEntityName;
+						pMap.SetArgString(0, sToolName);
+						pMap.SetArgString(1, sFocusEntity);
+						
+						if(pMap.ScriptExecute())
+						{
+							if(pMap.GetReturnBool())
+							{
+								RemoveTool(sToolName); // Remove tool from inventory by default
+							}
+						}
+					}
+				}
+			return;
+		}
+		if(abPressed==false) return;
+		if(mlCurrentToolIndex < 0) return;
+		
+		cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+		if(pCurrentTool.m_idHudObject == tID_Invalid && !VR_IsPhysicalWorldTool(pCurrentTool)) return;
+		
+		////////////////////////////
+		// Use Tool
+		if(alAction == eAction_Interact)
+		{
+			// H57.56J O4: Catherine use is physical. Slot docking and OmniPanel
+			// contact own activation; the flatscreen Interact-button callback is suppressed.
+			if (VR_IsPhysicalWorldTool(pCurrentTool)) return;
+			/////////////////////////////////////
+			// Check if interaction possible
+			if(pCurrentTool.msUseCallback == "") return;
+
+			tString sFocusEntity = mPickBasics.msFocusedEntityName;
+			if(sFocusEntity=="") return;
+						
+			if(mbCanInteract==false) return;
+						
+			/////////////////////////////////////
+			// Call callback
+			cLuxMap@ pMap = cLux_GetCurrentMap();
+			if(pMap.ScriptPrepare("bool "+pCurrentTool.msUseCallback+"(const tString &in asToolName, const tString &in asFocusEntity)" ) )
+			{
+				tString sToolName = pCurrentTool.msPickedEntityName;
+				pMap.SetArgString(0, sToolName);
+				pMap.SetArgString(1, sFocusEntity);
+				
+				if(pMap.ScriptExecute())
+				{
+					if(pMap.GetReturnBool())
+					{
+						RemoveTool(sToolName); // Remove tool from inventory by default
+					}
+				}
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnExitPressed()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool EquipTool(const tString& in asEntityName, const tString &in asLookEntities="")
+	{
+		for (uint i = 0; i < mvInventory.length(); i++)
+		{
+			if (mvInventory[i].msPickedEntityName != asEntityName) continue;
+			
+			EquipTool(i, asLookEntities);
+			
+			return true;
+		}
+		
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool EquipTool(int alIndex, const tString &in asLookEntities)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				if (alIndex < 0 || alIndex >= mvInventory.length()) return false;
+				
+				int lIndex = alIndex; //Index might change, don't modify arg
+				
+				/////////////////////////////////////////////////////////////////////////
+				// Handle equipping new tool while current one is being removed
+				if (mState == eToolState_Hide && mbRemoveToolWhenHidden)
+				{
+					if (lIndex == mlCurrentToolIndex) return false;
+					
+					if (lIndex > mlCurrentToolIndex) lIndex--;
+					
+					RemoveTool(mlCurrentToolIndex);
+				}
+				
+				////////////////////////
+				// Tool already in use
+				if (mbActive && lIndex == mlCurrentToolIndex)
+				{
+					mbFadeInDrawAnim = true;
+					mfAutoHideTimer=-1;
+					if(mState == eToolState_Hide) 
+						mState = eToolState_Unhide;
+					else if(mState == eToolState_CustomAnimation)
+						mbCustomAnim_HideToolWhenOver = false;
+					
+					cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+					cScript_SetGlobalArgString(0, asLookEntities);
+					cScript_RunGlobalFunc(pCurrentTool.msPickedEntityName, "", "_Global_UpdateLookEntities");
+				
+					return true;	
+				}
+				
+				////////////////////////
+				// Set up variables
+				mbFadeInDrawAnim =false;
+				mfAutoHideTimer=-1;
+				mState = eToolState_Unhide;
+				mPrevState = eToolState_Idle;
+				SetActive(true);
+										
+				/////////////////////////////
+				// Deactivate current tool
+				if (mlCurrentToolIndex >= 0)
+				{
+					//if (mvInventory[mlCurrentToolIndex].m_idHudObject!=tID_Invalid)
+					//	cLux_ID_Prop(mvInventory[mlCurrentToolIndex].m_idHudObject).SetActive(false);
+				}
+					
+				////////////////
+				//Equip tool
+				mlCurrentToolIndex = lIndex;
+				cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+				
+				cScript_SetGlobalArgString(0, pCurrentTool.msPickedEntityName);
+				cScript_RunGlobalFunc(pCurrentTool.msPickedEntityName, "", "_Global_OnEquip");
+				
+				cScript_SetGlobalArgString(0, asLookEntities);
+				cScript_RunGlobalFunc(pCurrentTool.msPickedEntityName, "", "_Global_UpdateLookEntities");
+				
+				if (pCurrentTool.m_idHudObject == tID_Invalid)
+				{
+					CreateHudObject(pCurrentTool);
+				}
+				
+				SetupMoveStateMultipliers();
+				
+				return true;
+		}
+		if (alIndex < 0 || alIndex >= mvInventory.length()) return false;
+		
+		int lIndex = alIndex; //Index might change, don't modify arg
+		
+		/////////////////////////////////////////////////////////////////////////
+		// Handle equipping new tool while current one is being removed
+		if (mState == eToolState_Hide && mbRemoveToolWhenHidden)
+		{
+			if (lIndex == mlCurrentToolIndex) return false;
+			
+			if (lIndex > mlCurrentToolIndex) lIndex--;
+			
+			RemoveTool(mlCurrentToolIndex);
+		}
+		
+		////////////////////////
+		// Tool already in use
+		if (mbActive && lIndex == mlCurrentToolIndex)
+		{
+			mbFadeInDrawAnim = true;
+			mfAutoHideTimer=-1;
+			if(mState == eToolState_Hide) 
+				mState = eToolState_Unhide;
+			else if(mState == eToolState_CustomAnimation)
+				mbCustomAnim_HideToolWhenOver = false;
+			
+			cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+			cScript_SetGlobalArgString(0, asLookEntities);
+			cScript_RunGlobalFunc(pCurrentTool.msPickedEntityName, "", "_Global_UpdateLookEntities");
+		
+			return true;	
+		}
+		
+		////////////////////////
+		// Set up variables
+		mbFadeInDrawAnim =false;
+		mfAutoHideTimer=-1;
+		mState = eToolState_Unhide;
+		mPrevState = eToolState_Idle;
+		SetActive(true);
+								
+		/////////////////////////////
+		// Deactivate current tool
+		if (mlCurrentToolIndex >= 0)
+		{
+			//if (mvInventory[mlCurrentToolIndex].m_idHudObject!=tID_Invalid)
+			//	cLux_ID_Prop(mvInventory[mlCurrentToolIndex].m_idHudObject).SetActive(false);
+		}
+			
+		////////////////
+		//Equip tool
+		mlCurrentToolIndex = lIndex;
+		cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+		
+		cScript_SetGlobalArgString(0, pCurrentTool.msPickedEntityName);
+		cScript_RunGlobalFunc(pCurrentTool.msPickedEntityName, "", "_Global_OnEquip");
+		
+		cScript_SetGlobalArgString(0, asLookEntities);
+		cScript_RunGlobalFunc(pCurrentTool.msPickedEntityName, "", "_Global_UpdateLookEntities");
+		
+		if (pCurrentTool.m_idHudObject == tID_Invalid && !VR_IsPhysicalWorldTool(pCurrentTool))
+		{
+			CreateHudObject(pCurrentTool);
+		}
+		
+		SetupMoveStateMultipliers();
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetupMoveStateMultipliers()
+	{
+		bool bHeavyTool = false;
+		cToolData@ pCurrentTool = null;
+		if (mlCurrentToolIndex >= 0 && mlCurrentToolIndex < mvInventory.length())
+		{
+			@pCurrentTool = mvInventory[mlCurrentToolIndex];
+			bHeavyTool = pCurrentTool.mbIsHeavy;
+		}
+		
+		if (bHeavyTool)
+		{
+			cScript_SetGlobalVarFloat("ToolHeadBobMul", 1.25);
+			cScript_SetGlobalVarFloat("ToolMoveSpeedMul", 0.75);
+			cScript_SetGlobalVarFloat("ToolRunSpeedMul", 0.5);
+		}
+		else
+		{
+			cScript_SetGlobalVarFloat("ToolHeadBobMul", 1);
+			cScript_SetGlobalVarFloat("ToolMoveSpeedMul", 1);
+			cScript_SetGlobalVarFloat("ToolRunSpeedMul", 1);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void UnequipCurrentTool(bool abRemoveWhenHidden)
+	{	
+		if (mlCurrentToolIndex < 0 || mbRemoveToolWhenHidden) return; //Don't allow another unequip to override mbRemoveToolWhenHidden
+		
+		cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+		
+		msPreviousTool = pCurrentTool.msPickedEntityName;
+		
+		mbRemoveToolWhenHidden = abRemoveWhenHidden;
+		
+		if(mState == eToolState_CustomAnimation)
+		{
+			mbCustomAnim_HideToolWhenOver=true;
+		}
+		else
+		{
+			mState = eToolState_Hide;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void RemoveTool(const tString& in asEntityName)
+	{
+		for (uint i = 0; i < mvInventory.length(); i++)
+		{			
+			if (mvInventory[i].msPickedEntityName == asEntityName)
+			{
+				RemoveTool(i);
+				break;
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetToolInteractionAllowed(bool abState)
+	{
+		cScript_SetGlobalArgBool(0,abState);
+		cScript_RunGlobalFunc("State_Normal", "", "_Global_SetToolInteractionAllowed");
+	}
+	
+	//------------------------------------------------------------
+	
+	void RemoveTool(int alIndex)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				mbRemoveToolWhenHidden = false;
+				
+				if (alIndex == mlCurrentToolIndex)
+				{
+					SetActive(false);
+					mbCanInteract = false;
+					mlCurrentToolIndex = -1;
+					SetToolInteractionAllowed(true);
+					SetupMoveStateMultipliers();
+				}
+				else if (mlCurrentToolIndex > alIndex)
+					mlCurrentToolIndex--;
+					
+				cToolData@ pCurrentTool = mvInventory[alIndex];
+				//cLux_ID_Prop(pCurrentTool.m_idHudObject).SetActive(false);
+				cLux_GetCurrentMap().DestroyEntity(cLux_ID_Entity(pCurrentTool.m_idHudObject));
+				pCurrentTool.m_idHudObject = tID_Invalid;
+				
+				mvInventory.removeAt(alIndex);
+				
+				if (mvInventory.length() == 0)
+				{
+					SetActive(false);
+				}
+			return;
+		}
+		mbRemoveToolWhenHidden = false;
+		
+		if (alIndex == mlCurrentToolIndex)
+		{
+			SetActive(false);
+			mbCanInteract = false;
+			mlCurrentToolIndex = -1;
+			SetToolInteractionAllowed(true);
+			SetupMoveStateMultipliers();
+		}
+		else if (mlCurrentToolIndex > alIndex)
+			mlCurrentToolIndex--;
+			
+		cToolData@ pCurrentTool = mvInventory[alIndex];
+		//cLux_ID_Prop(pCurrentTool.m_idHudObject).SetActive(false);
+		if (pCurrentTool.m_idHudObject != tID_Invalid)
+			cLux_GetCurrentMap().DestroyEntity(cLux_ID_Entity(pCurrentTool.m_idHudObject));
+		pCurrentTool.m_idHudObject = tID_Invalid;
+		
+		mvInventory.removeAt(alIndex);
+		
+		if (mvInventory.length() == 0)
+		{
+			SetActive(false);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void RemoveAllTools()
+	{
+		for (uint i = 0; i < mvInventory.length(); i++)
+		{
+			cToolData@ pTool = mvInventory[i];
+			
+			/////////////////////////////////
+			// Destroy hud object
+			if(pTool.m_idHudObject != tID_Invalid) 
+			{
+				//cLux_ID_Prop(pTool.m_idHudObject).SetActive(false);
+				cLux_GetCurrentMap().DestroyEntity(cLux_ID_Entity(pTool.m_idHudObject));
+				pTool.m_idHudObject = tID_Invalid;
+			}
+		}
+		mvInventory.resize(0);
+		msPreviousTool = "";
+		mlCurrentToolIndex = -1;
+		SetupMoveStateMultipliers();
+		
+		SetActive(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateHudObject(cToolData@ aToolData)
+	{
+		if (!_HPL3VR_RuntimeActive_ToolHandler())
+		{
+				cLux_GetCurrentMap().CreateEntity(aToolData.msPickedEntityName + "_HudObject", aToolData.msHudObjFile, cMatrixf_Identity,cVector3f(1) );
+				iLuxEntity @pEntity = cLux_GetCurrentMap().GetLatestEntity();
+				
+				//////////////////////////////
+				// Check if correct entity type
+				if(pEntity.GetEntityType() != eLuxEntityType_Prop)
+				{
+					Error("Hud object '"+aToolData.msHudObjFile+"' is of wrong type!\n");
+					return;
+				}
+				
+				cLuxProp@ pTool = cast<cLuxProp>(cLux_GetCurrentMap().GetEntityByName(aToolData.msPickedEntityName));
+				
+				cLuxProp@ pProp = cast<cLuxProp>(pEntity);
+				pProp.SetAllowMapTransfer(false);
+				pProp.SetEffectsActive(pTool.GetEffectsActive(), false);
+						
+				//////////////////////////////
+				// Set up inventory entry with ID.
+				for (int i = 0; i < mvInventory.length(); i++)
+				{
+					if (aToolData.msPickedEntityName != mvInventory[i].msPickedEntityName)
+						continue;
+					
+					mvInventory[i].m_idHudObject = pProp.GetID();
+					break;
+				}
+				
+				//////////////////////////////
+				// Set up render flags
+				for(int i=0; i<pProp.GetMeshEntity().GetSubMeshEntityNum(); ++i)
+				{
+					cSubMeshEntity @pEnt = pProp.GetMeshEntity().GetSubMeshEntity(i);
+					pEnt.SetRenderFlagBit(eRenderableFlag_VisibleInReflection, false);
+					pEnt.SetRenderFlagBit(eRenderableFlag_ShadowCaster, false);
+				}
+				
+				//////////////////////////////
+				// Setup prop
+				pProp.SetActive(false);
+			return;
+		}
+		if (VR_IsPhysicalWorldTool(aToolData)) return;
+		cLux_GetCurrentMap().CreateEntity(aToolData.msPickedEntityName + "_HudObject", aToolData.msHudObjFile, cMatrixf_Identity,cVector3f(1) );
+		iLuxEntity @pEntity = cLux_GetCurrentMap().GetLatestEntity();
+		
+		//////////////////////////////
+		// Check if correct entity type
+		if(pEntity.GetEntityType() != eLuxEntityType_Prop)
+		{
+			Error("Hud object '"+aToolData.msHudObjFile+"' is of wrong type!\n");
+			return;
+		}
+		
+		cLuxProp@ pTool = cast<cLuxProp>(cLux_GetCurrentMap().GetEntityByName(aToolData.msPickedEntityName));
+		
+		cLuxProp@ pProp = cast<cLuxProp>(pEntity);
+		pProp.SetAllowMapTransfer(false);
+		pProp.SetEffectsActive(pTool.GetEffectsActive(), false);
+				
+		//////////////////////////////
+		// Set up inventory entry with ID.
+		for (int i = 0; i < mvInventory.length(); i++)
+		{
+			if (aToolData.msPickedEntityName != mvInventory[i].msPickedEntityName)
+				continue;
+			
+			mvInventory[i].m_idHudObject = pProp.GetID();
+			break;
+		}
+		
+		//////////////////////////////
+		// Set up render flags
+		for(int i=0; i<pProp.GetMeshEntity().GetSubMeshEntityNum(); ++i)
+		{
+			cSubMeshEntity @pEnt = pProp.GetMeshEntity().GetSubMeshEntity(i);
+			pEnt.SetRenderFlagBit(eRenderableFlag_VisibleInReflection, false);
+			pEnt.SetRenderFlagBit(eRenderableFlag_ShadowCaster, false);
+		}
+		
+		//////////////////////////////
+		// Setup prop
+		pProp.SetActive(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	tString GetCurrentEntityName()
+	{
+		if(mbActive==false || mlCurrentToolIndex < 0) 
+		{
+			return "";
+		}
+		
+		return mvInventory[mlCurrentToolIndex].msPickedEntityName;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		//apSet.DrawFont(tWString("Something:"+mBaseObj.mpPlayer.GetCamera().GetPitch()), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		//afStartY += 14;
+		
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	int mlCurrentToolIndex = -1;
+	array<cToolData> mvInventory;
+	
+	//------------------------------------------------------------
+	
+	bool mbActive;
+	
+	bool mbCanInteract;
+	
+	bool mbPlayerCarriesHeavyTool=false;
+	
+	eToolState mState = eToolState_Idle;
+	eToolState mPrevState = eToolState_Idle;
+	
+	float mfAutoHideTimer = -1.f;
+	bool mbRemoveToolWhenHidden = false;
+	
+	tString msPreviousTool;
+	
+	cUtility_PickBasics mPickBasics;
+	
+	tString msCustomAnim;
+	bool mbCustomAnim_RemoveToolWhenOver;
+	bool mbCustomAnim_HideToolWhenOver;
+	tString msCustomAnim_Callback;
+	
+	bool mbFadeInDrawAnim=false;
+		
+	//------------------------------------------------------------
+	
+	tWString msPickupText;
+	cColor mTextColor;
+	float mfTextAlpha;
+	float mfTextDisplayTime;
+	bool mbTextDisplayed;
+	
+	//------------------------------------------------------------
+		
+	// AA shoulder registrations are map/script supplied and may be re-published on load.
+	array<tString> mvVRShoulderRegisteredNames;
+	int mlVRShoulderNextOrder = 0;
+
+	[nosave] bool mbVRStreamMapReady = false;
+	[nosave] bool mbVRStreamMapReadyTokenSent = false;
+	[nosave] float mfVRStreamMapReadyTimer = 1.00f;
+	[nosave] float mfVRStreamPhysicalDelay = 0.0f;
+	[nosave] bool mbVRPhysicalOmniEnsured = false;
+	[nosave] float mfVRPhysicalOmniEnsureTimer = 0.75f;
+	[nosave] tString msVRPhysicalOmniPanelCandidate = "";
+	[nosave] float mfVRPhysicalOmniPanelCooldown = 0.0f;
+	[nosave] tString msVRPhysicalUpgradeChipCandidate = "";
+	[nosave] tString msVRPhysicalUpgradeFocusTarget = "";
+	[nosave] tString msVRUpsilonToolChipCarrierName = "";
+	[nosave] float mfVRPhysicalUpgradeChipCooldown = 0.0f;
+	[nosave] tString msVROmniPhysicalInsertTarget = "";
+	[nosave] float mfVROmniPhysicalInsertCooldown = 0.0f;
+	[nosave] tString msVRInsertedOmniName = "";
+	[nosave] tString msVRInsertedOmniSlot = "";
+	[nosave] tString msVRShoulderUseTool = "";
+	[nosave] tString msVRShoulderUseTarget = "";
+	[nosave] tString msVRShoulderRetrievePending = "";
+    [nosave] bool mbVRShoulderRetrieveBodyAccepted=false;
+	[nosave] float mfVRShoulderUseCooldown = 0.0f;
+	[nosave] bool mbVRShoulderReconciled = false;
+    [nosave] array<tString> mvVRReconciledCarriers;
+	[nosave] float mfVRShoulderReconcileTimer = 0.60f;
+
+}
+
+
+

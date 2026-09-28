@@ -1,0 +1,826 @@
+#include "interfaces/Area_Interface.hps"
+
+
+class cScrAreaSticky : iScrArea, iScrArea_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mAttachedBodyID = tID_Invalid;
+		mLastAttachedBodyID = tID_Invalid;
+
+		msAttachFunction = "";
+		msDetachFunction = "";
+
+		msAttachSound = "";
+		msDetachFunction = "";
+
+		msAttachSound = "";
+		msDetachSound = "";
+
+		mbMoveBody = true;
+		mbRotateBody = true;
+
+		mbCheckCenterInArea = true;
+
+		mfPoseTime = 0.2f;
+
+		mbCanDetach = true;
+		
+		mbSpringyInProgress = false;
+		mbSpringyAttach = false;
+
+		mfSetMtxTime = 1.0f;
+
+		mfAttachedBodyMass =0;
+		mbAttachedEntityFullGameSaved = false;
+		
+		m_idSpringyLoopSound = tID_Invalid;
+
+		mBaseObj.SetAutoSleep(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject @apVars)
+	{
+		msAttachFunction = apVars.GetVarString("AttachFunction","");
+		msDetachFunction = apVars.GetVarString("DetachFunction","");
+
+		msAttachSound = apVars.GetVarString("AttachSound","");
+		msDetachSound = apVars.GetVarString("DetachSound","");
+
+		msAttachPS = apVars.GetVarString("AttachPS","");
+		msDetachPS = apVars.GetVarString("DetachPS","");
+
+		cString_GetStringVec(apVars.GetVarString("AttachableBodyName",""), mvsAttachableBodyNames," ");
+
+		mbMoveBody = apVars.GetVarBool("MoveBody",true);
+		mbRotateBody = apVars.GetVarBool("RotateBody",true);
+
+		mbCheckCenterInArea = apVars.GetVarBool("CheckCenterInArea",true);
+
+		mbCanDetach = apVars.GetVarBool("CanDetach",true);
+		mbRequiresInteraction = apVars.GetVarBool("RequiresInteraction",true);
+		
+		mfPoseTime = apVars.GetVarFloat("PoseTime",1);
+		
+		mbSpringy_Active = apVars.GetVarBool("Springy_Active",false);
+		mfSpringy_DetachDistanceMul = apVars.GetVarFloat("Springy_DetachDistanceMul",1);
+		mfSpringy_ForceMul = apVars.GetVarFloat("Springy_ForceMul",1);
+		mfSpringy_ReleaseTime = apVars.GetVarFloat("Springy_ReleaseTime",1);
+		msSpringy_DetachLoopSound = apVars.GetVarString("Springy_DetachLoopSound","");
+				
+		cLux_PreloadSound(msAttachSound);
+		cLux_PreloadSound(msDetachSound);
+		cLux_PreloadParticleSystem(msAttachPS);
+		cLux_PreloadParticleSystem(msDetachPS);
+		
+		mBaseObj.SetCheckCollision(true);
+		mBaseObj.SetupCheckCollision(
+					mbCheckCenterInArea, //Check center
+					true, 	//Check Dynamic	
+					false, 	//Check Static
+					false	//Check characters
+					);
+
+		///////////////
+		// Prelo0ad particles
+		cLux_PreloadParticleSystem(msDetachPS);
+		cLux_PreloadParticleSystem(msAttachPS);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	// S26O: a second VR hand may own a physical plug without owning the single
+	// desktop Grab state. Keep the authored socket spring, filters and callbacks.
+	// S26AU: the native socket bridge does not exist in ordinary flatscreen
+	// play. Query it only while VR is active; do not cache across mode changes.
+	bool _HPL3VR_SocketRuntimeActive()
+	{
+		cScript_SetGlobalReturnBool(false);
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		return cScript_GetGlobalReturnBool();
+	}
+
+	bool _HPL3VR_SocketBodyHeld(iPhysicsBody@ body)
+	{
+		return body !is null && _HPL3VR_SocketRuntimeActive() && cScript_RunGlobalFunc("VRSOCKETHELD",""+body.GetUniqueID(),"Q");
+	}
+
+	void OnUpdate(float afTimeStep)
+	{
+		if(mbCanDetach && !mbSpringyInProgress && mAttachedBodyID!=tID_Invalid)
+		{
+			iPhysicsBody@ body=cLux_ID_Body(mAttachedBodyID);
+			if(_HPL3VR_SocketBodyHeld(body)) _Global_BodyIsInteractedWith();
+		}
+		UpdateAttachBody(afTimeStep);
+		UpdateSpringy(afTimeStep);
+	}
+	
+	void UpdateExtra(const tString &in asName)
+	{
+		cLux_AddDebugMessage("Extra: "+asName, false);
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnPostUpdate(float afTimeStep)
+	{
+	
+	}
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnAttachmentUpdate(const cMatrixf&in a_mtxTransformAdd)
+	{
+		UpdateAttachBody(0);
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INTERACT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		return false;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		return false;
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// COLLISIONS
+	/////////////////////////////////////////
+	
+	//-----------------------------------------------------------------------
+
+	bool OnStartCheckCollision(float afTimeStep, float afTimeSinceCheck)
+	{
+		if(afTimeSinceCheck < 0.1) return false;
+		
+		///////////////////////////////
+		//If a body is already attached, skip
+		if(mAttachedBodyID != tID_Invalid) return false;
+		
+		///////////////////////////////
+		//Check if springy
+		if(mbSpringyInProgress) return false;
+				
+		///////////////////////////////
+		//Set up collision variables
+		mbLastAttachedInside = false;
+		
+		return true;
+	}
+	
+	//-----------------------------------------------------------------------
+
+	bool OnCheckCollision(iPhysicsBody@ apBody, iLuxEntity@ apEntity)
+	{
+		// A physics-only body (including a VR hand) has no Lux entity.
+		// It cannot be an authored connector; never dereference a null owner.
+		if(apBody is null || apEntity is null) return true;
+		/////////////////////////////
+		//If it requires interacton, then skip if not interacted with.
+		if(mbRequiresInteraction && !apEntity.IsInteractedWith() && !_HPL3VR_SocketBodyHeld(apBody))
+		{
+			return true;
+		}
+				
+		/////////////////////////////////////////////
+		//If last attached is still colliding, skip it.
+		if(apBody.GetID() == mLastAttachedBodyID)
+		{
+			mbLastAttachedInside = true;
+			return true;
+		}
+		
+		/////////////////////////////
+		//Check if the name contains the attachable name
+		if(mvsAttachableBodyNames.length()>0)
+		{
+			bool bFound = false;
+			for (int i=0;i<mvsAttachableBodyNames.length();++i)
+			{
+				if(cString_GetFirstStringPos(apBody.GetName(), mvsAttachableBodyNames[i])>=0)
+				{
+					bFound = true;
+					break;
+				}
+			}
+			
+			if (!bFound)
+				return true;
+		}
+		
+		///////////////////////////
+		// Call callback and see if it should be attached.
+		if(msAttachFunction!="")
+		{
+			cLuxMap @pMap = mBaseObj.GetMap();
+		
+			if(pMap.ScriptPrepare("bool " + msAttachFunction + "(const tString &in asAreaName, const tString &in asBodyName)" ) )
+			{
+				tString sAreaName = mBaseObj.GetName();
+				pMap.SetArgString(0, sAreaName);
+				
+				tString sBodyName = apBody.GetName();
+				pMap.SetArgString(1, sBodyName );
+				
+				if(pMap.ScriptExecute())
+				{
+					if(pMap.GetReturnBool()==false) return true;
+				}
+				else
+				{
+					return true;
+				}
+			}
+		}
+
+		///////////////////////////
+		// Attach
+		AttachBody(apBody);
+		mbLastAttachedInside = true; //attach sets current as last body, so "both" are inside
+			
+		return false; //Attached a body, so check no more!
+	}
+	
+	//-----------------------------------------------------------------------
+
+	void OnEndCheckCollision(float afTimteStep)
+	{
+		////////////////////////////
+		//Last attached is no longer inside and does not need to be rejected
+		if(mbLastAttachedInside==false) 
+		{
+			mLastAttachedBodyID = tID_Invalid;
+		}
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//-----------------------------------------------------------------------
+
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+		if(alState==0) return;
+	}
+		
+	//-----------------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPECIFIC ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_AttachEntity()
+	{
+		iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(cScript_GetGlobalArgString(0), eLuxEntityType_LastEnum, "");
+		if (pEntity is null)
+		{
+			Error("Couldn't find prop " + cScript_GetGlobalArgString(0));
+			return;
+		}
+		
+		tString bodyName = cScript_GetGlobalArgString(1);
+		iPhysicsBody@ pBody = bodyName.length() == 0 ? pEntity.GetMainBody() : pEntity.GetBodyFromName(bodyName);
+		if (pBody is null)
+		{
+			Error("Prop " + cScript_GetGlobalArgString(0) + " has no body" + (bodyName.length() == 0 ? "." : (" called " + bodyName)));
+			return;
+		}
+		AttachBody(pBody);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_AttachBody()
+	{
+		iPhysicsBody@ pBody = cLux_GetCurrentMap().GetPhysicsWorld().GetBody(cScript_GetGlobalArgString(0));
+		if (pBody is null)
+		{
+			Error("Couldn't find body " + cScript_GetGlobalArgString(0));
+			return;
+		}
+		AttachBody(pBody);
+	}
+	
+	//------------------------------------------------------------
+	
+	void AttachBody(iPhysicsBody @apBody)
+	{
+		if(mAttachedBodyID != tID_Invalid) return;
+		
+		/////////////////////////
+		//If in an interact state, set the previous state		
+		iLuxEntity @pEntity = cLux_GetBodyEntity(apBody);
+		if(pEntity !is null && pEntity.IsInteractedWith())
+			cScript_RunGlobalFunc(cLux_GetPlayer().GetCurrentStateName(),"", "OnAttachBodyToStickyArea");
+		
+		/////////////////////////
+		//Snap it into place.
+		// Release exact VR hand anchors before saving mass/gravity and snapping.
+        if(_HPL3VR_SocketRuntimeActive())
+            cScript_RunGlobalFunc("VRSOCKETHELD",""+apBody.GetUniqueID(),"R");
+        m_mtxAttachedStart = apBody.GetLocalMatrix();
+
+		mfSetMtxTime = 0;
+
+		apBody.SetLinearVelocity(cVector3f(0));
+		apBody.SetAngularVelocity(cVector3f(0));
+
+		mbAttachedBodyGravity = apBody.GetGravity();
+		apBody.SetGravity(false);
+
+		mfAttachedBodyMass = apBody.GetMass();
+		apBody.SetMass(0);
+
+		mAttachedBodyID = apBody.GetID();
+		mLastAttachedBodyID = mAttachedBodyID;
+		
+		mbSpringyAttach = false;
+		
+		////////////////////////////
+		//Set the area as parent
+		if(pEntity !is null) 
+			pEntity.SetupParent(mbCanDetach ? eParentType_Sticky : eParentType_StickyStuck, mBaseObj.GetID(), mBaseObj.GetName());
+	}
+
+	//-----------------------------------------------------------------------
+
+	void DetachBody()
+	{
+		if(mAttachedBodyID == tID_Invalid) return;
+
+		iPhysicsBody@ pBody = cLux_ID_Body(mAttachedBodyID);
+		
+		if(pBody is null)
+		{
+			mAttachedBodyID = tID_Invalid;
+			return;
+		}
+		
+		cWorld @pWorld = mBaseObj.GetMap().GetWorld();
+
+		/////////////////////////
+		//Callback function
+		if(msDetachFunction!="")
+		{
+			cLuxMap @pMap = mBaseObj.GetMap();
+			if(pMap.ScriptPrepare("void " + msDetachFunction + "(const tString &in asAreaName, const tString &in asBodyName)" ) )
+			{
+				tString sAreaName = mBaseObj.GetName();
+				pMap.SetArgString(0, sAreaName);
+				
+				tString sBodyName = pBody.GetName();
+				pMap.SetArgString(1, sBodyName );
+				pMap.ScriptExecute();
+			}
+		}
+
+		/////////////////////////
+		//Sound
+		if(msDetachSound!="")
+		{
+			cSoundEntity @pSound = pWorld.CreateSoundEntity("DetachSound",msDetachSound,true);
+			if(pSound !is null) pSound.SetPosition(mBaseObj.GetBody(0).GetWorldPosition());
+		}
+		
+		/////////////////////////
+		//Particle System
+		if(msDetachPS!="")
+		{
+			cParticleSystem @pPS = pWorld.CreateParticleSystem("DetachPS",msDetachPS,cVector3f(1), true, false);
+			if(pPS !is null) pPS.SetMatrix(mBaseObj.GetBody(0).GetWorldMatrix());
+		}
+		
+		////////////////////////////
+		//Remove the area as parent
+		iLuxEntity @pEntity = cLux_GetBodyEntity(pBody);
+		if(pEntity !is null)
+			pEntity.SetupParent(-1, pEntity.GetID(), "");		
+			
+		////////////////////////////
+		// Put back body to normal
+		pBody.SetGravity(mbAttachedBodyGravity);
+		pBody.SetMass(mfAttachedBodyMass);
+		pBody.Enable();
+		
+		mAttachedBodyID = tID_Invalid;
+		
+		/////////////////////////
+		// Reset springy
+		mbSpringyAttach = false;
+		mbSpringyInProgress = false;
+		
+		if(m_idSpringyLoopSound != tID_Invalid)
+		{
+			cSoundEntity@ pSound = cLux_ID_SoundEntity(m_idSpringyLoopSound);
+			if(pSound !is null)
+				pSound.FadeOut(3);
+			m_idSpringyLoopSound = tID_Invalid;
+		}
+	}
+
+	void _Global_GetAttachedBodyName()
+	{
+		iPhysicsBody@ pBody = cLux_ID_Body(mAttachedBodyID);
+		cScript_SetGlobalReturnString(pBody is null ? "" : pBody.GetName());
+	}
+
+	//------------------------------------------------------------
+
+	void _Global_GetAttachedEntityName()
+	{
+		iPhysicsBody@ pBody = cLux_ID_Body(mAttachedBodyID);
+		cScript_SetGlobalReturnString(pBody is null ? "" : cLux_GetBodyEntity(pBody).GetName());
+	}
+
+	//------------------------------------------------------------
+
+	void _Global_GetPoseTime()
+	{
+		cScript_SetGlobalReturnFloat(mfPoseTime);
+	}
+
+	//------------------------------------------------------------
+	
+	void _Global_BodyIsInteractedWith()
+	{
+		////////////////////////
+		// Give some springy resitence before detaching.
+		if(mbSpringy_Active)
+		{
+			iPhysicsBody@ pBody = cLux_ID_Body(mAttachedBodyID);
+			if(pBody !is null)
+			{
+				mbSpringyInProgress = true;
+				mfSpringyReleaseCount = mfSpringy_ReleaseTime;
+				mvSpringyNoMovePostion = pBody.GetLocalPosition(); //Used in case the area has a no move.
+				
+				////////////////////////////
+				// Loop
+				if(msSpringy_DetachLoopSound != "")
+				{
+					cSoundEntity@ pSound = mBaseObj.GetMap().GetWorld().CreateSoundEntity("StickyDetachLopp", 
+																						msSpringy_DetachLoopSound,
+																						true);
+					if(pSound !is null)
+					{
+						m_idSpringyLoopSound = pSound.GetID();
+						pSound.FadeIn(4.0f);
+						mBaseObj.GetAttachEntity().AddChild(pSound);
+					}
+				}
+				
+				////////////////////////////
+				// Put back body to normal
+				pBody.SetGravity(mbAttachedBodyGravity);
+				pBody.SetMass(mfAttachedBodyMass);
+				pBody.Enable();
+			}
+			else
+			{
+				DetachBody();
+			}
+		}
+		////////////////////////
+		// Normal detach
+		else
+		{
+			DetachBody();
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPECIFIC UPDATES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void UpdateAttachBody(float afTimeStep)
+	{
+		//The timestep>0 check is just when for attachment update
+		iPhysicsBody@ pBody = cLux_ID_Body(mAttachedBodyID);
+		if(pBody is null || (mfSetMtxTime >= 1 && afTimeStep>0)) return;
+		
+		//////////////////////////////////
+		// Check so that the prop still exist!
+		if(cLux_GetCurrentMap().EntityWasDestroyed())
+		{
+			if(cLux_GetCurrentMap().EntityExists(cLux_GetBodyEntity(pBody))==false)
+			{
+				mAttachedBodyID = tID_Invalid;
+				return;
+			}
+		}
+				
+		iPhysicsBody @pAreaBody = mBaseObj.GetBody(0);
+		
+		//////////////////////////////////
+		// Get post time
+		float fPoseTime = mbSpringyAttach ? 0.1f : mfPoseTime;
+		
+		//////////////////////////////////
+		// Move and rotate
+		if(mbMoveBody && mbRotateBody)
+		{
+			if(fPoseTime==0)	mfSetMtxTime = 1.0f;
+			else				mfSetMtxTime += afTimeStep / fPoseTime;
+
+			cMatrixf mtxGoal = pAreaBody.GetWorldMatrix();
+			mtxGoal.SetTranslation(pAreaBody.GetWorldPosition() - pBody.GetMassCenter());
+
+			cMatrixf mtxNew = cMath_MatrixSlerp(mfSetMtxTime,m_mtxAttachedStart,mtxGoal,true);
+
+			pBody.SetMatrix(mtxNew);
+		}
+		//////////////////////////////////
+		// Move only
+		else if(mbMoveBody && !mbRotateBody)
+		{
+			if(fPoseTime==0)	mfSetMtxTime = 1.0f;
+			else				mfSetMtxTime += afTimeStep / fPoseTime;
+
+			cVector3f vGoal = pAreaBody.GetWorldPosition() - pBody.GetMassCenter();
+
+			cVector3f vNew =	m_mtxAttachedStart.GetTranslation()* (1-mfSetMtxTime) + vGoal*mfSetMtxTime;
+
+			pBody.SetPosition(vNew);
+		}
+		//////////////////////////////////
+		// Rotate only
+		else if(!mbMoveBody && mbRotateBody)
+		{
+			if(fPoseTime==0)	mfSetMtxTime = 1.0f;
+			else				mfSetMtxTime += afTimeStep / fPoseTime;
+
+			cMatrixf mtxGoal = pAreaBody.GetWorldMatrix();
+
+			cMatrixf mtxNew = cMath_MatrixSlerp(mfSetMtxTime,m_mtxAttachedStart,mtxGoal,true);
+
+			mtxNew.SetTranslation(pBody.GetWorldPosition());
+			pBody.SetMatrix(mtxNew);
+		}
+		//////////////////////////////////
+		// No transformation
+		else
+		{
+			mfSetMtxTime = 1.0f;
+		}
+
+
+		//////////////////////////////////
+		// If attached body in place, do effects
+		if(mfSetMtxTime >= 1 && afTimeStep>0)
+		{
+			cWorld @pWorld = mBaseObj.GetMap().GetWorld();
+			
+			//Sound
+			if(msAttachSound!="")
+			{
+				cSoundEntity @pSound = pWorld.CreateSoundEntity("AttachSound",msAttachSound,true);
+				if(pSound !is null) pSound.SetPosition(pAreaBody.GetWorldPosition());
+			}
+
+			//Particle System
+			if(msAttachPS!="")
+			{
+				cParticleSystem @pPS = pWorld.CreateParticleSystem("AttachPS",msAttachPS,cVector3f(1),true, false);
+				if(pPS !is null) pPS.SetMatrix(pAreaBody.GetWorldMatrix());
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateSpringy(float afTimeStep)
+	{
+		if(mbSpringyInProgress==false) return;
+		
+		/////////////////////////////
+		// Get Body
+		iPhysicsBody@ pBody = cLux_ID_Body(mAttachedBodyID);
+		if(pBody is null)
+		{
+			DetachBody();
+			mbSpringyInProgress =false;
+			return;
+		}
+		
+		/////////////////////////////
+		// Get Entity
+		iLuxEntity@ pEntity = cLux_GetBodyEntity(pBody);
+		if(pEntity is null)
+		{
+			DetachBody();
+			mbSpringyInProgress =false;
+			return;
+		}
+		
+		/////////////////////////////
+		// Check if interacted with, if so attach again
+		if(pEntity.IsInteractedWith()==false && !_HPL3VR_SocketBodyHeld(pBody))
+		{
+			/////////////////////////////
+			// Set up attach variables
+			m_mtxAttachedStart = pBody.GetLocalMatrix();
+			mfSetMtxTime = 0;
+
+			pBody.SetLinearVelocity(cVector3f(0));
+			pBody.SetAngularVelocity(cVector3f(0));
+
+			pBody.SetGravity(false);
+			pBody.SetMass(0);
+			
+			/////////////////////////////
+			// Springy variables
+			mbSpringyInProgress =false;
+			mbSpringyAttach = true;
+			
+			/////////////////////////////
+			// Turn off looping sound
+			if(m_idSpringyLoopSound != tID_Invalid)
+			{
+				cSoundEntity@ pSound = cLux_ID_SoundEntity(m_idSpringyLoopSound);
+				if(pSound !is null)
+					pSound.FadeOut(3);
+				m_idSpringyLoopSound = tID_Invalid;
+			}
+			return;
+		}
+		
+		/////////////////////////////
+		// Apply forces
+		iPhysicsBody@ pAreaBody = mBaseObj.GetBody(0);
+		
+		cVector3f vGoalPos = mbMoveBody ? pAreaBody.GetWorldPosition() : mvSpringyNoMovePostion;
+		
+		cVector3f vDiff =  vGoalPos - pBody.GetWorldPosition();
+		pBody.AddForce(vDiff * pBody.GetMass()*1000*mfSpringy_ForceMul);	
+				
+		/////////////////////////////
+		// See if detached
+		if(vDiff.Length() > 0.05f * mfSpringy_DetachDistanceMul)
+		{
+			mfSpringyReleaseCount -= afTimeStep;
+			
+			if(mfSpringyReleaseCount<=0)
+			{
+				DetachBody();
+				mbSpringyInProgress =false;
+			}
+		}
+		else
+		{
+			mfSpringyReleaseCount += afTimeStep*0.5f;
+			mfSpringyReleaseCount = cMath_Min(mfSpringy_ReleaseTime, mfSpringyReleaseCount);
+		}
+		
+	}
+
+	/////////////////////////////////////////
+	// HELPERS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	//This is not usable yet, as strings can not be exectuted!
+	/*tString GetCallbackFunc(const tString &in asFunc,iPhysicsBody @apBody)
+	{
+		return asFunc + "(\"" + mBaseObj.GetName() + "\",\"" + apBody.GetName() + "\")"; 
+	}*/
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////
+	// Data
+	tString msAttachFunction;
+	tString msDetachFunction;
+
+	tString msAttachSound;
+	tString msDetachSound;
+
+	tString msAttachPS;
+	tString msDetachPS;
+	
+	[nosave] array<tString> mvsAttachableBodyNames;
+
+	bool mbMoveBody;
+	bool mbRotateBody;
+
+	bool mbCheckCenterInArea;
+
+	bool mbCanDetach;
+	bool mbRequiresInteraction;
+
+	float mfPoseTime;
+	
+	bool mbSpringy_Active;
+	float mfSpringy_DetachDistanceMul;
+	float mfSpringy_ForceMul;
+	float mfSpringy_ReleaseTime;
+	tString msSpringy_DetachLoopSound;
+
+	/////////////////////////
+	// Variables
+	bool mbAttachedBodyGravity;
+	float mfAttachedBodyMass;
+
+	bool mbAttachedEntityFullGameSaved;
+
+	tID mAttachedBodyID;
+	tID mLastAttachedBodyID;
+	
+	tID m_idSpringyLoopSound;
+
+	float mfSetMtxTime;
+	cMatrixf m_mtxAttachedStart;
+	
+	bool mbLastAttachedInside;
+	
+	bool mbSpringyInProgress;
+	bool mbSpringyAttach=false;
+	float mfSpringyReleaseCount;
+	cVector3f mvSpringyNoMovePostion;
+
+	//------------------------------------------------------------
+		
+}	

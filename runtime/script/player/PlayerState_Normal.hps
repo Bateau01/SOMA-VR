@@ -1,0 +1,304 @@
+#include "interfaces/PlayerState_Interface.hps"
+#include "base/InputHandler_Types.hps"
+#include "player/Player_Types.hps"
+#include "utilities/Utility_PickBasics.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_eventdb.hps"
+
+
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+//------------------------------------------------------------
+
+class cScrPlayerState_Normal : iScrPlayerState, iScrPlayerState_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnAttachBodyToStickyArea()
+	{
+		//Do nothing!
+	}
+	
+	void _Global_GetFocusEntityName()
+	{
+		cScript_SetGlobalReturnString(mPickBasics.msFocusedEntityName);		
+	}
+	
+	void _Global_GetFocusEntityID()
+	{
+		if (mPickBasics.GetFocusedEntity() !is null)
+			cScript_SetGlobalReturnID(mPickBasics.GetFocusedEntity().GetID());	
+		else
+			cScript_SetGlobalReturnID(tID_Invalid);	
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetInteractionAllowed()
+	{
+		mbInteractionAllowed = cScript_GetGlobalArgBool(0);
+		cLux_AddDebugMessage("SetInteractionAllowed:"+mbInteractionAllowed);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_GetInteractionAllowed()
+	{
+		cScript_SetGlobalReturnBool(mbInteractionAllowed);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetToolInteractionAllowed()
+	{
+		mbToolInteractionAllowed = cScript_GetGlobalArgBool(0);
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnEnterState(int alPrevStateId)
+	{
+	
+	}
+	void OnLeaveState(int alNextStateId)
+	{
+	
+	}
+		
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		mPickBasics.Reset();
+		mbToolInteractionAllowed = true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		if (!mbInteractionAllowed)
+			return;
+			
+		cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
+		
+		if(mPickBasics.UpdatePickCheck(pCam, true))
+		{
+			int lState = mPickBasics.GetFocusedEntity().GetInteractIconId(0, mPickBasics.GetFocusedBody());
+			if(lState >=0 )
+				Player_SetCrossHairState(eCrossHairState(lState));
+			else
+				Player_SetCrossHairState(eCrossHairState_Default);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+		if(abPressed==false) return true;
+		
+		////////////////////////////
+		// Physical Interaction
+		if(alAction == eAction_Interact)
+		{
+            // S26BU: the physical readable already received OnInteract and queued
+            // Grab. Its synthetic held mouse press must not select the gaze target
+            // while that transition is still pending.
+            cScript_SetGlobalReturnBool(false);
+            cScript_RunGlobalFunc("State_Interact_Grab", "", "_Global_VRConsumeReadablePress");
+            if(cScript_GetGlobalReturnBool()) return false;
+
+			if (!mbInteractionAllowed)
+				return false;
+				
+			if (!mbToolInteractionAllowed)
+				return false;
+				
+			if(mPickBasics.GetFocusedEntity() is null) return false;
+			
+			//Call entity
+			if(mPickBasics.GetFocusedEntity().OnInteract(0, mPickBasics.GetFocusedBody(), mPickBasics.mvFocusPosition, ""))
+			{
+				//Event db trigger
+				if(EventDB_UseStandardTriggers())
+				{
+					EventDB_SetGlobalFactString("InteractEntity", mPickBasics.GetFocusedEntity().GetName());
+					EventDB_SetGlobalFactString("InteractEntityTag", mPickBasics.GetFocusedEntity().GetEventTag());
+					EventDB_SetGlobalFactString("InteractEntityInstanceTag", mPickBasics.GetFocusedEntity().GetEventInstanceTag());
+					EventDB_QueryToAll(0, "PlayerInteract");
+				}
+			}
+				
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+		return true;
+	}
+	
+	/////////////////////////////////////////
+	// BODY CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool AllowBuoyancy(iPhysicsBody @apBody)
+	{
+		return true;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		tString sBodyName = "Null";
+		if(mPickBasics.GetFocusedBody() !is null) sBodyName = mPickBasics.GetFocusedBody().GetName();
+		
+		apSet.DrawFont(tWString("Focus Body:"+sBodyName), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		afStartY += 14;
+						
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	cUtility_PickBasics mPickBasics;
+	bool mbInteractionAllowed = true;
+	bool mbToolInteractionAllowed = true;
+	
+	//------------------------------------------------------------
+		
+}

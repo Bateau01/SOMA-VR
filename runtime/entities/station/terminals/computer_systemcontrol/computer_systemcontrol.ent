@@ -1,0 +1,115 @@
+<Entity>
+    <ModelData>
+        <Entities />
+        <Mesh Filename="entities/station/terminals/computer_systemcontrol/computer_systemcontrol.dae">
+            <SubMesh ID="23" Name="polymsh_detached1" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="0.01 0.01 0.01" TriCount="2" Material="" />
+            <SubMesh ID="24" Name="polymsh" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="0.01 0.01 0.01" TriCount="408" Material="" />
+        </Mesh>
+        <Bones />
+        <Shapes>
+            <Shape ID="2" Name="Shape_1" CreStamp="0" ModStamp="1429544867" WorldPos="-0.302238 0.66433 -0.0302173" Rotation="0 0 0" Scale="0.150595 1.24808 0.114404" RelativeTranslation="-0.255354 -0.446495 -0.187898" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="3" Name="Shape_2" CreStamp="0" ModStamp="1429544872" WorldPos="-0.146931 0.0268905 0.0173411" Rotation="0 0 0" Scale="0.882213 0.0435426 0.202344" RelativeTranslation="-0.100047 -1.08393 -0.14034" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="4" Name="Shape_3" CreStamp="0" ModStamp="1429544862" WorldPos="0.208471 1.12581 -0.0352995" Rotation="0 0 0" Scale="0.35996 0.334913 0.0960063" RelativeTranslation="0.255354 0.0149847 -0.19298" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="5" Name="Shape_4" CreStamp="0" ModStamp="0" WorldPos="0.00331055 1.77436 8.08425e-005" Rotation="0 0 0" Scale="1.18508 0.994395 0.173461" RelativeTranslation="0.050194 0.663535 -0.1576" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="6" Name="Shape_5" CreStamp="0" ModStamp="0" WorldPos="0.00331055 1.77436 0.093888865" Rotation="0 -0 0" Scale="1.18508 0.834975 0.03246763" RelativeTranslation="0.05019405 0.66353 -0.063792135" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="7" Name="Shape_1Shape_1" CreStamp="0" ModStamp="1429544845" WorldPos="0.00197207 2.19476 0.0881388" Rotation="0 -0 1.5708" Scale="0.0771012 1.18766 0" RelativeTranslation="0.0488556 1.08393 -0.069542" RelativeRotation="0 -0 1.5708" RelativeScale="1 1 1" ShapeType="Cylinder" />
+            <Shape ID="8" Name="Shape_2Shape_2" CreStamp="0" ModStamp="1429544856" WorldPos="0.00197207 1.35498 0.0881388" Rotation="0 -0 1.5708" Scale="0.0771012 1.18766 0" RelativeTranslation="0.0488556 0.244155 -0.069542" RelativeRotation="0 -0 1.5708" RelativeScale="1 1 1" ShapeType="Cylinder" />
+            <Shape ID="9" Name="Shape_6" CreStamp="0" ModStamp="0" WorldPos="-0.258392 1.51682 0.265351" Rotation="0.30041 -0 0" Scale="0.520043 0.0439308 0.256035" RelativeTranslation="-0.211509 0.405995 0.10767" RelativeRotation="0.30041 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="10" Name="Shape_7" CreStamp="0" ModStamp="0" WorldPos="-0.258392 1.47071 0.271059" Rotation="0 0 0" Scale="0.520043 0.0415329 0.243541" RelativeTranslation="-0.211509 0.359885 0.113378" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="11" Name="Shape_3Shape_3" CreStamp="0" ModStamp="1429544851" WorldPos="-0.258529 1.47577 0.385054" Rotation="0 -0 1.5708" Scale="0.025304 0.520256 0" RelativeTranslation="-0.211646 0.364945 0.227373" RelativeRotation="0 -0 1.5708" RelativeScale="1 1 1" ShapeType="Cylinder" />
+            <Shape ID="12" Name="Shape_8" CreStamp="0" ModStamp="0" WorldPos="-0.258392 1.50844 0.215625" Rotation="0 0 0" Scale="0.520043 0.0415329 0.135767" RelativeTranslation="-0.211509 0.397615 0.0579442" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="13" Name="wer" CreStamp="0" ModStamp="0" WorldPos="0.208471 0.919454 -0.0321272" Rotation="0.639552 -0 0" Scale="0.35996 0.119057 0.0336514" RelativeTranslation="0.255354 -0.191371 -0.189808" RelativeRotation="0.639552 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="14" Name="Shape_9" CreStamp="0" ModStamp="0" WorldPos="0.208471 1.03004 -0.0696924" Rotation="0 0 0" Scale="0.35996 0.334913 0.0286441" RelativeTranslation="0.255354 -0.0807853 -0.227373" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="15" Name="Shape_10" CreStamp="0" ModStamp="0" WorldPos="0.208471 0.989978 -0.0414822" Rotation="0 0 0" Scale="0.35996 0.158849 0.0344015" RelativeTranslation="0.255354 -0.120847 -0.199163" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="21" Name="ShapeBox_1" CreStamp="1417877433" ModStamp="1417877502" WorldPos="-0.260544 1.83461 0.10862268" Rotation="0 -0 0" Scale="0.508864 0.458842 0.003" RelativeTranslation="0 0 -0.04973932" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="25" Name="AZ_frame_25" CreStamp="0" ModStamp="0" WorldPos="-0.552336946 1.77436 0.137716815" Rotation="0 -0 0" Scale="0.0737850084 0.834975 0.05518827" RelativeTranslation="-0.505453446 0.66353 -0.019964185" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="26" Name="AZ_frame_26" CreStamp="0" ModStamp="0" WorldPos="0.293887345 1.77436 0.137716815" Rotation="0 -0 0" Scale="0.60392641 0.834975 0.05518827" RelativeTranslation="0.340770845 0.66353 -0.019964185" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="27" Name="AZ_frame_27" CreStamp="0" ModStamp="0" WorldPos="-0.261760151 1.48214455 0.137716815" Rotation="0 -0 0" Scale="0.507368581 0.2505441 0.05518827" RelativeTranslation="-0.214876651 0.37131455 -0.019964185" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="28" Name="AZ_frame_28" CreStamp="0" ModStamp="0" WorldPos="-0.261760151 2.12865535 0.137716815" Rotation="0 -0 0" Scale="0.507368581 0.1263843 0.05518827" RelativeTranslation="-0.214876651 1.01782535 -0.019964185" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="29" Name="AZ_frame_29" CreStamp="1417877433" ModStamp="1417877502" WorldPos="-0.00709393016 1.83461 0.158362" Rotation="0 -0 0" Scale="0.00196386032 0.458842 0.087986" RelativeTranslation="0.25345007 0 0" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="30" Name="AZ_frame_30" CreStamp="1417877433" ModStamp="1417877502" WorldPos="-0.26152593 1.6063028 0.158362" Rotation="0 -0 0" Scale="0.50690014 0.0022276 0.087986" RelativeTranslation="-0.000981930161 -0.2283072 0" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="31" Name="AZ_glass_31" WorldPos="-0.261760151 1.8364399 0.10962268" Rotation="-0 -0 5.11390031e-16" Scale="0.505368581 0.4560466 0.003" RelativeTranslation="-0.00121615098 0.0018299 -0.04873932" RelativeRotation="0 -0 5.11390031e-16" RelativeScale="1 1 1" ShapeType="Box" />
+        </Shapes>
+        <Bodies>
+            <Body ID="18" Name="Body_1" CreStamp="0" ModStamp="1429544919" WorldPos="-0.0468835 1.11083 0.157681" Rotation="0 0 0" Scale="1 1 1" Material="" Mass="0" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="true" CollideNonCharacter="true" Volatile="false" UseSurfaceEffects="true" HasGravity="true" BlocksLight="true">
+                <Children>
+                    <Child ID="24" />
+                </Children>
+                <Shape ID="7" />
+                <Shape ID="11" />
+                <Shape ID="6" />
+                <Shape ID="9" />
+                <Shape ID="10" />
+                <Shape ID="5" />
+                <Shape ID="12" />
+                <Shape ID="8" />
+                <Shape ID="4" />
+                <Shape ID="14" />
+                <Shape ID="15" />
+                <Shape ID="13" />
+                <Shape ID="2" />
+                <Shape ID="3" />
+                <Shape ID="25" />
+                <Shape ID="26" />
+                <Shape ID="27" />
+                <Shape ID="28" />
+            </Body>
+            <Body ID="22" Name="screen_body" CreStamp="0" ModStamp="1429544914" WorldPos="-0.260544 1.83461 0.158362" Rotation="0 0 0" Scale="1 1 1" Material="" Mass="0" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="true" CollideNonCharacter="true" Volatile="false" UseSurfaceEffects="true" HasGravity="true" BlocksLight="true">
+                <Children>
+                    <Child ID="23" />
+                </Children>
+                <Shape ID="21" />
+                <Shape ID="29" />
+                <Shape ID="30" />
+                <Shape ID="31" />
+            </Body>
+        </Bodies>
+        <Joints />
+        <Animations />
+        <ProcAnimations />
+    </ModelData>
+    <UserDefinedVariables EntityType="Prop_Terminal">
+        <Var Name="Health" Value="100" />
+        <Var Name="Toughness" Value="0" />
+        <Var Name="MaxInteractDistance" Value="0" />
+        <Var Name="EventTag" Value="" />
+        <Var Name="ShowHints" Value="true" />
+        <Var Name="LifeLength" Value="0" />
+        <Var Name="DissolveDuringLifeDecrease" Value="true" />
+        <Var Name="BlocksLineOfSight" Value="true" />
+        <Var Name="MainPhysicsBody" Value="screen_body" />
+        <Var Name="NoGravityWhenUnderwater" Value="false" />
+        <Var Name="DisableFreezeAtStart" Value="false" />
+        <Var Name="CustomScriptFile" Value="" />
+        <Var Name="CustomScriptClass" Value="" />
+        <Var Name="ShowMesh" Value="true" />
+        <Var Name="DissolveOnDestruction" Value="false" />
+        <Var Name="DissolveTime" Value="1.0" />
+        <Var Name="RandomizeAnimationStart" Value="true" />
+        <Var Name="EffectsOnSound" Value="" />
+        <Var Name="EffectsOffSound" Value="" />
+        <Var Name="EffectsOnTime" Value="0.2" />
+        <Var Name="EffectsOffTime" Value="0.2" />
+        <Var Name="StaticMoveCheckCollision" Value="false" />
+        <Var Name="StaticMoveStartSound" Value="" />
+        <Var Name="StaticMoveStopSound" Value="" />
+        <Var Name="StaticMoveLoopSound" Value="" />
+        <Var Name="StaticMoveLoopSoundFade" Value="true" />
+        <Var Name="BreakActive" Value="false" />
+        <Var Name="BreakOnlyOnMainBody" Value="false" />
+        <Var Name="BreakDestroyJoints" Value="false" />
+        <Var Name="BreakMinEnergy" Value="100" />
+        <Var Name="BreakEntity" Value="" />
+        <Var Name="BreakEntityAlignBody" Value="" />
+        <Var Name="BreakSound" Value="" />
+        <Var Name="BreakParticleSystem" Value="" />
+        <Var Name="BreakImpulse" Value="4" />
+        <Var Name="ConnectedSubmesh" Value="polymsh_detached1" />
+        <Var Name="ClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenSize" Value="512 512" />
+        <Var Name="OfflineClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenPosition" Value="0 0 0" />
+        <Var Name="ScreenNormal" Value="0 0 1" />
+        <Var Name="TargetCameraDistance" Value="0.4" />
+    </UserDefinedVariables>
+</Entity>

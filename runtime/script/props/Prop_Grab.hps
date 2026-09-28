@@ -1,0 +1,335 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+#include "helpers/helper_props.hps"
+#include "helpers/helper_modules.hps"
+
+//#include "props/Prop_Helper_Climbing.hps" SKIPPING FOR NOW
+
+class cScrPropGrab : iScrProp, iScrProp_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		mBaseObj.EnableBodyCollisionCallback(); //This so that we generate collide events.
+		
+		mbGrab_UseCustomOffset = apVars.GetVarBool("Grab_UseCustomOffset", false);
+		mvGrab_CostumPositionOffset = apVars.GetVarVector3f("Grab_CustomPositionOffset", cVector3f(0,0,0));
+		mvGrab_CostumRotationOffset = apVars.GetVarVector3f("Grab_CustomRotationOffset", cVector3f(0,0,0));
+		mbGrab_UseCustomDepth = apVars.GetVarBool("Grab_UseCustomDepth", false);
+		mfGrab_CustomDepth = apVars.GetVarFloat("Grab_CustomDepth", 0);
+		mfGrab_MassMul = apVars.GetVarFloat("Grab_MassMul", 0);
+		mfGrab_MinDepth = apVars.GetVarFloat("Grab_MinDepth", 0);
+		mfGrab_MaxDepth = apVars.GetVarFloat("Grab_MaxDepth", 0);
+		mfGrab_ForceMul = apVars.GetVarFloat("Grab_ForceMul", 0);
+		mfGrab_TorqueMul = apVars.GetVarFloat("Grab_TorqueMul", 0);
+		mfGrab_ThrowImpulse = apVars.GetVarFloat("Grab_ThrowImpulse", 5.0f);
+		mbGrab_IsHeavy = apVars.GetVarBool("Grab_IsHeavy", false);
+		mbGrab_CollisionWithPlayer = apVars.GetVarBool("Grab_CollisionWithPlayer", false);
+		mbGrab_InteractOnlyWithMainBody = apVars.GetVarBool("Grab_InteractOnlyWithMainBody", false);
+		
+		//////////////////////
+		// Readable
+		msTextCategory = apVars.GetVarString("TextCategory", "");
+		msFrontTextEntry = apVars.GetVarString("FrontTextEntry", "");
+		msBackTextEntry = apVars.GetVarString("BackTextEntry", "");
+		mfTextRotateOffset = apVars.GetVarFloat("TextRotateOffset", 0.0f);
+		if(apInstanceVars.GetVarString("TextCategory", "") != "")
+			msTextCategory = apInstanceVars.GetVarString("TextCategory", "");
+		if(apInstanceVars.GetVarString("FrontTextEntry", "") != "")
+			msFrontTextEntry = apInstanceVars.GetVarString("FrontTextEntry", "");
+		if(apInstanceVars.GetVarString("BackTextEntry", "") != "")
+			msBackTextEntry = apInstanceVars.GetVarString("BackTextEntry", "");
+			
+		//mClimbHelper.LoadVariables(apVars);
+		
+		mbInteractDisablesStaticPhysics = apInstanceVars.GetVarBool("InteractDisablesStaticPhysics", false);
+		
+		//mBaseObj.SetSaveDataIsUpdated(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	/*void OnUpdate(float afTimeStep)
+	{
+		if(mBaseObj.GetName() == "plastic_jug_1")
+		{
+			cLux_AddDebugMessage("MaxLinearSpeed: "+mBaseObj.GetMainBody().GetMaxLinearSpeed());
+		}
+		
+		
+		 //mClimbHelper.Update(afTimeStep, mBaseObj.GetMainBody());
+	}*/
+	
+	//------------------------------------------------------------
+	
+	/*void OnPostUpdate(float afTimeStep)
+	{
+		//mClimbHelper.PostUpdate(afTimeStep);
+	}*/
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+		
+	//-----------------------------------------------------------
+
+	void _Global_SetForceMul()
+	{
+		mfGrab_ForceMul = cScript_GetGlobalArgFloat(0);
+		
+		mBaseObj.SetSaveDataIsUpdated(true);
+		
+		// Are we currently grabbing a prop?
+		cLuxProp@ pProp = Grab_GetGrabbedProp();
+		if (pProp==null)
+			return;
+			
+		// Is it this prop?
+		if (pProp.GetID() == mBaseObj.GetID())
+		{
+			// Update the forcemul used by the current grab
+			cScript_SetGlobalArgFloat(0, mfGrab_ForceMul);
+			cScript_RunGlobalFunc("State_Interact_Grab", "", "_Global_SetForceMul");
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in aContactData)
+	{
+		//Debug:
+		//cLux_AddDebugMessage("Body "+apBody.GetName()+" vs "+apCollideBody.GetName() + "Nrm: " +aContactData.mfMaxContactNormalSpeed + " Tan: "+aContactData.mfMaxContactTangentSpeed, false);
+	}
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INTERACTION
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+    // S26L: the two static Theta slot displays are Prop_Grab, not the real
+    // inventory Tool. Route their physical interaction to the authored socket
+    // synchronously, while native dispatch still owns the current grip hand.
+    tString VR_ThetaSocket()
+    {
+        tString name=mBaseObj.GetName();
+        tString tool="",slot="";
+        if(name=="SimulationSlot_Right_Chip") {tool="BrainScanChip";slot="SimulationSlot_Right";}
+        else if(name=="SimulationSlot_Left_Chip") {tool="EnvironmentChip";slot="SimulationSlot_Left";}
+        else return "";
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        if(!cScript_GetGlobalReturnBool()) return "";
+        cLuxMap@ map=cLux_GetCurrentMap();
+        if(map is null || map.GetEntityByName(tool,eLuxEntityType_LastEnum,"") is null) return "";
+        if(Entity_GetVarString(tool,"Slot")!=slot || !Entity_IsActive(name)) return "";
+        return slot;
+    }
+
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		if(ToolHandler_GetPlayerCarriesHeavyTool()) return false;
+        if(VR_ThetaSocket()!="") return true;
+        if(mbGrab_InteractOnlyWithMainBody && apBody !is mBaseObj.GetMainBody()) return false;
+		if(mBaseObj.HasPlayerInteractCallback()) return true;
+		if(mBaseObj.GetStaticPhysics() && !mbInteractDisablesStaticPhysics) return false;
+		if(mBaseObj.GetParentType() == eParentType_StickyStuck) return false;
+	
+		return true;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+    {
+        tString socket=VR_ThetaSocket();
+        if(socket!="")
+        {
+            cLuxMap@ map=cLux_GetCurrentMap();
+            if(map !is null && map.ScriptPrepare("void InteractChipSlot(const tString&in asEntity)"))
+            {
+                map.SetArgString(0,socket);
+                map.ScriptExecute();
+            }
+            return true; // Never promote the socket display into native Grab.
+        }
+		if (mBaseObj.GetStaticPhysics())
+		{
+			if (!mbInteractDisablesStaticPhysics) 
+				return false;
+				
+			mBaseObj.SetStaticPhysics(false);
+		}
+		
+		mBaseObj.SetSaveDataIsUpdated(true);
+						
+		///////////////////////////////
+		//Set up the grabstate
+		cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+		cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+		cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
+		cScript_SetGlobalArgBool(3, mbGrab_UseCustomOffset);	//Use custom offset
+		cScript_SetGlobalArgVector3f(4, mvGrab_CostumPositionOffset);	//Costum Position offset
+		cScript_SetGlobalArgVector3f(5, mvGrab_CostumRotationOffset);	//Costum Rotation offset
+		cScript_SetGlobalArgBool(6, mbGrab_UseCustomDepth);	//Use custom Depth
+		cScript_SetGlobalArgFloat(7, mfGrab_CustomDepth);	//Custom depth
+		cScript_SetGlobalArgFloat(8, mfGrab_MassMul);	//Grab mass mul
+		cScript_SetGlobalArgFloat(9, mfGrab_MinDepth);	//Min depth
+		cScript_SetGlobalArgFloat(10, mfGrab_MaxDepth);	//Max Depth
+		cScript_SetGlobalArgFloat(11, mfGrab_ForceMul);
+		cScript_SetGlobalArgFloat(12, mfGrab_TorqueMul);
+		cScript_SetGlobalArgFloat(13, mfGrab_ThrowImpulse);
+		cScript_SetGlobalArgBool(14, mbGrab_IsHeavy);
+		cScript_SetGlobalArgBool(15, mbGrab_CollisionWithPlayer);
+		
+		cScript_RunGlobalFunc("State_Interact_Grab", "", "SetupGrab");
+		
+		cScript_SetGlobalArgString(0, msTextCategory);
+		cScript_SetGlobalArgString(1, msFrontTextEntry);
+		cScript_SetGlobalArgString(2, msBackTextEntry);
+		cScript_SetGlobalArgFloat(3, mfTextRotateOffset);
+		
+		cScript_RunGlobalFunc("State_Interact_Grab", "", "SetupReading");
+		
+		///////////////////////////////
+		//Set up the grabstate
+		cLux_GetPlayer().ChangeState(ePlayerState_Grab);
+	
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_CarryOneHanded;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbGrab_UseCustomOffset;
+	[nosave] cVector3f mvGrab_CostumPositionOffset;
+	[nosave] cVector3f mvGrab_CostumRotationOffset;
+	[nosave] bool mbGrab_UseCustomDepth;
+	[nosave] float mfGrab_CustomDepth;
+	[nosave] float mfGrab_MassMul;
+	[nosave] float mfGrab_MinDepth;
+	[nosave] float mfGrab_MaxDepth;
+	[nosave] float mfGrab_ForceMul;
+	[nosave] float mfGrab_TorqueMul;
+	[nosave] float mfGrab_ThrowImpulse;
+	[nosave] bool mbGrab_IsHeavy;
+	[nosave] bool mbGrab_CollisionWithPlayer;
+	[nosave] bool mbGrab_InteractOnlyWithMainBody;
+	
+	//////////////////////
+	// Readable
+	[nosave] tString msTextCategory;
+	[nosave] tString msFrontTextEntry;
+	[nosave] tString msBackTextEntry;
+	[nosave] float mfTextRotateOffset;
+	//------------------------------------------------------------
+	
+	//cProp_Helper_Climbing mClimbHelper;
+	bool mbInteractDisablesStaticPhysics = false;
+	
+	//------------------------------------------------------------
+}	

@@ -1,0 +1,21 @@
+{
+  "version": "S26BY",
+  "native_payload_rebuild_matches_release": true,
+  "native_hand_scale_regression": {
+    "before": {
+      "exit": 1,
+      "stdout": "FAIL line 95 scale=2.000000 heal=0 held=0\n",
+      "stderr": ""
+    },
+    "after": {
+      "exit": 0,
+      "stdout": "PASS 49106 checks: both hands, four families, 31 slider values, free/grab/two-hand/heal/release transitions; native refresh does not double-scale; positions and bone-local units unchanged.\n",
+      "stderr": ""
+    }
+  },
+  "packaged_launcher_started_isolated_game": true,
+  "supplied_upsilon_save_loaded": true,
+  "gameplay_camera_authority_reached": true,
+  "engine_exit_successful": true,
+  "hardware_hand_scale_confirmation": "pending"
+}

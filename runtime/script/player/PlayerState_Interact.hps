@@ -1,0 +1,163 @@
+#include "interfaces/PlayerState_Interface.hps"
+#include "base/InputHandler_Types.hps"
+#include "player/Player_Types.hps"
+
+//------------------------------------------------------------
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+bool _HPL3VR_RuntimeActive_Interact()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+class iScrPlayerState_Interact : iScrPlayerState
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnAttachBodyToStickyArea()
+	{
+		mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+	}
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupInteractVars()
+	{
+		tID lEntityId = cScript_GetGlobalArgID(0);
+		int lBodyId = 	cScript_GetGlobalArgInt(1);
+		mvFocusPos = 	cScript_GetGlobalArgVector3f(2);
+		
+		mPropID = lEntityId;
+		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+
+		iPhysicsBody@ pBody = pProp.GetBodyFromID(lBodyId);
+		mBodyID = pBody.GetID();
+		
+		pProp.SetIsInteractedWith(true);
+		
+		//If attached to sticky area (and can be removed), detach.
+		if(pProp !is null && pProp.GetParentType() == eParentType_Sticky)
+		{
+			cScript_RunGlobalFunc(pProp.GetParentName(), "", "_Global_BodyIsInteractedWith");
+		}
+		
+		//Get the local offset. 
+		cMatrixf mtxInvBody = cMath_MatrixInverse(pBody.GetLocalMatrix());
+		mvLocalBodyOffset = cMath_MatrixMul(mtxInvBody, mvFocusPos);
+	}
+
+	//-----------------------------------------------------------------------
+
+	void EnterInteractState(int alPrevStateId)
+	{
+		if(alPrevStateId<0) mlPreviousState = ePlayerState_Normal;
+		else				mlPreviousState = alPrevStateId;
+	}
+
+	//-----------------------------------------------------------------------
+	
+	bool CheckShouldUpdate()
+	{
+		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+		if(pProp is null || pProp.IsInteractedWith()==false)
+		{
+			mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//-----------------------------------------------------------------------
+
+	void ResetPropInteractVars()
+	{
+		cLux_ID_Prop(mPropID).SetIsInteractedWith(false);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPERS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	cVector2f GetCurrentFocusScreenPos()
+	{
+		cCamera @pCam = cLux_GetPlayer().GetCamera();
+		
+		cVector3f vFocusPos =  cMath_MatrixMul(cLux_ID_Body(mBodyID).GetLocalMatrix(), mvLocalBodyOffset);
+		
+		cVector3f vProjPos = cMath_MatrixMul(pCam.GetViewMatrix(), vFocusPos);
+		vProjPos = cMath_MatrixMulDivideW(pCam.GetProjectionMatrix(),vProjPos);
+		
+		return cVector2f( (vProjPos.x+1)*0.5f * cLux_GetHudVirtualSize().x, ((-vProjPos.y)+1)*0.5f * cLux_GetHudVirtualSize().y);
+	}
+	
+	//------------------------------------------------------------
+	
+	void CheckOutsideAtScreenEdgeAndMove(float afTimeStep)
+	{
+		if (!_HPL3VR_RuntimeActive_Interact())
+		{
+				iCharacterBody @pCharBody = cLux_GetPlayer().GetCharacterBody();
+				cCamera @pCam = cLux_GetPlayer().GetCamera();
+				
+				cVector2f vScreenPos = GetCurrentFocusScreenPos();
+				
+				cVector2f vMin = cVector2f(200, 150);
+				cVector2f vMax = cLux_GetHudVirtualSize() - vMin;
+				cVector2f vCamMove = cVector2f(0);
+				
+				if(vScreenPos.x < vMin.x) vCamMove.x += (vScreenPos.x - vMin.x);
+				if(vScreenPos.y < vMin.y) vCamMove.y += (vScreenPos.y - vMin.y);
+				if(vScreenPos.x > vMax.x) vCamMove.x += (vScreenPos.x - vMax.x);
+				if(vScreenPos.y > vMax.y) vCamMove.y += (vScreenPos.y - vMax.y);
+				
+				pCharBody.AddYaw(vCamMove.x * -0.01 * afTimeStep);
+				pCam.AddPitch(vCamMove.y * -0.01 * afTimeStep);
+			return;
+		}
+		// H5755CB_VR_SCREENEDGE_DISABLED
+		// Desktop SOMA rotates the character body and pitches the camera to keep
+		// the grabbed focus point inside a 200x150 HUD margin. In room-scale VR
+		// that becomes involuntary camera motion, so VR interaction leaves the
+		// authored player/camera orientation untouched. Right-stick/body yaw is
+		// unaffected because it does not use this helper.
+	}
+	
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	tID mPropID;
+	tID mBodyID;
+	
+	cVector3f mvFocusPos;
+	cVector3f mvLocalBodyOffset;
+	
+	int mlPreviousState;
+		
+	//------------------------------------------------------------
+}

@@ -1,0 +1,93 @@
+<Entity>
+    <ModelData>
+        <Entities>
+            <PointLight ID="11" Name="PointLight_2" CreStamp="0" ModStamp="1406652676" WorldPos="0.295373 0.132718 -0.520885" Rotation="0 0 0" Scale="1 1 1" CastShadows="false" ShadowResolution="High" ShadowsAffectStatic="true" ShadowsAffectDynamic="true" Radius="0.125" Gobo="" GoboType="Diffuse" GoboAnimMode="None" GoboAnimFrameTime="1" GoboAnimStartTime="0" DiffuseColor="1 0.896149 0.675781 1" FlickerActive="false" FlickerOnMinLength="0" FlickerOnMaxLength="0" FlickerOnPS="" FlickerOnSound="" FlickerOffMinLength="0" FlickerOffMaxLength="0" FlickerOffPS="" FlickerOffSound="" FlickerOffColor="0 0 0 1" FlickerOffRadius="0" FlickerFade="false" FlickerOnFadeMinLength="0" FlickerOnFadeMaxLength="0" FlickerOffFadeMinLength="0" FlickerOffFadeMaxLength="0" AffectedBySSAO="true" Brightness="2" CulledByDistance="true" CulledByFog="true" FalloffPow="0.5" ConnectedLightMaskID="4294967295" />
+            <PointLight ID="12" Name="PointLight_3" CreStamp="0" ModStamp="1406652689" WorldPos="0.422124 0.111301 -0.559232" Rotation="0 0 0" Scale="1 1 1" CastShadows="false" ShadowResolution="High" ShadowsAffectStatic="true" ShadowsAffectDynamic="true" Radius="0.075" Gobo="" GoboType="Diffuse" GoboAnimMode="None" GoboAnimFrameTime="1" GoboAnimStartTime="0" DiffuseColor="0.391418 1 0.339844 1" FlickerActive="false" FlickerOnMinLength="0" FlickerOnMaxLength="0" FlickerOnPS="" FlickerOnSound="" FlickerOffMinLength="0" FlickerOffMaxLength="0" FlickerOffPS="" FlickerOffSound="" FlickerOffColor="0 0 0 1" FlickerOffRadius="0" FlickerFade="false" FlickerOnFadeMinLength="0" FlickerOnFadeMaxLength="0" FlickerOffFadeMinLength="0" FlickerOffFadeMaxLength="0" AffectedBySSAO="true" Brightness="1" CulledByDistance="true" CulledByFog="true" FalloffPow="0.5" ConnectedLightMaskID="4294967295" />
+            <PointLight ID="13" Name="PointLight_4" CreStamp="0" ModStamp="1406652682" WorldPos="-0.433479 0.129263 -0.549973" Rotation="0 0 0" Scale="1 1 1" CastShadows="false" ShadowResolution="High" ShadowsAffectStatic="true" ShadowsAffectDynamic="true" Radius="0.125" Gobo="" GoboType="Diffuse" GoboAnimMode="None" GoboAnimFrameTime="1" GoboAnimStartTime="0" DiffuseColor="1 0.339844 0.339844 1" FlickerActive="false" FlickerOnMinLength="0" FlickerOnMaxLength="0" FlickerOnPS="" FlickerOnSound="" FlickerOffMinLength="0" FlickerOffMaxLength="0" FlickerOffPS="" FlickerOffSound="" FlickerOffColor="0 0 0 1" FlickerOffRadius="0" FlickerFade="false" FlickerOnFadeMinLength="0" FlickerOnFadeMaxLength="0" FlickerOffFadeMinLength="0" FlickerOffFadeMaxLength="0" AffectedBySSAO="true" Brightness="2" CulledByDistance="true" CulledByFog="true" FalloffPow="0.5" ConnectedLightMaskID="4294967295" />
+        </Entities>
+        <Mesh Filename="entities/oceanbottom/terminals/high_pressure_terminal/high_pressure_terminal.dae">
+            <SubMesh ID="0" Name="low" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="1052" Material="" />
+            <SubMesh ID="1" Name="hex" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="14" Material="" />
+            <SubMesh ID="2" Name="terminal" CreStamp="0" ModStamp="0" WorldPos="0 0 0" Rotation="0 0 0" Scale="1 1 1" TriCount="14" Material="" />
+        </Mesh>
+        <Bones />
+        <Shapes>
+            <Shape ID="3" Name="ShapeBox_1" CreStamp="0" ModStamp="1406651317" WorldPos="0 -0.0286168 0" Rotation="0 -0 0" Scale="1.3813 0.076718 1.12785" RelativeTranslation="-0.153152 -0.1143202 0.27275" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="4" Name="ShapeBox_2" CreStamp="0" ModStamp="1406651341" WorldPos="0 0.0128346 -0.530458" Rotation="0 0 0" Scale="1.08446 0.167785 0.12444" RelativeTranslation="-0.153152 -0.0728687 -0.257707" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="5" Name="ShapeBox_3" CreStamp="0" ModStamp="1406651353" WorldPos="-0.295129 0.0580284 -0.530458" Rotation="0 0 0" Scale="0.0818866 0.167785 0.0760629" RelativeTranslation="-0.448281 -0.027675 -0.257707" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="6" Name="ShapeBox_4" CreStamp="0" ModStamp="1406651383" WorldPos="0.601434 0.183735 -0.545501" Rotation="0 0 0" Scale="0.0274631 0.371849 0.0312042" RelativeTranslation="0.448281 0.0980316 -0.27275" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="7" Name="ShapeBox_5" CreStamp="0" ModStamp="1406651392" WorldPos="0.566498 0.0622014 -0.545501" Rotation="0 0 0" Scale="0.0753398 0.079364 0.0533624" RelativeTranslation="0.413345 -0.023502 -0.27275" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="14" Name="AZ_frame_14" CreStamp="0" ModStamp="1406651317" WorldPos="-0.6224365 0.0260307 0" Rotation="0 -0 0" Scale="0.136427 0.032577 1.12785" RelativeTranslation="-0.7755885 -0.0596727 0.27275" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="15" Name="AZ_frame_15" CreStamp="0" ModStamp="1406651317" WorldPos="0.6224365 0.0260307 0" Rotation="0 -0 0" Scale="0.136427 0.032577 1.12785" RelativeTranslation="0.4692845 -0.0596727 0.27275" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="16" Name="AZ_frame_16" CreStamp="0" ModStamp="1406651317" WorldPos="-2.22044605e-16 0.0260307 -0.496573386" Rotation="0 -0 0" Scale="1.108446 0.032577 0.134703229" RelativeTranslation="-0.153152 -0.0596727 -0.223823386" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="17" Name="AZ_frame_17" CreStamp="0" ModStamp="1406651317" WorldPos="-2.22044605e-16 0.0260307 0.496573664" Rotation="0 -0 0" Scale="1.108446 0.032577 0.134702672" RelativeTranslation="-0.153152 -0.0596727 0.769323664" RelativeRotation="0 -0 0" RelativeScale="1 1 1" ShapeType="Box" />
+            <Shape ID="18" Name="AZ_glass_18" WorldPos="-2.39808173e-16 0.0092422 2.78434355e-07" Rotation="-1.57079633 -2.22234397e-16 0" Scale="1.106446 0.856444099 0.003" RelativeTranslation="-0.153152 -0.0764612 0.272750278" RelativeRotation="-1.57079633 -2.22234397e-16 0" RelativeScale="1 1 1" ShapeType="Box" />
+        </Shapes>
+        <Bodies>
+            <Body ID="9" Name="Body_1" CreStamp="0" ModStamp="1406651413" WorldPos="0.153152 0.0857034 -0.27275" Rotation="0 0 0" Scale="1 1 1" Material="Metal Compact" Mass="0" AngularDamping="0.1" LinearDamping="0.1" MaxAngularSpeed="20" MaxLinearSpeed="20" BuoyancyDensityMul="1" BlocksSound="false" ContinuousCollision="true" CanAttachCharacter="false" PushedByCharacterGravity="false" CollideCharacter="true" CollideNonCharacter="true" Volatile="false" UseSurfaceEffects="true" HasGravity="true" BlocksLight="true">
+                <Children>
+                    <Child ID="0" />
+                    <Child ID="1" />
+                    <Child ID="2" />
+                </Children>
+                <Shape ID="7" />
+                <Shape ID="4" />
+                <Shape ID="3" />
+                <Shape ID="5" />
+                <Shape ID="6" />
+                <Shape ID="14" />
+                <Shape ID="15" />
+                <Shape ID="16" />
+                <Shape ID="17" />
+                <Shape ID="18" />
+            </Body>
+        </Bodies>
+        <Joints />
+        <Animations />
+        <ProcAnimations />
+    </ModelData>
+    <UserDefinedVariables EntityType="Prop_Terminal">
+        <Var Name="Health" Value="100" />
+        <Var Name="Toughness" Value="0" />
+        <Var Name="MaxInteractDistance" Value="0" />
+        <Var Name="EventTag" Value="" />
+        <Var Name="ShowHints" Value="true" />
+        <Var Name="LifeLength" Value="0" />
+        <Var Name="DissolveDuringLifeDecrease" Value="true" />
+        <Var Name="BlocksLineOfSight" Value="true" />
+        <Var Name="MainPhysicsBody" Value="" />
+        <Var Name="NoGravityWhenUnderwater" Value="false" />
+        <Var Name="DisableFreezeAtStart" Value="false" />
+        <Var Name="CustomScriptFile" Value="" />
+        <Var Name="CustomScriptClass" Value="" />
+        <Var Name="ShowMesh" Value="true" />
+        <Var Name="DissolveOnDestruction" Value="false" />
+        <Var Name="DissolveTime" Value="1.0" />
+        <Var Name="RandomizeAnimationStart" Value="true" />
+        <Var Name="EffectsOnSound" Value="" />
+        <Var Name="EffectsOffSound" Value="" />
+        <Var Name="EffectsOnTime" Value="0.2" />
+        <Var Name="EffectsOffTime" Value="0.2" />
+        <Var Name="StaticMoveCheckCollision" Value="false" />
+        <Var Name="StaticMoveStartSound" Value="" />
+        <Var Name="StaticMoveStopSound" Value="" />
+        <Var Name="StaticMoveLoopSound" Value="" />
+        <Var Name="StaticMoveLoopSoundFade" Value="true" />
+        <Var Name="BreakActive" Value="false" />
+        <Var Name="BreakOnlyOnMainBody" Value="false" />
+        <Var Name="BreakDestroyJoints" Value="false" />
+        <Var Name="BreakMinEnergy" Value="100" />
+        <Var Name="BreakEntity" Value="" />
+        <Var Name="BreakEntityAlignBody" Value="" />
+        <Var Name="BreakSound" Value="" />
+        <Var Name="BreakParticleSystem" Value="" />
+        <Var Name="BreakImpulse" Value="4" />
+        <Var Name="ConnectedSubmesh" Value="terminal" />
+        <Var Name="ClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenSize" Value="1024 800" />
+        <Var Name="OfflineClearColor" Value="0 0 0 1" />
+        <Var Name="ScreenPosition" Value="-0.125 0 0.25" />
+        <Var Name="ScreenNormal" Value="0 0.75 0" />
+        <Var Name="TargetCameraDistance" Value="0.7" />
+    </UserDefinedVariables>
+</Entity>

@@ -1,0 +1,1132 @@
+#include "Prop_Tool.hps"
+#include "Prop_HudObject.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_audio.hps"
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+// H5756BF_VR_DEFER_NONPHYSICAL_OMNI_REHYDRATE: story/map nonphysical pickup stays logical/bodyless until PlayerToolHandler delayed ensure; manual physical pickup remains immediate.
+bool _HPL3VR_RuntimeActive_Catherine()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+const tString gsCathInteractUnderwaterSound = "Entities_OceanBottom/objects/cathtool/remove";
+const tString gsCathInteractNonUnderwaterSound = "Entities_Station/object/cathtool/remove_cathtool_nonunderwater";
+
+//------------------------------------------------------------
+
+enum eCathToolScreen
+{
+	eCathToolScreen_PreInteract,
+	eCathToolScreen_Interact,
+	eCathToolScreen_Disconnected
+}
+
+enum eCathToolTarget
+{
+	eCathToolTarget_None,
+	eCathToolTarget_Panel,
+	eCathToolTarget_Slot
+}
+
+enum eCathToolVariant
+{
+	eCathToolVariant_HelperJane,
+	eCathToolVariant_Cath,
+	eCathToolVariant_CathDelta,
+	eCathToolVariant_CathAbyss,
+	
+	eCathToolVariant_LastEnum
+}
+
+//------------------------------------------------------------
+
+void SetUpOmnitoolGUI(cLuxProp@ apBaseObj)
+{
+	// Set up GUI screen
+	apBaseObj.CreateAndSetupGui("screen", cColor_White, 0, 0, cVector2f(512.0f, 320.0f));
+	apBaseObj.SetOnGuiFunction("$_CathTool_OnGui");
+}
+
+//------------------------------------------------------------
+
+//////////////////////////////////////////////////////
+// TOOL
+//////////////////////////////////////////////////////
+
+//------------------------------------------------------------
+
+// H5756I_VR_OMNITOOL_MANUAL_RETRIEVAL_C_FRAME
+// H5756S_VR_OMNITOOL_POST_STATIC_UPGRADE_CAPTURE
+// H5756T_VR_OMNITOOL_INSERTED_CONTEXT: after authored Insert() has switched Catherine to static slot ownership, capture that exact current main body for physical chip contact; never re-adopt into H26.
+// H5756AE_VR_INSERTED_SAVE_CONTEXT_RESTORE: save bootstrap for mbInserted=true reconstructs the same post-static upgrade-body capture and PlayerToolHandler inserted context as live Insert(); no story callback or physical motion is invoked.
+// H5756AN_VR_OMNITOOL_RIGHT_SHOULDER_SLOT lineage
+// H5756AO_VR_OMNITOOL_RIGHT_SHOULDER_SLOT: default right-shoulder storage is hidden/bodyless like the left shoulder; fresh-Grip draw rematerializes owned non-inserted Catherine without map Use/slot callbacks; legacy physical hip mode remains native-configurable.
+// H5756W_VR_OMNITOOL_REPLACED_SOURCE_RETIREMENT: Upsilon source OmniTool becomes non-interactable immediately after its authored replacement is inserted, then hides after a short safe delay so old Newton hand references are already released.
+// H5756BG_VR_CATHERINE_LOCAL_BOOTSTRAP_DELAY: SetupAfterLoad never touches cLux_GetCurrentMap/Map_AddTimer; object-local OnUpdate delay owns bootstrap after entity construction.
+void _CathTool_VRBootstrap_Timer(const tString &in asTimer)
+{
+	cScript_RunGlobalFunc(asTimer, "cScrPropCatherineTool", "_Global_VRBootstrap");
+}
+
+class cScrPropCatherineTool : cScrPropTool
+{
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{
+		// S26BX: replacement is an authored ownership transaction. Finish its
+		// saved cleanup even when a VR-created save is resumed in flatscreen.
+		// Keep the delay: native hand references must retire before body hiding.
+		if (mbVRReplacementSourceRetirePending)
+		{
+			mfVRReplacementSourceRetireDelay -= afTimeStep;
+			if (mfVRReplacementSourceRetireDelay <= 0.0f)
+			{
+				mbVRReplacementSourceRetirePending = false;
+				mfVRReplacementSourceRetireDelay = 0.0f;
+				mbVRHolstered = false;
+				mBaseObj.SetActive(false);
+				mBaseObj.SetSaveDataIsUpdated(true);
+				if (_HPL3VR_RuntimeActive_Catherine())
+					cScript_RunGlobalFunc("VROMNIRET", mBaseObj.GetName(), "H");
+				return;
+			}
+		}
+		if (!_HPL3VR_RuntimeActive_Catherine())
+		{
+				cScrPropTool::OnUpdate(afTimeStep);
+				
+				
+			return;
+		}
+		cScrPropTool::OnUpdate(afTimeStep);
+		if (!mbVRBootstrapDone && mfVRBootstrapDelay > 0.0f)
+		{
+			mfVRBootstrapDelay -= afTimeStep;
+			if (mfVRBootstrapDelay <= 0.0f)
+			{
+				mfVRBootstrapDelay = 0.0f;
+				_Global_VRBootstrap();
+			}
+		}
+		VR_PublishPlayerBodyPosition();
+		VR_SuppressNonCanonicalOwnedDuplicate();
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+		cScrPropTool::OnSetActive(abX);
+		
+		if (abX==false && msSlot != "")
+		{
+			cScript_SetGlobalArgBool(0, false);
+			cScript_RunGlobalFunc(msSlot, "cScrPropOmniSlot", "_Global_SetAttachAllowed");
+			msSlot = "";
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		if (!_HPL3VR_RuntimeActive_Catherine())
+		{
+				cScrPropTool::SetupAfterLoad(apWorld, apVars, apInstanceVars);
+				
+				// Set up GUI screen
+				SetUpOmnitoolGUI(mBaseObj);
+				
+				//Unless another callback has been set, use a default one
+				if (msCanBeUsedCallback=="") msCanBeUsedCallback = "$CathTool_CanUse";
+				
+				mBaseObj.SetVariableUpdateRate(cMath_RandRectf(0.25f, 0.35f)); //call variable update no faster than once per 0.3 sec
+				mBaseObj.SetAutoSleep(false);
+				
+				// Clear out hints after moving to new map (potential if streaming)
+				ResetHints();
+			return;
+		}
+		cScrPropTool::SetupAfterLoad(apWorld, apVars, apInstanceVars);
+		
+		// Set up GUI screen
+		SetUpOmnitoolGUI(mBaseObj);
+		
+		//Unless another callback has been set, use a default one
+		if (msCanBeUsedCallback=="") msCanBeUsedCallback = "$CathTool_CanUse";
+		
+		// H57.56B: Catherine is now a real body-relative world prop while owned.
+		// A modest 60 Hz variable update keeps the pre-first-draw storage park alive;
+		// once native O2 has captured the raw body it owns the same park at Newton cadence.
+		mBaseObj.SetVariableUpdateRate(0.0167f);
+		mBaseObj.SetAutoSleep(false);
+		mfVRBootstrapDelay = 0.35f;
+		
+		// Clear out hints after moving to new map (potential if streaming)
+		ResetHints();
+	}
+	
+	//------------------------------------------------------------
+	
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		if (mbVRReplacementSourceRetirePending) return false;
+		if (!_HPL3VR_RuntimeActive_Catherine())
+		{
+				if(cScrPropTool::CanInteract(alType, apBody)==false) return false;
+				
+				if (mbInserted)
+				{
+					if(mBaseObj.Timer_Exists(0)) return false; //Do so do not get the crossed over icon straight after.
+					
+					if (CanGiveHint())
+						return true;
+					return false;
+				}
+				return true;
+		}
+		// S26BO: retained physics/contact references must not make an inactive
+		// slot display or hidden shoulder carrier interactable in the world.
+		// Authored hidden first acquisition calls OnInteract directly instead.
+		if (!mBaseObj.IsActive()) return false;
+		// W: once this source carrier has been authoritatively replaced by another
+		// Catherine entity, it is dead to VR interaction immediately even though its
+		// world body stays alive briefly for safe Newton hand-reference retirement.
+		if (VR_IsDeltaCrashDisplay() && !mbInserted && !Player_ToolIsInInventory(mBaseObj.GetName())) return Entity_IsActive("CathTool_InteractArea");
+		// An already-owned physical Catherine may always be gripped directly.
+		// Do not ask ToolHandler_CanPickOrUseTool(), which describes flatscreen HUD use.
+		if (!mbInserted && Player_ToolIsInInventory(mBaseObj.GetName())) return true;
+		if(cScrPropTool::CanInteract(alType, apBody)==false) return false;
+		
+		if (mbInserted)
+		{
+			if(mBaseObj.Timer_Exists(0)) return false; //Do so do not get the crossed over icon straight after.
+			
+			if (CanGiveHint())
+				return true;
+			return false;
+		}
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void PickUpTool(bool abEquipTool, bool abCallback)
+	{
+		if (!_HPL3VR_RuntimeActive_Catherine())
+		{
+				cScrPropTool::PickUpTool(abEquipTool, abCallback);
+				
+				Map_AddTimer(mBaseObj.GetName(), 1.0f, "$_CathTool_ResetScreen_Timer");
+			return;
+		}
+		// H57.56C: one logical pickup only. A nested/repeated pickup after the first
+		// AddTool must not publish P twice or create a second logical Catherine.
+		if (Player_ToolIsInInventory(mBaseObj.GetName()))
+		{
+			if (mbVRPhysicalPickupInProgress && !mbVRPhysicalDrawStarted)
+			{
+				mbVRPhysicalDrawStarted = true;
+				VR_BeginPhysicalDraw();
+				cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "G");
+			}
+			return;
+		}
+
+		// Let the authored callback + PlayerToolHandler inventory transaction succeed
+		// first. Only a successful inventory acquisition becomes a P token.
+		cScrPropTool::PickUpTool(abEquipTool, abCallback);
+		if (!Player_ToolIsInInventory(mBaseObj.GetName())) return;
+
+		cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "P");
+		if (mbVRPhysicalPickupInProgress)
+		{
+			if (!mbVRPhysicalDrawStarted)
+			{
+				mbVRPhysicalDrawStarted = true;
+				VR_BeginPhysicalDraw();
+				cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "G");
+			}
+		}
+		else
+		{
+			// H57.56BF: map/story Tool_PickUp may run inside OnEnter while the old
+			// world is still being retired. Do not create/activate/static-toggle/
+			// GetMainBody/SetMatrix the Catherine carrier synchronously here.
+			// PlayerToolHandler::VR_EnsurePhysicalOmniWorldEntity owns the delayed
+			// physical rehydration once the new map/script/physics lifetime is mature.
+			mbVRHolstered = true;
+		}
+		Map_AddTimer(mBaseObj.GetName(), 1.0f, "$_CathTool_ResetScreen_Timer");
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetVoiceCharacter()
+	{
+		msVoiceCharacter = cScript_GetGlobalArgString(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_OnEquip()
+	{
+		//msEquippedCathTool = cScript_GetGlobalArgString(0);
+		
+		//Map_AddTimer(mBaseObj.GetName(), 0.5f, "$_CathTool_Equipped_ScreenUpdate_Timer");
+		
+		cLux_AddDebugMessage("Cathtool equipped");
+	}
+	
+	void _Global_OnUnequip()
+	{
+		cLux_AddDebugMessage("Cathtool unequipped");
+		
+		mBaseObj.SetVarString("LookEntities", "");
+		//if(mScreenState==eCathToolScreen_Disconnected)
+		//	mScreenState = eCathToolScreen_PreInteract;
+		
+		//Map_RemoveTimer(mBaseObj.GetName());
+	}
+	
+	void _Global_UpdateLookEntities()
+	{
+		if(cScript_GetGlobalVarInt("CathToolScreen")!=eCathToolScreen_PreInteract)
+			return;
+			
+		tString sLookEntities = cScript_GetGlobalArgString(0);
+		mBaseObj.SetVarString("LookEntities", sLookEntities);
+		
+		iLuxEntity@ pClosestEntity = null;
+	
+		array<tString> vLookEntities;
+		cString_GetStringVec(sLookEntities, vLookEntities, ",");
+		
+		if(vLookEntities.length()==1)
+		{
+			@pClosestEntity = cLux_GetCurrentMap().GetEntityByName(vLookEntities[0], eLuxEntityType_LastEnum, "");
+		}
+		else
+		{
+			float fMinDistance = 999999.9f;
+			cVector3f vPlayerPos = cLux_GetPlayer().GetCamera().GetPosition();
+			
+			for(int i=0; i<vLookEntities.length(); ++i)
+			{
+				iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(vLookEntities[i], eLuxEntityType_LastEnum, "");
+				if(pEntity !is null)
+				{
+					float fDistanceSqr = cMath_Vector3DistSqr(vPlayerPos, pEntity.GetPosition());
+					if(fDistanceSqr<fMinDistance)
+					{
+						fMinDistance = fDistanceSqr;
+						@pClosestEntity = pEntity;
+					}
+				}			
+			}
+		}
+		
+		int lTarget = eCathToolTarget_None;
+		
+		if(pClosestEntity !is null)
+		{
+			if(pClosestEntity.GetVarBool("IsOmniSlot"))
+				lTarget = eCathToolTarget_Slot;
+			else if(pClosestEntity.GetVarBool("IsOmniPanel"))
+				lTarget = eCathToolTarget_Panel;
+		}
+			
+		mBaseObj.SetVarInt("Target", lTarget);
+	}
+		
+	//------------------------------------------------------------
+	
+	/*
+	void _Global_SetScreen()
+	{
+		SetScreen(cScript_GetGlobalArgInt(0));
+	}
+	
+	void _Global_GetScreen()
+	{
+		cScript_SetGlobalReturnInt(mScreenState);
+	}
+	 * */
+	 
+	void _Global_SetGuiActive()
+	{
+		float fFade = cScript_GetGlobalArgBool(1)? 0.1f : 0.0f;
+		mBaseObj.SetGuiActive(cScript_GetGlobalArgBool(0), fFade);
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetScreen(int alX)
+	{
+		cScript_SetGlobalVarInt("CathToolScreen", alX);
+	}
+	
+	//------------------------------------------------------------
+	
+	void Insert()
+	{
+		if (!_HPL3VR_RuntimeActive_Catherine())
+		{
+				msSlot = cScript_GetGlobalArgString(0);
+				mbInserted = true;
+				
+				mBaseObj.SetStaticPhysics(true);
+				mBaseObj.SetActive(true);
+				//mBaseObj.SetEffectBaseColor(cColor(0));
+				//mBaseObj.FadeEffectBaseColor(cColor_White, 0.5);
+			
+				mBaseObj.GetMeshEntity().ProcPlayFadeToName("Insert", 0.5, false, 0);
+				
+				SetScreen(eCathToolScreen_Interact);
+			return;
+		}
+		mbVRHolstered = false;
+		cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "I");
+		msSlot = cScript_GetGlobalArgString(0);
+		mbInserted = true;
+		
+		mBaseObj.SetStaticPhysics(true);
+		mBaseObj.SetActive(true);
+
+		// S: the VROMNI I token above intentionally sees the pre-static physical holder.
+		// Capture AGAIN only after SOMA has performed the authored static-physics transition,
+		// so O5 compares the held chip against the exact slot-owned Catherine body.
+		cScript_RunGlobalFunc("VROMNIUP", mBaseObj.GetName(), "B");
+		iPhysicsBody@ pVRInsertedUpgradeBody = mBaseObj.GetMainBody();
+		cScript_RunGlobalFunc("VROMNIUP", mBaseObj.GetName(), "E");
+		cScript_SetGlobalArgString(0, mBaseObj.GetName());
+		cScript_SetGlobalArgString(1, msSlot);
+		cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRSetInsertedOmniContext");
+		// Keep the local handle alive through the bracket; native only observes identity.
+		if (pVRInsertedUpgradeBody is null) {}
+
+		//mBaseObj.SetEffectBaseColor(cColor(0));
+		//mBaseObj.FadeEffectBaseColor(cColor_White, 0.5);
+
+		mBaseObj.GetMeshEntity().ProcPlayFadeToName("Insert", 0.5, false, 0);
+		
+		SetScreen(eCathToolScreen_Interact);
+	}
+
+	//-------------------------------------------------------
+	
+	void Detach()
+	{
+		if (!_HPL3VR_RuntimeActive_Catherine())
+		{
+				mBaseObj.SetInteractionDisabled(false);
+				
+				mBaseObj.WakeUp();
+				mBaseObj.SetAutoSleep(false);
+				//mBaseObj.FadeEffectBaseColor(cColor(0), 0.5);
+			
+				mbInserted = false;
+
+				
+				SetScreen(eCathToolScreen_Disconnected);
+			return;
+		}
+		cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "D");
+        cScript_SetGlobalArgString(0,mBaseObj.GetName());
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRClearInsertedOmniContext");
+		mBaseObj.SetInteractionDisabled(false);
+		
+		mBaseObj.WakeUp();
+		mBaseObj.SetAutoSleep(false);
+		//mBaseObj.FadeEffectBaseColor(cColor(0), 0.5);
+
+		mbInserted = false;
+		
+		SetScreen(eCathToolScreen_Disconnected);
+	}
+	
+	//-------------------------------------------------------
+	
+	void _Global_CanBeHighlighted()
+	{
+		cScript_SetGlobalReturnBool(!mbInserted);
+		cScript_SetGlobalArgID(0,mBaseObj.GetID());
+	}
+
+	//-------------------------------------------------------
+	
+	void _Global_IsInserted()
+	{
+		cScript_SetGlobalReturnBool(IsInserted());
+	}
+
+	//-------------------------------------------------------
+	
+	void _Global_GetSlot()
+	{
+		cScript_SetGlobalReturnString(msSlot);
+	}
+		
+	//------------------------------------------------------------
+	
+	bool IsInserted()
+	{
+		return mBaseObj.IsActive() && mbInserted;
+	}
+		
+	//------------------------------------------------------------
+	
+	bool VR_IsDeltaCrashDisplay()
+	{
+		if (mBaseObj.GetName()!="CathTool_Crashed") return false;
+		cLuxMap@ pMap=cLux_GetCurrentMap();
+		return pMap !is null && pMap.GetName()=="02_03_delta";
+	}
+
+    bool VR_IsPhysicalPickupReady()
+    {
+        return _HPL3VR_RuntimeActive_Catherine() && mbVRPhysicalDrawStarted &&
+            !mbInserted && !mbVRReplacementSourceRetirePending && mBaseObj.IsActive() &&
+            Player_ToolIsInInventory(mBaseObj.GetName());
+    }
+
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		if (mbVRReplacementSourceRetirePending) return false;
+		if (!_HPL3VR_RuntimeActive_Catherine())
+		{
+				if (mbInserted&&CanGiveHint())
+				{
+					mBaseObj.Timer_Add(0, 3); //Do so do not get the crossed over icon straight after.
+					
+					 PlayHint();
+					 return true;
+				}
+				 
+				if (cScrPropTool::OnInteract(alType, apBody, avFocusPos, asData)==false)
+				   return false;
+			
+				tString sSound = "";
+				if (Player_GetUnderwater())
+				{
+					cLux_AddTodoMessage("Sound: Underwater cath tool interact");
+					sSound = gsCathInteractUnderwaterSound;
+					Sound_PlayGui("Entities_Station/object/cathtool/underwater/remove_cathtool_underwater", 1.0f, eSoundEntryType_WorldClean);
+				}
+				else
+				{
+					sSound = gsCathInteractNonUnderwaterSound;
+					//Sound_PlayGui("Entities_Station/object/cathtool/remove_cathtool_nonunderwater", 1.0f, eSoundEntryType_World);
+					Sound_CreateAtEntity("RemoveCathtoolNonunderwater", "Entities_Station/object/cathtool/remove_cathtool_nonunderwater", "Player");
+				}
+			  
+				return true;
+		}
+		// S26BO: a consumed display's authored callback may try to interact with
+		// the already-owned hidden tool again. Reject before that callback can run
+		// or VR_BeginPhysicalDraw can rematerialize it without a shoulder handoff.
+		// Preserve native hidden first acquisitions when no Omni is owned yet.
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRGetOwnedPhysicalOmniName");
+        tString sOwnedBefore=cScript_GetGlobalReturnString();
+        if (!mBaseObj.IsActive() && sOwnedBefore!="") return false;
+		if (VR_IsDeltaCrashDisplay() && !mbInserted && !Player_ToolIsInInventory(mBaseObj.GetName()))
+		{
+			cLuxMap@ pMap=cLux_GetCurrentMap();
+			if (!pMap.ScriptPrepare("bool VR_TakeCrashedCathTool()")) return false;
+			return pMap.ScriptExecute() && pMap.GetReturnBool();
+		}
+		if (mbVRReplacementSourceRetirePending) return false;
+		if (mbInserted&&CanGiveHint())
+		{
+			mBaseObj.Timer_Add(0, 3); //Do so do not get the crossed over icon straight after.
+			
+			 PlayHint();
+			 return true;
+		}
+		 
+		if (!mbInserted && Player_ToolIsInInventory(mBaseObj.GetName()))
+		{
+			VR_BeginPhysicalDraw();
+			cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "G");
+			return true;
+		}
+
+		// Slot retrieval / first world pickup is a physical pickup transaction.
+		// The base Prop_Tool still owns callbacks and logical inventory; C keeps the
+		// successfully acquired real Catherine dynamic in this gripping hand.
+        cMatrixf mtxPickup=mBaseObj.GetMatrix();
+		mbVRPhysicalPickupInProgress = true;
+		mbVRPhysicalDrawStarted = false;
+		bool bPicked = cScrPropTool::OnInteract(alType, apBody, avFocusPos, asData);
+		mbVRPhysicalPickupInProgress = false;
+        // BM: authored pickup callbacks can acquire a different Catherine, hide
+        // this display and return false to avoid awarding the display itself.
+        // Complete only that synchronous, newly-owned replacement transaction.
+        // The nested OnInteract already published its physical draw/body capture.
+        if(sOwnedBefore=="" && !mBaseObj.IsActive() && !Player_ToolIsInInventory(mBaseObj.GetName()))
+        {
+            cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRGetOwnedPhysicalOmniName");
+            tString sReplacement=cScript_GetGlobalReturnString();
+            if(sReplacement!="" && sReplacement!=mBaseObj.GetName())
+            {
+                cLuxProp@ pReplacement=Map_GetProp(sReplacement);
+                if(pReplacement !is null && pReplacement.ScriptPrepare("bool VR_IsPhysicalPickupReady()") &&
+                    pReplacement.ScriptExecute() && pReplacement.GetReturnBool())
+                {
+                    pReplacement.SetMatrix(mtxPickup);
+                    pReplacement.SetSaveDataIsUpdated(true);
+                    return true;
+                }
+            }
+        }
+		if (bPicked==false) return false;
+		// A pickup callback may legally veto acquisition even if the base interaction
+		// itself returned. Never report/sonify a physical retrieval unless the
+		// logical PlayerToolHandler inventory actually accepted this exact Catherine.
+		if (!Player_ToolIsInInventory(mBaseObj.GetName())) return false;
+
+		tString sSound = "";
+		if (Player_GetUnderwater())
+		{
+			cLux_AddTodoMessage("Sound: Underwater cath tool interact");
+			sSound = gsCathInteractUnderwaterSound;
+			Sound_PlayGui("Entities_Station/object/cathtool/underwater/remove_cathtool_underwater", 1.0f, eSoundEntryType_WorldClean);
+		}
+		else
+		{
+			sSound = gsCathInteractNonUnderwaterSound;
+			//Sound_PlayGui("Entities_Station/object/cathtool/remove_cathtool_nonunderwater", 1.0f, eSoundEntryType_World);
+			Sound_CreateAtEntity("RemoveCathtoolNonunderwater", "Entities_Station/object/cathtool/remove_cathtool_nonunderwater", "Player");
+		}
+	  
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		if (mbInserted&&CanGiveHint())
+		{
+			if (Voice_SceneInvolvingCharacterIsActive(msVoiceCharacter))
+				return eCrossHairState_TalkBusy;
+			return eCrossHairState_Talk;
+		}
+		return cScrPropTool::GetInteractIconId(alType, apBody);
+	}
+	
+	//------------------------------------------------------------
+	// Hints
+	//------------------------------------------------------------
+
+	bool mbHintsEnabled = false;
+	tString msHintsCallback = "";
+
+	void ResetHints()
+	{
+		mbHintsEnabled = false;
+		msHintsCallback = "";
+	}
+
+	//------------------------------------------------------------
+
+	void _Global_SetHintsCallback()
+	{
+		SetHintsCallback(cScript_GetGlobalArgString(0));
+	}
+
+	//------------------------------------------------------------
+
+	void SetHintsCallback(const tString& in asHintsCallback)
+	{
+		msHintsCallback = asHintsCallback;
+	}
+
+	//------------------------------------------------------------
+
+	void _Global_SetHintsEnabled()
+	{
+		SetHintsEnabled(cScript_GetGlobalArgBool(0));
+	}
+	
+	//------------------------------------------------------------
+
+	void SetHintsEnabled(bool abEnabled)
+	{
+		mbHintsEnabled = abEnabled;
+	}
+	
+	//------------------------------------------------------------
+
+	bool CanGiveHint()
+	{		
+		if (!mbHintsEnabled)
+			return false;
+			
+		tString sHintPrefix = GetHintStringPrefix();
+		if (sHintPrefix=="")
+			return false;
+			
+		tString sHint = GetValidHintStringVariant(sHintPrefix, false);
+		if (sHint=="")
+			return false;
+			
+		return true;
+	}
+
+	//------------------------------------------------------------
+
+	tString GetHintStringPrefix()
+	{
+		if (msHintsCallback!="")
+		{
+			cLuxMap @pMap = mBaseObj.GetMap();
+			if(pMap.ScriptPrepare("tString " + msHintsCallback + "(const tString &in asEntityName)" ) )
+			{
+				tString sName = mBaseObj.GetName();
+				pMap.SetArgString(0, sName);
+				pMap.ScriptExecute();
+				tString sHint = pMap.GetReturnString();
+				return sHint;
+			}
+		}
+		return "";
+	} 
+	
+	//------------------------------------------------------------
+	
+	tString GetValidHintStringVariant(const tString& in asHintPrefix, bool abUseTheHint)
+	{
+		int lPlayedTimes = GetHintPlayedTimes(asHintPrefix);
+		lPlayedTimes++;
+		tString sHint=asHintPrefix+"_"+lPlayedTimes;
+		if (Voice_SubjectExists(sHint)==false)
+		{
+			//Check if we can go back to previous line?
+			lPlayedTimes--;
+			sHint=asHintPrefix+"_"+lPlayedTimes;
+			if(Voice_SubjectExists(sHint)==false) return "";
+		}
+		else if(abUseTheHint)
+		{
+			IncHintPlayedTimes(asHintPrefix);
+		}
+		
+		return sHint;
+	}
+	
+	//------------------------------------------------------------
+	
+	void PlayHint()
+	{
+		if (!mbHintsEnabled)
+			return;
+		
+		tString sHintPrefix = GetHintStringPrefix();
+		if (sHintPrefix=="")
+			return;
+			
+		tString sHint = GetValidHintStringVariant(sHintPrefix, true);
+		if (sHint=="")
+			return;
+			
+		if (Voice_SceneInvolvingCharacterIsActive(msVoiceCharacter))
+			return;
+			
+		Voice_Play(sHint, -1,"", 10);
+	}
+	
+	//------------------------------------------------------------
+	
+	void IncHintPlayedTimes(const tString& in asHint)
+	{
+		tString sHintVar = "Hint_"+cLux_GetCurrentMap().GetName()+"_"+asHint;
+		cScript_SetGlobalVarInt(sHintVar, GetHintPlayedTimes(asHint)+1);
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetHintPlayedTimes(const tString& in asHint)
+	{
+		tString sHintVar = "Hint_"+cLux_GetCurrentMap().GetName()+"_"+asHint;
+		return cScript_GetGlobalVarInt(sHintVar);
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// H57.56B PHYSICAL CATHERINE
+	/////////////////////////////////////////
+
+	void VR_PublishPlayerBodyPosition()
+	{
+		if (mbInserted || !Player_ToolIsInInventory(mBaseObj.GetName())) return;
+		iCharacterBody@ pPlayerBody = cLux_GetPlayer().GetCharacterBody();
+		if (pPlayerBody is null) return;
+		cVector3f vPos = pPlayerBody.GetPosition();
+		// H57.56I: C's calibrated hip location was camera-origin based, while D/H
+		// correctly moved recurring translation to Simon's character body. Publish the
+		// authored camera-to-body vertical origin once with the body position so native
+		// can preserve C's physical hip height without returning to camera-relative X/Z.
+		float fCameraBodyY = cLux_GetPlayer().GetCamera().GetPosition().y - vPos.y;
+		tString sBodyPos = cString_ToString(vPos.x, 5) + "," +
+					   cString_ToString(vPos.y, 5) + "," +
+					   cString_ToString(vPos.z, 5) + "," +
+					   cString_ToString(fCameraBodyY, 5);
+		cScript_RunGlobalFunc("VROMNIBODY", sBodyPos, "B");
+	}
+
+	void VR_SetPhysicalBody(bool abLoose)
+	{
+        // Native maps attach inserted Catherine to a moving shuttle/zeppelin/lift.
+        // Only successful, non-inserted ownership may release that attachment.
+        if(mbInserted || !Player_ToolIsInInventory(mBaseObj.GetName())) return;
+        cLuxProp@ parent=mBaseObj.GetAttachmentParent();
+        if(parent !is null){parent.RemoveAttachedProp(mBaseObj);parent.SetSaveDataIsUpdated(true);}
+        mBaseObj.RemoveEntityAttachment();
+        mBaseObj.SetSaveDataIsUpdated(true);
+
+		// H57.56H/I: an owned Catherine is ALWAYS a live dynamic world prop.
+		// Vanilla PickUpTool deactivates the original world entity; merely making
+		// its mesh visible (G) can leave the restored body static/non-colliding.
+		// Rebuild ordinary dynamic physics first, then explicitly restore the body
+		// collision flag and positive mass.  Holstering is kinematic parking of this
+		// live body (gravity off), never SetStaticPhysics(true).
+		mBaseObj.SetActive(true);
+		cMeshEntity @pMeshEnt = mBaseObj.GetMeshEntity();
+		if (pMeshEnt !is null)
+		{
+			pMeshEnt.SetVisible(true);
+			pMeshEnt.ResetGraphicsUpdated();
+		}
+		mBaseObj.SetStaticPhysics(false);
+
+		// H57.56F: bracket Catherine's own authored GetMainBody() call so native
+		// code captures the exact dynamic wrapper SOMA returns after the static
+		// transition above.  No entity-loader pointer reinterpretation is used.
+		cScript_RunGlobalFunc("VROMNIBIND", mBaseObj.GetName(), "B");
+		iPhysicsBody@ pBody = mBaseObj.GetMainBody();
+		cScript_RunGlobalFunc("VROMNIBIND", mBaseObj.GetName(), "E");
+		if (pBody !is null)
+		{
+			pBody.SetCollide(true);
+			pBody.SetCollideCharacter(false);
+			pBody.SetMass(1.0f);
+			pBody.SetGravity(abLoose);
+		}
+		mBaseObj.SetAutoSleep(false);
+		mBaseObj.WakeUp();
+	}
+
+	cMatrixf VR_GetStorageMatrix()
+	{
+		iCharacterBody@ pBody = cLux_GetPlayer().GetCharacterBody();
+		float fYaw = pBody.GetYaw();
+		cMatrixf mtxYaw = cMath_MatrixRotateY(fYaw);
+		// H57.56AN one-shot presentation seed: default to the mirrored right-shoulder body slot.
+		// Native immediately takes over recurring motion and may select legacy hip mode from INI.
+		cVector3f vOrigin = pBody.GetPosition();
+		vOrigin.y = cLux_GetPlayer().GetCamera().GetPosition().y;
+		cVector3f vOffset = cMath_MatrixMul(mtxYaw.GetRotation(), cVector3f(0.26f, -0.07f, -0.10f));
+		cMatrixf mtxTool = cMath_MatrixMul(mtxYaw, cMath_MatrixRotateX(cMath_PiDiv2));
+		mtxTool.SetTranslation(vOrigin + vOffset);
+		return mtxTool;
+	}
+
+	void VR_UpdateHolsterTransform()
+	{
+		if (!mbVRHolstered || mbInserted) return;
+		mBaseObj.SetMatrix(VR_GetStorageMatrix());
+	}
+
+	void VR_EnterHolster()
+	{
+		mbVRHolstered = true;
+		VR_SetPhysicalBody(false);
+
+		// H57.56G: seed the save-restored entity through HPL's own SetMatrix once.
+		// F proved the raw body is valid, but raw Newton parking alone does not
+		// guarantee an inactive/hidden saved render entity gets a world transform.
+		// Native remains the ONLY recurring storage-slot authority after this seed.
+		mBaseObj.SetMatrix(VR_GetStorageMatrix());
+		cMeshEntity @pMeshEnt = mBaseObj.GetMeshEntity();
+		if (pMeshEnt !is null) pMeshEnt.SetVisible(true);
+
+		tString sPresentation = mBaseObj.IsActive() ? "A1" : "A0";
+		sPresentation += (pMeshEnt !is null && pMeshEnt.IsVisible()) ? "V1" : "V0";
+		cScript_RunGlobalFunc("VROMNIPRES", mBaseObj.GetName(), sPresentation);
+	}
+
+	void VR_BeginPhysicalDraw()
+	{
+		mbVRHolstered = false;
+		VR_SetPhysicalBody(true);
+	}
+
+	void _Global_VRShoulderStore()
+    {
+        bool committed=VR_TryShoulderStore();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_TryShoulderStore()
+	{
+		// AO: shoulder storage mirrors the left-shoulder inventory presentation.
+		// Logical Tool ownership stays in PlayerToolHandler; only this physical
+		// Catherine carrier is hidden/deactivated.  No map Use/Insert/Detach fires.
+		
+		if (!_HPL3VR_RuntimeActive_Catherine()) return false;
+		if (mbInserted || mbVRReplacementSourceRetirePending) return false;
+		if (!Player_ToolIsInInventory(mBaseObj.GetName())) return false;
+		mbVRHolstered = true;
+		cMeshEntity @pMeshEnt = mBaseObj.GetMeshEntity();
+		if (pMeshEnt !is null)
+		{
+			pMeshEnt.SetVisible(false);
+			pMeshEnt.ResetGraphicsUpdated();
+		}
+		mBaseObj.SetActive(false);
+		cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "Y");
+		return true;
+	}
+
+	void _Global_VRShoulderDraw()
+    {
+        bool committed=VR_TryShoulderDraw();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_PreserveShoulderCarrierForDeload(float x, float y, float z)
+    {
+        if(!_HPL3VR_RuntimeActive_Catherine()) return false;
+        if(mbInserted || mbVRReplacementSourceRetirePending || !mbVRHolstered) return false;
+        if(mBaseObj.IsActive() || !Player_ToolIsInInventory(mBaseObj.GetName())) return false;
+        // This is an inactive shoulder carrier, never a held/loose or slotted tool.
+        // Keep it hidden and inactive; only its retained-region position changes.
+        cMatrixf transform=mBaseObj.GetMatrix();
+        transform.SetTranslation(cVector3f(x,y,z));
+        mBaseObj.SetMatrix(transform);
+        mBaseObj.SetSaveDataIsUpdated(true);
+        return true;
+    }
+
+    bool VR_TryShoulderDraw()
+	{
+		// AO hidden body-slot gesture is physical presentation only. Do not invoke
+		// Insert/Detach/map Use callbacks here; logical ownership must already exist.
+		
+		if (!_HPL3VR_RuntimeActive_Catherine()) return false;
+		if (mbInserted || mbVRReplacementSourceRetirePending) return false;
+		if (!Player_ToolIsInInventory(mBaseObj.GetName())) return false;
+		VR_BeginPhysicalDraw();
+		cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "R");
+		return true;
+	}
+
+	void _Global_VREnsureOwnedPhysicalCarrier()
+	{
+		if (!_HPL3VR_RuntimeActive_Catherine()) return;
+		cScript_SetGlobalReturnBool(false);
+		if (mbInserted || !Player_ToolIsInInventory(mBaseObj.GetName())) return;
+
+		// H57.56I: PlayerToolHandler resets its ensure latch when a physical slot
+		// retrieval re-adds Catherine to logical inventory. That is a LIVE pickup, not
+		// save reconstruction. C kept the successful physical pickup in the gripping
+		// hand; E/H accidentally called VR_EnterHolster here and teleported it away.
+		// mbVRPhysicalDrawStarted is nosave and is set only by the current OnInteract
+		// pickup transaction, so saved/map-restored carriers still use the safe H path.
+		if (mbVRPhysicalDrawStarted)
+		{
+			mbVRBootstrapDone = true;
+			VR_PublishPlayerBodyPosition();
+			cScript_SetGlobalReturnBool(true);
+			return;
+		}
+
+		VR_EnterHolster();
+		mbVRBootstrapDone = true;
+		VR_PublishPlayerBodyPosition();
+		// H57.56E: inventory authority may explicitly reassert the carrier after
+		// save restoration. Native binding is deferred and fail-closed.
+		cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "H");
+		cScript_SetGlobalReturnBool(true);
+	}
+
+	void _Global_VRBootstrap()
+	{
+		if (!_HPL3VR_RuntimeActive_Catherine()) return;
+		if (mbVRBootstrapDone) return;
+		mbVRBootstrapDone = true;
+		// S26BN: native map transfer can retain an unowned source as name__spawn__
+		// with its old mbInserted/msSlot. It is not the separately owned carrier.
+		// Resolve this BEFORE publishing either state or the chip-contact body;
+		// otherwise a late source bootstrap overwrites H and disables shoulder draw.
+		// Ordinary authored inserted carriers remain valid (including Delta's legacy
+		// CathTool_Crashed). Live Insert/Detach and saved story state are untouched.
+		if (!Player_ToolIsInInventory(mBaseObj.GetName()))
+		{
+			cScript_SetGlobalReturnString("");
+			cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRGetOwnedPhysicalOmniName");
+			tString sOwned = cScript_GetGlobalReturnString();
+			if (sOwned != "" && sOwned != mBaseObj.GetName() &&
+				(!mbInserted || cString_GetFirstStringPos(mBaseObj.GetName(), "__spawn__") >= 0))
+			{
+				LogNewLine("S26BN Omni bootstrap ignored superseded carrier " + mBaseObj.GetName() + "; owned=" + sOwned);
+				return;
+			}
+		}
+		// Match the native IsInserted contract: inactive presentations are not slots.
+		if (mbInserted && !mBaseObj.IsActive()) return;
+		if (mbInserted)
+		{
+			mbVRHolstered = false;
+			cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "S");
+
+			// H57.56AE: mbInserted/msSlot are authored saved state, while the native
+			// docked-upgrade body identity and PlayerToolHandler VR context are
+			// deliberately [nosave]. Reconstruct ONLY those two runtime identities
+			// exactly as live Insert() does after SetStaticPhysics(true). The entity
+			// is already in its authored inserted/static state on save load, so this
+			// performs no Insert(), no animation, no movement, and no story callback.
+			cScript_RunGlobalFunc("VROMNIUP", mBaseObj.GetName(), "B");
+			iPhysicsBody@ pVRInsertedUpgradeBody = mBaseObj.GetMainBody();
+			cScript_RunGlobalFunc("VROMNIUP", mBaseObj.GetName(), "E");
+			cScript_SetGlobalArgString(0, mBaseObj.GetName());
+			cScript_SetGlobalArgString(1, msSlot);
+			cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRSetInsertedOmniContext");
+			if (pVRInsertedUpgradeBody is null) {}
+			return;
+		}
+		if (Player_ToolIsInInventory(mBaseObj.GetName()))
+		{
+			// H57.56BF: map/save bootstrap is also forbidden from synchronously
+			// physicalising an owned Catherine. A live manual pickup remains in-hand;
+			// all nonphysical ownership waits for PlayerToolHandler's delayed ensure.
+			if (mbVRPhysicalDrawStarted)
+			{
+				VR_PublishPlayerBodyPosition();
+				return;
+			}
+			mbVRHolstered = true;
+			return;
+		}
+		mbVRHolstered = false;
+		cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "F");
+	}
+
+	bool VR_RetireDeltaCrashDuplicate()
+	{
+		if (!_HPL3VR_RuntimeActive_Catherine() || !VR_IsDeltaCrashDisplay() || mbInserted) return false;
+		if (!Player_ToolIsInInventory("CathTool")) return false;
+		_Global_VRRetireReplacedCarrier();
+		return true;
+	}
+
+	void _Global_VRRetireReplacedCarrier()
+	{
+		if (!_HPL3VR_RuntimeActive_Catherine()) return;
+		if (mbInserted) return;
+		mbVRReplacementSourceRetirePending = true;
+		mfVRReplacementSourceRetireDelay = 0.12f;
+		mbVRHolstered = false;
+		mBaseObj.SetSaveDataIsUpdated(true);
+		cScript_RunGlobalFunc("VROMNIRET", mBaseObj.GetName(), "A");
+	}
+
+	void VR_SuppressNonCanonicalOwnedDuplicate()
+	{
+		if (mbInserted || msSlot != "" || mbVRReplacementSourceRetirePending || Player_ToolIsInInventory(mBaseObj.GetName())) return;
+		cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRGetCanonicalOmniName");
+		tString sCanonical = cScript_GetGlobalReturnString();
+		if (sCanonical == "")
+		{
+			// Older VR saves can contain the active source of an already-inserted
+			// replacement, without the formerly unsaved retirement flag. Recover
+			// through the same delayed retirement, only after validating insertion.
+			cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRGetInsertedPhysicalOmniName");
+			sCanonical = cScript_GetGlobalReturnString();
+			if (sCanonical != "" && sCanonical != mBaseObj.GetName())
+				_Global_VRRetireReplacedCarrier();
+			return;
+		}
+		if (sCanonical == "" || sCanonical == mBaseObj.GetName()) return;
+		if (!mbVRNonCanonicalSuppressed)
+		{
+			mbVRNonCanonicalSuppressed = true;
+			cScript_RunGlobalFunc("VROMNI", mBaseObj.GetName(), "X");
+		}
+		mBaseObj.SetActive(false);
+	}
+
+    bool VR_IsInsertedPhysicalOmni()
+    {
+        return mbInserted && msSlot!="" && mBaseObj.IsActive();
+    }
+
+		/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbVRHolstered = false;
+	[nosave] bool mbVRBootstrapDone = false;
+	[nosave] float mfVRBootstrapDelay = 0.0f;
+	[nosave] bool mbVRPhysicalPickupInProgress = false;
+	[nosave] bool mbVRPhysicalDrawStarted = false;
+	[nosave] bool mbVRNonCanonicalSuppressed = false;
+	// Persist the short retirement window: otherwise a save here restores an
+	// active, unowned old carrier with no remaining cleanup transaction.
+	bool mbVRReplacementSourceRetirePending = false;
+	float mfVRReplacementSourceRetireDelay = 0.0f;
+	bool mbInserted = false;
+	tString msSlot = "";
+	
+	tString msVoiceCharacter="Catherine";
+	
+	//------------------------------------------------------------
+	
+	
+	
+	//------------------------------------------------------------
+}
+
+//------------------------------------------------------------
+
+//////////////////////////////////////////////////////
+// HUD OBJECT
+//////////////////////////////////////////////////////
+
+//------------------------------------------------------------
+
+class cScrPropCatherineToolHud : cScrPropHudObject
+{
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		cScrPropHudObject::SetupAfterLoad(apWorld, apVars, apInstanceVars);
+		
+		// Set up GUI screen
+		SetUpOmnitoolGUI(mBaseObj);
+	}
+	
+	//------------------------------------------------------------
+}

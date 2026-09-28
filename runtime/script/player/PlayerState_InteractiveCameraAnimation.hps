@@ -1,0 +1,922 @@
+#include "player_types.hps"
+#include "inputhandler_types.hps"
+#include "interfaces/PlayerState_Interface.hps"
+#include "utilities/Utility_PickBasics.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_map.hps"
+#include "helpers/helper_areas.hps"
+
+//------------------------------------------------------------
+	
+class cScrPlayerState_InteractiveCameraAnimation : iScrPlayerState, iScrPlayerState_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mvNodes.resize(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mvNodes.resize(0);
+		m_idAttachedEntity = tID_Invalid;
+	}
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		mvNodes.resize(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnEnterState(int alPrevStateId)
+	{		
+		mlPreviousState = alPrevStateId;
+		
+		if (mvNodes.length() == 0)
+		{
+			Error("Interactive Camera Animation started without any nodes!");
+			Player_ChangeStateToNormal();
+			return;
+		}
+		
+		/////////////////////////////////
+		// Initialize variables
+		mfYaw = 0;
+		mfPitch = 0;
+		mfMovement = 0.01f;
+		mfDistanceMoved = 0.0f;
+		mvGeneralMovementDir = cVector3f(0, 0, 0);
+		mvCurrentMovementDir = mvGeneralMovementDir;
+		mfForwardSpeed = CameraAnimationNode_GetForwardSpeed(mvNodes[0]);
+		mfBackSpeed = CameraAnimationNode_GetBackSpeed(mvNodes[0]);
+		mfMaxPitch = CameraAnimationNode_GetMaxPitch(mvNodes[0]);
+		mfMaxYaw = CameraAnimationNode_GetMaxYaw(mvNodes[0]);
+		mfLookSpeedMul = CameraAnimationNode_GetLookSpeedMul(mvNodes[0]);
+		
+		m_idAttachedEntity = tID_Invalid;
+		
+		/////////////////////////////////
+		// Setup player camera
+		cLuxPlayer@ pPlayer = mBaseObj.mpPlayer;
+		pPlayer.GetCharacterBody().SetCamera(null);
+		pPlayer.GetCamera().SetRotateMode(eCameraRotateMode_Matrix);
+		UpdateCameraMatrix();
+		pPlayer.GetCamera().SetRotationMatrix(m_mtxCameraRotation.GetRotation().GetTranspose());		
+		UpdateEntityAttachment();
+		
+		//Log("ENTER INTERACTIVE CAM STATE! First node: "+mvNodes[0]+"\n");
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnLeaveState(int alNextStateId)
+	{
+        // S26BB: OnEnterState explicitly returns to Normal when no nodes exist.
+        // That transition invokes OnLeaveState too; there is no node to index.
+        if(mvNodes.length()==0)
+        {
+            cLuxPlayer@ p=mBaseObj.mpPlayer;
+            p.GetCamera().SetRotateMode(eCameraRotateMode_EulerAngles);
+            p.GetCharacterBody().SetCamera(p.GetCamera());
+            return;
+        }
+		
+		//Log("LEAVE INTERACTIVE CAM STATE! First node: "+mvNodes[0]+"\n");
+		
+		cVector3f vFwd = mBaseObj.mpPlayer.GetCamera().GetForward();
+		
+		float fYaw = -cMath_ATan2(vFwd.x, -vFwd.z);
+		float fPitch = cMath_ATan2(vFwd.y, cMath_Sqrt(vFwd.x*vFwd.x + vFwd.z * vFwd.z));
+		
+		////////////////////
+		// Crouching
+		int index = mfDistanceMoved;
+        if(index<0) index=0;
+        if(index>=int(mvNodes.length())) index=int(mvNodes.length())-1;
+		bool bCrouching = CameraAnimationNode_GetCrouchOnExit(mvNodes[index]);
+		cScript_SetGlobalArgBool(0, bCrouching);
+		cScript_SetGlobalArgBool(1, true);
+		cScript_SetGlobalArgBool(2, true);
+		cScript_SetGlobalArgBool(3, true);
+		cScript_RunGlobalFunc("MoveState_Normal","","_Global_SetCrouching");
+		
+		////////////////////////////////////////
+		// Position player, orient camera
+		cLuxPlayer@ pPlayer = mBaseObj.mpPlayer;
+		float fBodyHeight = (bCrouching ? gvBodyCrouchSize.y : gvBodySize.y);
+		pPlayer.GetCharacterBody().SetFeetPosition(mBaseObj.mpPlayer.GetCamera().GetPosition() - cVector3f(0, fBodyHeight - 0.1f, 0), false);
+		pPlayer.GetCamera().SetRotateMode(eCameraRotateMode_EulerAngles);
+		pPlayer.GetCharacterBody().SetYaw(fYaw);
+		pPlayer.GetCamera().SetPitch(fPitch);
+		
+		pPlayer.GetCharacterBody().SetCamera(pPlayer.GetCamera());
+		
+			
+		mvNodes.resize(0);
+	}
+		
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		mPickBasics.Reset();
+		
+		cLuxPlayer@ pPlayer = mBaseObj.mpPlayer;
+		if (pPlayer.GetCharacterBody() !is null)
+			pPlayer.GetCharacterBody().SetCamera(pPlayer.GetCamera());
+		mvNodes.resize(0);
+		
+		m_idAttachedEntity = tID_Invalid;
+	}
+	
+	//------------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{		
+		cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
+		
+		////////////////////////////
+		// Update camera picking.
+		if(msInteractCallback != "" && mPickBasics.UpdatePickCheck(pCam, true))
+		{
+			int lState = mPickBasics.GetFocusedEntity().GetInteractIconId(0, mPickBasics.GetFocusedBody());
+			if(lState >=0 )
+				Player_SetCrossHairState(eCrossHairState(lState));
+			else
+				Player_SetCrossHairState(eCrossHairState_Default);
+		}
+		
+		int index = mfDistanceMoved;
+		tString sCurrentNode = mvNodes[index];
+		
+		////////////////////////////
+		// End node check
+		if (index == mvNodes.length()-1 && mbExitOnLastNode)
+		{
+			mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+			return;
+		}
+				
+		///////////////////////////////////
+		// Update mfMovement from input
+		UpdateMovement();
+		mvCurrentMovementDir = cVector3f(0);
+		
+		float fAutoMove = CameraAnimationNode_GetAutoMove(sCurrentNode);
+			
+		///////////////////////////////////////////////////////
+		// Check if input move or automove is the valid one
+		float fActualMovement = 0;
+		if (cMath_Abs(mfMovement) > 0 && CameraAnimationNode_GetInteractiveMovement(sCurrentNode))
+		{
+			/////////////////////////////////////
+			// Both movements in same direction
+			if (cMath_Sign(mfMovement) == cMath_Sign(fAutoMove))
+				fActualMovement = cMath_Max(cMath_Abs(mfMovement), cMath_Abs(fAutoMove)) * cMath_Sign(mfMovement);
+				
+			/////////////////////////////////////////////////
+			// Movement not allowed in input direction
+			else if ((mfMovement > 0 && CameraAnimationNode_GetForwardSpeed(sCurrentNode) == 0) || 
+					 (mfMovement < 0 && CameraAnimationNode_GetBackSpeed(sCurrentNode) == 0))
+				fActualMovement = fAutoMove;
+				
+			else
+				fActualMovement = mfMovement;
+		}
+		else
+		{
+			fActualMovement = fAutoMove;
+		} 
+		
+		iLuxEntity@ pCurrentNode = Map_GetEntity(sCurrentNode, eLuxEntityType_Area, "cScrAreaCameraAnimationNode");
+		if (cMath_Abs(fActualMovement) < 0.01f && pCurrentNode.GetAttachEntity() is null)
+			return;
+		
+		UpdatePosition(fActualMovement, afTimeStep);
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdatePosition(float afMovement, float afTimeStep)
+	{		
+		int lIndex = mfDistanceMoved;
+		float fPrevDistanceMoved = mfDistanceMoved;
+		
+		/////////////////////
+		// Do movement
+		float fNodeSpeed = afMovement > 0 ? mfForwardSpeed : mfBackSpeed;
+		mfDistanceMoved += afMovement*afTimeStep*fNodeSpeed;
+		//mfDistanceMoved += cMath_Sign(afMovement)*0.25f;
+		
+		//////////////////////////////////////////////////////////
+		//Check if it's possible to move back to previous node
+		float fMinDistance = 0;
+		if (lIndex > 0 && !CameraAnimationNode_HasBackMovement(mvNodes[lIndex-1])) 
+			fMinDistance = lIndex;
+		
+		//////////////////////////////////////////////////////////
+		// Check if movement went past a node
+		int lNewIndex = cMath_Max(int(mfDistanceMoved), int(fMinDistance));
+		if (fPrevDistanceMoved > fMinDistance && mfDistanceMoved <= fMinDistance)
+		{
+			// Moved back to the min pos
+			lNewIndex = int(fMinDistance)-1;
+			lIndex = lNewIndex+1;
+		}
+		else if (fPrevDistanceMoved <= fMinDistance && mfDistanceMoved > fMinDistance)
+		{
+			// Moved forward from the min pos
+			lNewIndex = int(fMinDistance);
+			lIndex = lNewIndex-1;
+		}
+		
+		mfDistanceMoved = cMath_Clamp(mfDistanceMoved, fMinDistance, 
+									  float(mvNodes.length()-1));
+		
+		// Ugly failsafe to make sure the same callback doesn't get called two frames in a row
+		// Should only kick in extremely rarely, if ever.
+		if (mfDistanceMoved > fMinDistance && cMath_GetFraction(mfDistanceMoved) < 0.0001)
+			mfDistanceMoved+=0.0001;
+									  
+		/////////////////////////////
+		// node callback
+		if (lNewIndex != lIndex)
+		{ 								  
+			int lDir = lNewIndex > lIndex ? 1 : -1;
+			int lCallbackNode = lDir == 1 ? lIndex+1 : lIndex;
+			HandleNodeCallback(lCallbackNode, lDir);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void HandleNodeCallback(int alIndex, int alDir)
+	{
+		tString sPassedNode = mvNodes[alIndex];
+		
+		tString sCallback = CameraAnimationNode_GetCallbackFunc(sPassedNode);
+		if (sCallback != "" &&
+			cLux_GetCurrentMap().ScriptPrepare("bool " + sCallback + "(const tString &in asEntity, int alDir)" ) )
+		{
+			cLux_GetCurrentMap().SetArgString(0, sPassedNode);				
+			cLux_GetCurrentMap().SetArgInt(1, alDir);
+			
+			cLux_GetCurrentMap().ScriptExecute();
+			
+			if (!cLux_GetCurrentMap().GetReturnBool()) CameraAnimationNode_SetCallbackFunc(sPassedNode, "");
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+		//////////////////////////////////////////////
+		// This is all done in post update so that
+		// camera anims which area attached to other objects
+		// work correctly.
+		
+		cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
+
+		//////////////////////////////////////////////
+		// Update the camera 
+		UpdateCameraMatrix();
+		
+		//////////////////////////////////////////////
+		// Update attached entity (if any)
+		UpdateEntityAttachment();
+				
+		//////////////////////////////////////////////
+		// Update any fading
+		UpdateFadingProperties();
+		
+		////////////////////////////
+		// Update camera rotation
+		cMatrixf mtxCamRotation = m_mtxCameraRotation.GetRotation();
+		mtxCamRotation = cMath_MatrixMul(mtxCamRotation, cMath_MatrixRotateXYZ(cVector3f(mfPitch, mfYaw, 0)));
+		pCam.SetRotationMatrix(mtxCamRotation.GetTranspose());
+		
+		cVector3f vTargetPos = m_mtxCameraRotation.GetTranslation();
+		pCam.SetVelocity(vTargetPos - mBaseObj.mpPlayer.GetCamera().GetPosition());
+		
+		// Screenshake
+		vTargetPos += mBaseObj.mpPlayer.GetCameraPosAdd(eCameraAddType_Shake);
+		vTargetPos += mBaseObj.mpPlayer.GetCameraPosAdd(eCameraAddType_Sway);
+		
+		pCam.SetPosition(vTargetPos);
+		
+		// Need to update the camera proxy object because we're so late on in the frame.
+		iLuxEntity@ pProxyEntity = cLux_GetCurrentMap().GetEntityByName("Camera");
+		pProxyEntity.SetMatrix(pCam.GetMatrix());
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_Setup()
+	{	
+		//////////////////////////////////
+		// Add nodes
+		tString sAnimationName = cScript_GetGlobalArgString(0);
+		for (int i = 1; Entity_Exists(sAnimationName + "_" + i); i++)
+		{
+			tString sNodeName = sAnimationName + "_" + i;		
+			iLuxEntity@ pEntity = Map_GetEntity(sNodeName, eLuxEntityType_Area, "cScrAreaCameraAnimationNode");
+			if (pEntity is null)
+			{
+				Error(sNodeName + " is not a camera animation node!");
+				continue;
+			}
+			
+			mvNodes.push_back(sNodeName);
+			
+			if (CameraAnimationNode_GetInitToCamera(sNodeName))
+			{
+				////////////////////////////////////////////
+				// Give node the orientation of the camera
+				cCamera@ pCamera = cLux_GetPlayer().GetCamera();
+			
+				cMatrixf mtxCameraRot = cMath_MatrixUnitVectors(pCamera.GetRight(), 
+																pCamera.GetUp(), 
+																pCamera.GetForward(), 
+																pCamera.GetPosition());
+				pEntity.SetMatrix(mtxCameraRot);
+			}
+		}
+		
+		if (mvNodes.length() == 0)
+		{
+			Error("Couldn't find an animation with the name " + sAnimationName + ", make sure the animation exists and that this is not the name of a node in the animation (AnimName_1 instead of just AnimName).");
+		}
+		
+		mbExitOnLastNode = cScript_GetGlobalArgBool(1);
+		
+		msInteractCallback = cScript_GetGlobalArgString(2);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetEntityAttachment()
+	{
+		m_idAttachedEntity = cScript_GetGlobalArgID(0);
+		mbAttachmentAlightYaw = cScript_GetGlobalArgBool(1);
+		mbAttachmentAlightPitch = cScript_GetGlobalArgBool(2);
+		mbAttachmentAlightRoll = cScript_GetGlobalArgBool(3);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_RemoveEntityAttachment()
+	{
+		m_idAttachedEntity = tID_Invalid;
+	}
+	
+	//------------------------------------------------------------
+		
+	void _Global_GetCurrentPitch()
+	{
+		cScript_SetGlobalReturnFloat(mfPitch);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_GetCurrentYaw()
+	{
+		cScript_SetGlobalReturnFloat(mfYaw);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+		if (alAction == eAction_Crouch || alAction == eAction_Jump)
+			return false;
+		
+		////////////////////////////
+		// Physical Interaction
+		if(alAction == eAction_Interact)
+		{
+			if(mPickBasics.GetFocusedEntity() is null) return false;
+			
+			//Call interact callback
+			cLuxMap@ pMap = cLux_GetCurrentMap();
+			if(msInteractCallback != "" && pMap.ScriptPrepare("void " + msInteractCallback + "(const tString &in asEntity)"))
+			{
+				tString entityName = mPickBasics.GetFocusedEntity().GetName();
+				pMap.SetArgString(0, entityName);
+				pMap.ScriptExecute();
+			}
+				
+			return false;
+		}
+		
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+		///////////////////////////////////
+		// Override move
+		if(alAnalogId == eAnalogType_GamepadMove)
+		{		
+			if (avAmount.Length() > 0.1f)
+			{
+				mvCurrentMovementDir += avAmount;
+				mvCurrentMovementDir = cMath_Vector3MaxLength(mvCurrentMovementDir, 1.f);
+			}
+			return false;
+		}
+		else if (alAnalogId == eAnalogType_Move)
+		{
+			mvCurrentMovementDir += avAmount;
+			mvCurrentMovementDir = cMath_Vector3MaxLength(mvCurrentMovementDir, 1.f);
+			
+			return false;
+		}
+		
+		///////////////////////////////////
+		// Override look
+		else if(alAnalogId == eAnalogType_Look)
+		{			
+			////////////////////////////
+			// Pitch
+			{
+				int lYDir = -1;
+				float fPitchMultiplier = 1;
+				
+				/////////////////////////////////////////////////////
+				// Decrease speed if rotating away from center
+				if (cMath_Sign(avAmount.y * lYDir) == cMath_Sign(mfPitch))
+				{
+					if (mfMaxPitch > 0)
+						fPitchMultiplier = 1 - cMath_Abs(mfPitch)/mfMaxPitch;
+					else
+						fPitchMultiplier = 0;
+				}
+					
+				mfPitch += avAmount.y * lYDir * fPitchMultiplier * mfLookSpeedMul;
+				mfPitch = cMath_Clamp(mfPitch, -mfMaxPitch, mfMaxPitch);
+			}
+			
+			////////////////////////////
+			// Yaw
+			{
+				float fYawMultiplier = 1;
+				
+				////////////////////////////
+				// Decrease speed if rotating away from center
+				if (cMath_Sign(-avAmount.x) == cMath_Sign(mfYaw))
+				{
+					if (mfMaxYaw > 0)
+						fYawMultiplier = 1 - cMath_Abs(mfYaw)/mfMaxYaw;
+					else
+						fYawMultiplier = 0;
+				}
+					
+				mfYaw -= avAmount.x * fYawMultiplier * mfLookSpeedMul;
+				mfYaw = cMath_Clamp(mfYaw, -mfMaxYaw, mfMaxYaw);
+			}
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPECIFIC METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	//////////////////////////////////
+	// Just cleans up the code a bit
+	cVector3f GetNodeForward(iLuxEntity@ pNode) { return pNode.GetMatrix().GetTranspose().GetForward() * -1.f; }
+	cVector3f GetNodeUp(iLuxEntity@ pNode) { return pNode.GetMatrix().GetTranspose().GetUp(); }
+	
+	//------------------------------------------------------------
+	
+	void UpdateCameraMatrix()
+	{		
+		int lIndex = mfDistanceMoved;
+		iLuxEntity@ pCurrentNode = Map_GetEntity(mvNodes[lIndex], eLuxEntityType_Area, "cScrAreaCameraAnimationNode");
+		
+		cVector3f vTargetPos;
+		cVector3f vTargetFwd;
+		cVector3f vTargetUp;
+		if (lIndex == mvNodes.length() - 1 || mfDistanceMoved == 0)
+		{
+			////////////////////////////
+			// Set target directly
+			vTargetPos = GetNodePosition(pCurrentNode);
+			vTargetFwd = GetNodeForward(pCurrentNode);
+			vTargetUp = pCurrentNode.GetMatrix().GetTranspose().GetUp();
+		}
+		else
+		{
+			////////////////////////////
+			// Get node entities
+			iLuxEntity@ pNextNode = Map_GetEntity(mvNodes[lIndex+1], eLuxEntityType_Area, "cScrAreaCameraAnimationNode");
+			iLuxEntity@ pPrevNode = lIndex > 0 ? Map_GetEntity(mvNodes[lIndex-1], eLuxEntityType_Area, "cScrAreaCameraAnimationNode") 
+											  : null;
+			iLuxEntity@ pNextNextNode = lIndex < mvNodes.length() - 2 ? Map_GetEntity(mvNodes[lIndex+2], eLuxEntityType_Area, "cScrAreaCameraAnimationNode") 
+																     : null;
+					
+			////////////////////////////
+			// Position						  
+			cVector3f vNode1 = GetNodePosition(pCurrentNode);
+			cVector3f vNode2 = GetNodePosition(pNextNode);
+			cVector3f vNode0 = pPrevNode is null ? (vNode1 + (vNode1 - vNode2)) : GetNodePosition(pPrevNode);
+			cVector3f vNode3 = pNextNextNode is null ? (vNode2 + (vNode2 - vNode1)) : GetNodePosition(pNextNextNode);
+			
+			//vTargetPos = cMath_Vector3CatmullRom(vNode0, vNode1, vNode2, vNode3, mfDistanceMoved-lIndex);
+			Math_CatmullRom(vTargetPos, vNode0, vNode1, vNode2, vNode3, mfDistanceMoved-lIndex);
+			
+			////////////////////////////
+			// Forward
+			cVector3f vForward1 = GetNodeForward(pCurrentNode);
+			cVector3f vForward2 = GetNodeForward(pNextNode);
+			cVector3f vForward0 = pPrevNode is null ? (vForward1 + (vForward1 - vForward2)) : GetNodeForward(pPrevNode);
+			cVector3f vForward3 = pNextNextNode is null ? (vForward2 + (vForward2 - vForward1)) : GetNodeForward(pNextNextNode);
+			
+			//vTargetFwd = cMath_Vector3CatmullRom(vForward0, vForward1, vForward2, vForward3, mfDistanceMoved-lIndex);
+			Math_CatmullRom(vTargetFwd, vForward0, vForward1, vForward2, vForward3, mfDistanceMoved-lIndex);
+			vTargetFwd.Normalize();
+			
+			////////////////////////////
+			// Up
+			cVector3f vUp1 = GetNodeUp(pCurrentNode);
+			cVector3f vUp2 = GetNodeUp(pNextNode);
+			cVector3f vUp0 = pPrevNode is null ? (vUp1 + (vUp1 - vUp2)) : GetNodeUp(pPrevNode);
+			cVector3f vUp3 = pNextNextNode is null ? (vUp2 + (vUp2 - vUp1)) : GetNodeUp(pNextNextNode);
+			
+			//vTargetUp = cMath_Vector3CatmullRom(vUp0, vUp1, vUp2, vUp3, mfDistanceMoved-lIndex);
+			Math_CatmullRom(vTargetUp, vUp0, vUp1, vUp2, vUp3, mfDistanceMoved-lIndex);
+			vTargetUp.Normalize();
+		}
+		
+		/////////////////////////////////////
+		// Create matrix from target vectors
+		cVector3f vTargetRight = cMath_Vector3Cross(vTargetUp, vTargetFwd);
+		vTargetRight.Normalize();
+		vTargetUp = cMath_Vector3Cross(vTargetFwd, vTargetRight);
+		
+		m_mtxCameraRotation = cMath_MatrixUnitVectors(vTargetRight, vTargetUp, vTargetFwd, vTargetPos);
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateEntityAttachment()
+	{
+		if(m_idAttachedEntity == tID_Invalid) return;
+		
+		////////////////////////////
+		// Set up basic data
+		cMatrixf mtxEntity;
+		cVector3f vRight, vUp, vFwd;	
+		
+		////////////////////////////
+		// Align all rotations
+		if(mbAttachmentAlightPitch && mbAttachmentAlightYaw && mbAttachmentAlightRoll)
+		{
+			mtxEntity = m_mtxCameraRotation;		
+		}
+		////////////////////////////
+		// Align no rotations
+		else if(!mbAttachmentAlightPitch && !mbAttachmentAlightYaw && !mbAttachmentAlightRoll)
+		{
+			mtxEntity = cMath_MatrixTranslate(m_mtxCameraRotation.GetTranslation());		
+		}
+		////////////////////////////
+		// Align specfic rotations
+		else
+		{
+			cMatrixf mtxBaseInv = cMath_MatrixInverse(m_mtxCameraRotation);
+			
+			if(mbAttachmentAlightRoll==false)
+			{
+				vRight = mbAttachmentAlightYaw ? mtxBaseInv.GetRight() : cVector3f(1,0,0);
+				vUp =  mbAttachmentAlightPitch ? mtxBaseInv.GetUp() : cVector3f(0,1,0);
+				vFwd = cMath_Vector3Cross(vRight, vUp);
+			}
+			else if(mbAttachmentAlightPitch==false)
+			{
+				vRight = mbAttachmentAlightYaw ? mtxBaseInv.GetRight() : cVector3f(1,0,0);
+				vFwd =  mbAttachmentAlightRoll ? mtxBaseInv.GetForward() : cVector3f(0,0,1);
+				vUp = cMath_Vector3Cross(vRight, vFwd);
+			}
+			else
+			{
+				vUp =  mbAttachmentAlightPitch ? mtxBaseInv.GetUp() : cVector3f(0,1,0);
+				vFwd =  mbAttachmentAlightRoll ? mtxBaseInv.GetForward() : cVector3f(0,0,1);
+				vRight = cMath_Vector3Cross(vUp, vFwd);
+			}
+			
+			mtxEntity = cMath_MatrixUnitVectors(vRight, vUp, vFwd, m_mtxCameraRotation.GetTranslation());
+		}
+		
+		////////////////////////////
+		// Update entity matrix
+		cLux_ID_Entity(m_idAttachedEntity).SetMatrix(mtxEntity);
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateMovement()
+	{		
+		if (mvCurrentMovementDir.Length() > 0.1f && 
+			cMath_Vector3Dot(cMath_Vector3Normalize(mvCurrentMovementDir), mvGeneralMovementDir) > 0.8f)
+		{
+			// If player keeps holding the same direction, just keep moving along spline at the same speed
+			mfMovement = cMath_Sign(mfMovement) * mvCurrentMovementDir.Length();
+			return;
+		}
+		
+		mvGeneralMovementDir = cMath_Vector3Normalize(mvCurrentMovementDir);
+		
+		cCamera@ pCam = mBaseObj.mpPlayer.GetCamera();
+		
+		///////////////////////////
+		// Look based movement
+		int lIndex = int(mfDistanceMoved);
+		tString pCurrentNode = mvNodes[lIndex];
+		float fDistanceMovedOnNode = cMath_GetFraction(mfDistanceMoved);
+		float fLookMoveDist = CameraAnimationNode_GetLookMoveDist(pCurrentNode);
+		float fLookMoveAngle = CameraAnimationNode_GetLookMoveAngle(pCurrentNode);
+		if (mvGeneralMovementDir.Length() <= 0.1f && fDistanceMovedOnNode < fLookMoveDist &&
+			lIndex+1 < mvNodes.length())
+		{
+			if (fLookMoveAngle <= 0)
+			{
+				Error("Animation node Look Move angle must be greater than 0 if a Look Move distance is specified!");
+				mfMovement = 0;
+				return;
+			}
+			
+			iLuxEntity@ pNextNode = Map_GetEntity(mvNodes[lIndex+1], eLuxEntityType_Area, "cScrAreaCameraAnimationNode");
+			cVector3f vToNextNode = GetNodePosition(pNextNode) - pCam.GetPosition();
+			vToNextNode.Normalize();
+			float fAngle = cMath_Vector3Angle(pCam.GetForward(), vToNextNode);
+			
+			// This caps the movement so that it only goes all the way to fLookMoveDist if the player 
+			// looks directly at the next node and slows down before getting to the current max distance
+			float fLookMove = 1.f - (fAngle/CameraAnimationNode_GetLookMoveAngle(pCurrentNode));
+			// S26AQ: equivalent for nonzero fLookMove, finite at the angular cutoff.
+			fLookMove -= fDistanceMovedOnNode/fLookMoveDist;
+			
+			mfMovement = cMath_Max(0.f, fLookMove);
+			return;
+		}
+		
+		///////////////////////////////////////////////
+		// calculate how much of the input is forward
+		cVector3f vDir = mvGeneralMovementDir;
+		vDir.z = vDir.y;
+		vDir.y = 0;
+		vDir = cMath_MatrixMul(pCam.GetRotationMatrix(), vDir);
+		
+		float fDot = cMath_Vector3Dot(vDir, m_mtxCameraRotation.GetForward());
+		mfMovement = fDot * mvCurrentMovementDir.Length();
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateFadingProperties()
+	{
+		int lIndex = int(mfDistanceMoved);
+		float fFract = mfDistanceMoved - lIndex;
+		
+		tString pCurrentNode = mvNodes[lIndex];
+		
+		if (lIndex == mvNodes.length() - 1)
+		{
+			mfMaxPitch = CameraAnimationNode_GetMaxPitch(pCurrentNode);
+			mfMaxYaw = CameraAnimationNode_GetMaxYaw(pCurrentNode);
+			mfLookSpeedMul = CameraAnimationNode_GetLookSpeedMul(pCurrentNode);
+		}
+		else
+		{
+			tString pNextNode = mvNodes[lIndex+1];
+			
+			mfMaxPitch = cMath_InterpolateLinear(CameraAnimationNode_GetMaxPitch(pCurrentNode), CameraAnimationNode_GetMaxPitch(pNextNode), fFract);
+			mfMaxYaw = cMath_InterpolateLinear(CameraAnimationNode_GetMaxYaw(pCurrentNode), CameraAnimationNode_GetMaxYaw(pNextNode), fFract);
+			mfLookSpeedMul = cMath_InterpolateLinear(CameraAnimationNode_GetLookSpeedMul(pCurrentNode), CameraAnimationNode_GetLookSpeedMul(pNextNode), fFract);
+			
+		}
+		
+		mfPitch = cMath_Clamp(mfPitch, -mfMaxPitch, mfMaxPitch);
+		mfYaw = cMath_Clamp(mfYaw, -mfMaxYaw, mfMaxYaw);
+		
+		/////////////////////////////
+		// Movement speed
+		bool bSpeedFade = CameraAnimationNode_GetUseSpeedFading(pCurrentNode);
+		const float fCloseFract = 0.3f; // Only interpolate speed values when close to previous node
+		
+		if (bSpeedFade && fFract < fCloseFract && lIndex > 0)
+		{
+			tString pPrevNode = mvNodes[lIndex-1];
+			float fSubFract = fFract/fCloseFract;
+			
+			float fCurrentFwdSpeed = CameraAnimationNode_GetForwardSpeed(pCurrentNode);
+			float fCurrentBackSpeed = CameraAnimationNode_GetBackSpeed(pCurrentNode);
+			float fPrevFwdSpeed = CameraAnimationNode_GetForwardSpeed(pPrevNode);
+			float fPrevBackSpeed = CameraAnimationNode_GetBackSpeed(pPrevNode);
+			
+			mfForwardSpeed = cMath_InterpolateLinear(cMath_Max(fPrevFwdSpeed, 0.05), fCurrentFwdSpeed, fSubFract);
+			mfBackSpeed = cMath_InterpolateLinear(cMath_Max(fPrevBackSpeed, 0.05), fCurrentBackSpeed, fSubFract);
+		}
+		else
+		{
+			mfForwardSpeed = CameraAnimationNode_GetForwardSpeed(pCurrentNode);
+			mfBackSpeed = CameraAnimationNode_GetBackSpeed(pCurrentNode);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector3f GetNodePosition(iLuxEntity@ apEntity)
+	{
+		cScript_RunGlobalFunc(apEntity.GetName(), "cScrAreaCameraAnimationNode", "_Global_GetPosition");
+		return cScript_GetGlobalReturnVector3f();
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// BODY CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool AllowBuoyancy(iPhysicsBody @apBody)
+	{
+		return false;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	void SaveBodyProperties(iPhysicsBody @apBody)
+	{
+		
+	}
+
+	//-----------------------------------------------------------------------
+
+
+	bool BodyIsAdded(iPhysicsBody @apBody)
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	array<tString> mvNodes;
+	bool mbExitOnLastNode;
+	int mlPreviousState;
+	
+	tString msInteractCallback;
+	cUtility_PickBasics mPickBasics;
+	
+	tID m_idAttachedEntity = tID_Invalid;
+	bool mbAttachmentAlightYaw = false;
+	bool mbAttachmentAlightPitch = false;
+	bool mbAttachmentAlightRoll = false;
+	
+	////////////////////
+	// Movement
+	float mfDistanceMoved; // Total distance moved along spline
+	float mfMovement; // Input converted to a movement multiplier where 1 is full forward speed and -1 is full reverse speed
+	cVector3f mvCurrentMovementDir; // Input direction
+	cVector3f mvGeneralMovementDir; // General input direction. Allows player to move the analog stick slightly without accidentally changing directions.
+	float mfForwardSpeed;
+	float mfBackSpeed;
+	
+	////////////////////
+	// Rotation
+	cMatrixf m_mtxCameraRotation;
+	float mfPitch;
+	float mfYaw;
+	float mfMaxPitch;
+	float mfMaxYaw;
+	float mfLookSpeedMul;
+	
+	//------------------------------------------------------------
+		
+}

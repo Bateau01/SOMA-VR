@@ -1,0 +1,1407 @@
+#include "helpers/helper_vr_phone_q.hps"
+#include "interfaces/Map_Interface.hps"
+#include "helpers/helper_map.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_props.hps"
+#include "helpers/helper_ai.hps"
+#include "helpers/helper_areas.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_game.hps"
+#include "helpers/helper_imgui.hps"
+#include "helpers/helper_sequences.hps"
+#include "helpers/helper_modules.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_player.hps"
+#include "helper_imgui_cellphone.hps"
+
+//-------------------------------------------------------
+	
+/////////////////////////////////////////
+// MAP VARIABLES
+/////////////////////////////////////////
+	
+//-------------------------------------------------------
+
+const float gfTrainBaseSpeed = 20;	//Base speed of the walls.			
+const float gfTrainBaseAcc = 2;		//Base acceleration of the walls.
+
+tString[] gvScreenMaterials = {"00_02_arriving_station_osgoode.mat","00_02_arriving_station_st_patrick.mat","00_02_arriving_station_queens_park.mat"};
+tString[] gvStationAnnouncements = {"StationOsgoode","StationStPatrick","StationQueensPark"};
+
+tString gsCarriageName = "00_02_subway_moving_carriage_";
+
+//-------------------------------------------------------
+
+class cScrMap : iScrMap
+{
+    cVRPhoneQ mVRPhone;
+    void VRPhoneW_Gui(const tString &in entity,float dt)
+    {
+        mVRPhone.Draw("jesse","00_02_Time","B",false);
+    }
+
+
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	//==================
+	// MAIN VARIABLES
+	//==================
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	int mlTrainStopCount;	//Used to check what "station" the walls are to stop at.
+	int mlTrainDistance;	//Used to count distance walls have moved.
+	float mfTrainBounce;
+	float mfNextTrainBounce;
+	float mfDebrisForces;
+	int mlNumUpdates;
+	bool mbIntroStarted = false;
+	bool mbFadeOutStarted = false;
+	cVector2f mvSavedPitchLimits;
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	//==================
+	// MAIN CALLBACKS
+	//==================
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void Setup()
+	{
+		GetBase().SetDisplayNameEntry("00-02-subway");
+		
+		// Effect init
+		Effect_Bloom_FadeBrightPass(0.5f, 2);
+        Effect_Bloom_FadeBloomWidth(128, 2);
+        Effect_Bloom_FadeBloomFalloff(0.5f, 2);
+        Effect_Bloom_FadeBloomTint(1, 1, 1, 2);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadData()
+	{
+		CellphoneGui_Preload();
+
+		PlayerHands_PreloadHandModel_Human();
+		
+		Material_Preload("00_02_signal_error.mat");
+		Material_Preload("00_02_arriving_station_osgoode.mat");
+		Material_Preload("00_02_arriving_station_st_patrick.mat");
+		Material_Preload("00_02_arriving_station_queens_park.mat");
+	}
+
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// Run first time starting map
+	void OnStart()
+	{
+		//////////////////////////////////
+		// INIT VARIABLES
+		mlTrainDistance = 0;
+		mlTrainStopCount = 0;
+		mfMaxHandleForce = 0;
+		mbTrainHasStopped = true;
+		mbTrainIsAccelerating = false;
+		mbTrainIsStopping = false;		
+		mfTrainBounce = 0;
+		mfNextTrainBounce = 0;
+		mfDebrisForces = 0;
+		mlNumUpdates = 0;
+		
+		
+		/////////////////////////
+		//SOUND AND MUSIC
+		Sound_SetGlobalVolume(0.0f, eSoundEntryType_WorldAll);
+		
+		/////////////////////////
+		//INIT VISUALS
+		Effect_Fade_Out(0);
+		
+		////////////////////////////
+		// Start level
+		Move_Train(10, 1.1);
+		
+		Player_Teleport("PlayerStartArea_1",true);
+		Player_SetJumpDisabled(true);
+		Player_SetCrouchDisabled(true);
+		Player_SetStandDisabled(true);
+		Player_SetHeadBobMul(0.0f);
+		
+		mvSavedPitchLimits = Player_GetPitchLimits();
+		Player_SetPitchLimits(-40, 20);
+		Player_SetYawLimits(-240, -120);
+		
+		if (EyeTracking_IsActive())
+		{
+			Player_SetPitchLimits(-30, 20);
+			EyeTracking_SetExtendedViewMul(0.7f);
+		}
+			
+		Map_AddTimer("level_begin", 1, "TimerFadeInLevel");
+		Map_AddTimer("TimerStartPhoneCall",20.5,"Seq_PhoneCall");
+		
+		/////////////////
+		//INIT PLAYER
+		Player_SetFlashlightDisabled(true);		
+		Player_StartLookAt("AreaStartLookAt", 4, 4, 4);
+		Player_SetMoveSpeedMul(0);
+		Player_SetLookSpeedMul(0.7);
+		Player_SetFootWear("sneaker");
+		Player_SetClothing("dressed");
+
+		Player_SetCrossHairState(eCrossHairState_None);
+		
+		PlayerHands_SetHandModel_Human();
+		
+		//Player_SetPitchLimits(cMath_ToDeg(-0.9), cMath_ToDeg(0.7));		
+
+		////////////////////////////////////////
+		// Setup Sound
+		Map_AddTimer("BumPlayer", cMath_RandRectf(6.0f, 8.0f), "BumLine");
+		
+		/////////////////////////////////////
+		// Entity Setup
+		mBaseObj.GetEntityByName("debris_emptybottle").GetBody(0).SetAngularDamping(200);
+		Entity_PlayAnimation("subway_girl_2", "erin_subway", 0.1f, true);
+		Entity_SetActive("simon_body", false);
+		
+		////////////////////////////////////////
+		// SETUP NPCs
+		Entity_AttachToSocket("tablet", "subway_businessman_1", "pad", true);
+		Map_GetEntity("subway_bum_1").GetMeshEntity().SetVisible(false);
+		
+		/////////////////////////////////////////
+		// DEBUG, PLAYER GLOBAL VARS
+		if(cLux_ScriptDebugOn())
+		{
+			Effect_Fade_In(0);
+		}
+		
+	}
+	
+	//-----------------------------------------------------
+	
+	///////////////////////////////////////////
+	// Map Update
+	void Update(float afTimeStep)
+	{	
+		if (mbIntroStarted == false) return;
+		
+		///////////////////////////////////////////////////////////////////
+		// Make train carriages move for realism
+		if (mbTrainHasStopped == false)
+		{
+			Move_Outer_Carriages(afTimeStep);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// Run when entering map
+	void OnEnter()
+	{
+		MainMenu_SetBGPhase(eMainMenuPhase_Initial_To_1_3);
+		
+		if(cLux_ScriptDebugOn() == false) Game_AutoSave();
+	}
+	
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when leaving map
+	void OnLeave()
+	{
+        mVRPhone.End();
+		// Allow player to look around
+		Player_SetPitchLimits(mvSavedPitchLimits.x,mvSavedPitchLimits.y);
+		Player_SetYawLimits(0, 0);	
+		
+		Player_SetMoveSpeedMul(1);
+		Player_SetLookSpeedMul(1);
+		Player_SetStandDisabled(false);
+		Player_SetJumpDisabled(false);
+		Player_SetCrouchDisabled(false);
+		Player_SetHeadBobMul(1.0f);
+		
+		Player_SetCrouching(false);
+		Player_ChangeStateToNormal();
+	}
+
+	//-------------------------------------------------------
+
+	void OnAction(int alAction, bool abPressed)
+	{
+		if(abPressed==false) return;
+		/*
+		if (alAction == eAction_Forward)
+		{
+			Entity_PlaceAtEntity("subway_bum_1", "subway_bum_1", cVector3f_Forward*0.25);
+		}
+		
+		if (alAction == eAction_Backward)
+		{
+			Entity_PlaceAtEntity("subway_bum_1", "subway_bum_1", cVector3f_Back*0.25);
+		}
+		
+		if (alAction == eAction_Left)
+		{
+			Entity_PlaceAtEntity("subway_bum_1", "subway_bum_1", cVector3f_Left*0.25);
+		}
+		
+		if (alAction == eAction_Right)
+		{
+			Entity_PlaceAtEntity("subway_bum_1", "subway_bum_1", cVector3f_Right*0.25);
+		}
+		
+		if (alAction == eAction_Test1)
+		{
+			Girl_TimerEnterTrain("");
+		}
+		*/
+	}
+
+	//-------------------------------------------------------
+	
+	//////////////////////////////////////////
+	//=====================
+	// MAIN FUNCTIONS
+	//=====================
+	//////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SCENE 1 - SIMON NARRATION
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbIgnoredPhone = false;
+	bool mbAnsweredPhone = false;
+	bool mbHungUpPhone = false;
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mPhoneCallSequence;
+		
+	void Seq_PhoneCall(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_PhoneCall", mPhoneCallSequence);
+			
+		if (Sequence_DoStepAndWait(3))
+		{
+			cLux_AddDebugMessage("Seq_PhoneCall");
+			Sound_CreateAtEntity("CellphoneRing", "Entities_Urban/tech/cellphone/ringing_hand", "Player");
+		}
+		else if (Sequence_DoStepAndWait(0.2))
+		{
+		}
+		else if (Sequence_DoStepAndPause(0.5))
+		{
+            if(mVRPhone.Begin("")) Map_AddTimer("VRPhoneQ",0.05f,"VRPhoneQ_Tick");
+            else
+            {
+			Entity_SetActive("Cellphone", true);
+			Entity_CallEntityInteract("Cellphone");
+            }
+		}
+		else if (Sequence_DoStepAndWait(1))
+		{
+		}
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void PhonecallOver(const tString&in asScene, const tString&in asSubject)
+	{
+        mVRPhone.End();		
+		//mbLooping = false;
+		//Entity_SetActive("TrainLoopPoint_End", false);
+		Map_AddTimer("TimerEndPhoneBeep",0.5,"TimerEndPhoneBeep");
+		Map_AddTimer("ResumeVolume", 1.0f, "Timer_ConversationAudio");
+		Map_AddTimer("TimerEndLevel", 6.5f, "TimerEndLevel");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerEndPhoneBeep(const tString& in asName)
+	{
+		Sound_CreateAtEntity("PhoneBeep", "00_01_subway/SFX/phone_beep_action", "Player");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnGuiPhone(const tString&in asEntityName, float afTimeStep)
+	{
+		if (ImGui_IsFirstRun())
+		{
+			CellPhoneGui_SetClockString("00_02_Time");
+			CellPhoneGui_SetReceptionIcons("B");
+			CellPhoneGui_StartRinging("jesse", 15.0f);	// Timeout after 12 secs
+		}
+		
+		eCellPhoneGuiAction action = CellPhoneGui_Update();
+	
+		if (action==eCellPhoneGuiAction_Answered||
+			action==eCellPhoneGuiState_Rejected||
+			action==eCellPhoneGuiAction_MissedCall)
+		{
+			// We put away the phone and stop the ringing no matter what
+			Sound_Stop("CellphoneRing", 0.1);
+			ImGui_AddTimer("PutAwayPhone", 2);
+		}
+		
+		if (action==eCellPhoneGuiState_Rejected)
+		{
+			mbHungUpPhone = true;
+			Map_AddTimer("TimerEndLevel", 20, "TimerEndLevel");
+			Map_SetPreloadPriority(eWorldStreamPriority_Normal);
+		}
+		else if (action==eCellPhoneGuiAction_Answered)
+		{
+			mbAnsweredPhone = true;
+			Terminal_SetShowMouse(asEntityName,false);
+			
+			Map_AddTimer("FadeVolume", 1.0f, "Timer_ConversationAudio");
+			
+			bool bMailSent = cScript_GetGlobalVarBool("PlayerSentApartmentEmail");
+			tString sSubject = bMailSent ? "Phonecall_EmailSent" :
+										   "Phonecall_EmailNotSent";
+			Voice_Play(sSubject,-1,"PhonecallOver",0);
+		}
+		else if (action==eCellPhoneGuiAction_MissedCall)
+		{
+			mbIgnoredPhone = true;
+			SequenceStates_Resume("Seq_PhoneCall");
+			Map_AddTimer("TimerEndLevel", 7.5, "TimerEndLevel");
+			Map_SetPreloadPriority(eWorldStreamPriority_Normal);
+		}
+		
+		if(ImGui_TimerOver("PutAwayPhone"))
+		{
+			ImGui_Exit();
+			SequenceStates_Resume("Seq_PhoneCall");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_ConversationAudio(const tString &in asTimer)
+	{
+		if (asTimer=="FadeVolume")
+		{
+			Sound_FadeGlobalVolume(0.75f, 4.0f, eSoundEntryType_World);
+			Music_FadeVolumeMul(0.85f, 6.0f);
+			cLux_AddDebugMessage("Fade audio down");
+		}
+		else if(asTimer=="ResumeVolume")
+		{
+			Sound_FadeGlobalVolume(1.f, 3.0f, eSoundEntryType_World);
+			Music_FadeVolumeMul(0.45f, 3.0f);
+			cLux_AddDebugMessage("Fade audio back up");
+		}
+	}
+	
+	void LeaveGui_Phone(const tString&in asEntityName)
+	{
+		if (mbIgnoredPhone || mbAnsweredPhone || mbHungUpPhone)
+			return;
+		
+		mbHungUpPhone = true;
+		Sound_Stop("CellphoneRing", 0.1);
+		Sound_Stop("CellphoneRingTone", 0.1);
+		SequenceStates_Resume("Seq_PhoneCall");
+		Map_AddTimer("TimerEndLevel", 18, "TimerEndLevel");
+		Map_SetPreloadPriority(eWorldStreamPriority_Normal);
+	}
+	
+	//-------------------------------------------------------
+	//Bum player
+	
+	int mlBumStage = 1;
+	bool mbBumLineAllowed = true;
+	bool mbBumRamblingActive = false;
+	
+	void BumLine(const tString &in asTimer)
+	{
+		if(mbBumLineAllowed==true && Sound_Exists("BumLine")==false && mlBumStage < 12)
+		{
+			Sound_CreateAtEntity("BumLine", "00_01_subway/ambience/spot/bum_rambling_"+mlBumStage, "Subway_bum_1");
+			mlBumStage++;
+			Map_AddTimer("BumPlayer", cMath_RandRectf(3.0f, 5.0f), "BumLine");
+		}
+		else
+		{
+			Map_AddTimer("BumPlayer", cMath_RandRectf(3.0f, 5.0f), "BumLine");
+		}
+	}
+		
+	//-------------------------------------------------------
+	//Stop bum from talking during conversation
+	
+	void LineStart_Conversation(const tString &in asParent, const tString &in asChild, int alState, bool abStart)
+	{
+		if(abStart==false)
+			return;
+			
+		mbBumLineAllowed = false;
+	}
+	
+	void LineOver_Conversation(const tString &in asParent, const tString &in asChild, int alState, bool abStart)
+	{
+		if(abStart)
+			return;
+			
+		mbBumLineAllowed = true;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SCENE 2 - FADE IN/OUT LEVEL
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	void TimerFadeInLevel(const tString &in asTimer)
+	{
+		cLux_AddDebugMessage("Fade start");
+		
+		//////////////////////////
+		// Sound
+		Sound_FadeGlobalVolume(1.0f, 7.0f, eSoundEntryType_WorldAll);
+		Sound_CreateAtEntity("SubwaySweet", "00_01_subway/SFX/subway_sweetener", "Player");
+		
+		///////////////
+		//INIT LEVEL - TRAIN/WALLS
+		ConstructTunnelAndTrainRig();
+		cLux_GetCurrentMap().GetEntityArrayID("holding_handle_*", eLuxEntityType_LastEnum, "", mvHandles);
+		Entity_SetInteractionDisabled("debris_*",false);
+		
+		//Train_SetCorrectStationWalls();
+		
+		//////////////////////////
+		// Fade in - visuals on timer to sync with music
+		Map_AddTimer("VisualsFadeIn", 3.5f, "VisualsFadeIn");
+		Player_StopLookAt(0);
+		Entity_SetActive("simon_body", true);
+		
+		////////////////////
+		// NPCs
+		NPC_StartBehaviour();
+		Map_GetEntity("subway_bum_1").GetMeshEntity().SetVisible(true);
+		
+		///////////////////////
+		// Start train bounce
+		Map_AddTimer("TrainBounce",1.0,"Timer_TrainBounce");	
+		
+		mbIntroStarted = true;
+			
+		if(cLux_ScriptDebugOn()==false)
+		{
+			Map_Preload("00_03_laboratory.hpm");
+			Map_SetPreloadPriority(eWorldStreamPriority_Low);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void VisualsFadeIn(const tString &in asTimer)
+	{
+		Effect_Fade_In(0.5f);
+		Music_FadeVolumeMul(0.45f, 10.0f);
+	}
+	
+	void Timer_StartTrip(const tString &in asTimer)
+	{
+		Move_Train(0.9, 1.1);
+	}
+	
+	//-------------------------------------------------------
+	
+	float mfPreloadTimeout = 15.0f;
+	void TimerEndLevel(const tString &in asTimer)
+	{
+		if (Map_IsPreloadCompleted()==false && mfPreloadTimeout > 0)
+		{
+			cLux_AddDebugMessage("Preloading not completed!");
+			const float fPreloadDelay = 5;
+			Map_AddTimer("TimerEndLevel", fPreloadDelay, "TimerEndLevel");
+			mfPreloadTimeout-=fPreloadDelay;
+			Map_SetPreloadPriority(eWorldStreamPriority_High);
+			return;
+		}
+		
+		mbTrainDoorsAllowed = false;
+		Effect_Fade_Out(2.5);	// fade to black
+		mbFadeOutStarted = true;
+		
+		//Allow graceful fading of music before next level trigger
+		Music_Stop(10.0f, eMusicPrio_BgAmb);
+		Sound_FadeGlobalVolume(0.0f, 5.0f, eSoundEntryType_World);
+		Map_AddTimer("timer_transition",11,"EndLevel");	
+	}
+	
+	//-------------------------------------------------------
+	
+	void EndLevel(const tString &in asTimer)
+	{	
+		Map_ChangeMap("00_03_laboratory.hpm","PlayerStartArea_1","","");
+		
+		//cLuxMap@ pMap = cLux_GetLoadedMap("00_03_laboratory.hpm");
+		//cLux_SetSubMap(pMap,eLuxSetSubmapPosition_MoveToStartPos,"PlayerStartArea_1");
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// CHARACTERS - SHARED REACTIONS TO PLAYER
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ======================================
+	// NPC CHARACTER CONTROLS
+	// ======================================
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void NPC_StartBehaviour()
+	{
+		///////////////////////////////////////////////
+		// BIZ Animations
+		Map_AddTimer("Swipe", cMath_RandRectf(7.0f, 14.0f), "Biz_TimerSwipePage");
+		
+		////////////////////////////
+		// BUM Animations & Lookat Check
+		Bum_TimerRandomExtraAnim("");	
+
+		///////////////////////////////////////////////
+		// Girl enters
+		//Girl_TimerEnterTrain("");	
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER - BIZ
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void Biz_TimerSwipePage(const tString&in asTimer)
+	{
+		Map_AddTimer("Swipe", cMath_RandRectf(7.0f, 14.0f), "Biz_TimerSwipePage");
+		NPC_PlayExtraAnimation("subway_businessman_1", "swipe_screen");
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// CHARACTER - BUM
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void Bum_TimerRandomExtraAnim(const tString& in asTimer)
+	{
+		NPC_PlayExtraAnimation("subway_bum_1", "Rambling_extra_0"+cMath_RandRectl(1,4), 0.3f, "Bum_ExtraAnimOver");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Bum_ExtraAnimOver(const tString& in asEntityName, const tString &in asAnim)
+	{
+		Map_AddTimer("bum_random_extra_anim", cMath_RandRectf(6, 15), "Bum_TimerRandomExtraAnim");
+	}
+	
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// CHARACTER - GIRL
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+
+	void Girl_EnterTrain()
+	{		
+		Map_AddTimer("girl_enter",9,"Girl_TimerEnterTrain");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Girl_TimerEnterTrain(const tString& in asTimer)
+	{
+		Entity_SetActive("subway_girl_1", true);
+		Sound_CreateAtEntity("SubwayGirlTalking", "00_01_subway/ambience/spot/subway_girl_talking", "subway_girl_1");
+		NPC_SetMainAnimation("subway_girl_1", "walk_n_sit", false, "", 0);
+		Map_AddTimer("Timer_GirlHasSatDown", 7, "Timer_GirlHasSatDown");
+
+		//TEMP SOUND
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_GirlHasSatDown(const tString &in asTimer)
+	{
+		NPC_SetMainAnimation("subway_girl_1", "sit_n_talk_normal", true, "");
+		
+		cLux_AddDebugMessage("Girl has taken seat");
+		NPC_PlayExtraAnimation("subway_girl_1", "sit_n_talk_extra_0"+cMath_RandRectl(1,3), 0.3f, "Girl_ExtraAnimOver");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Girl_TimerRandomExtraAnim(const tString& in asTimer)
+	{
+		NPC_PlayExtraAnimation("subway_girl_1", "sit_n_talk_extra_0"+cMath_RandRectl(1,3), 0.3f, "Girl_ExtraAnimOver");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Girl_ExtraAnimOver(const tString& in asEntityName, const tString &in asAnim)
+	{
+		Map_AddTimer("girl_random_extra_anim", cMath_RandRectf(6, 15), "Girl_TimerRandomExtraAnim");
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// HOLDING HANDLES
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	float mfMaxHandleForce;
+	bool mbTrainHasStopped;
+	bool mbTrainIsAccelerating;
+	bool mbTrainIsStopping;
+	array<tID> mvHandles; 
+
+	//-------------------------------------------------------
+	
+	void IncrementHandleForces(float alMultiplier)
+	{
+		mfMaxHandleForce += 0.02*alMultiplier;
+		if (mfMaxHandleForce > 0.3)
+		{
+			mfMaxHandleForce = 0.3;
+		}
+		if (mfMaxHandleForce < 0)
+		{
+			mfMaxHandleForce = 0;
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void ApplyHandleForces(float afAmountX, float afAmountZ)
+	{
+		cVector3f vImpulse;
+		
+		for(uint i=0; i<mvHandles.length(); ++i)
+		{
+			cLuxProp@ pProp = cLux_ID_Prop(mvHandles[i]);
+			cVector3f vPropVelocity = pProp.GetBodyFromName("Body_bottom").GetAngularVelocity();
+			
+			vImpulse = cMath_RandRectVector3f(cVector3f(-afAmountX,0,-afAmountZ), cVector3f(afAmountX,0,afAmountZ)); 
+			pProp.GetBodyFromName("Body_bottom").AddImpulse(vImpulse);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MOVE DEBRIS 
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	float fAccumulatedForce = 0;
+	float fDebrisForceDirection = 0;
+	
+	//-------------------------------------------------------
+	
+	void RollBottle(float afDirection)
+	{
+		//afDirection should be either 1 or -1
+		fAccumulatedForce = 0;
+		fDebrisForceDirection = afDirection;
+		SequenceMoveDebris("");
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSeqMoveDebris;
+	void SequenceMoveDebris(const tString &in asX)
+	{
+		Sequence_Begin("SequenceMoveDebris", mSeqMoveDebris);
+		
+		for (uint i=0;i<5;++i)
+		{
+			if (Sequence_DoStepAndWait(0.1))
+			{
+				ApplyForcesToDebris(fDebrisForceDirection * 0.1);
+			}
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void ApplyForcesToDebris(float afAmount)
+	{	
+		fAccumulatedForce += afAmount;
+		
+		float fX = fAccumulatedForce;
+		float fY = 0;
+		float fZ = 0;
+			
+		// Apply it
+		cVector3f vImpulse = cVector3f(fX,fY,fZ); 
+		Entity_AddImpulse("debris_*",vImpulse,false,true);
+		
+	}
+	
+	//----------------------------------------------------
+	
+	///////////////////////////////////////
+	// TRAIN CONTROLS
+	///////////////////////////////////////
+	
+	//-----------------------------------------------------
+	
+	tID m_idFrontCarriage;
+	tID m_idRearCarriage; 
+	bool mbTrainMoving = false;
+	int mlID_CrashShakeEffect = 0;
+	int mlID_CrashTrailEffect = 0;
+	
+	cVector3f mvRearCarriageStart = cVector3f_Zero;
+	cVector3f mvFrontCarriageStart = cVector3f_Zero;
+	float mfCarriageBobCycle = 0;
+	float mfCarriageSwayDistance = 0.1;
+	float mfCarriageBounceCycle = 0;
+	float mfCarriageBounceDistance = 0.1;
+	
+	bool mbLooping = false;
+	bool mbStopLooping = false;
+	
+	//-----------------------------------------------------
+	
+	void ConstructTunnelAndTrainRig()
+	{
+		///////////////////////////////////////////
+		//Turn off station 01 start, station 02 and 03 start/end and regular wall end.
+		//Using Mesh visible to simply be able to move all of the meshes, which if using active would not be possible.
+		for(int i=1;i<=3;i++)
+		{
+			mBaseObj.GetEntityByName("00_02_station_01_s_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+			mBaseObj.GetEntityByName("00_02_station_02_s_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+			mBaseObj.GetEntityByName("00_02_station_03_s_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+			
+			mBaseObj.GetEntityByName("00_02_station_01_e_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+			mBaseObj.GetEntityByName("00_02_station_02_e_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+			mBaseObj.GetEntityByName("00_02_station_03_e_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+		}
+		
+		///////////////////////////////////////////
+		//Turn off station wall in the beginning.
+		for(int i=1;i<=5;i++)
+		{
+			mBaseObj.GetEntityByName("00_02_outside_sp"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+			mBaseObj.GetEntityByName("00_02_outside_spw"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+		}
+
+		///////////////////////////////////////////
+		// Attach all the entities to the moving area.
+		Entity_AttachToEntity("00_02_outside_*","TrainMoveArea","",false,false);
+		Entity_AttachToEntity("00_02_station_*","TrainMoveArea","",false,false);
+		Entity_AttachToEntity("subway_lamp*","TrainMoveArea","",false,false);
+		
+		////////////////////////////////////////////////////////
+		// Remember starting positions of front & rear carriages and get IDs
+		iLuxEntity@ pRearCarriage = mBaseObj.GetEntityByName(gsCarriageName+"1");
+		mvRearCarriageStart = pRearCarriage.GetPosition();
+		cLux_AddDebugMessage("Vec: " + mvRearCarriageStart.x + "," + mvRearCarriageStart.y + "," + mvRearCarriageStart.z);
+		m_idRearCarriage = pRearCarriage.GetID();
+		
+		iLuxEntity@ pFrontCarriage = mBaseObj.GetEntityByName(gsCarriageName+"2");
+		mvFrontCarriageStart = pFrontCarriage.GetPosition();
+		cLux_AddDebugMessage("Vec: " + mvFrontCarriageStart.x + "," + mvFrontCarriageStart.y + "," + mvFrontCarriageStart.z);
+		m_idFrontCarriage = pFrontCarriage.GetID();
+	}
+	
+	//-----------------------------------------------------
+
+	void Timer_TrainBounce(const tString &in asTimer)
+	{	
+		////////////////////////
+		// This timer should repeat!
+		Map_AddTimer("TrainBounce",cMath_RandRectf(1.0,3.0),"Timer_TrainBounce");	
+		
+		///////////////////////////
+		// But if train is not moving, do not run effects
+		if (mbTrainMoving == false || mbTrainHasStopped == true) return;
+		
+		
+		///////////////////////////////////////////////
+		// Periodically cause a subtle shake effect for the train
+		Effect_Shake_Start(0.03,0.1,0.21,0.21,cVector3f(0,1,0),3);
+		
+		///////////////////////////////////////////////
+		// Move handles
+		ApplyHandleForces(mfMaxHandleForce,mfMaxHandleForce);
+	}
+	
+	//-----------------------------------------------------
+	
+	void Open_Train_Doors()
+	{
+		Map_AddTimer("open_door", 8, "TimerDoorOpen");
+		Map_AddTimer("close_door", 19, "TimerDoorClose");
+	}
+	
+	//-----------------------------------------------------
+	bool mbFirstTimeTrainMovement = true;
+	void Move_Train(float afAccMul, float afSpeedMul)
+	{
+		float fAccel = gfTrainBaseAcc * afAccMul;
+		float fSpeed = gfTrainBaseSpeed * afSpeedMul;
+		
+		mbTrainMoving = true;
+		mbTrainHasStopped = false;
+		mbTrainIsAccelerating = true;
+
+		///////////////////////////////////
+		// Move debris around
+		RollBottle(1.0);
+		
+		///////////////////////////////////
+		// Move the train
+		Area_MoveLinearTo("TrainMoveArea","TrainEndPoint",fAccel, fSpeed, 50, false);	// Begin moving the wall
+		
+		if (mbFirstTimeTrainMovement==true)
+		{
+			Sound_CreateAtEntity("TrainLoop", "00_01_subway/SFX/train_loop", "train_door_source", 0.0f, false, 1.0f);
+			cLux_AddDebugMessage("SOUND: Train is moving for the first time");
+			mbFirstTimeTrainMovement = false;
+		}
+		else
+		{
+			Sound_CreateAtEntity("TrainDepart", "00_01_subway/SFX/train_depart", "train_door_source");
+			Sound_CreateAtEntity("TrainLoop", "00_01_subway/SFX/train_loop", "train_door_source", 8.0f, false, 1.0f);
+			cLux_AddDebugMessage("SOUND: Train is Moving");
+		}
+
+	}
+	
+	//-----------------------------------------------------
+	
+	void Reset_Train()
+	{
+		// just a little polish 
+		Effect_Shake_Start(0.01,0.1,0,0.1,cVector3f(1,0,0),1);		// mask it with a slight mechanical jault as train starts if necessary
+		
+		Entity_PlaceAtEntity("TrainMoveArea","TrainBeginPoint",cVector3f_Zero,false);
+		mfMaxHandleForce = 0;
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_LoopTrain(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == -1)
+			return true;
+			
+		if (mbStopLooping)
+		{
+			mbLooping = false;
+			return true;
+		}
+		
+		mbLooping = true;
+		
+		cLux_AddDebugMessage("Loop");
+		// just a little polish 
+		Effect_Shake_Start(0.01,0.1,0,0.1,cVector3f(1,0,0),1);		// mask it with a slight mechanical jault as train starts if necessary
+		
+		Entity_PlaceAtEntity("TrainMoveArea","TrainLoopPoint_Start",cVector3f_Zero,false);
+		
+		return true;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// TRAIN MOVEMENT
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	////////////////////
+	// When the walls have moved so they are close to the end of how many there are, the area triggers a timer to reset wall and 
+	// start moving the wall again from the beginning.
+	bool mbIsTrainSlowDownPlaying = false;
+	bool CollideCheckPos(const tString &in asParent,const tString &in asChild, int alState)
+	{
+		if(alState == -1) return true;
+		
+		if (mbLooping) return true;
+		
+		mlTrainDistance++;
+		
+		// When train starts moving again, let the handles start swinging
+		// otherwise reduce the impulse we give it back towards zero
+		if (mlTrainDistance < 34)
+		{
+			IncrementHandleForces(1);
+		}
+		else
+		{
+			IncrementHandleForces(-1);
+		}
+		
+		/////////////////////////////////
+		//A bit before destination, update the end station graphics.
+		if(mlTrainDistance == 30)
+		{
+			Train_SetDestination();
+		}
+		
+		/////////////////////////////////	
+		//Trigger the train stopping sound.
+		if(mlTrainDistance == 34)
+		{
+			if(mbIsTrainSlowDownPlaying==false)
+			{
+				cLux_AddTodoMessage("SOUND: Train is Stopping");
+				Sound_CreateAtEntity("TrainArrive", "00_01_subway/SFX/train_arriving", "train_door_source");
+				Sound_Stop("TrainLoop", 11.0f);
+				
+				//Failsafe to stop arrive sound from retriggering again and again
+				Map_AddTimer("Timer_TrainSoundBoolean", 15.0f, "TrainArriveSoundFinished");				
+				mbIsTrainSlowDownPlaying = true;
+			}
+			
+			mbTrainIsStopping = true;
+			RollBottle(-1.0);
+		}
+		
+		/////////////////////////////////
+		//As train is almost at end, trigger the start station switch and soon thereafter teleport walls back.
+		if(mlTrainDistance == 46)
+		{
+			/////////////////////////////
+			// Set variables for train journey
+			mlTrainDistance = 0;
+			mbTrainIsStopping = false;
+			mbTrainHasStopped = true;
+			
+			/////////////////////////////
+			// Update textures
+			Train_SetCorrectStationWalls();
+			
+			/////////////////////////////
+			//Open the train doors at each stop
+			Open_Train_Doors();
+			
+			/////////////////////////////
+			//Handle any events for each station
+			Handle_Station_Events();
+			
+			/////////////////////////////
+			//Reset train
+			Map_AddTimer("reset_train", 20, "TimerResetTrain");
+			Map_AddTimer("continue_train_"+mlTrainStopCount, 21.01f, "TimerResetTrain");
+			Map_AddTimer("reset_train_accelerating", 23.01f, "TimerResetTrain");
+		}
+
+		//cLux_AddDebugMessage("Location: "+mlTrainDistance);
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	
+	void TrainArriveSoundFinished(const tString &in asTimer)
+	{
+		//Failsafe to stop train sound from retriggering
+		mbIsTrainSlowDownPlaying = false;
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////////////
+	// Events for each stop
+	void Handle_Station_Events()
+	{
+		if(mlTrainStopCount==1)
+		{
+			//////////////////////////////
+			// Girl enters train at stop 1
+			Girl_EnterTrain(); 		
+		}
+	}
+	void Train_SetCorrectStationWalls()
+	{
+		//////////////////////////////////////////////////////////
+		//Make all stop walls invisible before enabling the others
+		for(int p=1;p<=3;p++)
+		{
+			for(int i=1;i<=3;i++)
+				mBaseObj.GetEntityByName("00_02_station_0"+p+"_s_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+		}
+			
+		//Turn on the station at the start matching the station the train ended on.
+		for(int i=1;i<=3;i++)
+			mBaseObj.GetEntityByName("00_02_station_0"+mlTrainStopCount+"_s_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(true);
+				
+		for(int i=1;i<=5;i++)
+		{
+			mBaseObj.GetEntityByName("00_02_outside_sp"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(true);
+			mBaseObj.GetEntityByName("00_02_outside_spw"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(true);
+			mBaseObj.GetEntityByName("00_02_outside_sb"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void Train_SetDestination()
+	{
+		Sound_CreateAtEntity("ann_ping", "00_01_subway/ambience/inside/announcer_ping", "Player", 0, false);
+			
+			SetStationScreenText("station_screen", gvScreenMaterials[mlTrainStopCount]);
+			SetStationScreenText("station_screen_1", gvScreenMaterials[mlTrainStopCount]);
+			
+			if (mbFadeOutStarted == false)
+				Voice_Play(gvStationAnnouncements[mlTrainStopCount]);
+			cLux_AddDebugMessage("Annoucer says: "+gvStationAnnouncements[mlTrainStopCount]);
+			
+			mlTrainStopCount++;
+						
+			/////////////////////////////////
+			//Set stop walls visible.			
+			for(int i=1;i<=3;i++)
+				mBaseObj.GetEntityByName("00_02_station_0"+mlTrainStopCount+"_e_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(true);
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	// Moves the wall back and add a new continue_train_x to add additional trips.
+	void TimerResetTrain(const tString &in asTimer)
+	{
+		if(asTimer == "reset_train")
+		{
+			Reset_Train();
+			
+			//Turn off station at end when train back at start.
+			for(int i=1;i<=3;i++)
+				mBaseObj.GetEntityByName("00_02_station_0"+mlTrainStopCount+"_e_"+i, eLuxEntityType_Prop, "").GetMeshEntity().SetVisible(false);
+		}	
+		
+		//Different movements for a "varied" trip.
+		else if(asTimer == "continue_train_1")
+		{
+			Move_Train(0.9, 1.1);
+			
+			SetStationScreenText("station_screen","00_02_next_station_st_patrick.mat");
+			SetStationScreenText("station_screen_1","00_02_next_station_st_patrick.mat");
+			
+		}
+		else if(asTimer == "continue_train_2")
+		{
+			Move_Train(2, 2);
+			
+			SetStationScreenText("station_screen","00_02_next_station_queens_park.mat");
+			SetStationScreenText("station_screen_1","00_02_next_station_queens_park.mat");
+			
+			if (mbAnsweredPhone)
+				Entity_SetActive("TrainLoopPoint_End", true);
+		}
+		else if(asTimer == "continue_train_3")
+		{
+			Move_Train(2, 2);
+		}
+		
+		else if(asTimer == "reset_train_accelerating")
+		{
+			mbTrainIsAccelerating = false;
+		}
+		
+		//Each time the walls begin to move again, restart train sounds.
+		if(cString_GetFirstStringPos(asTimer, "continue_train") >= 0)
+		{
+			mlTrainDistance = 0;
+			
+		}
+		
+		cLux_AddDebugMessage("Timer: "+asTimer);
+	}
+	
+	//-----------------------------------------------------
+	
+	void Move_Outer_Carriages(float afTimeStep)
+	{
+
+		/////////////////////////////////////////////////////////////////////
+		// Sway the end carriages using basic trig and a cumulative value
+		mfCarriageBobCycle += afTimeStep;
+		float fZoffset = cMath_Sin(mfCarriageBobCycle);
+		float fYoffset = cMath_Cos(mfCarriageBobCycle);
+		
+		///////////////////////////////////////////
+		// Get carriage entities
+		iLuxEntity@ pRearCarriage = cLux_ID_Entity(m_idRearCarriage);
+		iLuxEntity@ pFrontCarriage = cLux_ID_Entity(m_idFrontCarriage);
+		
+		cVector3f vRearPos = mvRearCarriageStart;
+		cVector3f vFrontPos = mvFrontCarriageStart;
+		
+		vRearPos.z += fZoffset * mfCarriageSwayDistance;
+		vFrontPos.z += -fZoffset * mfCarriageSwayDistance;
+		vRearPos.y += fYoffset * mfCarriageSwayDistance;
+		vFrontPos.y += -fYoffset * mfCarriageSwayDistance;
+		
+		pRearCarriage.SetPosition(vRearPos);
+		pFrontCarriage.SetPosition(vFrontPos);
+	}
+	
+	//-------------------------------------------------------
+	bool mbTrainDoorsAllowed = true;
+	void TimerDoorOpen(const tString &in asTimer)
+	{
+		cLux_AddDebugMessage("Train doors open");
+		SlideDoor_SetClosed("slidedoor_subway_exit_3", false);
+
+		if(mbTrainDoorsAllowed==true)
+		{
+			Sound_CreateAtEntity("train_door_open_close", "00_01_subway/SFX/train_doors_sequence", "train_door_source", 0, false);
+		}
+	}
+	 
+	//-------------------------------------------------------
+	
+	void TimerDoorClose(const tString &in asTimer)
+	{
+		cLux_AddDebugMessage("Train doors close");
+		SlideDoor_SetClosed("slidedoor_subway_exit_3", true);
+	}
+	
+	//----------------------------------------------------
+	
+	void SetStationScreenError()
+	{
+		SetStationScreenText("station_screen","00_02_signal_error.mat");
+		SetStationScreenText("station_screen_1","00_02_signal_error.mat");
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetStationScreenText(const tString &in asEntity, const tString &in asMaterial)
+	{
+		iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(asEntity, eLuxEntityType_LastEnum, "");
+		cMaterial@ pMaterial = cResources_CreateMaterial(asMaterial);
+
+		pEntity.GetMeshEntity().GetSubMeshEntity(0).SetCustomMaterial(pMaterial, true);
+	}
+
+	
+	//----------------------------------------------------
+	
+	///////////////////////////////////////
+	// TRAIN CRASH SEQUENCE
+	///////////////////////////////////////
+	
+	//-----------------------------------------------------
+	
+	float mfLightRandom = 0.1f;
+	bool mbCrashStarted = false;
+	
+	//-----------------------------------------------------
+	
+	////////////////////////////////
+	// Flicker the lights leading up to crash
+	cSequenceStatesData mSeqLightFlicker;
+	void SequenceLightFlicker(const tString &in asX)
+	{
+	
+		Sequence_Begin("SequenceLightFlicker", mSeqLightFlicker);
+		
+		if (Sequence_DoStepAndWait(5.0))
+		{
+			// pause before flickering lights
+		}
+		if (Sequence_DoStepAndWait(0.01))
+		{
+			ToggleAllLightsLit(false);	// off
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(true);	// on
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(false);	// off
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(true);	// on
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(false);	// off
+		}
+		if (Sequence_DoStepAndWait(5))
+		{
+			ToggleAllLightsLit(true);	// on
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(false);	// off
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(true);	// on
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(false);	// off
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(true);	// on
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(false);	// off
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(true);	// on
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(false);	// off
+		}
+		if (Sequence_DoStepAndWait(0.1))
+		{
+			ToggleAllLightsLit(true);	// on
+		}
+
+		Sequence_End();
+	}
+	
+	//---------------------------------------------------------
+	
+	bool mbLightsOn = true;
+	void ToggleAllLightsLit(bool abOn)
+	{
+		// Only flicker the lights up until the point of the crash
+		if (mbCrashStarted) return;
+		
+		/////////////////////////////
+		// Change the lights
+		mbLightsOn = abOn;
+		Light_SetVisible("PointLight_Train_*",mbLightsOn);
+		Light_SetVisible("Train_Spotlight_*",mbLightsOn);
+		Light_SetVisible("BoxLight_5",mbLightsOn);
+		
+		///////////////////////
+		// Turn off all lamps
+		for(uint i=1; i<24; ++i)
+		{
+			Lamp_SetLit("fluorescent_subway_ceiling_"+i,mbLightsOn,false);
+		}
+		
+		if (mbLightsOn == false)
+		{			
+			mfLightRandom *= 0.3f;	// always shorter time when lights are off
+			CreateTrackSpark();
+		}
+	}
+	
+	//---------------------------------------------------------
+	
+	void CreateTrackSpark()
+	{
+		//////////////////////////////////
+		// Sparks at randomly chosen areas
+		int lChosenArea = cMath_RandRectl(1,3);
+		ParticleSystem_CreateAtEntity("elec_spark","elec_spark_oneshot.ps","SparkParticlePoint_"+lChosenArea,false);
+		
+		lChosenArea = cMath_RandRectl(1,8);
+		ParticleSystem_CreateAtEntity("elec_spark","elec_spark_oneshot.ps","LightSparkParticlePoint_"+lChosenArea,true);
+		
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// GUI								   //
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	//-------------------------------------------------------
+	
+	void OnGui(float afTimeStep)
+	{
+	}
+
+	//---------------------------------------------------------
+
+    void VRPhoneQ_Tick(const tString &in timer)
+    {
+        if(mVRPhone.state==0) return;
+        // Resume the authored presentation when an unanswered VR save is loaded flat.
+        if(mVRPhone.state==1 && !VRPhoneQ_Active())
+        {
+            mVRPhone.End();
+            Entity_SetActive("Cellphone",true);Entity_CallEntityInteract("Cellphone");
+            return;
+        }
+
+        int result=mVRPhone.Tick(15.0f);
+        if(result==1 || result==2 || result==3)
+        {
+            Sound_Stop("CellphoneRing",0.1f);
+            SequenceStates_Resume("Seq_PhoneCall");
+            if(result==1)
+            {
+                mbAnsweredPhone=true;
+                Map_AddTimer("FadeVolume",1.0f,"Timer_ConversationAudio");
+                bool sent=cScript_GetGlobalVarBool("PlayerSentApartmentEmail");
+                Voice_Play(sent ? "Phonecall_EmailSent" : "Phonecall_EmailNotSent",-1,"PhonecallOver",0);
+            }
+            else if(result==3)
+            {
+                mbHungUpPhone=true;
+                Map_AddTimer("VRPhoneX_End",2.0f,"VRPhoneX_End");
+                Map_AddTimer("TimerEndLevel",20.0f,"TimerEndLevel");
+                Map_SetPreloadPriority(eWorldStreamPriority_Normal);
+            }
+            else
+            {
+                mbIgnoredPhone=true;mVRPhone.End();
+                Map_AddTimer("TimerEndLevel",7.5f,"TimerEndLevel");
+                Map_SetPreloadPriority(eWorldStreamPriority_Normal);
+            }
+        }
+        if(mVRPhone.state!=0) Map_AddTimer("VRPhoneQ",0.05f,"VRPhoneQ_Tick");
+    }
+    void VRPhoneX_End(const tString &in timer) { mVRPhone.End(); }
+}

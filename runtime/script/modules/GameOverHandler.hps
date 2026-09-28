@@ -1,0 +1,551 @@
+#include "interfaces/UserModule_Interface.hps"
+#include "modules/ModuleInterfaces.hps"
+
+#include "base/Inputhandler_Types.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_font.hps"
+#include "custom_depth/helper_custom_deathfx.hps"
+
+//------------------------------------------------------------
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+bool gbGameOverLoadingSaveGame=false;
+tString gsGameOverDeathCallback="";
+tString gsGameOverDeathSource="";
+int glGameOverCheckpointCount=0;
+
+class cScrGameOverHandler : iScrUserModule, iScrUserModule_Interface, iScrGameOverHandler_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		msCustomDeathMessageCat = "";
+		msCustomDeathMessageEntry = "";
+		
+		msDeathCallback="";
+		
+		mlCheckPointDeathNum =0;
+	}
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void PreloadData(cLuxMap @apMap)
+	{
+		ImGui_PreloadImage("death_note_background", eImGuiGfx_Texture);
+		DeathFX_Preload();
+	}
+
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+		
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Reset()
+	{		
+		if(gbGameOverLoadingSaveGame==false)
+		{
+			mbActive = false;
+			mbShowScreen = false;
+			mbShowText=false;
+			mbShowPressButtonText=false;
+		}
+		
+		msCustomDeathMessageCat = "";
+		msCustomDeathMessageEntry = "";
+		
+		msDeathCallback="";
+		
+		mfTimeSinceLastGameOver=999999.0f;
+	}
+	
+	//------------------------------------------------------------
+	
+	void ResetMenuProperties()
+	{
+		
+		
+		
+	}
+	
+	//------------------------------------------------------------
+
+	void Update(float afTimeStep)
+	{
+        if(mbVRDeathPresentation && cScript_RunGlobalFunc("VRDRETRY","",""))
+        {
+            if(mbShowPressButtonText) End();
+        }
+		if(mfTimeSinceLastGameOver<999999.0f)
+		{
+			mfTimeSinceLastGameOver+=afTimeStep;
+		}
+	}
+	
+	void PostUpdate(float afTimeStep)
+	{
+	}
+	
+	void VariableUpdate(float afDeltaTime)
+	{
+	}
+	//------------------------------------------------------------
+		
+	void OnAction(int alAction, bool abPressed)
+	{
+		if(abPressed==false || mbShowPressButtonText==false) return;
+		
+		if(alAction == eAction_Interact || alAction == eAction_InteractCancel ||
+			alAction == eAction_Jump || alAction == eAction_MenuConfirm)
+		{
+			End();
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnGui(float afTimeStep)
+	{
+		if(!mbShowScreen)
+			return;
+		
+		ImGui_SetModColorMul(cColor(0,0,0,mfBackgroundAlpha));
+		ImGui_DoImage(cImGuiGfx(), cLux_GetHudVirtualStartPos(), cLux_GetHudVirtualSize());
+		ImGui_ResetModifiers();
+
+		ImGui_GroupBegin(cLux_GetHudVirtualCenterScreenStartPos(), cLux_GetHudVirtualCenterScreenSize());
+		
+			/////////////////////////////////////////
+			// Background
+			mfBackgroundAlpha = cMath_IncreaseTo(mfBackgroundAlpha, afTimeStep*1.0f, 1.0f);
+			ImGui_SetModColorMul(cColor(1,1,1,mfBackgroundAlpha));
+			
+			cImGuiGfx gfxBG("death_note_background", eImGuiGfx_Texture);
+			cVector2f vBGSize = GetGfxSize(gfxBG);
+			float fBGAspectRatio = vBGSize.x/vBGSize.y;
+			vBGSize = ImGui_NrmSizeGroup(1.0f, 0.0f);
+			vBGSize.y = vBGSize.x/fBGAspectRatio;
+					
+			ImGui_DoImage(cImGuiGfx("death_note_background", eImGuiGfx_Texture), ImGui_NrmPosGroup(0,0,1), vBGSize);
+
+			ImGui_ResetModifiers();
+
+			/////////////////////////////////////////
+			// Text
+			cImGuiLabelData textData;
+			textData.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_XLarge_Bold));
+			textData.mFont.mvSize = cVector2f(32.0f);
+			textData.mFontAlign = eFontAlign_Center;
+
+			if (mbShowText)
+			{
+				tWString sMessage;
+				if(msCustomDeathMessageCat!="" && msCustomDeathMessageEntry!="")
+					sMessage = cString_ToUpperCaseW(cLux_Translate(msCustomDeathMessageCat, msCustomDeathMessageEntry));
+				else
+					sMessage = cString_ToUpperCaseW(cLux_Translate("GameOver", "DefaultMessage"));
+					
+				mfTextAlpha = cMath_IncreaseTo(mfTextAlpha, afTimeStep*1.0f, 1.0f);
+				ImGui_SetModColorMul(cColor(1,1,1,mfTextAlpha));
+				ImGui_SetTextOverride(sMessage);
+				ImGui_DoLabelExt("", textData, ImGui_NrmPosGroup(0.0f,0.35,2.0), ImGui_NrmSizeGroup(1.0f,0.2f), 1.5f);
+			}
+			
+			if (mbShowPressButtonText)
+			{
+				mfPressButtonAlpha = cMath_IncreaseTo(mfPressButtonAlpha, afTimeStep*1.0f, 1.0f);
+				ImGui_SetModColorMul(cColor(1,1,1,mfPressButtonAlpha));
+				ImGui_SetTextOverride(cLux_Translate("GameOver", "PressToContinue"));
+				ImGui_DoLabelExt("", textData, ImGui_NrmPosGroup(0.0f,0.45f,2.0), ImGui_NrmSizeGroup(1.0f,0.2f), 1.0f);
+			}
+			
+			ImGui_ResetModifiers();
+
+		ImGui_GroupEnd();
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnDraw(float){}
+	void OnPostRender(float){}
+	void OnEnterContainer(const tString&in){}
+	void OnLeaveContainer(const tString&in){}
+	void AppGotInputFocus(){}
+	void AppLostInputFocus(){}	
+	void OnAnalogInput(int alAnalogId, const cVector3f &in avAmount){}
+	void OnExitPressed(){}
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// PUBLIC METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+    [nosave] bool mbVRDeathPresentation=false;
+    bool HPL3VR_DeathRuntime()
+    {
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        return cScript_GetGlobalReturnBool();
+    }
+	void Start(const tString& in asDeathSource)
+	{
+        mbVRDeathPresentation=HPL3VR_DeathRuntime();
+        if(mbVRDeathPresentation) cScript_RunGlobalFunc("VRDEATH","","B");
+		mbActive = true;
+		
+		mBaseObj.Timer_Remove(3);
+		
+		cLux_GetPlayer().SetActive(false);
+		
+		Voice_StopAll();
+		
+		//////////////////////////////
+		// Start variables
+		mfBackgroundAlpha =0;
+		mfTextAlpha =0;
+		mfPressButtonAlpha=0;
+		mbShowText =false;
+		mbShowPressButtonText=false;
+		mfBackgroundAlpha = 0.0f;
+		
+		/////////////////////////////
+		// Set up globals
+		gsGameOverDeathCallback= msDeathCallback;
+		gsGameOverDeathSource= asDeathSource;
+		glGameOverCheckpointCount = mlCheckPointDeathNum+1;
+				
+		//////////////////////////
+		// Next step
+		if (cLux_GetExplorationModeActive())
+		{
+			mBaseObj.Timer_Add(5, 3, "ExplorationDeath_Step1");
+			return;
+		}
+		
+		if (gbDeathFXOn)
+		{
+			// Crazy death effects
+			Effect_Shake_EnableAll(false);
+	
+			// Stop the player moving
+			cLux_GetPlayer().GetCharacterBody().SetGravityActive(false);
+			cLux_GetPlayer().GetCharacterBody().StopMovement();
+	
+			mBaseObj.Timer_Add(2, 0.25f, "DeathFX_Step1");
+			mBaseObj.Timer_Add("Shake", 0.1, "DeathFX_Shake");
+			return;
+		}
+		mBaseObj.Timer_Add(2, 1, "Start_Timer_ShowText");
+	}
+	
+	//------------------------------------------------------------
+	
+	void DeathFX_Shake(uint64 alID)
+	{
+		float fTime = cMath_RandRectf(0.2, 0.4);
+		
+		Effect_Rumble_Start(cMath_RandRectf(0.36, 0.85), fTime+0.3, 0.1, 0.3);
+		mBaseObj.Timer_Add("Shake", fTime, "DeathFX_Shake");
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	void DeathFX_Step1(uint64 alID)
+	{
+		DeathFX_Start();
+		Effect_Fade_In(0.2f);
+		mBaseObj.Timer_Add(0, 4.0f,"DeathFX_Step2");
+        
+        Sound_CreateAtEntity("DeathLoop", "Player/UI/death/you_are_dead_loop", "Player");
+	}
+	
+	//------------------------------------------------------------
+	
+	void DeathFX_Step2(uint64 alID)
+	{
+		Effect_Flash_Start(0.5f,1.5f,1.0f);
+		mBaseObj.Timer_Add(0, 2.0f,"DeathFX_Step3");
+		mBaseObj.Timer_Remove("Shake");
+		Effect_Rumble_Start(1.0f, 1.6f, 0.1, 1);
+	}
+	
+	//------------------------------------------------------------
+	
+	void DeathFX_Step3(uint64 alID)
+	{
+		DeathFX_SetBlack();
+		mbShowScreen=true;
+		mfBackgroundAlpha = 1.0f;
+		mBaseObj.Timer_Add(0, 1.0f,"DeathFX_Step4");
+	}
+	
+	//------------------------------------------------------------
+	
+	void DeathFX_Step4(uint64 alID)
+	{
+		DeathFX_Stop();
+		cLux_GetPlayer().GetCharacterBody().SetGravityActive(true);
+		Effect_Shake_EnableAll(true);
+		// And back to normal service...
+		mBaseObj.Timer_Add(2, 0.5f, "Start_Timer_ShowText");
+	}
+	
+	//------------------------------------------------------------
+	
+	void ExplorationDeath_Step1(uint64 alID)
+	{
+		Effect_Rumble_Start(1.0f, 1.1f, 0.1, 1);
+		mBaseObj.Timer_Add(5, 1.5f,"ExplorationDeath_Step2");
+	}
+	
+	//------------------------------------------------------------
+	
+	void ExplorationDeath_Step2(uint64 alID)
+	{
+		mbShowScreen=true;
+		mBaseObj.Timer_Add(5, 1.5f,"Start_Timer_ShowText");
+	}
+	
+	//------------------------------------------------------------
+		
+	void Start_Timer_ShowText(uint64 alID)
+	{
+		mbShowText = true;
+		
+		cLux_GetCurrentMap().SetActive(false);
+			
+		Music_StopAll(1);
+		Effect_Fade_In(0.1f);
+		cSound_FadeGlobalVolume(0, 1, eSoundEntryType_AllExceptGui, eLuxGlobalVolumeType_Menu, false);
+		mBaseObj.Timer_Add(2, 2, "Start_Timer_FadeInPressButton");
+	}
+	
+	//------------------------------------------------------------
+	
+	void Start_Timer_FadeInPressButton(uint64 alID)
+	{
+		mbShowPressButtonText = true;
+        if(mbVRDeathPresentation) cScript_RunGlobalFunc("VRDEATH","","R");
+	}
+		
+	//------------------------------------------------------------
+	
+	void End()
+	{
+		////////////////////////
+		// Set up variables
+		mbShowPressButtonText=false;
+		mbShowText=false;
+		
+        cLux_AddDebugMessage("End called");
+        Sound_Stop("DeathLoop", 2.0f);
+        
+		mBaseObj.Timer_Add(3, 2.0, "End_Timer_DeathOver");
+	}
+	
+	//------------------------------------------------------------
+	
+	float GetTimeSinceLastGameOver()
+	{
+		return mfTimeSinceLastGameOver;
+	}
+	
+	//------------------------------------------------------------
+	
+	void End_Timer_DeathOver(uint64 alID)
+	{     
+		gbGameOverLoadingSaveGame = true;
+        if(mbVRDeathPresentation) cScript_RunGlobalFunc("VRDEATH","","C");
+		cLux_LoadScreenSetBarPosAndSize(0, 0); //hide loading bar
+		cLux_GetSaveHandler().DelayedLoadGameFromFile(tWString("CheckPoint.sav"),"GameOverHandler", "OnLoadSaveDone", false, false);
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnLoadSaveDone()
+	{
+		///////////////
+		// Setup variables
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		
+		pMap.SetActive(true);
+				
+		gbGameOverLoadingSaveGame = false;
+		mbActive=false;
+		
+		mlCheckPointDeathNum = glGameOverCheckpointCount;
+		
+		mfTimeSinceLastGameOver=0;
+				
+		///////////////
+		// Custom callback
+		if(gsGameOverDeathCallback != "")
+		{
+			if(pMap.ScriptPrepare("void "+gsGameOverDeathCallback+"(int alNumberOfRecentDamages, const tString &in asSource)"))
+			{
+				pMap.SetArgInt(0, mlCheckPointDeathNum);
+				tString sEntityName = gsGameOverDeathSource;
+				pMap.SetArgString(1, sEntityName);
+				pMap.ScriptExecute();
+			}
+		}
+		
+		///////////////
+		// Map Death callback
+		if(pMap.ScriptMethodExists("void OnPlayerKilled(int alNumberOfRecentDamages, const tString &in asSource)"))
+		{
+			if(pMap.ScriptPrepare("void OnPlayerKilled(int alNumberOfRecentDamages, const tString &in asSource)"))
+			{
+				pMap.SetArgInt(0, mlCheckPointDeathNum);
+				tString sEntityName = gsGameOverDeathSource;
+				pMap.SetArgString(1, sEntityName);
+				pMap.ScriptExecute();
+			}
+		}
+        cScript_RunGlobalFunc("VRDEATH","","E");
+        mbVRDeathPresentation=false;
+	}
+	
+		
+	//------------------------------------------------------------
+	
+	void SetCustomGameOverScreenText(const tString& in asCat, const tString& in asEntry)
+	{
+		msCustomDeathMessageCat = asCat;
+		msCustomDeathMessageEntry = asEntry;
+	}
+		
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// GLOBAL METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetupCheckPoint()
+	{
+		msDeathCallback = cScript_GetGlobalArgString(0);
+		
+		//msPlayerTeleportPos = cScript_GetGlobalArgString(1);
+		//msAttackerTeleportPos = cScript_GetGlobalArgString(2);
+		
+		//NOTE SKIPPING THIS FOR PC! MORE TENSE THAT WAY WHEN WE DUNNO WHEN IT SAVES
+		//LoadScreen_ShowLoadingIcon(2.0f);
+		
+		//cLux_GetSaveHandler().DelayedSaveGameToFile(tWString("CheckPoint.sav"), false);
+		cLux_GetSaveHandler().AutoSave(true, true); //Save as checkpoint and as AutoSave
+
+		mlCheckPointDeathNum=0;
+	}
+	
+			
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		//apSet.DrawFont(tWString("Death Amount: " + mfAmount), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		//afStartY += 14;
+		
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] cGuiGfxElement@ mpBackgroundGfx;
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbActive=false;
+	[nosave] bool mbShowText=false;
+	[nosave] bool mbShowPressButtonText=false;
+	
+	[nosave] bool mbShowScreen=false;
+	[nosave] float mfTextAlpha=0;
+	[nosave] float mfPressButtonAlpha=0;
+	[nosave] float mfBackgroundAlpha=0;
+	
+	float mfTimeSinceLastGameOver=999999.0f;
+	
+	int mlCheckPointDeathNum = 0;
+	
+	tString msDeathCallback;	
+	tString msCustomDeathMessageCat;
+	tString msCustomDeathMessageEntry;
+	
+	//------------------------------------------------------------
+}

@@ -1,0 +1,2355 @@
+#include "helpers/helper_vr_phone_q.hps"
+#include "interfaces/Map_Interface.hps"
+#include "base/InputHandler_Types.hps"
+#include "helper_ai.hps"
+#include "helper_game.hps"
+#include "helper_audio.hps"
+#include "helper_effects.hps"
+#include "helper_sequences.hps"
+#include "helpers/helper_player.hps"
+#include "helper_imgui_urban.hps"
+#include "helper_imgui_cellphone.hps"      
+
+//------------------------------------------------------------
+
+enum eDavidState
+{
+	eDavidState_Server,
+	eDavidState_Talk,
+	eDavidState_Idle,
+	eDavidState_Keyboard
+}
+
+//------------------------------------------------------------
+	
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+///////////////////////////////////////////////////
+// EVENT SETTINGS
+const float gfTimeBeforeDoorOpens = 180.0f;
+const float gfTimeBeforeErinCommentsOnStalling = 25.0f;
+float gfTimeBeforePhoneConvo = 90.0f;
+const float gfTimeBeforeMagazineHint = 60.0f;
+
+const tString gsKeypadCode = "2501";
+
+const cVector3f gvDavidTempScale = cVector3f(1.1f,1.1f,1.1f);
+ 
+const cVector2f gvDavidReminderTimeSpan = cVector2f(15.0f,25.0f);
+
+class cScrMap : iScrMap
+{
+    cVRPhoneQ mVRPhone;
+    void VRPhoneW_Gui(const tString &in entity,float dt)
+    {
+        mVRPhone.Draw("munshi","00_03_Time","A",true);
+    }
+
+
+
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MAIN CALLBACKS
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void Setup()
+	{
+		GetBase().SetDisplayNameEntry("00-03-laboratory");
+	// Effect init
+		Effect_Bloom_FadeBrightPass(0.5f, 2);
+        Effect_Bloom_FadeBloomWidth(128, 2);
+        Effect_Bloom_FadeBloomFalloff(0.5f, 2);
+        Effect_Bloom_FadeBloomTint(1, 1, 1, 2);
+
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadData()
+	{
+		UrbanGui_Preload();
+		CellphoneGui_Preload();
+		
+		PlayerHands_PreloadHandModel_Human();
+
+		ImGui_PreloadImage("munshi_screen1");
+		ImGui_PreloadImage("munshi_screen2");
+		ImGui_PreloadImage("munshi_screen3");
+		ImGui_PreloadImage("brain_scan_4");
+		ImGui_PreloadImage("tunnel_vision");
+
+		Material_Preload("security_keypad_greenlamp");
+		Material_Preload("security_keypad_redlamp");
+		Material_Preload("vignette_screen.mat");
+		Material_Preload("00_04_scan_noise.mat");
+	}
+
+	////////////////////////////
+	// This only used for pure debug purposes when info needs to printed.
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afY)
+	{
+		iLuxEntity@ pPropEntity = Map_GetEntity("David");
+		cMeshEntity @pEntity = pPropEntity.GetMeshEntity();
+		for(int i=0; i<pEntity.GetAnimationStateNum(); ++i)
+		  {
+		   cAnimationState @pState = pEntity.GetAnimationState(i);
+		  if(pState.IsActive()==false) continue;
+		   afY = cLux_DrawDebugText("Animation: "+pState.GetName(),afY);
+		   afY = cLux_DrawDebugText("  Speed: "+pState.GetSpeed(),afY);
+		   afY = cLux_DrawDebugText("  Weight: "+pState.GetWeight(),afY);
+		  }
+		return afY;
+	}
+	
+	//-------------------------------------------------------
+	
+	void DebugDumpRunningAnimations(const tString& in asEntity)
+	{
+		cLux_AddDebugMessage("===== "+asEntity+" =====");
+		iLuxEntity@ pPropEntity = Map_GetEntity(asEntity);
+		cMeshEntity @pEntity = pPropEntity.GetMeshEntity();
+		for(int i=0; i<pEntity.GetAnimationStateNum(); ++i)
+		{
+			cAnimationState @pState = pEntity.GetAnimationState(i);
+			if(pState.IsActive()==false) continue;
+			cLux_AddDebugMessage("Animation: "+pState.GetName()+" Speed: "+pState.GetSpeed()+" Weight: "+pState.GetWeight()+"\n");
+		}
+		cLux_AddDebugMessage("=========================");
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// Run first time starting map
+	void OnStart()
+	{
+		/////////////////////////
+		//INIT VISUALS
+		Effect_Fade_Out(0);		
+		CameraAnimation_End();
+		
+		//////////////////////////////////////////
+		// Setup voices
+		Voice_SetSource("David", "David", 1.0f, 16.0f, true, 16.0f, 22000, 500, eLuxVoiceSourceFreqencyFlag_LowPass);		
+		
+		//////////////////////////////////////////
+		// Init variables
+		mbScanningEffectsActivated = false;
+		mfBackRotation = 0;
+		mlCurrentDavidSubjectIndex = 0;
+		mbPlayerIsInsideRoom = false;
+
+		//////////////////////////////////////////
+		// Specific setup functions
+		SetupScanningEffects();
+		SetupChairInteraction();
+		SetupDrapes();
+		SetupLights();
+		SetupDavid();
+		
+		SetKeypadMaterial("security_keypad_1","security_keypad_redlamp");
+
+		/////////////////////////
+		///Audio - Preload Sounds
+		Sound_PreloadGroup("00_06_lab/sfx", true);
+		Sound_PreloadGroup("00_06_lab/VIPScriptedEvents", true);
+		Sound_SetGlobalVolume(0.0f);
+		Music_FadeVolumeMul(1.0f,0.5f);
+		Map_AddTimer("DavidAnimationSoundControl", 0.25f, "DavidAnimationSoundControl");
+		
+		////////////////////////
+		///Audio - Set player foley sounds
+		Player_SetFootWear("sneaker");
+		Player_SetClothing("dressed");
+		
+		/////////////////////////////////
+		// Entities setup
+		Prop_RotateToSpeed("fan_wall_fan_1", 20, 20, cVector3f(0,0,1), false, "");
+		Entity_SetEffectBaseColor("lock_light", cColor(1, 0, 0, 1));
+		Entity_SetActive("simon_legs", false);
+		
+		MovePedestrians();
+		
+		//To use only auxareas
+		Entity_SetMaxInteractionDistance("Drapes_WaitRoom_A", 0.01);
+		Entity_SetMaxInteractionDistance("Drapes_WaitRoom_B", 0.01);
+		Entity_SetMaxInteractionDistance("Drapes_Reception_C", 0.01);
+		
+		AdjustWaitroomLight(0.0f);
+		
+		Player_SetFlashlightDisabled(true);
+		
+		bool bDoIntro = true;
+		if(cLux_ScriptDebugOn())
+		{
+			bDoIntro = false;
+			Effect_Fade_In(2.0f);
+			Entity_SetInteractionDisabled("ScanChair", false);
+			SwingDoor_SetOpenAmount("swingdoor_scanroom_corridor_4", 0.6f);
+			Sound_FadeGlobalVolume(1.0f,1.0f);
+			Player_SetFlashlightDisabled(false);
+		}
+		
+		if (bDoIntro)
+		{
+			SetupIntro();
+		}
+		
+		PlayerHands_SetHandModel_Human();
+		
+		Map_AddTimer("preload", 10, "TimerBeginPreload");
+		
+		LastOnSoma_SetText("00_03_laboratory_1");
+	}
+	
+	//-------------------------------------------------------
+	
+		////////////////////////////
+		// To get when player makes input (mostly used for debug)
+		void OnAction(int alAction, bool abPressed) 
+		{
+			if(abPressed==false) return;
+  
+			if(alAction == eAction_Test1)
+			{
+				SimonArms("");
+			}
+			else if (alAction == eAction_Test2)
+			{
+				Seq_Truck();
+			}
+		}
+	
+	//-------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{
+	}
+	
+	//-------------------------------------------------------
+	
+	void CreateData()
+	{
+		///////////////////////////////
+		// Create tunnel vision gfx
+		@mpTunnelVisionGfx = cGui_CreateGfxImage("tunnel_vision",eGuiMaterial_Alpha);
+	}
+	
+	//-------------------------------------------------------
+	
+	void DestroyData()
+	{
+		cGui_DestroyGfx(mpTunnelVisionGfx);
+	}
+
+	//-------------------------------------------------------
+	
+	[nosave] cGuiGfxElement @mpTunnelVisionGfx;
+	[nosave] float mfBackRotation;
+	
+	void OnDraw(float afTimeStep)
+	{
+		if (mbScanningEffectsActivated)
+		{
+			cCamera@ pCam = cLux_GetPlayer().GetCamera();
+			
+			////////////////////////////////////////////
+			// Render tunnel vision hud object
+			cVector3f vDrawingPos = cLux_GetHudVirtualStartPos();
+			cVector2f vDrawingSize = cLux_GetHudVirtualSize();
+			cLux_GetGameHudSet().DrawGfx(mpTunnelVisionGfx, vDrawingPos, vDrawingSize, cColor(1));
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void OnEnter()
+	{
+		MainMenu_SetBGPhase(eMainMenuPhase_Initial_To_1_3);
+		
+		if(cLux_ScriptDebugOn() == false) Game_AutoSave();
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnLeave() 
+	{
+        mVRPhone.End();
+	}
+	
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN FUNCTIONS
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	/*Put any variables that are used in more than one scene here.*/
+
+	//-------------------------------------------------------
+
+	void TimerVoicePlay(const tString& in asName)
+	{
+		Voice_Play(asName);
+	}
+	
+	//-------------------------------------------------------
+	
+	float mfElapsedTime = 0;
+
+	void UpdateClock(float afTimeStep)
+	{
+		mfElapsedTime+=afTimeStep;
+		
+		int seconds = int(mfElapsedTime) /*base time 10:53:30*/ + 30 + 53*60 + 10*60*60;
+		int minutes = seconds / 60;
+		int hours = minutes / 60;
+		seconds = seconds % 60;
+		minutes = minutes % 60;
+		hours = hours % 12;
+		
+		Meter_SetState("wall_clock_second_1",(seconds/60.0f),false);
+		Meter_SetState("wall_clock_minute_1",1.0f-(minutes/60.0f)-(seconds/3600.0f),false);
+		Meter_SetState("wall_clock_hour_1",1.0f-(hours/12.0f)-(minutes/720.0f)-(seconds/43200.0f),false);
+		//cLux_AddDebugMessage("H:"+hours+" M:"+minutes+" S:"+seconds);
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	//=======================================
+	// INTRO
+	//=======================================
+	/////////////////////////////////////////
+	
+	
+	//-------------------------------------------------------
+	
+	void TimerStartNarration(const tString &in asTimer)
+	{		
+		SequenceIntro("");
+	}
+	
+	//--------------------------------------------------------
+
+	void SetupIntro()
+	{
+		///////////////////////////
+		// Start the map faded out
+		if (cLux_ScriptDebugOn())
+			Effect_Fade_Out(0);
+		Player_SetActive(false);
+		Map_AddTimer("timer_introtext",0.5f,"TimerStartNarration");
+		SwingDoor_SetOpenAmount("swingdoor_scanroom_corridor_4", 0.6f);
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSequenceIntro;	
+	void SequenceIntro(const tString &in asName)
+	{
+		Sequence_Begin("SequenceIntro", mSequenceIntro);
+		
+		///////////////////////////////
+		// Begin fade in
+		if (Sequence_DoStepAndWait(2.0f)) 
+		{
+			//Small blackout before intro begins
+			CheckPoint_Setup();
+		}
+		
+		if (Sequence_DoStepAndWait(2.5f))
+		{
+			//////////////////////////////////////
+			//Level start sweetener
+			Sound_CreateAtEntity("DoorClosed", "00_06_lab/VIPScriptedEvents/door_close_level_start", "Player", 0.0f, false, 1.0f);
+		}
+		
+		/////////////////////////////
+		// Activate player and play intro voice
+		if (Sequence_DoStepAndWait(3.0f))
+		{
+			Effect_Fade_In(2.0f);
+			Sound_FadeGlobalVolume(1.0f, 2.0f);
+			/////////////////////
+			//Begin
+			Player_SetActive(true);
+		}
+		
+		if (Sequence_DoStepAndWait(1.0f))
+		{
+			Voice_Play("1_Arriving", -1, "VoiceOver_ArrivedLine");
+		}
+		
+		Sequence_End();
+	}
+	
+	void VoiceOver_ArrivedLine(const tString&in asScene, const tString&in asSubject)
+	{
+		Map_AddTimer("Timer_SimonCallsOut", 10, "Timer_SimonCallsOut");
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// =====================================
+	// SCENE 1 | Enter & Search Anteroom
+	// =====================================
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	float mfWaitroomBright = 0.025f;
+
+	//-------------------------------------------------------
+
+	/*-----------------------------------------------------------------------------
+	 * Waiting room brightness is calculated by all lights in the waiting room	  *
+	 * We actually allow the accumulated value to overflow beyond the maximum     *
+	 * brightness we want for the boxlight. This is so that things do not become  *
+	 * too bright while ensuring that there is room for the lights to contribute  *
+	 * without them 'fighting' each other										  *
+	 *----------------------------------------------------------------------------*/
+	 // TODO: We now have a mul function for lights. Maybe use this instead1
+	 /*---------------------------------------------------------------------------*/
+	 
+	void AdjustWaitroomLight(float afValue)
+	{
+		cLux_AddDebugMessage("AdjustWaitroomLight:"+afValue);
+		
+		float fMin = 0.0375f;
+		float fMax = 0.725f;
+		
+		////////////////////////////////
+		// Nudge accumulated brightness
+		mfWaitroomBright += afValue;
+		
+		///////////////////////////////////////////////////
+		// Ensure boxlight cannot exceed a given brightness
+		float fBright = cMath_Clamp(mfWaitroomBright,fMin,fMax);
+		
+		/////////////////////////////////
+		// Set brightness of the boxlight
+		iLight@ pBoxLight = cLux_GetCurrentMap().GetWorld().GetLight("WaitingRoom_BoxLight_1");
+		pBoxLight.FadeTo(pBoxLight.GetDefaultDiffuseColor()*fBright, 1, 0.5f);
+		
+		cLux_AddDebugMessage("New Brightness: " + fBright);
+	}
+	
+	//--------------------------------------------------------------------------------
+	
+	void SetupLights()
+	{
+		float fBright = 0.025f;
+		
+		////////////////////////////////
+		// Set lamps and lights to dark
+		Lamp_SetLit("WaitingRoom_Lamp_*",false,false);
+		Light_SetBrightness("WaitingRoom_PointLight*",fBright);
+		Light_SetBrightness("Drapes_PointLight*",0.3);
+		
+		///////////////////////////////
+		// Overall box light
+		Light_FadeTo("WaitingRoom_BoxLight_1", cColor(0.025,0.025,0.025,0.025),0,0.1);
+		
+		///////////////////////////////
+		// Turn off billboards for lamps	
+		Billboard_SetVisible("Billboard_SideOffice_Lamp_*",false);
+		
+		cLux_AddDebugMessage("--- Light setup complete ---");
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 - WAITING ROOM - Event 0 | Trying to exit
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	int mlExitDialogue = 0;
+
+	//-------------------------------------------------------
+
+	void ExitDoor_OnPlayerInteract(const tString &in asEntity)
+	{
+		if (mbDavidGreetingDone)
+		{
+			Voice_Play("3_TryExitAfterMunshi");
+			return;
+		}
+		
+		if (!mbDoorLocked)
+			return;
+			
+		//////////////////////////////////////////////
+		// Play dialogue if Simon tries to leave level
+		Dialog_Begin();
+			Dialog_AddBranchAndSubject("3_TryExit"+(mlExitDialogue%3), "", "");
+		Dialog_End();
+		++mlExitDialogue;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 1 - WAITING ROOM - Plant Noises
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollidePlant(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		float fPlayerSpeed = cLux_GetPlayer().GetCharacterBody().GetMoveSpeed(eCharDir_Forward);
+		
+		if(fPlayerSpeed < 0.2) fPlayerSpeed = cMath_RandRectf(0.3, 0.5);
+		else if(fPlayerSpeed > 0.7) fPlayerSpeed = cMath_RandRectf(0.3, 0.5);
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 1 - WAITING ROOM - Event 1 - Turn on lights
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbCalledOut = false;
+	
+	//-------------------------------------------------------
+	
+	void Interact_LightSwitch(const tString &in asEntity)
+	{ 
+		/////////////////////////////////
+		// Play voice if this is the first time
+		if (mbCalledOut==false)
+		{
+			Map_AddTimer("Timer_SimonCallsOut", 0.5, "Timer_SimonCallsOut");
+		}
+		
+		////////////////////////////////
+		// Get current state of lights (and invert)
+		bool bState = !Lamp_GetLit("WaitingRoom_Lamp_1");
+			
+		////////////////////////////////
+		// Toggle lamps
+		Lamp_SetLit("WaitingRoom_Lamp*",bState,true);
+			
+		////////////////////////////////
+		// Sounds
+		if (bState == true)
+		{
+			cLux_AddTodoMessage("SOUND: Lightswitch ON, waitingroom");
+			Sound_CreateAtEntity("LightswitchSound", "Entities_Urban/lamp/generic_INT/switch_plastic_on_off", asEntity, 0, true);
+			Sound_CreateAtEntity("LightsOn", "00_06_lab/sfx/waiting_room_lights_on", "CeilingLight_SoundArea_2", 0, true);
+			Sound_Stop("LightsOff", 0.25f);	
+			Sound_Play("WaitingRoomLightBuzz_*", 0.25f, false);
+			AdjustWaitroomLight(0.6);
+		}
+		if (bState == false)
+		{
+			cLux_AddTodoMessage("SOUND: Lightswitch OFF, waitingroom");
+			Sound_CreateAtEntity("LightswitchSound", "Entities_Urban/lamp/generic_INT/switch_plastic_on_off", asEntity, 0, true);
+			Sound_CreateAtEntity("LightsOff", "00_06_lab/sfx/waiting_room_lights_off", "CeilingLight_SoundArea_2", 0, true);
+			Sound_Stop("LightsOn", 0.25f);
+			Sound_Stop("WaitingRoomLightBuzz_*", 0.05f);	
+			AdjustWaitroomLight(-0.6);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_SimonCallsOut(const tString &in asTimer)
+	{
+		if (mbCalledOut || mbDoorLocked==false) return;
+		
+		if (Voice_AnySceneIsActive())
+		{
+			Map_AddTimer(asTimer, 1, "Timer_SimonCallsOut");
+			return;
+		}
+			
+		Voice_Play("4_TurnOnLights");
+		mbCalledOut = true;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Scene 1 - WAITING ROOM - Event 2 - Open the Drapes
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbDrapesOpen = false;
+	float mfDrapesBrightness = 0.6;
+	cColor mDrapesColor = cColor(1,1,1,0);
+	float mfDrapeAmbSoundMul;
+	bool mbDrapesBeenOpened=false;
+	
+	//-------------------------------------------------------
+	
+	void SetupDrapes()
+	{
+		mfDrapeAmbSoundMul = 1.0f;
+	}
+	
+	//-------------------------------------------------------
+	
+	void StateChangedDrapes(const tString &in asEntity, int alState)
+	{
+		mbDrapesOpen = MovingButton_IsSwitchedOn(asEntity);
+		
+		if (mbDrapesOpen)
+		{
+			///////////////////////////
+			// Adjust brightness for open
+			mDrapesColor = cColor(1,1,1,0);
+			mfDrapesBrightness = 0.6;
+			AdjustWaitroomLight(0.25);
+			
+			//////////////////////////
+			// Play open sound
+			Sound_CreateAtEntity("open_drapes", "Entities_Urban/ornament/curtains/curtains_draw", asEntity, 0, false);
+			mfDrapeAmbSoundMul /= 0.7f;
+			
+			Entity_SetActive(asEntity+"_Closed", false);
+			Entity_SetActive(asEntity+"_Open1", true);
+			Entity_SetActive(asEntity+"_Open2", true);
+			
+			if (mbCalledOut==false)
+			{
+				Map_AddTimer("Timer_SimonCallsOut", 0.5, "Timer_SimonCallsOut");
+			}
+			
+			if (!mbDrapesBeenOpened)
+			{
+				mbDrapesBeenOpened = true;
+				Seq_Truck();
+			}
+		}
+		else
+		{
+			/////////////////////////////
+			// Adjust brightness for closed
+			mDrapesColor = cColor(0,0,0,0);
+			mfDrapesBrightness = 0.3;
+			AdjustWaitroomLight(-0.25);
+			
+			//////////////////////////
+			// Play closing sound
+			Sound_CreateAtEntity("open_drapes", "Entities_Urban/ornament/curtains/curtains_draw", asEntity, 0, false);
+			mfDrapeAmbSoundMul *= 0.7f;
+			
+			Entity_SetActive(asEntity+"_Closed", true);
+			Entity_SetActive(asEntity+"_Open1", false);
+			Entity_SetActive(asEntity+"_Open2", false);
+		}
+
+		//////////////////////////////////////
+		// Fade sounds from outside
+		Sound_Fade("sound_outside", mfDrapeAmbSoundMul, 1);
+
+		/////////////////////////////////////
+		// Adjust light for appropriate drapes
+		if(asEntity == "Drapes_WaitRoom_A")
+		{
+			Light_SetBrightness("Drapes_PointLight_A",mfDrapesBrightness);
+			Lamp_SetLit("Lamp_Drapes_A",mbDrapesOpen,true);
+		}
+			
+		if(asEntity == "Drapes_WaitRoom_B")
+		{
+			Light_SetBrightness("Drapes_PointLight_B",mfDrapesBrightness);
+			Lamp_SetLit("Lamp_Drapes_B",mbDrapesOpen,true);
+		}
+			
+		if(asEntity == "Drapes_Reception_C")
+		{
+			Lamp_SetLit("Lamp_Drapes_C",mbDrapesOpen,true);
+			cLux_AddDebugMessage("Opened reception drapes");
+			Light_SetBrightness("Drapes_PointLight_C",mfDrapesBrightness);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void TriggerCloseDrapes_OnPlayerInteract(const tString &in asEntity)
+	{
+		Entity_CallEntityInteract("drapes_waitroom_"+cString_GetLastChar(asEntity));
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////
+	// Scene 1 - WAITING ROOM - Event 4 | Use Watercooler
+	/////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void UseWaterCoolerHot(const tString &in asEntity)
+	{
+		///////////////////////////////
+		// Turn on hot tap
+		Map_RemoveTimer("enableinteractioncooler");
+		Entity_SetActive("TriggerArea_Water_Hot",false);
+		Entity_SetActive("TriggerArea_Water_Cold",false);
+		Map_AddTimer("stop_cold",1.5f,"Timer_StopHotWater");
+		Map_AddTimer("enableinteractioncooler",2.5f,"Timer_EnableWater");
+		ParticleSystem_CreateAtEntity("Particles_TapStream_Hot","toilet_sink_stream.ps","WaterCooler_Hot_Effect",false);
+		
+		Sound_CreateAtEntity("UseWatercooler", "Entities_Urban/utility/water_cooler/button_press", asEntity, 0.0f, false, 1.0f);
+	}
+	
+	//-------------------------------------------------------
+	
+	void UseWaterCoolerCold(const tString &in asEntity)
+	{
+		///////////////////////////////
+		// Turn on cold tap
+		Map_RemoveTimer("enableinteractioncooler");
+		Entity_SetActive("TriggerArea_Water_Hot",false);
+		Entity_SetActive("TriggerArea_Water_Cold",false);
+		Map_AddTimer("stop_cold",1.5f,"Timer_StopColdWater");
+		Map_AddTimer("enableinteractioncooler",2.5f,"Timer_EnableWater");
+		ParticleSystem_CreateAtEntity("Particles_TapStream_Cold","toilet_sink_stream.ps","WaterCooler_Cold_Effect",false);
+		
+		Sound_CreateAtEntity("UseWatercooler", "Entities_Urban/utility/water_cooler/button_press", asEntity, 0.0f, false, 1.0f);
+	}
+	//-------------------------------------------------------
+	void Timer_StopColdWater(const tString &in  asTimer)
+	{
+		///////////////////////////////
+		// Turn off cold tap
+		ParticleSystem_Destroy("Particles_TapStream_Cold");
+		
+		ParticleSystem_CreateAtEntity("Particles_Bubbles","oneshot_waterbubbles_small_vertical.ps","Bubble_Effect",false);
+	}
+	//-------------------------------------------------------
+	void Timer_StopHotWater(const tString &in asTimer)
+	{
+		///////////////////////////////
+		// Turn off hot tap
+		ParticleSystem_Destroy("Particles_TapStream_Hot");
+		ParticleSystem_Destroy("Particles_Bubbles");
+		ParticleSystem_CreateAtEntity("Particles_Bubbles","oneshot_waterbubbles_small_vertical.ps","Bubble_Effect",false);
+	}
+	
+	void Timer_EnableWater(const tString &in asTimer)
+	{
+		Entity_SetActive("TriggerArea_Water_Hot",true);
+		Entity_SetActive("TriggerArea_Water_Cold",true);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnTriggerHoleInCeiling(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_DropPageFocus("dynamic_range");
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	
+	////////////////////////////////////////////////
+	// Scene 1 - WAITING ROOM - Event 5 | Find Notebook
+	////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool FindNotebook(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			//Music_Play("00_00_locked", 0.45f, false, eMusicPrio_MinorEvent);
+		}		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////////////////////
+	// Scene 1 - WAITING ROOM - Event 6 | Locked Door and Keypad
+	////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	int mlLockedDoorDialogue = 0;
+	bool mbDoorLocked = true;
+	bool mbUsingKeypad = false;
+	tString msPadCode = "";
+	float mfKeypadPulse = 0;
+	bool mbReadHint = false;
+	
+	//-------------------------------------------------------
+	
+	void exit_waitroom_OnPlayerInteract(const tString &in asEntity)
+	{
+		if (mbDoorLocked == false) return;
+		
+		if (Voice_SubjectExists("2_LockedDoor"+mlLockedDoorDialogue)==false)
+			return;
+			
+		if (Voice_AnySceneIsActive())
+			return;
+		
+		//////////////////////////
+		// Play voice if door is locked
+		tString sCallback = "";
+		if (mlLockedDoorDialogue==0)
+		{
+			Player_SetInteractionAllowed(false);
+			sCallback = "VoiceOver_UsePhone";
+		}
+		Voice_Play("2_LockedDoor"+mlLockedDoorDialogue, -1, sCallback, 0);
+		
+		++mlLockedDoorDialogue;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool mbInWaitingRoom = true;
+
+	//-------------------------------------------------------
+
+	bool OnWaitRoomDoorOpens(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("Wait Room Door Opens:"+alState);
+		return true;
+	}
+
+	//-------------------------------------------------------
+
+	bool OnDoorwayWaitRoom(const tString &in asArea, const tString &in asEntity, int alState)
+	{
+		mbInWaitingRoom = (alState!=1);
+		cLux_AddDebugMessage("In waiting room:"+mbInWaitingRoom);
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	
+	void VoiceOver_UsePhone(const tString&in asScene, const tString&in asSubject)
+	{
+        if(mVRPhone.Begin(""))
+        {
+            Player_SetInteractionAllowed(true);
+            Map_AddTimer("VRPhoneQ",0.05f,"VRPhoneQ_Tick");
+            return;
+        }
+		Entity_SetActive("Cellphone", true);
+		Entity_CallEntityInteract("Cellphone");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnGui_Cellphone(const tString&in asEntityName, float afTimeStep)
+	{
+		if (ImGui_IsFirstRun())
+		{
+			CellPhoneGui_SetClockString("00_03_Time");
+			CellPhoneGui_SetReceptionIcons("A");
+			CellPhoneGui_DecideToCall("munshi");
+		}
+		
+		eCellPhoneGuiAction action = CellPhoneGui_Update();
+		if (action==eCellPhoneGuiAction_Called)
+		{
+			Sound_CreateAtEntity("PhoneDavid", "00_06_lab/VIPScriptedEvents/phone_call_munshi", "Player");
+			ImGui_AddTimer("PutAwayPhone", 2.5);
+				
+			Voice_Play("2_LockedDoor0_Dialing", -1, "VoiceOver_DialingComment");
+		}
+		else if (action==eCellPhoneGuiAction_CancelledCall)
+		{
+			ImGui_AddTimer("PutAwayPhone", 1);
+		}
+		
+		if(ImGui_TimerOver("PutAwayPhone"))
+		{
+			Player_SetInteractionAllowed(true);
+			ImGui_Exit();
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void VoiceOver_DialingComment(const tString&in asScene, const tString&in asSubject)
+	{
+		Map_AddTimer("Timer_NoCallReply", 1, "Timer_NoCallReply");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_NoCallReply(const tString &in asTimer)
+	{
+		cLux_AddTodoMessage("Sound: Dial tone stops");
+		Voice_Play("2_LockedDoor0_NoAnswer");
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetKeypadMaterial(const tString &in asEntity, const tString &in asMaterial)
+	{
+		iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(asEntity, eLuxEntityType_LastEnum, "");
+		cMaterial@ pMaterial = cResources_CreateMaterial(asMaterial);
+
+		pEntity.GetMeshEntity().GetSubMeshEntity(1).SetCustomMaterial(pMaterial, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void Keypad_EnterDigit(tString asDigit)
+	{
+		
+		///////////////////////
+		// Append digit to code
+		msPadCode = msPadCode + asDigit; 
+		if (msPadCode != cString_Sub(gsKeypadCode, 0, msPadCode.length()))
+		{
+			tString sFirstCodeChar = cString_Sub(gsKeypadCode, 0, 1);
+			if (asDigit==sFirstCodeChar)
+				msPadCode = asDigit;
+			else
+				msPadCode = "";
+		}
+		
+		///////////////////////
+		// Keypad sound
+		Sound_CreateAtEntity("EnterDigit","Entities_Urban/tech/keypad/keypad_press_01","security_keypad_1",0.0,false);
+		
+		//////////////////////
+		// Check complete code
+		if (msPadCode.length() < gsKeypadCode.length())
+		{
+			Entity_SetEffectsActive(ImGui_GetName(), false, false);
+			Map_AddTimer(ImGui_GetName(), 0.1, "Timer_KeypadEffectsOn");
+			Light_FadeTo("Keypad_PointLight_1",0,0.1,0);
+			return;
+		}
+		
+		/////////////////////
+		// Unlock door on correct code
+		if (msPadCode==gsKeypadCode)
+		{
+			// Change to green light
+			SetKeypadMaterial("security_keypad_1","security_keypad_greenlamp");
+			Light_FadeTo("Keypad_PointLight_1",cColor_Green,0.1,0);
+			
+			// Deactivate gui and return player to normal
+			Terminal_SetGuiActive(ImGui_GetName(),false);	
+			Player_ChangeStateToNormal();
+			SwingDoor_SetLocked("exit_waitroom",false,true);
+			Entity_SetActive("DoorHandleTrigger_3", true);
+			mbDoorLocked = false;
+			// Sounds
+			Sound_CreateAtEntity("KeypdOpen","Entities_Urban/tech/keypad/keypad_correct","security_keypad_1",0.0,false);
+			Map_AddTimer("UnlockMusic", 1.0f, "UnlockMusic");
+			
+			// Comment if didn't look at hint
+			if (!mbReadHint)
+			{
+				Map_AddTimer("3_CodeWithoutHint",0.5f,"TimerVoicePlay");
+			}
+		}
+	}
+		
+	//-------------------------------------------------------
+
+	void UnlockMusic (const tString &in asTimer)
+	{
+		Music_Play("00_00_locked", 0.75f, false, eMusicPrio_BigEvent);
+	}
+	
+	//-------------------------------------------------------
+
+	void OnReadHint(const tString &in asEntity)
+	{
+		mbReadHint = true;
+	}
+	
+	//-------------------------------------------------------
+
+	void Timer_KeypadEffectsOn(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive(asTimer, true, false);
+		Light_FadeTo("Keypad_PointLight_1",cColor_Red,0.1,0);
+	}
+		
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// SCENE 2 | Hallway
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	/*Put any variables that are used by many events in Scene X here.*/
+
+	//-------------------------------------------------------
+	
+	bool Trigger_ShowHintRun(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Hint_ShowHint("Hints", "HintRun", true);
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_HandleSound(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			//Sound source is "HandleSoundTrigger"
+			Sound_CreateAtEntity("HandleDown", "Entities_Urban/door/toilet_door/door_handle_down", asParent,0,false);
+			cLux_AddDebugMessage("Handle down at "+asParent);
+		}
+		else
+		{
+			//Sound source is "HandleSoundTrigger"
+			Sound_CreateAtEntity("HandleUp", "Entities_Urban/door/toilet_door/door_handle_up", asParent,0,false);
+		}
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool Music_TriggerAmbience(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//Music_Play("00_00_hallway", 0.35, true, eMusicPrio_BgAmb);
+		return false;
+	}
+
+	//-------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// Scene 2 - HALLWAY - Event  - Preload (changed to priority change, already begun preloading)
+	/////////////////////////////////////////
+	
+	bool CollideAreaStartPreload(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		PreloadPriorityNormal();
+
+		return false;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 - HALLWAY - Event 0 - Checking side room
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	//////////////////////////////////////////
+	// Scene 2 - Side room light switch
+	//////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	void SideOffice_LightSwitch(const tString &in asEntity, int alState)
+	{
+		Sound_CreateAtEntity("LightswitchSound", "Entities_Urban/lamp/generic_INT/switch_plastic_on_off", asEntity, 0, true);	
+		
+		if (alState == 1)
+		{
+			Billboard_SetVisible("Billboard_SideOffice_Lamp_*",true);
+			Light_FadeTo("SpotLight_ComputerScreen_*",cColor(0.0, 0.0, 0.0),0,0.5);
+			Sound_CreateAtEntity("LightsFlicker", "00_06_lab/sfx/fluorescent_light_flicker", "serverroomlightsource_1");
+			Sound_CreateAtEntity("LightsFlicker", "00_06_lab/sfx/fluorescent_light_flicker", "serverroomlightsource_2");
+			Sound_Play("serverroom_light_*", 0.25f, false);
+		}
+		
+		if (alState == -1)
+		{
+			Light_FadeTo("SpotLight_ComputerScreen_*",cColor(0.37, 0.92, 0.95),1.3,0.5);
+			Billboard_SetVisible("Billboard_SideOffice_Lamp_*",false);
+			Sound_CreateAtEntity("LightsFlicker", "00_06_lab/sfx/fluorescent_light_flicker", "serverroomlightsource_1");
+			Sound_CreateAtEntity("LightsFlicker", "00_06_lab/sfx/fluorescent_light_flicker", "serverroomlightsource_2");
+			Sound_Stop("serverroom_light_*", 0.25f);
+		}
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// SCENE 3 | Meet David and get Scanned
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbDavidEventTriggered = false;
+	bool mbPlayerIsInsideRoom = false;
+	int mlCurrentDavidSubjectIndex = 0;
+	int mlLeaveRoomWarnings = 0;
+	bool mbDavidGreetingDone = false;
+	
+	eDavidState mDavidState = eDavidState_Server;
+	
+	void SetupDavid()
+	{
+		Entity_SetInteractionDisabled("David", true );
+		
+		David_StartRepairServer();
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_StartRepairServer()
+	{
+		cLux_AddDebugMessage("Start David Repair Server");
+		mDavidState = eDavidState_Server;
+		
+		NPC_SetMainAnimation("David", "server_idle", true,"",0.0f, true);
+		Map_AddTimer("Timer_PlayDavidRepairServerExtra", cMath_RandRectf(6.2f,7.2f), "Timer_PlayDavidRepairServerExtra");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_PlayDavidRepairServerExtra(const tString& in asName)
+	{
+		int lAnim = cMath_RandRectl(1,3);
+		tString sAnim = "server_idle_extra_"+lAnim;
+		NPC_PlayExtraAnimation("David",sAnim,1.0f,"", true);
+		Map_RestartCurrentTimer(cMath_RandRectf(5.0f,7.0f));
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_StopRepairServer()
+	{
+		NPC_StopExtraAnimation("David");
+		Map_RemoveTimer("Timer_PlayDavidRepairServerExtra");
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_StartTalking()
+	{
+		mDavidState = eDavidState_Talk;
+		NPC_SetMainAnimation("David", "talk_idle_speak", true, "", 0.0f, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_StopTalking()
+	{
+		NPC_StopExtraAnimation("David");
+		David_StopIdleTimer();
+		for (int i=1;i<=6;++i)
+		{
+			if (Map_TimerExists("talk_idle_speak_extra_"+i))
+				Map_RemoveTimer("talk_idle_speak_extra_"+i);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_SwitchToTalk()
+	{
+		cLux_AddDebugMessage("Switch to talk");
+		//DebugDumpRunningAnimations("David");
+		David_StopIdle();
+		David_StopRepairServer();
+		David_StartTalking();
+		Entity_SetActive("DavidTalkArea",false);
+		cLux_AddDebugMessage("Disable David interaction");
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_SwitchToIdle()
+	{
+		cLux_AddDebugMessage("Switch to idle");
+		//DebugDumpRunningAnimations("David");
+		David_StopTalking();
+		NPC_SetMainAnimation("David", "talk_idle", true,"",0.0f, true);
+		Map_AddTimer("Timer_SwitchToServer",(mlCurrentDavidSubjectIndex<=2)?5.0f:1.0f,"Timer_SwitchToServer");
+		Entity_SetActive("DavidTalkArea2",  (mlCurrentDavidSubjectIndex<=2) );
+		mDavidState = eDavidState_Idle;
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_StopIdle()
+	{
+		NPC_StopExtraAnimation("David");
+		Map_RemoveTimer("Timer_SwitchToServer");
+		Entity_SetActive("DavidTalkArea2",false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_SwitchToServer(const tString& in asName)
+	{
+		David_SwitchToServer();
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_SwitchToServer()
+	{
+		cLux_AddDebugMessage("Switch to server");
+		//DebugDumpRunningAnimations("David");
+		David_StopIdle();
+		Entity_SetActive("DavidTalkArea",false);
+		David_StartRepairServer();
+		Map_AddTimer("Timer_AllowDavidInteraction",6.0f,"Timer_AllowDavidInteraction");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_AllowDavidInteraction(const tString& in asName)
+	{
+		//////////////////////////////////////////////////
+		// Player can interact with David 3 times only
+		Entity_SetActive("DavidTalkArea", (mlCurrentDavidSubjectIndex<=3) );
+		cLux_AddDebugMessage("Enable David interaction");
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_SwitchToKeyboard()
+	{
+		David_StopRepairServer();
+		David_StopIdle();
+		mDavidState = eDavidState_Keyboard;		
+		NPC_SetMainAnimation("David", "stand_at_computer", true,"",0.0f, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool TriggerPlayerLeaveScanRoom(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//////////////////////////////////////
+		// If conversation done and player leaves room - David nags
+		if (alState == 1 && mbDavidGreetingDone && mbPlayerIsInsideRoom)
+		{
+			Dialog_Begin();
+				Dialog_AddBranchAndSubject("14_LeaveRoom_"+mlLeaveRoomWarnings%3,"","OnDavidWarnedPlayer");
+			Dialog_End();
+				
+			mlLeaveRoomWarnings++;
+		}
+		
+		///////////////////////////////////////
+		// Now flag simon as having left
+		if (alState == 1)
+		{
+			cLux_AddDebugMessage("Player left room");
+			mbPlayerIsInsideRoom = false;
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool TriggerPlayerEnterScanRoom(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		///////////////////////////////////////
+		// Flag player as being inside the room
+		if (alState == 1)
+		{
+			mbPlayerIsInsideRoom = true;
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool TriggerOpenDoor(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		///////////////////////////////////////////////
+		// When the door is opened, stop David mumbling
+		if (alState == 1)
+		{
+			Music_Stop(5.0f, eMusicPrio_BgAmb);
+			cLux_AddDebugMessage("DEBUG: The door is opened... it begins");
+			Sound_CreateAtEntity("ScanRoomSweetener", "00_06_lab/sfx/lab_sweetener", "ScanSweetenerSource");
+			Sound_Stop("behind_door_spot", 0.1f);
+			Sound_Play("lab_room_server_1", 0.5);
+			
+			PreloadPriorityLow();
+			
+			return false;
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////////////////////////
+	// SCENE 3 - EVENT 1 - Talk to David
+	//////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	int mlDavidReminders = 0;
+	int mlPowerSwitchMessage = 0;
+	bool mbSkipSimonIntroduction = false;
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_ForceTalking(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		// Greet Simon for the first time and activate the chair
+		if (mbDavidGreetingDone == false)
+		{
+			cLux_AddDebugMessage("Greeting");
+			/////////////////////////////////
+			// Stop any current dialog
+			Dialog_StopAll();
+			
+			////////////////////////////////
+			// Walk to player
+			DavidGreetPlayer();	
+		}
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_Surprised(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("talk_idle_speak_extra_1", cMath_RandRectf(0.25f,2.0f), "TimerDavidPlayExtraAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_Uncomfortable(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("talk_idle_speak_extra_2", cMath_RandRectf(0.25f,2.0f), "TimerDavidPlayExtraAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_SincereConvince(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("talk_idle_speak_extra_3", cMath_RandRectf(0.25f,2.0f), "TimerDavidPlayExtraAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_SincereUncomfortable(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("talk_idle_speak_extra_4", cMath_RandRectf(0.25f,2.0f), "TimerDavidPlayExtraAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_Questioning(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("talk_idle_speak_extra_5", cMath_RandRectf(0.25f,2.0f), "TimerDavidPlayExtraAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_Relieved(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("talk_idle_speak_extra_6", cMath_RandRectf(0.25f,2.0f), "TimerDavidPlayExtraAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDavidPlayExtraAnim(const tString& in asAnim)
+	{
+		David_StopIdleTimer();
+		if (!Map_GetEntity("David").GetMeshEntity().GetAnimationStateFromName("server_idle_tr_talk_idle").IsActive())
+		{
+			cLux_AddDebugMessage("Play extra talk anim");
+			//DebugDumpRunningAnimations("David");
+		
+			NPC_StopExtraAnimation("David");
+			NPC_PlayExtraAnimation("David", asAnim, 0.5f,"OnDavidExtraAnimDone", true);
+			if (asAnim=="talk_idle_speak_extra_4")
+			{
+				Map_AddTimer("TimerHackFixJankyAnimation",2.3f,"TimerHackFixJankyAnimation");
+			}
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerHackFixJankyAnimation(const tString& in asName)
+	{
+		Timer_DavidPlayIdleExtra("");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnDavidExtraAnimDone(const tString& in asEntity, const tString& in asAnimName)
+	{
+		// Removed - causing blending issues and not contributing anything really.
+		//Timer_DavidPlayIdleExtra("");
+		//David_StartIdleTimer();
+	}
+	
+	//-------------------------------------------------------
+	
+	void David_StartIdleTimer()
+	{
+		Map_AddTimer("Timer_DavidPlayIdleExtra", cMath_RandRectf(0.5f,1.0f), "Timer_DavidPlayIdleExtra");
+	}
+
+	//-------------------------------------------------------
+	void David_StopIdleTimer()
+	{
+		Map_RemoveTimer("Timer_DavidPlayIdleExtra");
+	}
+	//-------------------------------------------------------
+	
+	void Timer_DavidPlayIdleExtra(const tString& in asTimer)
+	{
+		int lAnim = cMath_RandRectl(1,3);
+		tString sAnim="talk_idle_extra_"+lAnim;
+		NPC_PlayExtraAnimation("David",sAnim,0.5f,"", true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void DavidGreetPlayer()
+	{
+		/////////////////////////////////
+		// Force Conversation State
+		mbSkipSimonIntroduction = true;
+
+		David_SwitchToTalk();
+		 
+		Dialog_StartConversation_PosBased("David","David", "DavidConvArea", "Head");
+		Dialog_Begin();
+			Dialog_AddBranch("GreetDavid");
+				Dialog_AddPause(1.0f);	// Pause for animation
+				Dialog_AddSubject("7_GreetDavid","EndDavidDialogue");
+		Dialog_End();
+		
+		Entity_SetInteractionDisabled("ScanChair", false);
+		
+		mbDavidGreetingDone = true;
+	}
+	
+	//-------------------------------------------------------
+
+	void OnInteractDavid(const tString &in asEntity)
+	{
+		if (mlCurrentDavidSubjectIndex==3)
+		{
+			Entity_SetActive("DavidTalkArea",false);
+			Map_RemoveTimer("timer_reminder");
+			Voice_Play("8_InteractDavid4", -1, "OnDavidFinalInteractOver");
+			return;
+		}
+		
+		/////////////////////////////////////////////////////////
+		// Face Simon
+		David_SwitchToTalk();
+		
+		Map_RemoveTimer("timer_reminder");
+		
+		////////////////////////////////////////////
+		// Next David Subject
+		mlCurrentDavidSubjectIndex++;
+		
+		Dialog_StartConversation_PosBased("David","David","DavidConvArea", "Head");
+		Dialog_Begin();
+			Dialog_AddBranch("Dialogue");
+				if (mDavidState==eDavidState_Server)
+					Dialog_AddPause(3.0f);
+				Dialog_AddSubject("8_InteractDavid"+mlCurrentDavidSubjectIndex,"EndDavidDialogue");
+		Dialog_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnDavidFinalInteractOver(const tString&in asScene, const tString&in asSubject)
+	{
+		Entity_SetActive("DavidTalkArea",true);
+		Map_AddTimer("timer_reminder",cMath_RandRectf(gvDavidReminderTimeSpan.x,gvDavidReminderTimeSpan.y),"Timer_DavidRemindsPlayer");
+	}
+	
+	//-------------------------------------------------
+	
+	void Timer_DavidRemindsPlayer(const tString &in asName)
+	{
+		if (Voice_AnySceneIsActive())
+		{
+			Map_RestartCurrentTimer();
+			return;
+		}
+			
+		///////////////////////////////////////////////////////
+		// David periodically reminds the player to take a seat
+		if (mbPlayerIsInsideRoom)
+		{
+			int lDavidLine = mlDavidReminders % 2;
+			
+			Voice_Play("13_DavidReminder_"+lDavidLine, 0, "EndDavidReminder");
+				
+			mlDavidReminders++;
+			Map_AddTimer("timer_reminder",cMath_RandRectf(gvDavidReminderTimeSpan.x,gvDavidReminderTimeSpan.y),"Timer_DavidRemindsPlayer");
+			
+			Entity_SetActive("DavidTalkArea", false);
+		}
+		else
+		{
+			//////////////////////////////////////////////////////////////////////////////
+			// If player leaves the room, David will remind the player to sit upon reentry
+			Map_AddTimer("timer_reminder",2.0,"Timer_DavidRemindsPlayer");
+		}
+	}
+	
+	//-------------------------------------------------
+	
+	void OnDavidWarnedPlayer(const tString &in asSubject, bool abStartOfSubject)
+	{
+		if (abStartOfSubject) return;
+
+		Entity_SetActive("DavidTalkArea",  (mlCurrentDavidSubjectIndex<=3) );
+	}
+	
+	//-------------------------------------------------
+	
+	///////////////////////////////////////////////////////////////////////////////////////////
+	// Method used to prevent player getting locked in dialogue state during David's reminders
+	void EndDavidReminder(const tString&in asScene, const tString&in asSubject)
+	{
+		cLux_AddDebugMessage("EndDavidReminder");
+		Entity_SetActive("DavidTalkArea",  (mlCurrentDavidSubjectIndex<=3) );
+	}
+	
+	//-------------------------------------------------
+	
+	void EndDavidDialogue(const tString &in asSubject, bool abStartOfSubject)
+	{
+		///////////////////////////////////////////////////
+		// Nothing to do for the beginning of conversation
+		if(abStartOfSubject) return;
+
+		cLux_AddDebugMessage("End David dialogue:"+mlCurrentDavidSubjectIndex);
+		
+		Map_AddTimer("timer_reminder",cMath_RandRectf(gvDavidReminderTimeSpan.x,gvDavidReminderTimeSpan.y),"Timer_DavidRemindsPlayer");
+		David_SwitchToIdle();
+	}
+
+	//-------------------------------------------------------
+	
+	//////////////////////////////////////////
+	// SCENE 3 - Minor Event - Player fiddles with power switch
+	//////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void InteractPowerSwitch(const tString &in asEntity)
+	{
+		cLux_AddDebugMessage("Don't do that!");
+		Dialog_Begin();
+			Dialog_AddBranchAndSubject("15_PowerSwitchMessage", "", "EnableDavid");
+		Dialog_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////////////////////////
+	// SCENE 3 - EVENT 2 - Begin the Scan
+	//////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbScanningEffectsActivated;
+	int mlChairAreaCollisionCounter;
+	int mlid_Vignette; 
+	int mlid_ScanLines;
+	int mlid_Grain;
+	int mlid_RadialBlur;
+	
+	//-------------------------------------------------------
+	
+	void SetupScanningEffects()
+	{
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetupChairInteraction()
+	{
+		mlChairAreaCollisionCounter = 0;
+		Entity_SetInteractionDisabled("ScanChair", true);
+	}
+	
+	//-------------------------------------------------------
+		
+	void InteractScanChair(const tString &in asEntity)
+	{
+		//////////////////////////////////////////////
+		// Player sits down after interacting with chair
+		CameraAnimation_Begin("IntroAnim", "", false);
+		Entity_PlaceAtEntity("Player", "SafePlayerArea");
+		Map_AddTimer("EnableSimonLegs", 1.5f, "SimonLegs");
+		Map_AddTimer("EnableSimonArms", 1.75f, "SimonArms");
+		
+		Sound_PreloadGroup("Entities_Special/Equipment", true);
+		Sound_CreateAtEntity("sound_sit_down", "00_06_lab/VIPScriptedEvents/Camera_Anim_sitinchair", asEntity, 0, false);
+		
+		David_SwitchToKeyboard();
+		
+		EyeTracking_SetExtendedViewMul(0.2f);
+		
+		////////////////////////////////////////////
+		// Remove David's nag timer
+		Dialog_StopAll();
+		Map_RemoveTimer("timer_reminder"); 
+		
+		Map_AddTimer("Timer_DavidUseKeyboard", 3.0f, "Timer_DavidUseKeyboard");
+	}
+	
+	//-------------------------------------------------------
+	
+	void SimonLegs(const tString &in asTimer)
+	{
+	    Entity_SetActive("simon_legs", true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void SimonArms(const tString &in asTimer)
+	{
+		Entity_SetActive("SimonHands",true);
+		Entity_PlayAnimation("SimonHands","chair_00_03_scan",0.0,true);
+		Prop_MoveLinearTo("SimonHands","SimonHands_Target",10.0f,0.5f,0.05f,true);
+	}
+
+	//-------------------------------------------------------
+	
+	bool EventPlayerSits(const tString &in asEntity, int alDir)
+	{
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSequenceScanningPrepare;
+	void SequenceScanningPrepare(const tString &in asName)
+	{
+		Sequence_Begin("SequenceScanningPrepare", mSequenceScanningPrepare);
+
+		//////////////////////////////
+		// Start scan screen movement
+		if (Sequence_DoStepAndPause(0))
+		{
+			//Changing values or timing will take sound out of sync
+			Sound_PlayGui("Entities_Special/Equipment/scanner/urban/scanner_lower", 1.0f);
+			Prop_MoveLinearTo("ScanHelmet", "ScanHelmet_Target_1", 1, 1, 0.25, true, "MoveTo_ScanHelmet");
+		}
+		else if (Sequence_DoStepAndWait(1))
+		{
+			Prop_MoveLinearTo("ScanHelmet", "ScanHelmet_Target_2", 1, 1, 0.25, false);
+		}
+		else if (Sequence_DoStepAndWait(1.0f))
+		{
+			CollisionScanScreenFace("", "", 1);
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void MoveTo_ScanHelmet(const tString &in asProp)
+	{
+		SequenceStates_Resume("SequenceScanningPrepare");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollisionScanScreenFace(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//////////////////////////////////////////////////////////
+		// The scan screen is being placed over the player's face
+		mbScanningEffectsActivated = true;
+		Player_FadeFOVMulTo(0.9f, 0.3f);		
+		
+		/////////////////////////////////////////////////////////
+		// Audio - Fade World Mixgroup
+		Sound_FadeGlobalVolume(0.0,1.0f,eSoundEntryType_World);
+		
+		/////////////////////////////////////////////
+		// Add Vignette
+		mlid_Vignette = Effect_Screen_Start("vignette_screen.mat", cVector2f(0.5,0.5), cVector2f(1.4f,1.0f), 1.0, 1.0, 200.0, 200.0);
+		
+		/////////////////////////////////////////////
+		// Fade out, then wait until completely dark
+		Effect_Fade_Out(0.05f);
+		PreloadPriorityVeryHigh();
+		Map_AddTimer("ScanScreenFadeTimer", 9.0f, "TimerFadeInScanning");
+		
+		////////////////////////////////////////////
+		// The following effect is used in darkness - but it is to "warm up" the video distortion so that it works on the fade in (in sync)
+		Effect_VideoDistortion_Start(1.0f,1.0f,2.0f,0.1f,0.0f);
+		
+		//////////////////////////////////////
+		// Blur and mouse control effects
+		Effect_DoF_Start(3.0,10.0,0.3,50.0);
+		mlid_RadialBlur = Effect_RadialBlur_Start(0.1,0.25,0.25,0.1);
+		Player_SetLookSpeedMul(0.6);
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_DavidUseKeyboard(const tString& in asEntityName)
+	{
+		cLux_AddDebugMessage("David At Keyboard");
+		
+		Map_AddTimer("Timer_PrepScan",4.0f,"Timer_PrepScan");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_KeyboardExtra1(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("stand_at_computer_extra_1", 0.5f, "TimerDavidPlayExtraKeyboardAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_KeyboardExtra2(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("stand_at_computer_extra_2", 0.5f, "TimerDavidPlayExtraKeyboardAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Line_DavidAnim_KeyboardExtra3(const tString& in asScene, const tString& in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if (!abStartOfLine)
+			return;
+		// Don't want to be dead on the start of the line, let's put in a bit of delay
+		Map_AddTimer("stand_at_computer_extra_3", 0.5f, "TimerDavidPlayExtraKeyboardAnim");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDavidPlayExtraKeyboardAnim(const tString& in asName)
+	{
+		//NPC_StopExtraAnimation("David");
+		NPC_PlayExtraAnimation("David",asName,0.5f,"", true);	
+	}
+
+	//-------------------------------------------------------
+	
+	void Timer_PrepScan(const tString& in asName)
+	{
+		SequenceScanningPrepare("");
+	}
+	
+	//-------------------------------------------------------
+	
+	int mlGoggleDistortionID = -1;
+	
+	void TimerFadeInScanning(const tString &in asName)
+	{
+		EyeTracking_SetExtendedViewMul(0.0f);
+		
+		//////////////////////////////////////
+		// Remove scan screen
+		Entity_SetActive("ScanHelmet", false);
+	
+		//////////////////////////////////////
+		// Fade back in
+		Effect_Fade_In(0.1f);
+		PreloadPriorityNormal();
+		Sound_FadeGlobalVolume(1.0f,0.1f,eSoundEntryType_World);
+		cLux_AddDebugMessage("Goggles On!");
+		
+		//////////////////////////////////////
+		// Distortion on fade in
+		Effect_VideoDistortion_Start(1.0f,0.25f,0.1f,0.1f,0.0f);
+		
+		////////////////////////////////////
+		// Audio - Screen Sequence
+		Sound_CreateAtEntity("GogglesScreen", "Entities_Special/Equipment/scanner/interface_scan_sequence", "Player", 0.0f, false, 1.0f);
+		Map_AddTimer("TimerGogglesOnConversation", 2.0f, "TimerGogglesOnConversation");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerGogglesOnConversation(const tString& in asName)
+	{
+		////////////////////////////////
+		// Last conversation before scan		
+		Dialog_Begin();
+			Dialog_AddBranch("SitDown");
+				Dialog_AddSubject("10_SitDown");
+				Dialog_AddSubject("11_GogglesOn","ExecuteScan");
+		Dialog_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void ExecuteScan(const tString &in asSubject, bool abStartOfSubject)
+	{
+		if(abStartOfSubject) return;
+		
+		//////////////////////////////////////
+		// Start Scanning Sequence
+		SequenceScan("");
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSequenceScan;
+	
+	void SequenceScan(const tString &in asName)
+	{
+		Sequence_Begin("SequenceScan", mSequenceScan);
+		
+		///////////////////////////
+		// Initial Delay to allow sound sync
+		if (Sequence_DoStepAndWait(1.0f))
+		{
+			//////////////////////////////////////
+			// Startup the machine..
+			Sound_CreateAtEntity("GoggleAction", "Entities_Special/Equipment/scanner/urban/scan_sequence", "Player", 0, true);
+			Sound_FadeGlobalVolume(0.75f, 3.0f, eSoundEntryType_World);
+			PreloadPriorityVeryHigh();
+		}
+		
+		
+		if (Sequence_DoStepAndWait(4.5f))
+		{
+			//////////////////////////////////////
+			// Display scanning effect
+			mlid_ScanLines = Effect_Screen_Start("00_04_scan_noise.mat", cVector2f(0.5, 0.5), cVector2f(2,1),  1, 0.1, 900, 0.1);
+			Effect_ChromaticAberration_StartAnim(4.0f,0.005,0.005,cVector2f_Zero);
+			Effect_ImageTrail_Start(0.08,0.1,4.0,1.0);
+		}
+		
+		
+		if (Sequence_DoStepAndWait(0.3f))
+		{
+			//////////////////////
+			// Turn off Distortion effects
+			Effect_Screen_FadeOut(mlid_Vignette,0.0);
+			Effect_Screen_FadeOut(mlid_ScanLines,0.0);
+			//Player_FadeFOVMulTo(2.5f, 1.0f);
+			Effect_Flash_Start(0.25f, 0.95, 0.25);
+			Effect_Rumble_Start(0.9, 0.7, 0.25f);
+			Effect_Shake_Start(0.08,6.75,0,0.1);
+			
+		}
+		
+		//////////////////////////////////
+		// Fade to black and restore FOV
+		if(Sequence_DoStepAndWait(0.1f))
+		{
+			//Player_FadeFOVMulTo(1.0f, 0.0f);
+			Effect_Fade_Out(0.5f);
+			
+			/////////////////////////
+			// Fade out sound
+			Sound_Stop("GogglesScreen",0.15);
+			
+			/////////////////////////////////////
+			// Audio - Completely fade out all world audio
+			Sound_FadeGlobalVolume(0.0,0.1f,eSoundEntryType_World);
+		}
+
+		/////////////////////////
+		// Delay - allow for sound to fade out before level change
+		if (Sequence_DoStepAndWait(3.5f))
+		{
+			Effect_Screen_FadeOut(mlid_ScanLines,0);
+		}
+
+		/////////////////////////
+		// Change level
+		if (Sequence_DoStepAndWait(0.0f))
+		{
+			Effect_RadialBlur_FadeOut(mlid_RadialBlur,1.0);
+		}
+		
+		
+		if (Sequence_DoStepAndWait(0))
+		{
+			///////////////////////////
+			// Reset values
+			CameraAnimation_End();
+			Player_ChangeStateToNormal();
+			Player_SetLookSpeedMul(1.0);
+			
+			/////////////////////////
+			// Change map
+			cLux_AddDebugMessage("Switching scene...");
+			
+			Map_RemoveTimer("Timer_PlayDavidIdleTyping");
+			
+			LoadScreen_SetUseSmallIcon(true);
+			Map_ChangeMap("01_01_upsilon_awake.hpm","PlayerStartArea_1", "", "");
+		}
+
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// MOVE NPCs OUTSIDE
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+
+	void MovePedestrians()
+	{
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_1");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_64");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_66");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_14");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_19");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_28");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_29");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_33", 1.0f, 3.0f);
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_46");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_52");
+		Pathfinder_Track_Add("subway_girl_1", "GirlPath_60");
+		Pathfinder_Track_Start("subway_girl_1",true);
+		
+		Pathfinder_Track_Add("subway_businessman_1", "PathNodeArea_121");
+		Pathfinder_Track_Add("subway_businessman_1", "PathNodeArea_130");
+		Pathfinder_Track_Add("subway_businessman_1", "PathNodeArea_139");
+		Pathfinder_Track_Add("subway_businessman_1", "PathNodeArea_147",5.0f,10.0f);
+		Pathfinder_Track_Start("subway_businessman_1",true);
+		
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_84");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_20");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_28");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_74");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_56");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_74");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_77");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_23");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_16");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_5");
+		Pathfinder_Track_Add("subway_businessman_3", "PathNodeArea_119");
+		Pathfinder_Track_Start("subway_businessman_3",true);
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSeqTruck;
+	
+	void Seq_Truck(const tString& in asName="")
+	{
+		Sequence_Begin("Seq_Truck", mSeqTruck);
+		
+		if (Sequence_DoStepAndWait(10.0f))
+		{
+			Prop_MoveLinearTo("Truck","Truck_1",1,2,0.0f,true,"");
+			Prop_AlignRotation("Truck","Truck_1",0.05,0.05,0.0f,true,"");
+		}
+		else if (Sequence_DoStepAndWait(7.5f))
+		{
+			Prop_MoveLinearTo("Truck","Truck_2",2,2,0.0f,false,"");
+			Prop_AlignRotation("Truck","Truck_2",0.05,0.05,0.0f,false,"");
+		}
+		else if (Sequence_DoStepAndPause(15.0f))
+		{
+			Prop_MoveLinearTo("Truck","Truck_3",2,2,0.0f,false,"OnTruckReachedTarget");
+			Prop_AlignRotation("Truck","Truck_3",0.05,0.05,0.0f,false,"");
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			Entity_SetActive("Truck",false);
+			Prop_MoveLinearTo("Truck2","Truck2_1",2,2,1.0f,false,"OnTruckReachedTarget");
+			Prop_AlignRotation("Truck2","Truck2_1",0.1,0.1,0.3f,false,"");
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			Prop_MoveLinearTo("Truck2","Truck2_2",1,2,0.0f,true,"OnTruckReachedTarget");
+			Prop_AlignRotation("Truck2","Truck2_2",0.1,0.25,0.3f,true,"");
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			Prop_MoveLinearTo("Truck2","Truck2_3",2,2,1.0f,false,"OnTruckReachedTarget");
+			Prop_AlignRotation("Truck2","Truck2_3",0.1,0.25,0.3f,false,"");
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			Prop_MoveLinearTo("Truck2","Truck2_4",2,2,1.0f,true,"OnTruckReachedTarget");
+			Prop_AlignRotation("Truck2","Truck2_4",0.1,0.25,0.3f,true,"");
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnTruckReachedTarget(const tString&in asName)
+	{
+		SequenceStates_Resume("Seq_Truck");
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PRELOADING
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool PreloadDisabled(bool abCheckIfPreloading = true)
+	{
+		if(cLux_ScriptDebugOn())
+		{
+			cLux_AddDebugMessage("PRELOAD DISABLED!"); 
+			
+			return true;
+		}
+		
+		if(abCheckIfPreloading && Map_IsPreloading() == false)
+			return true;
+			
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerBeginPreload(const tString &in asTimer)
+	{
+		Preload();
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Begin preload.
+	void Preload()
+	{
+		if(PreloadDisabled(false)) return;
+		cLux_AddDebugMessage("Preloading");
+		
+		Map_Preload("01_01_upsilon_awake.hpm", eWorldStreamPriority_Low);
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Change preload prio to normal
+	void PreloadPriorityLow()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_SetPreloadPriority(eWorldStreamPriority_Low);
+	}	
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Change preload prio to normal
+	void PreloadPriorityNormal()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_SetPreloadPriority(eWorldStreamPriority_Normal);
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Change preload prio to normal
+	void PreloadPriorityVeryHigh()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+	}
+	
+	//--------------------------------------------------------
+	//
+	////////////////////////////////////////////////////////
+	// TERMINALS
+	////////////////////////////////////////////////////////
+	//
+	//-------------------------------------------------------
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////////////////////
+	// TERMINAL KEYPAD
+	/////////////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void security_keypad_1_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+		////////////////////////
+		// Buttons are transparent
+		cImGuiButtonData button;
+		button.mvDefaultSize = cVector2f(10,10);
+		button.mColorBase = cColor(0.3,0.3,0.3,0);
+		button.mbUseInFocusGfx = mbUsingKeypad;
+		button.mGfxInFocus.SetFile("urban/keypad/keypad_Selected");
+	
+		
+		////////////////////////
+		// Position buttonspath
+		bool bNumPad1 = ImGui_DoButtonExt("ButtonKeypad1","",button, ImGui_NrmPosGroup(cVector3f(0.27, 0.33, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad2 = ImGui_DoButtonExt("ButtonKeypad2","",button, ImGui_NrmPosGroup(cVector3f(0.38, 0.33, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad3 = ImGui_DoButtonExt("ButtonKeypad3","",button, ImGui_NrmPosGroup(cVector3f(0.48, 0.33, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad4 = ImGui_DoButtonExt("ButtonKeypad4","",button, ImGui_NrmPosGroup(cVector3f(0.27, 0.43, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad5 = ImGui_DoButtonExt("ButtonKeypad5","",button, ImGui_NrmPosGroup(cVector3f(0.38, 0.43, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad6 = ImGui_DoButtonExt("ButtonKeypad6","",button, ImGui_NrmPosGroup(cVector3f(0.48, 0.43, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad7 = ImGui_DoButtonExt("ButtonKeypad7","",button, ImGui_NrmPosGroup(cVector3f(0.27, 0.53, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad8 = ImGui_DoButtonExt("ButtonKeypad8","",button, ImGui_NrmPosGroup(cVector3f(0.38, 0.53, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad9 = ImGui_DoButtonExt("ButtonKeypad9","",button, ImGui_NrmPosGroup(cVector3f(0.48, 0.53, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPadAst = ImGui_DoButtonExt("ButtonKeypadA","",button, ImGui_NrmPosGroup(cVector3f(0.27, 0.63, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPad0 = ImGui_DoButtonExt("ButtonKeypad0","",button, ImGui_NrmPosGroup(cVector3f(0.38, 0.63, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		bool bNumPadHash = ImGui_DoButtonExt("ButtonKeypadH","",button, ImGui_NrmPosGroup(cVector3f(0.48, 0.63, 0)), ImGui_NrmSizeGroup(cVector2f(0.07, 0.07)));
+		
+		////////////////////////
+		// Enter key code
+		if (bNumPad1) 	{ Keypad_EnterDigit("1"); }
+		if (bNumPad2) 	{ Keypad_EnterDigit("2"); }
+		if (bNumPad3) 	{ Keypad_EnterDigit("3"); }
+		if (bNumPad4) 	{ Keypad_EnterDigit("4"); }
+		if (bNumPad5) 	{ Keypad_EnterDigit("5"); }
+		if (bNumPad6) 	{ Keypad_EnterDigit("6"); }
+		if (bNumPad7) 	{ Keypad_EnterDigit("7"); }
+		if (bNumPad8) 	{ Keypad_EnterDigit("8"); }
+		if (bNumPad9) 	{ Keypad_EnterDigit("9"); }
+		if (bNumPad0) 	{ Keypad_EnterDigit("0"); }
+		if (bNumPadAst)	{ Keypad_EnterDigit("*"); }
+		if (bNumPadHash){ Keypad_EnterDigit("#"); }
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	void security_keypad_1_GuiEnter(const tString&in asEntityName)
+	{
+		cLux_AddDebugMessage("Entered keypad GUI");
+		msPadCode = "";
+		mbUsingKeypad = true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void security_keypad_1_GuiLeave(const tString&in asEntityName)
+	{
+		cLux_AddDebugMessage("Left keypad GUI");
+		msPadCode = "";
+		mbUsingKeypad = false;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////////////////////
+	// TERMINAL LAPTOP
+	/////////////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void ReceptionLaptopGUI(const tString&in asEntityName, float afTimeStep)
+	{
+		UrbanGui_PACE_DrawBackdrop(1.0f);
+		UrbanGui_PACE_DrawDesktopIcons(2.0f);
+		
+		ImGui_SetTransCategory("00_03_laboratory");
+		
+		Depth_ImGui_AddMail("GUI_EMAIL_1", "EMAIL_1_BODY", "EMAIL_1_FROM", "EMAIL_1_DATE", eMailAppEntryType_Inbox);
+		Depth_ImGui_AddMail("GUI_EMAIL_2", "EMAIL_2_BODY", "EMAIL_2_FROM", "EMAIL_2_DATE", eMailAppEntryType_Inbox);
+		Depth_ImGui_AddMail("GUI_EMAIL_3", "EMAIL_3_BODY", "EMAIL_3_FROM", "EMAIL_3_DATE", eMailAppEntryType_Sent);
+		UrbanGui_MailApp("GUIMailAPaul");
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////////////////////
+	// TERMINAL RECEPTION COMPUTER
+	/////////////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void ErinMainComputerGUI(const tString&in asEntityName, float afTimeStep)
+	{
+		UrbanGui_PACE_DrawBackdrop();
+		LoginScreen("GUI_PACE_USER_Reception");
+	}
+
+	//-------------------------------------------------------
+	
+	void LoginScreen(const tString&in asUserName)
+	{
+		ImGui_SetTransCategory("00_03_laboratory");
+		
+		cImGuiWindowData window = UrbanGui_PACE_CreateDefaultWindowData();
+		
+		ImGui_DoWindowStart("GUI_PACE_LOGIN", window, ImGui_NrmPosGroup(cVector3f(0.3, 0.3, 1.0)), ImGui_NrmSizeGroup(cVector2f(0.4, 0.4)));
+		ImGui_DoWindowEnd();
+		
+		ImGui_DoWindowStart("GUI_PACE_USERNAME", window, ImGui_NrmPosGroup(cVector3f(0.35, 0.4, 1.0)), ImGui_NrmSizeGroup(cVector2f(0.3, 0.125)));
+		ImGui_DoWindowEnd();
+		ImGui_DoLabel(asUserName, ImGui_NrmPosGroup(cVector3f(0.37, 0.475, 1.0)));
+		
+		ImGui_DoWindowStart("GUI_PACE_PASSWORD", window, ImGui_NrmPosGroup(cVector3f(0.35, 0.525, 1.0)), ImGui_NrmSizeGroup(cVector2f(0.3, 0.125)));
+		ImGui_DoWindowEnd();
+	}
+	
+	//-------------------------------------------------------------------------
+	
+	void SideRoomComputer_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("");
+		
+
+		ImGui_ResetModifiers();
+
+		ImGui_SetModColorMul(cColor(0.0f,0.0f,0.0f,1.0f));
+			
+		ImGui_DoImage(cImGuiGfx(""), ImGui_NrmPos(cVector3f(0.0f, 0.0f, -1.0f)), ImGui_NrmSize(cVector2f(1.0f, 1.0f)));
+	}
+
+	//-------------------------------------------------------
+
+	void MainComputerLeft_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("");
+		ImGui_SetStateColor("bgcolor", cColor(0.0,0.0,0.0,1));
+
+		ImGui_ResetModifiers();
+
+		cImGuiGfx gfx;
+		gfx.SetFile("munshi_screen3");
+		ImGui_SetModColorMul(cColor(1.0f,1.0f,1.0f,1.0f));
+		ImGui_DoImage(gfx, ImGui_NrmPos(cVector3f(0.0, 0.0f, 1.0f)), ImGui_NrmSize(cVector2f(1.0f, 1.0f)));
+	}
+
+	//-------------------------------------------------------
+
+	void MainComputerMiddle_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+		cImGuiGfx gfx;
+		gfx.SetFile("brain_scan_4");
+		ImGui_SetModColorMul(cColor(1.0f,1.0f,1.0f,1.0f));
+		ImGui_DoImage(gfx, ImGui_NrmPos(cVector3f(0.0, 0.0f, 1.0f)), ImGui_NrmSize(cVector2f(1.0f, 1.0f)));
+		
+		cImGuiGfx window;
+		gfx.SetFile("munshi_screen1");
+		ImGui_SetModColorMul(cColor(1.0f,1.0f,1.0f,1.0f));
+		ImGui_DoImage(window, ImGui_NrmPos(cVector3f(0.3, 0.3f, 2.0f)), ImGui_NrmSizeKeepRatio(cVector2f(0.5f, 0.5f)));
+		
+		//LoginScreen("GUI_PACE_USER_David");
+	}
+
+	//-------------------------------------------------------
+
+	void MainComputerRight_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("");
+		ImGui_SetStateColor("bgcolor", cColor(0.0,0.0,0.0,1));
+
+		ImGui_ResetModifiers();
+
+		
+		cImGuiGfx gfx;
+		gfx.SetFile("munshi_screen2");
+		ImGui_SetModColorMul(cColor(1.0f,1.0f,1.0f,1.0f));
+		ImGui_DoImage(gfx, ImGui_NrmPos(cVector3f(0.0, 0.0f, 1.0f)), ImGui_NrmSize(cVector2f(1.0f, 1.0f)));
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// Ambient Audio
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void FadeInAudio(const tString &in asTimer) 
+	{
+		////////////////////////////
+		// Fade In Volume
+		Sound_FadeGlobalVolume(1,4.5,eSoundEntryType_World);
+	}
+	
+	void DavidAnimationSoundControl(const tString &in asTimer)
+	{
+		Map_AddTimer("DavidAnimationSoundControl", 0.015f, "DavidAnimationSoundControl");
+		
+		if(Entity_GetCollide("Player","DavidSoundControl")==false && SwingDoor_GetClosed("swingdoor_scanroom_corridor_3")==true)
+		{
+			if(Sound_Exists("David_AnimEvent"))
+			{
+				Sound_Stop("David_AnimEvent", 0.015f);
+			}
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	[nosave] float mfAlpha;
+	[nosave] iFontData@ mpFont;
+
+    void VRPhoneQ_Tick(const tString &in timer)
+    {
+        if(mVRPhone.state==0) return;
+        // Resume the authored presentation when an unanswered VR save is loaded flat.
+        if(mVRPhone.state==1 && !VRPhoneQ_Active())
+        {
+            mVRPhone.End();
+            Entity_SetActive("Cellphone",true);Entity_CallEntityInteract("Cellphone");
+            return;
+        }
+
+        int result=mVRPhone.Tick(0);
+        if(result==1)
+        {
+            Sound_CreateAtEntity("PhoneDavid","00_06_lab/VIPScriptedEvents/phone_call_munshi","Player");
+            Voice_Play("2_LockedDoor0_Dialing",-1,"VoiceOver_DialingComment");
+            Map_AddTimer("VRPhoneQ_End",2.5f,"VRPhoneQ_End");
+        }
+        else if(result==3) Map_AddTimer("VRPhoneQ_End",1.0f,"VRPhoneQ_End");
+        else if(result==2) mVRPhone.End();
+        if(mVRPhone.state!=0) Map_AddTimer("VRPhoneQ",0.05f,"VRPhoneQ_Tick");
+    }
+    void VRPhoneQ_End(const tString &in timer) { mVRPhone.End(); }
+}

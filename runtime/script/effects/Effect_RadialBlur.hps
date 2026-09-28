@@ -1,0 +1,394 @@
+bool _HPL3VR_HideComfortEffect(const tString&in key)
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    if(!cScript_GetGlobalReturnBool()) return false;
+    return cScript_RunGlobalFunc("VRFX",key,"Q");
+}
+#include "effect/Effects.hps"
+
+/////////////////////////////////////////
+// SETTINGS - DEPTH OF FIELD
+/////////////////////////////////////////
+
+
+class cFadeVariable
+{
+	//----------------------
+	
+	cFadeVariable()
+	{
+		mfFadeSpeed = 0;
+	}
+	
+	//----------------------
+
+	void Reset(float afDefault)
+	{
+		mfGoal = mfValue = afDefault;
+		mfFadeSpeed = 0;
+	}
+	
+	//----------------------
+
+	void StartFade(float afGoal, float afTime)
+	{
+		mfGoal = afGoal;
+		mfFadeSpeed = (mfGoal-mfValue) / cMath_Max(0.000001f, afTime);
+	}
+	
+	//----------------------
+
+	void Update(float afTimeStep)
+	{
+		mfValue += mfFadeSpeed * afTimeStep;
+
+		if(mfFadeSpeed < 0 && mfValue <= mfGoal || 
+		   mfFadeSpeed > 0 && mfValue >= mfGoal)
+		{
+			mfValue = mfGoal;
+			mfFadeSpeed = 0;
+		}
+	}
+	
+	//----------------------
+
+	bool IsActive()
+	{
+		return mfFadeSpeed != 0;
+	}
+	
+	//----------------------
+
+	float mfValue;
+	float mfFadeSpeed;
+	float mfGoal;
+}
+
+//------------------------------------------------------------
+
+class cRadialBlurInstance
+{
+	cRadialBlurInstance()
+	{
+		mAlpha.Reset(0.0f);
+		mSize.Reset(0.0f);
+		mbFadeOut = false;
+	}
+
+	cRadialBlurInstance(int alID)
+	{
+		mlID = alID;
+		mAlpha.Reset(0.0f);
+		mSize.Reset(0.0f);
+		mbFadeOut = false;
+	}
+
+	void Start(float afSize, float afAlpha, float afDistance, float afTime)
+	{
+		mBlurStartDist.Reset(afDistance);
+		
+		mAlpha.StartFade(afAlpha, afTime);
+		mSize.StartFade(afSize, afTime);
+	}
+
+	void FadeStartDistance(float afDistance, float afTime)
+	{
+		mBlurStartDist.StartFade(afDistance, afTime);
+	}
+
+	void FadeAlpha(float afAlpha, float afTime)
+	{
+		mAlpha.StartFade(afAlpha, afTime);
+	}
+
+	void FadeSize(float afSize, float afTime)
+	{
+		mSize.StartFade(afSize, afTime);
+	}
+
+	void Update(float afTimeStep)
+	{
+		mSize.Update(afTimeStep);
+		mAlpha.Update(afTimeStep);
+		mBlurStartDist.Update(afTimeStep);
+	}
+
+	bool IsActive()
+	{
+		return mbFadeOut == false || mAlpha.mfValue > 0 || mAlpha.mfFadeSpeed > 0;
+	}
+
+	cFadeVariable mSize;
+	cFadeVariable mAlpha;
+	cFadeVariable mBlurStartDist;
+
+	bool mbFadeOut;
+
+	int mlID;
+}
+
+//------------------------------------------------------------
+
+class cScrEffect_RadialBlur : iScrEffect, iScrEffect_Interface, iScrEffect_RadialBlur
+{
+
+	//----------------------------------
+	
+	void Init()
+	{
+		mlIDPool = 0;
+		
+		mfDirectSize = 0;
+		mfDirectAlpha = 0;
+		mfDirectDistance = 0;
+	}
+
+	//----------------------------------
+	
+	void OnDestroy()
+	{
+		if(mpEffect is null) return;
+		
+		cLux_GetViewport().GetPostEffectComposite().RemovePostEffect(mpEffect);
+		cGraphics_DestroyPostEffect(mpEffect);
+		@mpEffect = null;
+	}
+	
+	void CreatePostEffect()
+	{
+		if(mpEffect is null)
+		{
+			//////////////////
+			// Create the post effect if null
+			@mpEffect = cast<cPostEffect_RadialBlur@>(cLux_GetViewport().GetPostEffectComposite().GetPostEffectFromType("RadialBlur"));
+
+			if(mpEffect is null)
+			{
+				@mpEffect = cGraphics_CreatePostEffect_RadialBlur();
+				cLux_GetViewport().GetPostEffectComposite().AddPostEffect(mpEffect, 50);
+			}
+		}
+	}
+	
+	void LoadUserConfig()
+	{
+		cConfigFile@ pConfig = cLux_GetUserConfig();
+		mbScreenDistortionsActive = pConfig.GetBool("Gameplay", "ScreenDisortion", true);	
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PULBIC METHODS
+	/////////////////////////////////////////
+
+	//----------------------------------
+	
+	void SetDirect(float afSize, float afAlpha, float afDistance)
+	{
+		mfDirectSize = afSize;
+		mfDirectAlpha = afAlpha;
+		mfDirectDistance = afDistance;
+		
+		mBaseObj.SetActive(true);
+	}
+	//----------------------------------
+
+	int Start(float afSize, float afAlpha, float afDistance, float afTime)
+	{
+		cRadialBlurInstance instance = cRadialBlurInstance(mlIDPool);
+
+		instance.Start(afSize, afAlpha, afDistance, afTime);
+		mvInstances.push_back(instance);
+		
+		mBaseObj.SetActive(true);
+
+		return mlIDPool++;		
+	}
+	
+	//----------------------------------
+
+	void FadeSize(int alID, float afSize, float afTime)
+	{
+		for(int i = 0; i < mvInstances.size(); ++i)
+		{
+			if(mvInstances[i].mlID == alID) 
+			{
+				mvInstances[i].FadeSize(afSize, afTime);
+				return;
+			}
+		}
+	}
+	//----------------------------------
+
+	void FadeStartDistance(int alID, float afDistance, float afTime)
+	{
+		for(int i = 0; i < mvInstances.size(); ++i)
+		{
+			if(mvInstances[i].mlID == alID) 
+			{
+				mvInstances[i].FadeStartDistance(afDistance, afTime);
+				return;
+			}
+		}
+	}
+
+	//----------------------------------
+	
+	void FadeAlpha(int alID, float afAlpha, float afTime)
+	{
+		for(int i = 0; i < mvInstances.size(); ++i)
+		{
+			if(mvInstances[i].mlID == alID) 
+			{
+				mvInstances[i].FadeAlpha(afAlpha, afTime);
+				return;
+			}
+		}
+	}
+
+	//----------------------------------
+
+	void FadeOut(int alID, float afTime)
+	{
+		for(int i = 0; i < mvInstances.size(); ++i)
+		{
+			if(mvInstances[i].mlID == alID) 
+			{
+				mvInstances[i].FadeAlpha(0.0f, afTime);
+				mvInstances[i].mbFadeOut = true;
+				return;
+			}
+		}
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL CALLBACKS
+	/////////////////////////////////////////
+	
+	
+	//----------------------------------
+	
+	void OnStart()
+	{
+	}
+
+	//----------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	}
+	
+	//----------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		mvInstances.resize(0);
+	}
+
+	//----------------------------------
+	
+	void Reset()
+	{
+		mfDirectSize = 0;
+		mfDirectAlpha = 0;
+		mfDirectDistance = 0;
+		
+		mvInstances.resize(0);
+		if(mpEffect !is null) mpEffect.SetParams(0, 0, 0);
+	}
+
+	//----------------------------------
+	
+	
+	void Update(float afTimeStep)
+	{
+		CreatePostEffect();
+		
+		///////////////
+		// Update and remove completed
+		for(int i = 0; i < mvInstances.size(); ++i)
+		{
+			mvInstances[i].Update(afTimeStep);
+		}
+
+		for(int i = 0; i < mvInstances.size(); ++i)
+		{
+			if(mvInstances[i].IsActive() == false)
+			{
+				//Is no longer active, remove
+				mvInstances[i--] = mvInstances[mvInstances.size() - 1];
+				mvInstances.pop_back();
+			}
+		}
+
+		if(mvInstances.size() > 0 || mfDirectAlpha>0)
+		{
+			////////////////////
+			// Calculate depth of field values by combining the instances
+			float fSize = 0;
+			float fDistance = 0;
+			float fAlpha = 0;
+			float fWeight = 0.000001f;
+
+			for(int i = 0; i < mvInstances.size(); ++i)
+			{
+				float fW = mvInstances[i].mAlpha.mfValue;
+				fWeight += fW;
+				fAlpha += fW * fW;
+				fDistance += mvInstances[i].mBlurStartDist.mfValue * fW;
+				fSize += mvInstances[i].mSize.mfValue * fW;
+			}
+			
+			if(mfDirectAlpha != 0)
+			{
+				fWeight += 1.0f;
+				fAlpha += mfDirectAlpha;
+				fSize += mfDirectSize;
+				fDistance += mfDirectDistance;
+			}
+
+			/////////////
+			// Normalize and set values and enable depth of field
+			if(mbScreenDistortionsActive == false) fAlpha = 0.0f;
+
+			mpEffect.SetParams(fSize / fWeight, _HPL3VR_HideComfortEffect("HideBlur") ? 0.0f : fAlpha / fWeight, fDistance / fWeight);
+			//cLux_AddDebugMessage("Size: "+fSize/fWeight+ " fAlpha: "+fAlpha/fWeight +" Dist: "+fDistance/fWeight);
+		}
+		else
+		{
+			//No instances, radial blur
+			mpEffect.SetParams(0, 0, 0);
+			mBaseObj.SetActive(false);
+		}
+	}
+	
+	//----------------------------------
+	
+	void OnDraw(float afFrameTime)
+	{
+		
+	}
+	
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//----------------------------------
+	
+	array<cRadialBlurInstance> mvInstances;
+	[nosave] cPostEffect_RadialBlur@ mpEffect=null;
+	[nosave] bool mbScreenDistortionsActive = false;
+	int mlIDPool;
+	
+	float mfDirectSize;
+	float mfDirectAlpha;
+	float mfDirectDistance;
+
+	//----------------------------------
+}

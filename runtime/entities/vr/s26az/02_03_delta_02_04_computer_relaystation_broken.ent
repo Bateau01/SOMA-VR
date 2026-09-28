@@ -1,0 +1,63 @@
+<Entity>
+    <EditorSession>
+        <ViewportConfig Enlarged="true" Focused="3">
+            <Viewport CameraPos="0 0 200" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="2" LockToGrid="true" Mode="Front" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+            <Viewport CameraPos="200 0 0" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="0" LockToGrid="true" Mode="Right" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+            <Viewport CameraPos="0 200 0" CameraTarget="0 0 0" Controller="Ortho" GridHeights="0 0 0" GridPlane="1" LockToGrid="true" Mode="Top" OrthoZoom="7.38839" Renderer="Wireframe" ShowAxes="true" ShowGrid="true" />
+            <Viewport CameraPos="-2.24846 3.09026 -0.466215" CameraTarget="0.722914 0.0880129 -0.410361" Controller="Maya" GridHeights="0 0 0" GridPlane="1" LockToGrid="false" Mode="Perspective" Renderer="Shaded" ShowAxes="true" ShowGrid="true" />
+        </ViewportConfig>
+    </EditorSession>
+    <ModelData>
+        <Entities />
+        <Mesh Filename="entities/oceanbottom/tech/02_04_computer_relaystation/02_04_computer_relaystation_broken.dae">
+            <SubMesh ID="0" Material="" Name="Mesh" Rotation="0 0 0" Scale="1 1 1" TriCount="694" WorldPos="0 0 0" />
+        </Mesh>
+        <Bones />
+        <Shapes>
+            <Shape ID="1" Name="Shape_1" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="0.256221346 -0.260657 0.0045979" Rotation="0 -0 0" Scale="0.604204909 0.912006 2.53677" ShapeType="Box" WorldPos="0.274052846 0.45807 0" />
+            <Shape ID="2" Name="Shape_2" RelativeRotation="0 0.38402 0" RelativeScale="1 1 1" RelativeTranslation="-0.123264 -0.260656 -1.34319" Rotation="0 0.38402 0" Scale="0.971119 0.912006 0.256171" ShapeType="Box" WorldPos="-0.105433 0.45807 -1.34779" />
+            <Shape ID="4" Name="Shape_3" RelativeRotation="0.0818057 0.331222 0.552827" RelativeScale="1 1 1" RelativeTranslation="-0.0176109 0.260656 -1.38589" Rotation="0.0818057 0.331222 0.552827" Scale="1.14573 0.541841 0.256171" ShapeType="Box" WorldPos="0.000220597 0.979383 -1.39048" />
+            <Shape ID="6" Name="Shape_4" RelativeRotation="0 -0 0.470918" RelativeScale="1 1 1" RelativeTranslation="0.448490797 0.271860462 0.0045979" Rotation="0 -0 0.470918" Scale="0.763816633 0.912006 2.75498" ShapeType="Box" WorldPos="0.466322297 0.990587462 0" />
+            <Shape ID="7" Name="Shape_5" RelativeRotation="-0.184395 -0.232063 0.492214" RelativeScale="1 1 1" RelativeTranslation="0.0900595 0.240959 1.38589" Rotation="-0.184395 -0.232063 0.492214" Scale="1.14573 0.541841 0.256171" ShapeType="Box" WorldPos="0.107891 0.959685 1.38129" />
+            <Shape ID="8" Name="Shape_6" RelativeRotation="0.0275743 -0.273355 -2.59962e-010" RelativeScale="1 1 1" RelativeTranslation="-0.0650852 -0.260656 1.27997" Rotation="0.0275743 -0.273355 -2.59962e-010" Scale="0.971119 0.912006 0.256171" ShapeType="Box" WorldPos="-0.0472537 0.45807 1.27537" />
+            <Shape ID="9" Name="Shape_7" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="0.186578696 -0.146364 0.3944459" Rotation="0 -0 0" Scale="0.464919609 0.48017 0.678112" ShapeType="Box" WorldPos="0.204410196 0.572363 0.389848" />
+            <Shape ID="11" Name="AZ_frame_11" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="-0.345083654 -0.406607232 0.0045979" Rotation="0 -0 0" Scale="0.598405091 0.620105536 2.53677" ShapeType="Box" WorldPos="-0.327252154 0.312119768 0" />
+            <Shape ID="12" Name="AZ_frame_12" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="-0.345083654 0.0493957682 -0.837697044" Rotation="0 -0 0" Scale="0.598405091 0.291900464 0.852180112" ShapeType="Box" WorldPos="-0.327252154 0.768122768 -0.842294944" />
+            <Shape ID="13" Name="AZ_frame_13" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="-0.345083654 0.0493957682 0.852308388" Rotation="0 -0 0" Scale="0.598405091 0.291900464 0.841349024" ShapeType="Box" WorldPos="-0.327252154 0.768122768 0.847710488" />
+            <Shape ID="14" Name="AZ_frame_14" RelativeRotation="0 -0 0.470918" RelativeScale="1 1 1" RelativeTranslation="-0.0311194655 -0.286309551 0.0045979" Rotation="0 -0 0.470918" Scale="0.597483367 0.352379892 2.75498" ShapeType="Box" WorldPos="-0.0132879655 0.432417449 0" />
+            <Shape ID="15" Name="AZ_frame_15" RelativeRotation="0 -0 0.470918" RelativeScale="1 1 1" RelativeTranslation="-0.349210226 0.338474279 0.0045979" Rotation="0 -0 0.470918" Scale="0.597483367 0.0694387324 2.75498" ShapeType="Box" WorldPos="-0.331378726 1.05720128 0" />
+            <Shape ID="16" Name="AZ_frame_16" RelativeRotation="0 -0 0.470918" RelativeScale="1 1 1" RelativeTranslation="-0.222257769 0.0891182706 -0.892249544" Rotation="0 -0 0.470918" Scale="0.597483367 0.490187376 0.961285112" ShapeType="Box" WorldPos="-0.204426269 0.807845271 -0.896847444" />
+            <Shape ID="17" Name="AZ_frame_17" RelativeRotation="0 -0 0.470918" RelativeScale="1 1 1" RelativeTranslation="-0.222257769 0.0891182706 0.906860888" Rotation="0 -0 0.470918" Scale="0.597483367 0.490187376 0.950454024" ShapeType="Box" WorldPos="-0.204426269 0.807845271 0.902262988" />
+            <Shape ID="18" Name="AZ_frame_18" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="-0.414726304 -0.241501732 0.3944459" Rotation="0 -0 0" Scale="0.737690391 0.289894536 0.678112" ShapeType="Box" WorldPos="-0.396894804 0.477225268 0.389848" />
+            <Shape ID="19" Name="AZ_frame_19" RelativeRotation="0 -0 0" RelativeScale="1 1 1" RelativeTranslation="-0.414726304 -0.00141673182 0.582567888" Rotation="0 -0 0" Scale="0.737690391 0.190275464 0.301868024" ShapeType="Box" WorldPos="-0.396894804 0.717310268 0.577969988" />
+        </Shapes>
+        <Bodies>
+            <Body AngularDamping="0.1" BlocksLight="true" BlocksSound="false" BuoyancyDensityMul="1" CanAttachCharacter="false" CollideCharacter="true" CollideNonCharacter="true" ContinuousCollision="true" HasGravity="true" ID="10" LinearDamping="0.1" Mass="0" Material="Metal Hollow" MaxAngularSpeed="20" MaxLinearSpeed="20" Name="Body_1" PushedByCharacterGravity="false" Rotation="0 0 0" Scale="1 1 1" UseSurfaceEffects="true" Volatile="false" WorldPos="0.0178315 0.718727 -0.0045979">
+                <Children>
+                    <Child ID="0" />
+                </Children>
+                <Shape ID="7" />
+                <Shape ID="9" />
+                <Shape ID="6" />
+                <Shape ID="8" />
+                <Shape ID="1" />
+                <Shape ID="4" />
+                <Shape ID="2" />
+                <Shape ID="11" />
+                <Shape ID="12" />
+                <Shape ID="13" />
+                <Shape ID="14" />
+                <Shape ID="15" />
+                <Shape ID="16" />
+                <Shape ID="17" />
+                <Shape ID="18" />
+                <Shape ID="19" />
+            </Body>
+        </Bodies>
+        <Joints />
+        <Animations />
+    </ModelData>
+    <UserDefinedVariables EntityType="StaticProp">
+        <Var Name="ShowMesh" Value="true" />
+    </UserDefinedVariables>
+</Entity>

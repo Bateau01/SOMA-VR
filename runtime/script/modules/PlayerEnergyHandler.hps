@@ -1,0 +1,771 @@
+#include "interfaces/UserModule_Interface.hps"
+#include "modules/ModuleInterfaces.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_modules.hps"
+#include "helpers/helper_player.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+///////////////
+// Effects
+const tString gsHealthRestoreTentacleAir = "Player/UI/flower_interact";
+const tString gsHealthRestoreTentacleUnderwater = "Player/UI/flower_interact";
+const tString gsHealthRestoreNoTentacle = "Player/UI/flower_interact";
+
+//------------------------------------------------------------
+
+bool _HPL3VR_HealingActive()
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    return cScript_GetGlobalReturnBool();
+}
+
+class cScrPlayerEnergyHandler : iScrUserModule, iScrUserModule_Interface, iScrPlayerEnergyHandler_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		@mpGfxWhiteFlash = cGui_CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Additive);
+		
+		Reset();
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+        mlVRFlowerRefreshes=0;mfVRFlowerRefreshWait=0;
+		mvRechargeObjects.resize(0);
+		cLux_GetCurrentMap().GetEntityArrayID("*", eLuxEntityType_Prop, "cScrPropEnergySource", mvRechargeObjects);
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		if (mBaseObj.Timer_Exists(0)) mBaseObj.Timer_Remove(0);
+		mbAllowCathComment=false; //failsafe /Thomas's paranoid self
+	}
+	
+	//------------------------------------------------------------
+	
+	void PreloadData(cLuxMap @apMap)
+	{
+	}
+
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	}
+	
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	// (The reason the following are global instead of interface is because they are used by helper_game.hps
+	//  and it cannot access the module interfaces!)
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+    bool mbVRManualDrain=false;
+    float mfVRDrainElapsed=0;
+    float mfVRDrainDuration=10.0f;
+    void _Global_VRGetHealStage() { cScript_SetGlobalReturnInt(mlUseWauFlowerStage); }
+	void _Global_BeginDrain()
+	{
+		mDrainEntityID = cScript_GetGlobalArgID(0);
+		mfDrainEnergy = cScript_GetGlobalArgFloat(1);
+		
+		mfRechargeTime = 9.0f;
+		mfRechargeZoomInAmount =0;
+		mbDrainCompleted = false;
+		mbFlashStarted=false;
+		mfInfectionaAppearCount=0;
+		mbGainedHealthFromInteraction=false;
+				
+		cScript_SetGlobalVarBool("UsingWauFlower",true);
+        mbVRManualDrain=_HPL3VR_HealingActive();
+        if(mbVRManualDrain) cScript_RunGlobalFunc("VRHEAL","","B");
+		
+		/////////////////////
+		// Start animation
+		iLuxEntity @pFlowerEntity = cLux_ID_Entity(mDrainEntityID);
+		
+		PlayerHands_SetUseCustomPosition(true);
+		PlayerHands_SetCustomPositionFromEntity(pFlowerEntity.GetName());
+		PlayerHands_SetUseCustomRotation(true);
+		PlayerHands_SetCustomRotationFromEntity(pFlowerEntity.GetName());
+		
+		tString sAnimation = "wau_flower_touch_"+(mlUseWauFlowerStage+1); //TODO: Need to have proper selection here!
+		
+		PlayerHands_PlayAnimation(sAnimation, false, true, 0,"", true,1,-1);
+
+        if(mbVRManualDrain)
+        {
+            mfVRDrainElapsed=0;
+            cAnimationState@ pTiming=PlayerHands_GetCurrentAnimationState();
+            // Retain the original one-second attachment lead-in, but do not
+            // depend on rendering an invisible mesh to finish the interaction.
+            mfVRDrainDuration=pTiming is null ? 10.0f : pTiming.GetLength()+1.0f;
+            if(mfVRDrainDuration<1.0f || mfVRDrainDuration>120.0f) mfVRDrainDuration=10.0f;
+        }
+		
+        if(mbVRManualDrain) { PlayerHands_SetVisible(false); if(PlayerHands_GetCurrentAnimationState() !is null) PlayerHands_GetCurrentAnimationState().SetPaused(false); }
+        else
+        {
+		PlayerHands_AttachCameraToSocket("Socket_Camera", 1.0f, "", false,false,1.0f, 
+										cVector3f(0,0.0,0), cVector3f(0.0,0,0.0f));
+        }
+		Player_SetActive(false);
+		cLux_GetPlayer().ChangeState(ePlayerState_Null);
+		mBaseObj.Timer_Add("StartAnim", 1.0f, "Timer_StartAnim");
+		
+		cLux_AddDebugMessage("Wau flower used, stage "+mlUseWauFlowerStage);
+		
+		/////////////////////
+		// Audio
+		Sound_FadeGlobalVolume(0.45f, 5.0f);
+		
+		/////////////////////
+		// Swallow rumble
+		if(mlUseWauFlowerStage >=2)
+		{
+			mBaseObj.Timer_Add("SwallowRumble", mlUseWauFlowerStage==2 ? 3.45f : 3.2f, "Timer_SwallowRumble");
+		}
+		
+		/////////////////////
+		// Flash start
+		array<float> vGetEnergyTimes = {5.539f, 4.167, 7.317f, 7.1f};
+		mBaseObj.Timer_Add("Flash", vGetEnergyTimes[mlUseWauFlowerStage], "Timer_Flash");
+		
+		cScript_SetGlobalVarInt("WauFlowerCount", cScript_GetGlobalVarInt("WauFlowerCount")+1);
+		
+		/////////////////////
+		// Infection start
+		if(mlUseWauFlowerStage>1)
+		{
+			array<float> vGetEnergyTimes = {0, 0, 3.817f, 3.8f};
+			mBaseObj.Timer_Add("Infection", vGetEnergyTimes[mlUseWauFlowerStage], "Timer_Infection");
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void Timer_StartAnim(uint64 alId)
+	{
+		iLuxEntity @pFlowerEntity = cLux_ID_Entity(mDrainEntityID);
+		
+		tString sAnimation = "player_touch_"+(mlUseWauFlowerStage+1);
+		pFlowerEntity.PlayAnimation(sAnimation);
+		
+		if(cLux_GetUnderwaterEffectsActive())
+		{	
+			//Add clothing and vo here
+			Sound_PlayGui("Player/foley/wau_flower/player_arm_UW/wau_flower_UW_touch_"+mlUseWauFlowerStage, 1.0f, eSoundEntryType_Gui);
+			Sound_PlayGui("Player/foley/wau_flower/player_touch_vox/vox_UW/player_touch_"+mlUseWauFlowerStage, 1.0f, eSoundEntryType_Gui);
+			cLux_AddDebugMessage("Wau flower used, underwater, stage "+mlUseWauFlowerStage);
+		}
+		else
+		{
+			//Add clothing and vo here
+			Sound_PlayGui("Player/foley/wau_flower/player_arm_air/wau_flower_touch_"+mlUseWauFlowerStage, 1.0f, eSoundEntryType_Gui);
+			if(mlUseWauFlowerStage!=0)
+			{
+				Sound_PlayGui("Player/foley/wau_flower/player_touch_vox/vox_air/player_touch_air_"+mlUseWauFlowerStage, 1.0f, eSoundEntryType_Gui);
+			}
+			cLux_AddDebugMessage("Wau flower used, NOT underwater, stage "+mlUseWauFlowerStage);
+		}
+	}
+	
+	void Timer_Infection(uint64 alId)
+	{
+		Infection_CreateBorderTree(1, 30, cVector2f(14,35), 12.0f);
+		Infection_CreateBorderTree(2, 30, cVector2f(14,35), 12.0f);
+		Infection_CreateBorderTree(3, 30, cVector2f(14,35), 12.0f);
+	}
+	
+	void Timer_SwallowRumble(uint64 alId)
+	{
+		Effect_Rumble_Start(1.0, 2.0, 0.1, 1.5f);
+	}
+	
+	void Timer_Flash(uint64 alId)
+	{
+		mfFlashAmount=0;
+		mfFlashDir=1;
+		mbFlashStarted=true;
+		
+		Effect_Rumble_Start(0.5, 2.0, 0.1, 1.0f);
+		
+		Voice_SetPausedAll(true);
+		
+		if(mlUseWauFlowerStage==0)
+		{
+			mlUseWauFlowerStage =1;
+			if(Voice_SceneInvolvingCharacterIsActive("Player")==false)
+				Voice_Play("FirstWauFlower_Human");
+		}
+		
+		Sound_PlayGui("Player/foley/wau_flower/health_flash/flash", 1.0f, eSoundEntryType_Gui);
+		mBaseObj.Timer_Add("GiveEnergy", 0.25, "Timer_GiveEnergy");
+		mBaseObj.Timer_Add("ResumeVoice", 2.65, "Timer_ResumeVoice");
+	}
+	
+	void Timer_GiveEnergy(uint64 alId)
+	{
+		if(mlUseWauFlowerStage==2 && Voice_SceneInvolvingCharacterIsActive("Player")==false)
+		{
+			mlUseWauFlowerStage = 3;
+			if(Voice_SceneInvolvingCharacterIsActive("Player")==false)
+				Voice_Play("FirstWauFlower_Tentacle");
+		}
+		if(mlUseWauFlowerStage>1)
+			Infection_ClearTrees();
+		
+		mbDrainCompleted = true;
+		
+		iLuxEntity@ pEntity = cLux_ID_Entity(mDrainEntityID);
+		cScript_SetGlobalArgFloat(0, 0.0f);//Energy left in source
+		cScript_RunGlobalFunc(pEntity.GetName(), "", "_Global_OnDrainComplete");
+				
+		//////////////////////////
+		// Flash fades out
+		mfFlashDir = -1;
+		
+		/////////////////////////
+		// Audio fades back to normal
+		Sound_FadeGlobalVolume(1.0f, 4.0f);
+		
+		//////////////////////////
+		// Get some energy
+		if(Player_GetHealth()<0.9999f)
+		{
+			mbGainedHealthFromInteraction = true;
+		}
+		
+		Player_AddHealth(mfDrainEnergy);
+	}
+	
+	void Timer_ResumeVoice(uint64 alId)
+	{
+		Voice_SetPausedAll(false);
+	}
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Reset()
+	{	
+		if (mlEffectID!=-1)
+			Effect_ChromaticAberration_DestroyInstance(mlEffectID);
+		mlEffectID=Effect_ChromaticAberration_CreateInstance(0.0f,0.0f);
+		
+		mDrainEntityID = tID_Invalid;
+		
+		mfEffectT =0;
+		
+		mfEffectWhenReadingMul =1.0f;
+		
+		mlUseWauFlowerStage=0;
+		
+		mbCathCommentMade=false;
+		mbAllowCathComment=false;
+		
+		mbFlowerSwallows = true;
+		
+		float mfFlashAmount=0;
+		float mfFlashDir=1;
+		bool mbFlashStarted=false;
+		
+		mbHasMadeCommentOnHealthGain=false;
+		mbGainedHealthFromInteraction=false;
+		
+		mvRechargeObjects.resize(0);
+		
+		if(mBaseObj.Timer_Exists(0))
+			mBaseObj.Timer_Remove(0);
+	}
+	
+	//------------------------------------------------------------
+
+    [nosave] float mfVRFlowerPoll=0;
+    [nosave] int mlVRFlowerRefreshes=0;
+    [nosave] float mfVRFlowerRefreshWait=0;
+    void HPL3VR_PollFlowers(float dt)
+    {
+        mfVRFlowerPoll-=dt;
+        if(mfVRFlowerPoll>0) return;
+        mfVRFlowerPoll=0.05f;
+        if(!_HPL3VR_HealingActive()) return;
+        // Recover an empty list captured before saved/world entities were ready.
+        // At most three additional queries per map; never a recurring world scan.
+        if(mvRechargeObjects.size()==0 && mlVRFlowerRefreshes<3)
+        {
+            mfVRFlowerRefreshWait-=0.05f;
+            if(mfVRFlowerRefreshWait<=0 && cLux_GetCurrentMap() !is null)
+            {
+                mfVRFlowerRefreshWait=1.0f;mlVRFlowerRefreshes++;
+                cLux_GetCurrentMap().GetEntityArrayID("*",eLuxEntityType_Prop,"cScrPropEnergySource",mvRechargeObjects);
+                cLux_AddDebugMessage("S26V flower list refresh "+mlVRFlowerRefreshes+": "+mvRechargeObjects.size());
+            }
+        }
+        if(!cLux_GetPlayer().IsActive() || cScript_GetGlobalVarBool("UsingWauFlower")) return;
+        for(uint i=0;i<mvRechargeObjects.size();++i)
+        {
+            iLuxEntity@ flower=cLux_ID_Entity(mvRechargeObjects[i]);
+            if(flower is null || !flower.IsActive()) continue;
+            if((flower.GetPosition()-cLux_GetPlayer().GetCamera().GetPosition()).Length()>2.0f) continue;
+            cScript_RunGlobalFunc(flower.GetName(),"cScrPropEnergySource","_Global_VRProbeHeal");
+        }
+    }
+	void Update(float afTimeStep)
+	{
+        HPL3VR_PollFlowers(afTimeStep);
+		UpdateRechargeObjects(afTimeStep);
+		UpdateRecharge(afTimeStep);
+		UpdateEffects(afTimeStep);
+	}
+	void VariableUpdate(float afDeltaTime)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	float mfObjectT=0;
+	
+	void UpdateRechargeObjects(float afTimeStep)
+	{
+		//////////////////////////////////////////////
+		// Make sure recharge objects are still valid
+		for(int i=0; i<mvRechargeObjects.size(); ++i)
+		{
+			iLuxEntity@ pEntity = cLux_ID_Entity(mvRechargeObjects[i]);
+			if (pEntity !is null) continue;
+			
+			mvRechargeObjects.removeAt(i);
+			i--;
+			cLux_AddDebugMessage("Removing recharge object!");
+		}
+					
+		//////////////////////////////////
+		// Energy is full, just reset if needed
+		if(Player_GetHealth()>=1)
+		{
+			if(mbRechargeObjectsPulsing)
+			{
+				mbRechargeObjectsPulsing = false;
+				
+				for(int i=0; i<mvRechargeObjects.size(); ++i)
+				{
+					iLuxEntity@ pEntity = cLux_ID_Entity(mvRechargeObjects[i]);
+					
+					if(pEntity.GetAnimationIsPlaying())					
+						pEntity.FadeEffectBaseColor(cColor(1,1),1);
+				}
+			}
+			return;
+		}
+		
+		mfObjectT += afTimeStep;
+		if(mfObjectT>30000.0f) mfObjectT=0;
+		float fMul = (cMath_Sin(mfObjectT*1.8)+1)*0.5f;
+		
+		//////////////////////////////////
+		// Energy is low, pulse.
+		for(int i=0; i<mvRechargeObjects.size(); ++i)
+		{
+			iLuxEntity@ pEntity = cLux_ID_Entity(mvRechargeObjects[i]);
+			
+			//cLux_AddDebugMessage("Energy Obj: "+pEntity.GetName()+" Anim: "+pEntity.GetAnimationIsPlaying());
+			
+			if(pEntity.GetAnimationIsPlaying())
+			{
+				pEntity.FadeEffectBaseColor(cColor(2+fMul*Player_GetHealth()*9,1),0.1f);
+			}
+		}
+		
+		mbRechargeObjectsPulsing = true;
+	}
+	
+	//------------------------------------------------------------
+		
+	void UpdateRecharge(float afTimeStep)
+	{
+        // A saved drain can resume after native world/session references reset.
+        // Publish only during that finite sequence; no body search is involved.
+        if(mbVRManualDrain && mDrainEntityID!=tID_Invalid)
+        {
+            mfVRDrainElapsed+=afTimeStep;
+            if(_HPL3VR_HealingActive())
+            {
+                cScript_RunGlobalFunc("VRHEAL","","B");
+                PlayerHands_SetVisible(false);
+            }
+            else
+            {
+                PlayerHands_SetVisible(true);
+                cScript_RunGlobalFunc("VRHEAL","","E");
+                mbVRManualDrain=false;
+            }
+        }
+		///////////////////////////
+		// Flash Update
+		if(mbFlashStarted)
+		{
+			const float fMaxFlash=1.0;
+			
+			if(mfFlashDir>0)
+			{
+				mfFlashAmount += afTimeStep* 1.0f/0.25f;
+				if(mfFlashAmount >= fMaxFlash)
+				{
+					mfFlashAmount=fMaxFlash;
+				} 
+			}
+			else
+			{
+				mfFlashAmount -= afTimeStep*0.7f;
+				if(mfFlashAmount < 0)
+				{
+					mfFlashAmount=0;
+					mbFlashStarted=false;
+				}
+			}
+		}
+		
+		if (mDrainEntityID==tID_Invalid)
+			return;
+			
+		///////////////////////////////
+		// Check if insta-exit needed
+		if(AttackMeter_IsActive())
+		{
+			Effect_Shake_Start(3, 0.5, 0.1, 0.8f, cVector3f(1,0.3f,0));
+			ExitRecharge(true);
+			
+			return;
+		}
+		
+		///////////////////////////////
+		// Check if animation is over
+		if(mbVRManualDrain ? mfVRDrainElapsed>=mfVRDrainDuration : PlayerHands_GetAnimationPlaying()==false)
+		{
+			ExitRecharge();
+			
+			if(	Player_GetUnderwater()==false && 
+				mbGainedHealthFromInteraction && 
+				mbHasMadeCommentOnHealthGain==false)
+			{
+				mbHasMadeCommentOnHealthGain = true;
+				mBaseObj.Timer_Add("CommentOnHealthGain", 3.2f, "Timer_CommentOnHealthGain");
+			}
+			else if(	mbHasMadeCommentOnHealthGain &&
+						Player_GetUnderwater()==false && 
+						mbCathCommentMade==false &&
+						mbAllowCathComment)
+			{
+				mBaseObj.Timer_Add("CommentFromCath", 1.7f, "Timer_CommentFromCath");	
+			}
+			
+		}
+	}
+	
+	void Timer_CommentOnHealthGain(uint64 alId)
+	{
+		if(Voice_SceneInvolvingCharacterIsActive("Player")==false)
+			Voice_Play("FirstWauFlower_GotHealth");
+	}
+	
+	void Timer_CommentFromCath(uint64 alId)
+	{
+		if(Voice_AnySceneIsActive()==false)
+		{
+			mbCathCommentMade=true;
+			Voice_Play("WauFlower_CathAndSimon", -1, "", -1);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void ExitRecharge(bool abForceInstantDetach=false)
+	{
+        if(!mbVRManualDrain)
+        {
+            if(abForceInstantDetach) PlayerHands_DetachCameraFromSocket(0.0f);
+            else PlayerHands_DetachCameraFromSocket(0.8f);
+        }
+		
+		Infection_ClearTrees();
+		
+		mfFlashDir = -1;
+		
+		PlayerHands_SetActive(false);
+		
+		if(mbDrainCompleted==false)
+		{
+			iLuxEntity@ pEntity = cLux_ID_Entity(mDrainEntityID);
+			cScript_SetGlobalArgFloat(0, 0.0f);//Energy left in source
+			cScript_RunGlobalFunc(pEntity.GetName(), "", "_Global_OnDrainComplete");
+		}
+		
+		mBaseObj.Timer_Remove("GiveEnergy");
+		mBaseObj.Timer_Remove("Flash");
+		mBaseObj.Timer_Remove("StartAnim");
+		mBaseObj.Timer_Remove("Infection");
+				
+		mDrainEntityID=tID_Invalid;
+		
+		Infection_ClearTrees();
+		
+		Player_SetActive(true);
+		cLux_GetPlayer().ChangeState(ePlayerState_Normal);
+		
+		cScript_SetGlobalVarBool("UsingWauFlower",false);
+        if(mbVRManualDrain)
+        {
+            cScript_RunGlobalFunc("PlayerHandsHandler","cScrPlayerHandsHandler","HPL3VR_EndHealingVisibility");
+            cScript_RunGlobalFunc("VRHEAL","","E");
+            mbVRManualDrain=false;
+        }
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateEffects(float afTimeStep)
+	{
+		if (mlEffectID==-1)	// Map not entered yet
+			return;
+			
+		int lPlayerState = cLux_GetPlayer().GetCurrentStateId();
+		if( lPlayerState == ePlayerState_Terminal || 
+			lPlayerState == ePlayerState_HandheldTerminal ||
+			lPlayerState == ePlayerState_Read ||
+			lPlayerState == ePlayerState_ZoomArea)
+		{
+			mfEffectWhenReadingMul = cMath_IncreaseTo(mfEffectWhenReadingMul, afTimeStep*0.2f, 0.3f);
+		}
+		else
+		{
+			mfEffectWhenReadingMul = cMath_IncreaseTo(mfEffectWhenReadingMul, afTimeStep*0.5f, 1.0f);
+		}
+		
+		mfEffectT += afTimeStep;
+			
+		if(Player_GetHealth()>=1 && mfEffectHealth>=1) return;
+		
+		mfEffectHealth = cMath_IncreaseTo(mfEffectHealth,afTimeStep*2, Player_GetHealth());
+		
+		float fAmount = 1.0f- cMath_Max(mfEffectHealth-0.1f, 0.0f)/0.9f;
+		
+		float fPulseReadingMul = 0.5 + mfEffectWhenReadingMul*0.5f;
+		float fCAPulse = cMath_Abs(cMath_Sin(mfEffectT*0.35f)*0.5f + cMath_Cos(mfEffectT*1.5f)*0.5f)*fPulseReadingMul;
+		fCAPulse *= fCAPulse*fCAPulse*fCAPulse;
+		Effect_ChromaticAberration_SetInstanceValues(mlEffectID, fAmount*(0.008f + fCAPulse*0.01)*mfEffectWhenReadingMul, mfEffectT);
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+		
+	void OnAction(int alAction, bool abPressed)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnDraw(float afTimeStep)
+	{
+		if(mfFlashAmount<=0) return;
+		
+		float fAmount = mfFlashDir > 0 ? 	cMath_Easing(eEasing_CircIn, mfFlashAmount) :
+											cMath_Easing(eEasing_CubicIn, mfFlashAmount);
+		
+		cLux_GetGameHudSet().DrawGfx(	mpGfxWhiteFlash, 
+										cLux_GetHudVirtualStartPos() + cVector3f(0,0,10),
+										cLux_GetHudVirtualSize(),
+										cColor(1.0f, 1.0f, 3.0f, 1)*mfFlashAmount);
+	}
+	
+	//------------------------------------------------------------
+
+	void OnPostRender(float){}
+	void OnEnterContainer(const tString&in){}
+	void OnLeaveContainer(const tString&in){}
+	void AppGotInputFocus(){}
+	void AppLostInputFocus(){}	
+	void OnAnalogInput(int alAnalogId, const cVector3f &in avAmount){}
+	void OnExitPressed(){}
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// PUBLIC METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+
+	float GetMoveMul()
+	{
+		return cMath_Max(cMath_Easing(eEasing_CubicOut, Player_GetHealth()), 0.5f);
+	}
+	
+	//------------------------------------------------------------
+	
+	float GetLookMul()
+	{
+		return 1.0f;
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetFlowerSwallows(bool abX)
+	{
+		if(abX==false)	
+		{
+			if(mlUseWauFlowerStage>1)
+				mlUseWauFlowerStage =0;
+		}
+		else
+		{
+			if(mlUseWauFlowerStage<2)
+				mlUseWauFlowerStage = 2;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetAllowCathComment(bool abX)
+	{
+		mbAllowCathComment = abX;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{		
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+
+	int mlEffectID = -1;
+	float mfEffectWhenReadingMul=1.0f;
+	
+	bool mbFlowerSwallows=true;
+	
+	float mfInfectionaAppearCount;
+	
+	[nosave] cGuiGfxElement@ mpGfxWhiteFlash;
+	
+	//------------------------------------------------------------
+	
+	//------------------------------------------------------------
+	
+	tID mDrainEntityID = tID_Invalid;
+	float mfDrainEnergy = 0.0f;
+	
+	float mfRechargeTime=0;
+	float mfRechargeZoomInAmount=0;
+	
+	bool mbDrainCompleted=false;
+	
+	float mfPitchMinLimit;
+	float mfPitchMaxLimit;
+	
+	float mfFlashAmount=0;
+	float mfFlashDir=1;
+	bool mbFlashStarted=false;
+	
+	bool mbCathCommentMade=false;
+	bool mbAllowCathComment=false;
+	
+	bool mbTentacleStart=false;
+	
+	int mlUseWauFlowerStage=0;
+	
+	float mfEffectT=0;
+	
+	float mfEffectHealth=1;
+	
+	bool mbHasMadeCommentOnHealthGain=false;
+	bool mbGainedHealthFromInteraction=false;
+	
+	array <tID> mvRechargeObjects;
+	bool mbRechargeObjectsPulsing=false;
+	
+	//------------------------------------------------------------
+}
+
+//------------------------------------------------------------

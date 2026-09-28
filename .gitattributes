@@ -1,0 +1,11 @@
+* -text
+*.md text eol=lf
+*.py text eol=lf
+*.c text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.inc text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+# Preserve shipped game overlays and binary assets byte-for-byte.
+runtime/** -text

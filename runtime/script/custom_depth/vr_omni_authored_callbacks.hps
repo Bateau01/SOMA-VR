@@ -1,0 +1,19 @@
+// S26BI: exact authored pickup callbacks for fallback-created Omni carriers.
+// Only implemented campaign callbacks are restored. Theta exit grants its Tool
+// with callbacks disabled; its stale PickupCathTool metadata has no definition.
+tString VR_AuthoredOmniPickup(const tString &in map, const tString &in name)
+{
+    if(map=="01_01_upsilon_awake" && name=="OmniTool_Configured") return "OmniTool_Configured_OnPickUp";
+    if(map=="01_01_upsilon_awake" && name=="OmniTool_NotConfigured") return "OmniTool_Configured_OnPickUp";
+    if(map=="01_01_upsilon_awake" && name=="OmniTool") return "OmniTool_OnPickUp";
+    if(map=="02_01_ms_curie_outside" && name=="CathTool_WithChip") return "CathToolCortexChip_OnPickUp";
+    if(map=="02_03_delta" && name=="CathTool") return "PickupCathTool";
+    if(map=="02_03_delta" && name=="CathTool_Crashed") return "PickupCathTool";
+    if(map=="02_04_theta_outside" && name=="CathTool2") return "CathTool2_OnPickUp";
+    if(map=="02_05_theta_inside" && name=="CathTool") return "OnPickUpCathBox";
+    if(map=="03_02_omicron_inside" && name=="CathTool_Placed") return "CathTool_Placed_OnPickUp";
+    if(map=="04_01_tau_outside" && name=="CathTool") return "PickupCathTool";
+    if(map=="04_03_tau_escape" && name=="CathBoxTool") return "CathBox_OnPickUp";
+    if(map=="05_01_phi_inside" && name=="CathBoxTool") return "CathBox_OnPickUp";
+    return "";
+}

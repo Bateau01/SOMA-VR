@@ -1,0 +1,321 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+#include "helpers/helper_modules.hps"
+#include "helpers/helper_player.hps"
+#include "base/HeroStatsHandler_Types.hps"
+#include "helpers/helper_game.hps"
+
+bool _HPL3VR_HealingActive()
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    return cScript_GetGlobalReturnBool();
+}
+
+class cScrPropEnergySource : iScrProp, iScrProp_Interface
+{		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{	
+		mfCurrentEnergy = 1.0f;
+		float fOverrideEnergy = apInstanceVars.GetVarFloat("EnergyAvailable", -1.0f);
+		if (fOverrideEnergy>=0.0f)
+			mfCurrentEnergy = fOverrideEnergy;
+			
+		msDrainCallback = apInstanceVars.GetVarString("DrainedCallback", "");
+				
+		if(mfCurrentEnergy <= 0)
+		{
+			mBaseObj.SetEffectsActive(false,false);
+			mBaseObj.SetEffectBaseColor(cColor(0,0));
+			mBaseObj.StopAllAnimations(0);
+			mBaseObj.GetMeshEntity().SetDiffuseColorMul(cColor(1,0));
+		}
+		
+		mbInteraction = !apInstanceVars.GetVarBool("InteractionDisabled", false);
+		if (mbInteraction)
+		{
+			EyeTracking_RegisterEntity(mBaseObj.GetID(), true, false, true, 15.0f, 3.0f);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnAfterWorldLoad()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnUpdateAutoSleep()
+	{
+		return true; // VR contact is polled by the existing PlayerEnergyHandler flower list.
+	}
+	
+		
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+    [nosave] cVector3f mvVRMouth;
+    [nosave] bool mbVRStarting=false;
+    [nosave] int mlVRHealEvidence=0;
+    bool VR_CanStartHeal()
+    {
+        return mBaseObj.IsActive() && !mBaseObj.GetInteractionDisabled() &&
+            !mBaseObj.IsInteractedWith() && mfCurrentEnergy>0 &&
+            cLux_GetPlayer().IsActive() && cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Normal &&
+            !cScript_GetGlobalVarBool("UsingWauFlower") && !ToolHandler_GetPlayerCarriesHeavyTool();
+    }
+    void _Global_VRBeginHeal()
+    {
+        if(!_HPL3VR_HealingActive() || mbVRStarting || !VR_CanStartHeal()) return;
+        iPhysicsBody@ pBody=mBaseObj.GetMainBody();
+        if(pBody is null) return;
+        mbVRStarting=true;
+        // Use the native entity wrapper so general interaction callbacks run too.
+        mBaseObj.OnInteract(0,pBody,mvVRMouth,"");
+        mbVRStarting=false;
+    }
+	void OnUpdate(float afTimeStep) {}
+    void _Global_VRProbeHeal()
+    {
+        if(!_HPL3VR_HealingActive()) return;
+        if(mlVRHealEvidence<2)
+        {
+            mlVRHealEvidence++;
+            cLux_AddDebugMessage("S26V flower probe "+mBaseObj.GetName()+" state="+cLux_GetPlayer().GetCurrentStateId()+" energy="+mfCurrentEnergy+" disabled="+mBaseObj.GetInteractionDisabled());
+        }
+        if(!VR_CanStartHeal()) return;
+        if((mBaseObj.GetPosition()-cLux_GetPlayer().GetCamera().GetPosition()).Length()>2.0f) return;
+        cMeshEntity@ mesh=mBaseObj.GetMeshEntity();
+        if(mesh is null) return;
+        // Live petal tips define the opening. The effect light is above it.
+        cVector3f rim(0);
+        for(int i=0;i<8;i++)
+        {
+            cBoneState@ bone=mesh.GetBoneStateFromName("j_tip_0"+i);
+            if(bone is null) return;
+            rim+=bone.GetWorldPosition();
+        }
+        rim*=0.125f;
+        cVector3f axis=cMath_MatrixMul(mBaseObj.GetMatrix(),cVector3f(0,1,0))-cMath_MatrixMul(mBaseObj.GetMatrix(),cVector3f(0));
+        float length=axis.Length();
+        if(length<0.0001f) return;
+        axis*=1.0f/length;
+        cScript_RunGlobalFunc("PlayerEnergyHandler","cScrPlayerEnergyHandler","_Global_VRGetHealStage");
+        int stage=cScript_GetGlobalReturnInt();
+        mvVRMouth=rim;
+        if(stage>=2) mvVRMouth-=axis*0.070f;
+        cScript_RunGlobalFunc("VRHEAL",mBaseObj.GetName(),"C");
+        iPhysicsBody@ body=mBaseObj.GetMainBody();
+        cScript_RunGlobalFunc("VRHEAL",mBaseObj.GetName(),"D");
+        if(body is null) return;
+        tString data=""+mvVRMouth.x+","+mvVRMouth.y+","+mvVRMouth.z+","+stage+","+axis.x+","+axis.y+","+axis.z;
+        cScript_RunGlobalFunc("VRHEAL",mBaseObj.GetName(),data);
+    }
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		if(ToolHandler_GetPlayerCarriesHeavyTool()) return false;
+		
+		return mfCurrentEnergy>0;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		if ( mfCurrentEnergy>0.f ) HeroStat_IncreaseAmount(eHeroStats_UsedWauDevices,1);
+	
+		if (mBaseObj.IsInteractedWith()) return false;
+		
+		if(ToolHandler_IsActive())
+		{
+			ToolHandler_SetActive(false);
+		}
+		
+		
+		cScript_SetGlobalArgID(0, mBaseObj.GetID());
+		cScript_SetGlobalArgFloat(1, mfCurrentEnergy);
+		cScript_RunGlobalFunc("PlayerEnergyHandler", "cScrPlayerEnergyHandler", "_Global_BeginDrain");
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_Recharge;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPECFIC
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetEnergy(float afX)
+	{
+		mfCurrentEnergy = afX;
+		
+		if(mfCurrentEnergy <= 0)
+		{
+			mBaseObj.SetEffectBaseColor(cColor(0,0));
+			mBaseObj.StopAllAnimations(0);
+			mBaseObj.GetMeshEntity().SetDiffuseColorMul(cColor(1,0));
+		}
+		else
+		{
+			mBaseObj.SetEffectBaseColor(cColor(1,1));
+			mBaseObj.PlayAnimation("idle", 0.3f, true);
+			mBaseObj.GetMeshEntity().SetDiffuseColorMul(cColor(1,1));
+		}
+		
+		cLux_AddDebugMessage("AnimationPlaying: "+mBaseObj.GetAnimationIsPlaying());
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetEnergy()
+	{
+		SetEnergy(cScript_GetGlobalArgFloat(0));
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_OnDrainComplete()
+	{
+		SetEnergy(cScript_GetGlobalArgFloat(0));
+			
+		if (msDrainCallback!="")
+		{
+			cLuxMap @pMap = cLux_GetCurrentMap();
+			if(pMap.ScriptPrepare("void "+msDrainCallback+"(const tString &in asEntity)"))
+			{
+				tString sName = mBaseObj.GetName();
+				pMap.SetArgString(0, sName);
+				pMap.ScriptExecute();
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		//mBaseObj.DrawProjDebugText("Energy: "+mEnergySource.mfCurrentEnergy +" / "+mEnergySource.mfMaxEnergy);
+		
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	float mfPulseT=0;
+	
+	float mfCurrentEnergy;
+	tString msDrainCallback;
+	
+	bool mbInteraction = false;
+	bool mbEyeTrackingZoomActive = false;
+	
+	//------------------------------------------------------------
+}

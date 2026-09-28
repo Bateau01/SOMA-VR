@@ -1,0 +1,300 @@
+
+bool _HPL3VR_HideComfortEffect(const tString&in key)
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    if(!cScript_GetGlobalReturnBool()) return false;
+    return cScript_RunGlobalFunc("VRFX",key,"Q");
+}
+#include "effect/Effects.hps"
+
+/////////////////////////////////////////
+// SETTINGS - IMAGE TRAIL
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+class cFadeInstance
+{
+	//----------------------------------
+	
+	cFadeInstance()
+	{
+	}
+
+	//----------------------------------
+	
+	cFadeInstance(int alID, float afGoal, float afFadeInTime, float afStayTime, float afFadeOutTime)
+	{
+		mlStep = 0;
+		mlID = alID;
+
+		mfValue = 0;
+		mfGoal = afGoal;
+		
+		mbNeverFadeOut = afStayTime<0;
+
+		if(afFadeInTime==0) afFadeInTime = 0.000001f;
+		if(afStayTime==0) afStayTime = 0.000001f;
+		if(afFadeOutTime==0) afFadeOutTime = 0.000001f;
+
+		mfFadeInSpeed = afGoal / afFadeInTime;
+		mfStaySpeed = mbNeverFadeOut ? 0 : 1.0f / afStayTime;
+		mfFadeOutSpeed = afGoal / afFadeOutTime;
+	}
+	
+	//----------------------------------
+
+	bool Update(float afTimeStep)
+	{		
+		//////////////////////
+		// Fade in
+		if(mlStep ==0)
+		{
+			mfValue += mfFadeInSpeed * afTimeStep;
+			if(mfValue >= mfGoal)
+			{
+				mfValue = mfGoal;
+				mlStep=1;
+				mfCount = 1.0f;
+			}
+		}
+		//////////////////////
+		// Stay
+		else if(mlStep ==1)
+		{
+			if(mbNeverFadeOut) return true;
+			
+			mfCount -= mfStaySpeed * afTimeStep;
+			if(mfCount <= 0)
+			{
+				mlStep = 2;
+			}
+		}
+		//////////////////////
+		// Fade out
+		else if(mlStep ==2)
+		{
+			mfValue -= mfFadeOutSpeed * afTimeStep;
+			if (mfValue <= 0)
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	//----------------------------------
+	
+	float mfValue;
+
+	int mlStep;
+	int mlID;
+
+	float mfGoal;
+	float mfCount;
+	float mfFadeInSpeed;
+	float mfStaySpeed;
+	float mfFadeOutSpeed;
+	
+	bool mbNeverFadeOut;
+}
+
+//------------------------------------------------------------
+
+class cScrEffect_ImageTrail : iScrEffect, iScrEffect_Interface, iScrEffect_ImageTrail
+{
+
+	//----------------------------------
+	
+	void Init()
+	{
+		mfDirectAmount = 0;
+		mbEffectLoaded = false;
+		mlIDPool = 0;
+	//	CreatePostEffect();
+	}
+	
+	//----------------------------------
+	
+	void OnDestroy()
+	{
+		if(mpEffect is null) return;
+		
+		cLux_GetViewport().GetPostEffectComposite().RemovePostEffect(mpEffect);
+		cGraphics_DestroyPostEffect(mpEffect);
+		@mpEffect = null;
+	}
+	
+	//---------------------------------
+
+	void CreatePostEffect()
+	{
+		if(mbEffectLoaded == false)
+		{
+			//////////////////
+			// Create the post effect if null
+			@mpEffect = cast<cPostEffect_ImageTrail@>(cLux_GetViewport().GetPostEffectComposite().GetPostEffectFromType("ImageTrail"));
+
+			if(mpEffect is null)
+			{
+				@mpEffect = cGraphics_CreatePostEffect_ImageTrail();
+				cLux_GetViewport().GetPostEffectComposite().AddPostEffect(mpEffect, -100000);
+			}
+
+			mbEffectLoaded = true;
+		}
+	}
+
+	void LoadUserConfig()
+	{
+		cConfigFile@ pConfig = cLux_GetUserConfig();
+		mbScreenDistortionsActive = pConfig.GetBool("Gameplay", "ScreenDisortion", true);	
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PULBIC METHODS
+	/////////////////////////////////////////
+	
+	//----------------------------------
+
+	
+	int Start(float afAmount, float afFadeInTime, float afStayTime, float afFadeOutTime)
+	{
+		mBaseObj.SetActive(true);
+
+		int lID = mlIDPool++;
+		mvFadeInstances.push_back(cFadeInstance(lID, afAmount, afFadeInTime, afStayTime, afFadeOutTime));
+
+		CreatePostEffect();
+		
+		return lID;
+	}
+	
+	//---------------------------------
+	
+	void SetDirectAmount(float afAmount)
+	{
+		mfDirectAmount = afAmount;
+		
+		mBaseObj.SetActive(true);
+	}
+	
+	//---------------------------------
+
+	void FadeOut(int alID, float afFadeOutTime)
+	{
+		for(int i = 0; i < mvFadeInstances.size(); ++i)
+		{
+			if(mvFadeInstances[i].mlID == alID)
+			{
+				mvFadeInstances[i].mlStep = 2;
+				mvFadeInstances[i].mfFadeOutSpeed = mvFadeInstances[i].mfGoal / cMath_Max(0.00001f, afFadeOutTime);
+			}
+		}
+	}
+	
+	//----------------------------------
+
+	void ClearAll()
+	{
+		mfDirectAmount = 0.0f;
+		mvFadeInstances.resize(0);
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL CALLBACKS
+	/////////////////////////////////////////
+	
+	
+	//----------------------------------
+	
+	void OnStart()
+	{
+	}
+
+	//----------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	}
+	
+	//----------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	}
+
+	//----------------------------------
+	
+	void Reset()
+	{
+		mfDirectAmount =0;
+		mvFadeInstances.resize(0);
+
+		if(mbEffectLoaded)
+		{
+			mpEffect.SetParams(0.0f);
+		}	
+	}
+
+	//----------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		CreatePostEffect();
+		
+		float fAmount = 0;
+
+		for(int i = 0; i < mvFadeInstances.size(); ++i)
+		{
+			if(mvFadeInstances[i].Update(afTimeStep) == false)
+			{
+				////////////
+				// It has finished, remove it
+				mvFadeInstances[i--] = mvFadeInstances[mvFadeInstances.size()-1];
+				mvFadeInstances.pop_back();
+			}
+			else
+			{
+				// Get the largest active amount
+				fAmount = cMath_Max(fAmount, mvFadeInstances[i].mfValue);
+			}
+		}
+		
+		fAmount = cMath_Max(mfDirectAmount, fAmount);
+
+		if(mbScreenDistortionsActive == false) fAmount = 0.0f;
+
+		mpEffect.SetParams(_HPL3VR_HideComfortEffect("HideTrails") ? 0.0f : fAmount);
+		mBaseObj.SetActive(mvFadeInstances.empty() == false || mfDirectAmount>0);
+	}
+
+	void OnDraw(float afTimeStep)
+	{
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//----------------------------------
+
+	array<cFadeInstance> mvFadeInstances;
+	[nosave] cPostEffect_ImageTrail@ mpEffect = null;
+	[nosave] bool mbEffectLoaded = false;
+	[nosave] bool mbScreenDistortionsActive = true;
+
+	int mlIDPool;
+	
+	float mfDirectAmount;
+
+	//----------------------------------
+}

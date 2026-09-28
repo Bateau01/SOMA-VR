@@ -1,0 +1,420 @@
+#include "interfaces/UserModule_Interface.hps"
+#include "modules/ModuleInterfaces.hps"
+#include "helpers/helper_modules.hps"
+
+//------------------------------------------------------------
+
+
+class cHighlightObject
+{
+	tID m_idEntity;
+	
+	float mfPreOnScreenTimeCount=0;
+	float mfFlashCount=0;
+	float mfLightLevel;
+	
+	float mfRemoveTimeCount=0;
+	cColor mColorMul = cColor_White;
+}
+
+//------------------------------------------------------------
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+float gfHightlightEffectMaxDistance = 3;
+float gfHightlightEffectMaxDistanceSqr = 3*3;
+
+cVector3f gvHighligEffectGridSize = cVector3f(1, 1.5f, 1);
+
+//------------------------------------------------------------
+
+class cScrHighlightEffectHandler : iScrUserModule, iScrUserModule_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	}
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void PreloadData(cLuxMap @apMap)
+	{
+	}
+
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	}
+	
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetActive(bool abX)
+	{
+	}
+	
+	//------------------------------------------------------------
+
+	void Update(float afTimeStep)
+	{	
+	}
+	
+	//------------------------------------------------------------
+	
+	void VariableUpdate(float afDeltaTime)
+	{
+		UpdateAddObjects(afDeltaTime);
+		UpdateHighLightEffect(afDeltaTime);
+	}
+
+	//------------------------------------------------------------
+	
+	void UpdateHighLightEffect(float afTimeStep)
+	{
+		mfCheckOnScreenCount -=afTimeStep;
+		if(mfCheckOnScreenCount<0) mfCheckOnScreenCount=0;
+		
+		if(mfCheckOnScreenCount == 0 && mvObjects.size() > 0)
+		{
+			mlCheckOnScreenId = (mlCheckOnScreenId + 1) % mvObjects.size();
+		}
+		
+		if(cLux_GetPlayer().GetCharacterBody() is null) return;
+		
+		cVector3f vPlayerPos = cLux_GetPlayer().GetCharacterBody().GetPosition();
+		
+		for(int i=0; i<mvObjects.size(); ++i)
+		{
+			cHighlightObject @pObject = @mvObjects[i];
+			iLuxEntity @pEntity = cLux_ID_Entity(pObject.m_idEntity);
+			if(pEntity is null) continue;
+			
+			/////////////////////////////
+			// Wait a little bit before flashing
+			if(pObject.mfPreOnScreenTimeCount < 0.7f)
+			{
+				/////////////////////////
+				// Check if it is still on screen
+				if(mfCheckOnScreenCount==0 && i == mlCheckOnScreenId)
+				{
+					if(pEntity.CheckIsOnScreen(true)==false)
+					{
+						mvObjects[i] = mvObjects[mvObjects.size()-1];
+						mvObjects.pop_back();
+						mfCheckOnScreenCount = 0.5f;
+						--i;
+						continue;
+					}
+				}
+				
+				/////////////////////////
+				// Check if within distance	
+				if(cMath_Vector3DistSqr(vPlayerPos, pEntity.GetPosition()) > gfHightlightEffectMaxDistanceSqr)
+				{
+					pObject.mfPreOnScreenTimeCount =0;
+					continue;
+				}
+				
+				pObject.mfPreOnScreenTimeCount += afTimeStep;
+				continue;
+			}
+			
+			////////////////////////////////////
+			// Update the flash 
+			if(pObject.mfFlashCount < 1)
+			{
+				pObject.mfFlashCount += afTimeStep*1.25f;
+				if(pObject.mfFlashCount>=1) pObject.mfFlashCount=1;
+				
+				float fY = pObject.mfFlashCount;
+				float fT =1-cMath_Abs(2*fY-1);
+				fT = cMath_Easing(eEasing_CircInOut, fT);
+				fY = cMath_Easing(eEasing_QuadInOut, fY);
+				
+				//fT *= cMath_Easing(eEasing_QuadIn, cMath_Min(pObject.mfLightLevel, 1.0f));
+				
+				
+				cLux_GetEffectHandler().AddGlowObject(pEntity, fT*13, fY);
+				
+				//Debug:
+				//if(pObject.mfFlashCount==1) pObject.mfFlashCount=0;
+			}
+			////////////////////////////////////
+			// Check if we can reset and flash again.
+			else
+			{
+				if(mfCheckOnScreenCount==0 && pEntity.CheckIsOnScreen(true)==false)
+				{
+					pObject.mfRemoveTimeCount += 0.5f;
+					
+					if(pObject.mfRemoveTimeCount>5.0f)
+					{
+						mvObjects[i] = mvObjects[mvObjects.size()-1];
+						mvObjects.pop_back();
+						--i;
+					}
+				}
+			}
+		}
+		
+		if(mfCheckOnScreenCount==0) mfCheckOnScreenCount =0.125f;
+	}
+	
+	//------------------------------------------------------------
+
+	cVector3f mvCheckBoxMin;
+	cVector3f mvCheckBoxMax;
+	float mfCheckAddObjectsCount=0;
+	void UpdateAddObjects(float afTimeStep)
+	{
+		if(cLux_GetPlayer().GetCharacterBody() is null) return;
+		
+		mfCheckAddObjectsCount-=afTimeStep;
+		if(mfCheckAddObjectsCount >0) return;
+		mfCheckAddObjectsCount = 1.0f / 15.0f;
+		
+		////////////////////
+		// Setup variables
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		
+		//cLux_AddDebugMessage("Pos: "+mvCurrentGrid);
+		
+		////////////////////
+		// Get current area to check
+		mvCheckBoxMin = cVector3f(-gvHighligEffectGridSize.x*0.5f,-gvHighligEffectGridSize.y*0.5f,-gvHighligEffectGridSize.z*0.5f);
+		mvCheckBoxMax = cVector3f(gvHighligEffectGridSize.x*0.5f, gvHighligEffectGridSize.y*0.5f, gvHighligEffectGridSize.z*0.5f);
+		
+		cVector3f vPos = pCharBody.GetPosition() + pCharBody.GetForward()*(gfHightlightEffectMaxDistance*0.5 + 0.1f);
+		vPos += mvCheckBoxMin;
+		vPos += mvCurrentGrid;
+		
+		mvCheckBoxMin += vPos;
+		mvCheckBoxMax += vPos;
+		
+		
+		array<iPhysicsBody@> vBodies;
+		cLux_GetCurrentMap().GetPhysicsWorld().GetBodiesInAABB(mvCheckBoxMin, mvCheckBoxMax, vBodies);
+		
+		////////////////////
+		// Get all entities that need a highlight
+		bool bFoundObject=false;
+		iPhysicsBody @pBody;
+		iLuxEntity @pEntity;
+		for(int i=0; i<vBodies.size();++i)
+		{
+			@pBody = vBodies[i];
+			if(pBody.IsActive()==false) continue;
+			
+			@pEntity = cLux_GetBodyEntity(pBody);
+			if(pEntity is null) continue;
+			
+			if(	pEntity.GetClassName() != "cScrPropTool" &&
+				//pEntity.GetClassName() != "cScrPropDatamine" &&
+				pEntity.GetClassName() != "cScrPropReadable" &&
+				//pEntity.GetClassName() != "cScrAreaDatamine" &&
+				pEntity.GetClassName() != "cScrPropCatherineTool" &&
+				pEntity.GetClassName() != "cScrPropHandheldTerminal")
+			{
+				continue;	
+			}
+			
+			// S26BV: the physics query already supplied the exact current-map entity.
+            cScript_SetGlobalReturnBool(false);
+            if (!pEntity.ScriptPrepare("void _Global_CanBeHighlighted()") || !pEntity.ScriptExecute()) continue;
+			if(cScript_GetGlobalReturnBool()==false) continue;
+			
+			tID idEntity = cScript_GetGlobalArgID(0);
+			
+			iLuxEntity@ pEntity = cLux_ID_Entity(idEntity);
+			if(pEntity is null) continue;
+			if(pEntity.GetMeshEntity() is null) continue;
+			if(ObjectExists(idEntity)) continue;
+			
+			if(pEntity.CheckIsOnScreen(true)==false){
+				continue;		
+			}
+			
+			//cLux_AddDebugMessage("LightLevel check!");		
+			float fLightLevel = cLux_GetLightLevelAtPos(pEntity.GetPosition(), null, 0);
+			if(fLightLevel<0.1) continue;
+			
+			
+			cHighlightObject object;
+			object.m_idEntity = idEntity;
+			object.mfLightLevel = fLightLevel;
+			mvObjects.push_back(object);
+			bFoundObject=true;
+			break;
+		}
+		
+		if(bFoundObject) return;
+		
+		////////////////
+		// Warp around grid and update one part per frame
+		mvCurrentGrid.x += gvHighligEffectGridSize.x;
+
+		if(mvCurrentGrid.x >= gfHightlightEffectMaxDistance)
+		{
+			mvCurrentGrid.x = 0;
+			mvCurrentGrid.z += gvHighligEffectGridSize.z;
+
+			if(mvCurrentGrid.z >= gfHightlightEffectMaxDistance)
+			{
+				mvCurrentGrid.z = 0;
+				mvCurrentGrid.y += gvHighligEffectGridSize.y;
+
+				if(mvCurrentGrid.y >= 3) mvCurrentGrid.y = 0;
+			}
+		}
+	}
+	
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnAction(int alAction, bool abPressed)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/*void OnRenderSolid(cRendererCallbackFunctions@ apFunctions)
+	{
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		
+		
+		apFunctions.GetLowLevelGfx().DrawBoxMinMax(mvCheckBoxMin, mvCheckBoxMax, cColor(5,1));
+	}*/
+	
+	
+	//------------------------------------------------------------
+	
+	void OnGui(float afTimeStep)
+	{	
+		
+		
+	}	
+	
+	//------------------------------------------------------------
+	
+	void OnDraw(float){}
+	void OnPostRender(float){}
+	void OnEnterContainer(const tString&in){}
+	void OnLeaveContainer(const tString&in){}
+	void AppGotInputFocus(){}
+	void AppLostInputFocus(){}	
+	void OnAnalogInput(int alAnalogId, const cVector3f &in avAmount){}
+	void OnExitPressed(){}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool ObjectExists(tID a_idEntity)
+	{
+		for(int i=0; i<mvObjects.size(); ++i)
+		{
+			if(mvObjects[i].m_idEntity == a_idEntity) return true;
+		}
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	float mfCheckOnScreenCount=0;
+	int mlCheckOnScreenId = 0;
+
+	cVector3f mvCurrentGrid = cVector3f(0,0,0);
+	
+	//------------------------------------------------------------
+	
+	[nosave] array<cHighlightObject> mvObjects;
+	
+	//------------------------------------------------------------
+	
+}

@@ -1,0 +1,718 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+
+#include "helper/helper_modules.hps"
+
+// H5756K_VR_OMNITOOL_PHYSICAL_UPGRADE_CHIPS
+// H5756S_CORTEX_PRESENTATION_CONTINUITY: do not force story activation; whenever an authored upgrade-chip entity IS active, keep its real world mesh visible before and after physical acquisition.
+// H5756Z_VR_DELTA_REPLACEMENT_TOOLCHIP: historical Delta physical-carrier pass.
+ // H5756AA_VR_LEFT_SHOULDER_KEY_INVENTORY: exact registered story Tools retain a physical world body and can be stowed/retrieved without altering stock inventory/use callbacks.
+// H5756AF_VR_SHOULDER_ROUNDTRIP_OMICRON: shoulder retrieval ACKs only after exact GetMainBody succeeds; generic key-item physicalization remains inventory/callback-authorized.
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+bool _HPL3VR_RuntimeActive_PropTool()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+class cScrPropTool : iScrProp, iScrProp_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		//mBaseObj.SetScriptCollisionCallbackActive(true);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		if (!_HPL3VR_RuntimeActive_PropTool())
+		{
+				msHudObjectEntity = apVars.GetVarString("HudObjectEntity", "");
+				
+				msPickupCallback = apInstanceVars.GetVarString("PickupCallback", "");
+				msUseCallback = apInstanceVars.GetVarString("UseCallback", apVars.GetVarString("UseCallback", ""));
+				msDropCallback = apInstanceVars.GetVarString("DropCallback", "");
+				msCanBeUsedCallback = apInstanceVars.GetVarString("CanBeUsedCallback", apVars.GetVarString("CanBeUsedCallback", ""));
+				
+				msInventoryNameTextEntry = apVars.GetVarString("InventoryTextEntry", "");
+				
+				msInventoryIcon = apVars.GetVarString("InventoryIcon", "");
+				
+				msHandAnimationSuffix = apVars.GetVarString("HandAnimationSuffix", "generic");
+				
+				mbIsHeavy = apVars.GetVarBool("IsHeavy", false);
+				
+				mCustomUseIcon = PlayerTypes_StringToCrossHairState( apVars.GetVarString("CustomUseIcon", "UseToolAction"));
+				
+				/////////////////////////
+				// Instance Vars
+				mbAutoHide = apInstanceVars.GetVarBool("AutoHideAfterPickup", true);
+				mbHighlightActive = apInstanceVars.GetVarBool("HighlightActive", true);
+			
+				//////////////
+				// Preload entity and icon
+				cLux_PreloadEntity(msHudObjectEntity);
+				cLux_PreloadGuiGfx(msInventoryIcon, eImGuiGfx_Image);
+			return;
+		}
+		msHudObjectEntity = apVars.GetVarString("HudObjectEntity", "");
+		
+		msPickupCallback = apInstanceVars.GetVarString("PickupCallback", "");
+		msUseCallback = apInstanceVars.GetVarString("UseCallback", apVars.GetVarString("UseCallback", ""));
+		msDropCallback = apInstanceVars.GetVarString("DropCallback", "");
+		msCanBeUsedCallback = apInstanceVars.GetVarString("CanBeUsedCallback", apVars.GetVarString("CanBeUsedCallback", ""));
+		
+		msInventoryNameTextEntry = apVars.GetVarString("InventoryTextEntry", "");
+		
+		msInventoryIcon = apVars.GetVarString("InventoryIcon", "");
+		
+		msHandAnimationSuffix = apVars.GetVarString("HandAnimationSuffix", "generic");
+		
+		mbIsHeavy = apVars.GetVarBool("IsHeavy", false);
+		
+		mCustomUseIcon = PlayerTypes_StringToCrossHairState( apVars.GetVarString("CustomUseIcon", "UseToolAction"));
+		
+		/////////////////////////
+		// Instance Vars
+		mbAutoHide = apInstanceVars.GetVarBool("AutoHideAfterPickup", true);
+		mbHighlightActive = apInstanceVars.GetVarBool("HighlightActive", true);
+
+		// H57.56K: brain/cortex chip is authored massless + non-colliding. Enable
+		// collision ONLY for that exact Prop_Tool while it remains stock/static so a
+		// fresh physical Grip can reach the existing zero-mass contact semantics.
+		// Security chip is already a normal 0.2kg colliding body and is untouched here.
+		VR_PrepareUpgradeChipContact();
+		if (VR_IsPhysicalKeyItem() && mBaseObj.IsActive())
+		{
+			cMeshEntity@ pMeshVR = mBaseObj.GetMeshEntity();
+			if (pMeshVR !is null) pMeshVR.SetVisible(true);
+		}
+
+		//////////////
+		// Preload entity and icon
+		cLux_PreloadEntity(msHudObjectEntity);
+		cLux_PreloadGuiGfx(msInventoryIcon, eImGuiGfx_Image);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+    [nosave] float mfVRTracerAcquirePoll=0;
+    void OnUpdate(float afTimeStep)
+    {
+        if(mBaseObj.GetName()!="Tracer_Fluid") return;
+        mfVRTracerAcquirePoll-=afTimeStep;if(mfVRTracerAcquirePoll>0) return;mfVRTracerAcquirePoll=0.1f;
+        if(!mBaseObj.IsActive() || !_HPL3VR_RuntimeActive_PropTool()) return;
+        iPhysicsBody@ body=mBaseObj.GetMainBody();
+        if(body is null || !cScript_RunGlobalFunc("VRPHONEQ",""+body.GetUniqueID(),"H")) return;
+        cScript_SetGlobalArgString(0,mBaseObj.GetName());cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_GetToolIsInInventory");
+        if(!cScript_GetGlobalReturnBool()) PickUpTool(false,true);
+    }
+	
+	//------------------------------------------------------------
+	
+	void OnPostUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+		 
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+		if (_HPL3VR_RuntimeActive_PropTool() && abX && VR_IsPhysicalKeyItem())
+		{
+			cMeshEntity@ pMesh = mBaseObj.GetMeshEntity();
+			if (pMesh !is null) pMesh.SetVisible(true);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in aContactData)
+	{
+		//Debug:
+		//cLux_AddDebugMessage("Body "+apBody.GetName()+" vs "+apCollideBody.GetName() + "Nrm: " +aContactData.mfMaxContactNormalSpeed + " Tan: "+aContactData.mfMaxContactTangentSpeed, false);
+	}
+	
+	//------------------------------------------------------------
+	
+	bool VR_IsPhysicalUpgradeChip()
+	{
+		if (!_HPL3VR_RuntimeActive_PropTool()) return false;
+		tString sName = mBaseObj.GetName();
+		return msHandAnimationSuffix == "securitychip" ||
+			msHandAnimationSuffix == "brainchip" ||
+			sName == "KateChip" || sName == "GoyaChip";
+	}
+
+	bool VR_IsShoulderKeyItem()
+	{
+		if (!_HPL3VR_RuntimeActive_PropTool()) return false;
+		cScript_SetGlobalArgString(0, mBaseObj.GetName());
+		cScript_SetGlobalReturnBool(false);
+		cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRShoulderNameEligible");
+		return cScript_GetGlobalReturnBool();
+	}
+
+	bool VR_IsPhysicalKeyItem()
+	{
+		return VR_IsPhysicalUpgradeChip() || VR_IsShoulderKeyItem();
+	}
+
+	bool VR_IsBrainUpgradeChip()
+	{
+		if (!_HPL3VR_RuntimeActive_PropTool()) return false;
+		return msHandAnimationSuffix == "brainchip";
+	}
+
+	void VR_PrepareUpgradeChipContact()
+	{
+		if (!_HPL3VR_RuntimeActive_PropTool()) return;
+		if (!VR_IsBrainUpgradeChip()) return;
+		iPhysicsBody@ pBody = mBaseObj.GetMainBody();
+		if (pBody is null) return;
+		pBody.SetCollide(true);
+		pBody.SetCollideCharacter(false);
+	}
+
+    bool VR_RestoreElevatorChipCallbacks()
+    {
+        if(!_HPL3VR_RuntimeActive_PropTool() || mBaseObj.GetName()!="door_panel_chip_formatted") return false;
+        msUseCallback="door_panel_chip_OnUse";
+        msCanBeUsedCallback="door_panel_chip_CanBeUsed";
+        msPickupCallback="";msDropCallback="";
+        return true;
+    }
+
+	bool VR_EnableOwnedPhysicalUpgradeChip(bool abPublishPickup)
+	{
+		if (!VR_IsPhysicalKeyItem()) return false;
+		// H5756AV_VR_THETA_AUTHORED_PARENT_DETACH
+		// These two Theta Tools are authored as children before pickup: BrainScanChip
+		// rides a scan cylinder and chip_unformatted rides Brandon's hand. Stock HUD
+		// pickup can hide that relationship; a physical VR carrier cannot. Remove only
+		// those proven authored attachments before enabling dynamic physical ownership.
+		tString sThetaTool = mBaseObj.GetName();
+		if (sThetaTool == "BrainScanChip" || sThetaTool == "chip_unformatted")
+			Entity_RemoveEntityAttachment(sThetaTool);
+		// H5756AW_VR_OMICRON_BRAIN_PARENT_DETACH
+		// Omicron's BrokenRobotBrain is authored as a child of robot_brain_stem.
+		// Stock HUD pickup can hide that parent relationship, but the VR-owned Tool
+		// body must be free before HQ physical ownership begins. Scope this only to
+		// proven authored carriers; no generic Tool detach is added.
+		// S26BI: the baton and repaired chip also retain authored parent-motion
+        // attachments after stock pickup. Free these exact carriers before physics ownership.
+        if (sThetaTool == "BrokenRobotBrain" || sThetaTool == "StunRod" || sThetaTool == "ChipTool_Repaired")
+			Entity_RemoveEntityAttachment(sThetaTool);
+		mBaseObj.SetActive(true);
+		cMeshEntity@ pMeshVR = mBaseObj.GetMeshEntity();
+		if (pMeshVR !is null) pMeshVR.SetVisible(true);
+		mBaseObj.SetStaticPhysics(false);
+
+		tString sToolName = mBaseObj.GetName();
+		cScript_RunGlobalFunc("VROMNICHIP", sToolName, "B");
+		iPhysicsBody@ pBody = mBaseObj.GetMainBody();
+		cScript_RunGlobalFunc("VROMNICHIP", sToolName, "E");
+		if (pBody is null) return false;
+
+		pBody.SetCollide(true);
+		pBody.SetCollideCharacter(false);
+		if (pBody.GetMass() < 0.05f) pBody.SetMass(0.20f);
+		pBody.SetGravity(true);
+		pBody.SetAutoDisable(false);
+		mBaseObj.WakeUp();
+		// I re-publishes exact inventory-owned physical identity after save/retrieval.
+		// P remains reserved for the completed stock pickup transaction.
+		cScript_RunGlobalFunc("VROMNICHIP", sToolName, "I");
+		if (abPublishPickup) cScript_RunGlobalFunc("VROMNICHIP", sToolName, "P");
+		return true;
+	}
+
+	/////////////////////////////////////////
+	// INTERACTION
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+    bool VR_IsAuthoredToolPresentation(const tString &in name)
+    {
+        // Proven map displays and placement markers, never inventory carriers.
+        // ScanRoomSlot_Chip has a distinct, real-carrier removal route below.
+        return name=="ScanRoomSlot_InPos" || name=="ScanRoomSlot_OutPos" ||
+            name=="SimulationSlot_Left_OutPos" || name=="ChipTool_PreRepair" ||
+            name=="Chip_FullyRepaired" || name=="ComputerBrainInBody" ||
+            name=="ComputerBrainInBody_MoveTarget" || name=="PowerSourceInBody";
+    }
+
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+        if(_HPL3VR_RuntimeActive_PropTool() && msPickupCallback=="PowerpackPlugged_OnPickUp" &&
+            (mBaseObj.GetName()=="PowerpackPlugged_Lights" || mBaseObj.GetName()=="PowerpackPlugged_Cargo" || mBaseObj.GetName()=="PowerpackPlugged_SatFrameRoom")) return true;
+
+        if(_HPL3VR_RuntimeActive_PropTool() && VR_IsAuthoredToolPresentation(mBaseObj.GetName())) return false;
+		// H5756AT_VR_PHYSICAL_KEY_ITEM_GRAB_GATE
+		// Physical story Tools are world objects in VR. Their authored Active /
+		// InteractionDisabled state remains the exposure gate; the flatscreen
+		// ToolHandler focus/equip predicate must not suppress an otherwise-valid
+		// hand contact (Delta replacement chips were the hardware regression).
+		if (_HPL3VR_RuntimeActive_PropTool() && VR_IsPhysicalKeyItem()) return true;
+		return ToolHandler_CanPickOrUseTool();
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		PickUpTool(true, true);
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void PickUpTool(bool abEquipTool, bool abCallback)
+	{
+		if (!_HPL3VR_RuntimeActive_PropTool())
+		{
+				tString sToolName = mBaseObj.GetName();
+				
+				//////////////////////////
+				//Pick up callback
+				if(abCallback && msPickupCallback != "")
+				{
+					cLuxMap@ pMap = cLux_GetCurrentMap();
+					if(pMap.ScriptPrepare("bool "+msPickupCallback+"(const tString &in asName)" ) )
+					{
+						pMap.SetArgString(0, sToolName);
+						
+						if(pMap.ScriptExecute())
+						{
+							if(pMap.GetReturnBool()==false) return;
+						}
+					}
+				}
+				
+				//////////////////////////
+				//Disable entity
+				mBaseObj.SetActive(false);
+				
+				//////////////////////////
+				//Setup the tool interact state
+				cScript_SetGlobalArgString(0, sToolName);
+				cScript_SetGlobalArgString(1, msHudObjectEntity);
+				cScript_SetGlobalArgString(2, msUseCallback);
+				cScript_SetGlobalArgString(3, msDropCallback);
+				cScript_SetGlobalArgString(4, msCanBeUsedCallback);
+				cScript_SetGlobalArgBool(5, abEquipTool);
+				cScript_SetGlobalArgBool(6, mbAutoHide);
+				
+				cScript_SetGlobalArgString(7, msInventoryIcon);
+				cScript_SetGlobalArgString(8, msHandAnimationSuffix);
+				
+				cScript_SetGlobalArgBool(9, mbIsHeavy);
+				cScript_SetGlobalArgInt(10, mCustomUseIcon);
+				
+				cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_AddTool");
+			return;
+		}
+        tString sToolName = mBaseObj.GetName();
+        if(VR_IsAuthoredToolPresentation(sToolName)) return;
+        if(sToolName=="ScanRoomSlot_Chip")
+        {
+            if(Entity_GetVarString("EnvironmentChip","Slot")=="ScanRoomSlot")
+            {
+                cLuxMap@ pMap=cLux_GetCurrentMap();
+                if(pMap !is null && pMap.ScriptPrepare("void InteractChipSlot(const tString&in asEntity)"))
+                {
+                    tString sScanRoomSlot="ScanRoomSlot";
+                    pMap.SetArgString(0,sScanRoomSlot);
+                    pMap.ScriptExecute();
+                }
+            }
+            return;
+        }
+        // A hidden Theta carrier is still discoverable by a native body query.
+        // If inserted, remove the authored presentation before reacquiring it.
+        if (sToolName=="BrainScanChip" || sToolName=="EnvironmentChip")
+        {
+            tString sSlot=Entity_GetVarString(sToolName,"Slot");
+            if (sSlot!="")
+            {
+                cLuxMap@ pMap=cLux_GetCurrentMap();
+                if (pMap !is null && pMap.ScriptPrepare("void InteractChipSlot(const tString&in asEntity)"))
+                {
+                    pMap.SetArgString(0,sSlot);
+                    pMap.ScriptExecute();
+                }
+                return;
+            }
+        }
+        // Regrabbing an owned non-frozen item is physical ownership, not a
+        // second acquisition. Leave the four hardware-frozen chip paths alone.
+        if (VR_IsShoulderKeyItem() && sToolName!="ConfigChipTool" &&
+            sToolName!="CortexChipTool" && sToolName!="KateChip" && sToolName!="GoyaChip")
+        {
+            cScript_SetGlobalArgString(0,sToolName);
+            cScript_SetGlobalReturnBool(false);
+            cScript_RunGlobalFunc("PlayerToolHandler","","_Global_GetToolIsInInventory");
+            if (cScript_GetGlobalReturnBool())
+            {
+                VR_EnableOwnedPhysicalUpgradeChip(false);
+                return;
+            }
+        }
+
+        // H5756AU_VR_UPSILON_STOCK_PICKUP_RESTORE
+		// H57.56AT's pre-callback inventory short-circuit is removed. Preserve the
+		// H57.56AS stock PickupCallback -> _Global_AddTool -> ownership-proof order.
+		//////////////////////////
+		//Pick up callback
+		if(abCallback && msPickupCallback != "")
+		{
+			cLuxMap@ pMap = cLux_GetCurrentMap();
+			if(pMap.ScriptPrepare("bool "+msPickupCallback+"(const tString &in asName)" ) )
+			{
+				pMap.SetArgString(0, sToolName);
+				
+				if(pMap.ScriptExecute())
+				{
+					if(pMap.GetReturnBool()==false) return;
+				}
+			}
+		}
+		
+		//////////////////////////
+		// Vanilla tools disappear into the HUD inventory. Upgrade chips remain the
+		// real world object; their exact callback/inventory record is still added below.
+		bool bVRPhysicalUpgradeChip = VR_IsPhysicalKeyItem();
+		if (!bVRPhysicalUpgradeChip) mBaseObj.SetActive(false);
+		
+		//////////////////////////
+		//Setup the tool interact state
+		cScript_SetGlobalArgString(0, sToolName);
+		cScript_SetGlobalArgString(1, msHudObjectEntity);
+		cScript_SetGlobalArgString(2, msUseCallback);
+		cScript_SetGlobalArgString(3, msDropCallback);
+		cScript_SetGlobalArgString(4, msCanBeUsedCallback);
+		cScript_SetGlobalArgBool(5, abEquipTool);
+		cScript_SetGlobalArgBool(6, mbAutoHide);
+		
+		cScript_SetGlobalArgString(7, msInventoryIcon);
+		cScript_SetGlobalArgString(8, msHandAnimationSuffix);
+		
+		cScript_SetGlobalArgBool(9, mbIsHeavy);
+		cScript_SetGlobalArgInt(10, mCustomUseIcon);
+		
+		cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_AddTool");
+
+		// _Global_AddTool is void and can reject a duplicate/invalid record. Prove the
+		// exact named chip is now logically owned before publishing physical pickup.
+		// This keeps the P token equivalent to a completed stock inventory transaction.
+		if (bVRPhysicalUpgradeChip)
+		{
+			cScript_SetGlobalArgString(0, sToolName);
+			cScript_SetGlobalReturnBool(false);
+			cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_GetToolIsInInventory");
+			if (cScript_GetGlobalReturnBool()) VR_EnableOwnedPhysicalUpgradeChip(true);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_PickUp;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetAutoHide()
+	{
+		mbAutoHide = cScript_GetGlobalArgBool(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetHighlightActive()
+	{
+		mbHighlightActive = cScript_GetGlobalArgBool(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_PickUp()
+	{
+		PickUpTool(cScript_GetGlobalArgBool(0), cScript_GetGlobalArgBool(1));
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_CanBeHighlighted()
+	{
+		cScript_SetGlobalReturnBool(mbHighlightActive);
+		cScript_SetGlobalArgID(0,mBaseObj.GetID());
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_GetHandAnimationSuffix()
+	{
+		cScript_SetGlobalReturnString(msHandAnimationSuffix);
+	}
+	
+	//------------------------------------------------------------
+
+	void _Global_OnEquip()
+	{
+	}
+	
+	void _Global_UpdateLookEntities()
+	{
+	}
+	
+	void _Global_OnUnequip()
+	{
+	}
+
+    bool VR_RestoreOwnedToolCallbacks()
+    {
+        // Global arguments are shared with nested script calls. Copy them before
+        // the runtime and ownership queries reuse their argument/result slots.
+        tString savedUse=cScript_GetGlobalArgString(0), savedDrop=cScript_GetGlobalArgString(1);
+        tString savedCanUse=cScript_GetGlobalArgString(2), savedPickup=cScript_GetGlobalArgString(3);
+        if(!_HPL3VR_RuntimeActive_PropTool()) return false;
+        cScript_SetGlobalArgString(0,mBaseObj.GetName());
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_GetToolIsInInventory");
+        if(!cScript_GetGlobalReturnBool()) return false;
+        msUseCallback=savedUse;
+        msDropCallback=savedDrop;
+        msCanBeUsedCallback=savedCanUse;
+        if(msPickupCallback=="") msPickupCallback=savedPickup;
+        mBaseObj.SetSaveDataIsUpdated(true);
+        return true;
+    }
+
+    void _Global_VRReturnPhiPowerpack()
+    {
+        bool committed=VR_Try_ReturnPhiPowerpack();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_ReturnPhiPowerpack()
+    {
+        cScript_SetGlobalReturnBool(false);
+        if(!_HPL3VR_RuntimeActive_PropTool() || mBaseObj.GetName()!="powerpack_1") return false;
+        PickUpTool(false,false);
+        cScript_SetGlobalArgString(0,"powerpack_1");
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_GetToolIsInInventory");
+        if(!cScript_GetGlobalReturnBool()) return false;
+        return VR_EnableOwnedPhysicalUpgradeChip(false);
+    }
+
+    void _Global_VRReturnThetaCarrier()
+    {
+        bool committed=VR_Try_ReturnThetaCarrier();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_ReturnThetaCarrier()
+    {
+        cScript_SetGlobalReturnBool(false);
+        if(!_HPL3VR_RuntimeActive_PropTool()) return false;
+        tString name=mBaseObj.GetName();
+        if(name!="EnvironmentChip" && name!="BrainScanChip") return false;
+        if(Entity_GetVarString(name,"Slot")!="") return false;
+        // Existing acquisition callbacks have already run for inserted items.
+        // Re-add stock ownership without equipping an authored HUD animation.
+        PickUpTool(false,false);
+        cScript_SetGlobalArgString(0,name);
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_GetToolIsInInventory");
+        if(!cScript_GetGlobalReturnBool()) return false;
+        return VR_EnableOwnedPhysicalUpgradeChip(false);
+    }
+
+    void _Global_VREnsurePhysicalUpgradeChip()
+    {
+        bool committed=VR_Try_EnsurePhysicalUpgradeChip();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_EnsurePhysicalUpgradeChip()
+    {
+		if (!_HPL3VR_RuntimeActive_PropTool()) return false;
+		cScript_SetGlobalReturnBool(false);
+		if (!VR_IsPhysicalKeyItem()) return false;
+		return VR_EnableOwnedPhysicalUpgradeChip(false);
+	}
+
+	void _Global_VRShoulderStore()
+    {
+        bool committed=VR_Try_ShoulderStore();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_ShoulderStore()
+    {
+		cScript_SetGlobalReturnBool(false);
+		if (!_HPL3VR_RuntimeActive_PropTool() || !VR_IsShoulderKeyItem()) return false;
+		cScript_SetGlobalArgString(0, mBaseObj.GetName());
+		cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRShoulderStoreTool");
+	
+        return cScript_GetGlobalReturnBool();
+}
+
+	void _Global_VRShoulderRetrievePhysical()
+    {
+        bool committed=VR_Try_ShoulderRetrievePhysical();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_ShoulderRetrievePhysical()
+    {
+		cScript_SetGlobalReturnBool(false);
+		if (!_HPL3VR_RuntimeActive_PropTool() || !VR_IsShoulderKeyItem()) return false;
+		// AF: do not ACK shoulder retrieval until the exact world body exists.
+		// This avoids dropping a newly-activated Omicron/future key item out of the
+		// logical shoulder queue on a transient entity-physics maturation frame.
+		if (!VR_EnableOwnedPhysicalUpgradeChip(false)) return false;
+		cScript_RunGlobalFunc("VROMNIINV", mBaseObj.GetName(), "R");
+		return true;
+	}
+
+	void _Global_VRConsumePhysicalUpgradeChip()
+    {
+        bool committed=VR_Try_ConsumePhysicalUpgradeChip();
+        cScript_SetGlobalReturnBool(committed);
+    }
+
+    bool VR_Try_ConsumePhysicalUpgradeChip()
+    {
+		if (!_HPL3VR_RuntimeActive_PropTool()) return false;
+		cScript_SetGlobalReturnBool(false);
+		if (!VR_IsPhysicalKeyItem()) return false;
+		mBaseObj.SetActive(false);
+		return true;
+	}
+ 
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] tString msHudObjectEntity;
+	[nosave] tString msHandAnimationSuffix;
+	[nosave] tString msInventoryIcon;
+	[nosave] tString msInventoryNameTextEntry;
+	[nosave] bool mbIsHeavy;
+	[nosave] eCrossHairState mCustomUseIcon;
+	
+	//------------------------------------------------------------
+	
+	tString msPickupCallback;
+	tString msUseCallback;
+	tString msDropCallback;
+	tString msCanBeUsedCallback;
+	
+	bool mbAutoHide;
+	bool mbHighlightActive = true;
+
+	//------------------------------------------------------------
+}	

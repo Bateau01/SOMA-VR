@@ -1,0 +1,339 @@
+// S26AX: filter only the delivered camera shake. Timers and gamepad intensity
+// remain authored; an unavailable bridge defaults to the native behavior.
+bool _HPL3VR_HideScreenShake()
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetHideShake");
+    return cScript_GetGlobalReturnBool();
+}
+
+#include "effect/Effects.hps"
+#include "player/Player_Types.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+
+//------------------------------------------------------------
+
+class cLuxEffect_ShakeInstance
+{
+	float mfMaxSize;
+	float mfSize;
+	float mfTime;
+	float mfFadeInTime;
+	float mfMaxFadeInTime;
+	float mfFadeOutTime;
+	float mfMaxFadeOutTime;
+	cVector3f mvDirAmount;
+	float mfShakeMaxTime;
+	float mfShakeCount;
+	bool mbNeverFadeOut;
+	tID m_idSourceEntity = tID_Invalid;
+	float mfMinDist;
+	float mfMaxDist;
+	eEasing mEasingType = eEasing_CubicOut;
+	
+	cVector3f mvCurrentOffset = cVector3f(0);
+	cVector3f mvNextOffset = cVector3f(0);
+	
+	int mlID;
+}
+
+//------------------------------------------------------------
+
+class cScrEffect_Shake : iScrEffect, iScrEffect_Interface, iScrEffect_Shake
+{
+	
+	//----------------------------------
+	
+	void Init()
+	{
+		mlIdCounter = 0;
+	}
+	//----------------------------------
+	
+	void OnDestroy()
+	{
+	}
+	
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PULBIC METHODS
+	/////////////////////////////////////////
+	
+	//----------------------------------
+	
+	int Start(	float afAmount, float afTime, float afFadeInTime,float afFadeOutTime, 
+				const cVector3f&in avDirAmount, float afFrequency)
+	{		
+		cLuxEffect_ShakeInstance shake;
+		shake.mfSize = afAmount;
+		shake.mfMaxSize = afAmount;
+		shake.mfTime = afTime<0 ? 1.0f: afTime;
+		shake.mbNeverFadeOut = afTime<0;
+		shake.mfFadeInTime = afFadeInTime;
+		shake.mfMaxFadeInTime = afFadeInTime;
+		shake.mfFadeOutTime = cMath_Max(afFadeOutTime, 0.001f);
+		shake.mfMaxFadeOutTime = cMath_Max(afFadeOutTime, 0.001f);
+		
+		shake.mvDirAmount = avDirAmount;
+		shake.mfShakeMaxTime = afFrequency<=0 ? 0 : 1.0f/afFrequency;
+		shake.mfShakeCount = 0; //First shake should come directly
+		
+		shake.mlID = mlIdCounter++;
+
+		mvShakes.push_back(shake);
+
+		mBaseObj.SetActive(true);
+		
+		return shake.mlID;
+	}
+	
+	//----------------------------------
+
+	void FadeOut(int alID, float afFadeOutTime)
+	{
+		for(uint i = 0; i < mvShakes.size(); ++i)
+		{
+			if(alID==-1 || mvShakes[i].mlID  == alID)
+			{				
+				mvShakes[i].mfTime = 0;
+				mvShakes[i].mfFadeOutTime = afFadeOutTime * mvShakes[i].mfFadeOutTime / mvShakes[i].mfMaxFadeOutTime;
+				mvShakes[i].mfMaxFadeOutTime = cMath_Max(afFadeOutTime, 0.001f);
+				mvShakes[i].mbNeverFadeOut = false;
+			}
+		}
+	}
+	
+	//----------------------------------
+
+	void SetSourceEntity(int alID, tID a_idSource, float afMinDist, float afMaxDist, eEasing aEasingType)
+	{
+		for(uint i = 0; i < mvShakes.size(); ++i)
+		{
+			if(mvShakes[i].mlID  == alID)
+			{				
+				mvShakes[i].m_idSourceEntity = a_idSource;
+				mvShakes[i].mfMinDist = afMinDist;
+				mvShakes[i].mfMaxDist = afMaxDist;
+				mvShakes[i].mEasingType = aEasingType;
+				break;
+			}
+		}
+	}
+	
+	//----------------------------------
+	
+	float GetCurrentShakeAmount()
+	{
+		return mfCurrentShakeAmount;
+	} 
+	
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL CALLBACKS
+	/////////////////////////////////////////
+	
+	//----------------------------------
+	
+	void OnStart()
+	{
+	}
+
+	//----------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mfCurrentShakeAmount=0;
+	}
+	
+	//----------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		mfCurrentShakeAmount=0;
+		for(uint i=0;i<mvShakes.size(); ++i)
+		{
+			cLuxEffect_ShakeInstance @shake = @mvShakes[i];	
+			shake.mbNeverFadeOut = false;
+			shake.mfFadeInTime=0;
+			shake.mfTime=0;
+			
+			shake.mfFadeOutTime = 0.5;
+			shake.mfMaxFadeOutTime = 0.5;
+		}
+	}
+
+	//----------------------------------
+	
+	void Reset()
+	{
+		mfCurrentShakeAmount=0;
+		mvShakes.resize(0);
+	}
+
+	//----------------------------------
+	
+	
+	void Update(float afTimeStep)
+	{
+		cVector3f vLargest = 0;
+		float fLargestLength =0;
+
+		///////////////////////////////
+		// Iterate the shakes 
+		for(uint i=0;i<mvShakes.size(); ++i)
+		{
+			cLuxEffect_ShakeInstance @shake = @mvShakes[i];
+			
+			///////////////////////////////////////
+			// Fade in
+			if(shake.mfFadeInTime >0)
+			{
+				shake.mfFadeInTime -= afTimeStep; if(shake.mfFadeInTime<0) shake.mfFadeInTime=0;
+				float fT = shake.mfFadeInTime / shake.mfMaxFadeInTime;
+				shake.mfSize = (1-fT) * shake.mfMaxSize;
+			}
+			///////////////////////////////////////
+			// Mid point
+			else if(shake.mfTime >0 && shake.mbNeverFadeOut==false)
+			{
+				shake.mfTime -= afTimeStep; if(shake.mfTime<0)shake.mfTime=0;
+				shake.mfSize = shake.mfMaxSize;
+			}
+			///////////////////////////////////////
+			// Fade out
+			else if(shake.mbNeverFadeOut==false)
+			{
+				shake.mfFadeOutTime -= afTimeStep; if(shake.mfFadeOutTime<0) shake.mfFadeOutTime=0;
+				float fT = shake.mfFadeOutTime / shake.mfMaxFadeOutTime;
+				shake.mfSize =  fT * shake.mfMaxSize;
+			}
+			
+			///////////////////////////////////////
+			// Generate new offset.
+			shake.mfShakeCount -= afTimeStep;
+			if(shake.mfShakeCount <=0)
+			{
+				shake.mvCurrentOffset = shake.mvNextOffset;
+				shake.mvNextOffset = cMath_RandRectVector3f(cVector3f(-1), cVector3f(1))*
+										shake.mvDirAmount;
+				shake.mfShakeCount = shake.mfShakeMaxTime;
+			}
+			
+			///////////////////////////////////////
+			// Get current shake offset
+			float fT;
+			if(shake.mfShakeMaxTime<=0) fT = 1;
+			else	 					fT = (1.0f - shake.mfShakeCount/shake.mfShakeMaxTime);
+			cVector3f vShake;
+			if(fT <1)
+			{
+				fT = (1.0f - shake.mfShakeCount/shake.mfShakeMaxTime);
+				
+				vShake.x = cMath_InterpolateSigmoid(shake.mvCurrentOffset.x, shake.mvNextOffset.x, fT);
+				vShake.y = cMath_InterpolateSigmoid(shake.mvCurrentOffset.y, shake.mvNextOffset.y, fT);
+				vShake.z = cMath_InterpolateSigmoid(shake.mvCurrentOffset.z, shake.mvNextOffset.z, fT);
+			}
+			else
+			{
+				vShake = shake.mvNextOffset;
+			}
+			
+			vShake *= shake.mfSize;
+			
+			///////////////////////////////////////////
+			// reduce if far away from source entity
+			if (shake.m_idSourceEntity != tID_Invalid)
+			{
+				iLuxEntity@ pSource = cLux_ID_Entity(shake.m_idSourceEntity);
+				if (pSource is null)
+				{
+					if(shake.m_idSourceEntity != tID_Invalid) Error("ShakeInstance with id " + shake.mlID + " has an invalid source entity id!");
+					shake.m_idSourceEntity = tID_Invalid;
+					continue;
+				}
+				
+				float fDist = cMath_Vector3Dist(cLux_GetPlayer().GetCharacterBody().GetPosition(), pSource.GetPosition());
+				float fDistFract = (fDist-shake.mfMinDist)/(shake.mfMaxDist-shake.mfMinDist);
+				float fDistMul = cMath_Easing(shake.mEasingType, 1.0f-fDistFract);
+				vShake *= cMath_Clamp(fDistMul, 0.0, 1.0);
+			}
+			
+			float fLength = vShake.Length();
+												
+			///////////////////////////////////////
+			// Check if the this is the largest shake
+			if(fLargestLength < fLength)
+			{
+				fLargestLength = fLength;
+				vLargest = vShake;
+			}
+
+			///////////////////////////////////////
+			// Check if over.
+			if(shake.mfTime <= 0 && shake.mfFadeOutTime <= 0 && shake.mfFadeInTime <= 0)
+			{
+				mvShakes.removeAt(i);
+				--i;
+
+				//////////////////////////////////////////
+				//If all shaking is over, set pos add to 0 and return.
+				if(mvShakes.size()==0)
+				{
+					mfCurrentShakeAmount=0;
+					mBaseObj.SetActive(false);
+					cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Shake, cVector3f(0));
+					return;
+				}
+			}
+		}
+
+		////////////////////////////////
+		// Disable shakes when the player is reading etc.
+		if (!cScript_GetGlobalVarBool("ShakesEnabled"))
+		{
+			vLargest = cVector3f_Zero;
+		}
+		
+		mfCurrentShakeAmount = cMath_Abs(cMath_Vector3MaxElement(vLargest));
+		
+		//Wake up gamepad!
+		if(mfCurrentShakeAmount>0.0001f)
+		{
+			iScrEffect_Gamepad@ pEffect = cast<iScrEffect_Gamepad>(cLux_GetEffectHandler().GetEffect(eEffect_Gamepad));
+			pEffect.WakeUp();
+		}
+			
+		///////////////////////////////
+		// Set the camera offset.
+		cVector3f vCameraShake = _HPL3VR_HideScreenShake() ? cVector3f(0) : vLargest;
+        cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Shake, vCameraShake);
+	}
+	
+	//----------------------------------
+	
+	void OnDraw(float afFrameTime)
+	{
+	}
+	
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//----------------------------------
+	
+	float mfCurrentShakeAmount=0;
+	array<cLuxEffect_ShakeInstance> mvShakes;
+	int mlIdCounter;
+	
+	//----------------------------------
+}

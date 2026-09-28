@@ -1,0 +1,462 @@
+
+bool _HPL3VR_HideComfortEffect(const tString&in key)
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    if(!cScript_GetGlobalReturnBool()) return false;
+    return cScript_RunGlobalFunc("VRFX",key,"Q");
+}
+#include "effect/Effects.hps"
+#include "helpers/helper_player.hps"
+
+/////////////////////////////////////////
+// SETTINGS - IMAGE TRAIL
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+class cChromaticEffectInstance
+{
+	cChromaticEffectInstance()
+	{
+		mfAmount=0.0f;
+		mfRotation=0;
+		mfHue=0;
+		mvOffset=0;
+	}
+	
+	int mlID;
+	float mfAmount;
+	float mfRotation;
+	float mfHue;
+	cVector2f mvOffset;
+}
+
+//------------------------------------------------------------
+
+class cRotateAnimInstance
+{
+	//------------------------------------------------------------
+	
+	cRotateAnimInstance()
+	{
+	}
+	
+	//------------------------------------------------------------
+
+	cRotateAnimInstance(float afDuration, float afAmount, float afRandomness, cVector2f avDirection)
+	{
+		mfTime = 0;
+		mfDuration = afDuration + 1.5f / 60.0f;
+		mfAmount = 0;
+		mfRotation = 0;
+
+		if(avDirection.Length() == 0.0f) mvMainOffset = cMath_RandRectVector2f(cVector2f(-0.3f), cVector2f(0.3f));
+		else							 mvMainOffset = avDirection;
+
+		/////////////
+		// Setup offset that can be used to calculate the rotation from
+		float[] fDistance = { 0.33, 0.66, 1.0, 0.66, 0.33 };
+		cVector2f vDir = cMath_Vector2Normalize(mvMainOffset);
+		if(afRandomness == 1.0f) afRandomness = 0.99f;
+
+		for(int i = 0; i < 5; ++i)
+		{
+			// Generate a random direction with cosine distribution
+			mvOffset[i] = cMath_Vector2Normalize(vDir + cMath_RandomCircleEdgePoint(afRandomness)) * fDistance[i] * afAmount;
+		}
+
+		///////////
+		// Run one update step to setup initial values
+		Update(1.0f / 60.0f);
+		mfTime = 0;
+		mfAmount = 0;
+	}
+	
+	//------------------------------------------------------------
+
+	bool Update(float afTimeStep)
+	{	
+		mfTime += afTimeStep;
+
+		////////////////
+		// Setup id and fractional part for cubic interpolation
+		float fPos = cMath_SigmoidCurve(mfTime / mfDuration)  * 5.0f;
+
+		int lID = cMath_Clamp( int(fPos), 0, 4);
+		float fFrac = fPos - lID;
+
+		///////////////////
+		// Get cubic coords
+		cVector2f vA = ((lID - 1) < 0 || (lID - 1) > 4) ? cVector2f(0) : mvOffset[lID - 1];
+		cVector2f vB = lID > 4 ? cVector2f(0) : mvOffset[lID];
+		cVector2f vC = (lID + 1) > 4 ? cVector2f(0) : mvOffset[lID + 1];
+		cVector2f vD = (lID + 2) > 4 ? cVector2f(0) : mvOffset[lID + 2];
+
+		////////////////
+		// Generate interpolated value
+		cVector2f vPos = cMath_Vector2CatmullRom(vA, vB, vC, vD, fFrac);
+
+		/////////////
+		// Update rotation and amount and get difference
+		float fAmount = vPos.Length();
+		float fRotation = cMath_ATan2(vPos.y, vPos.x);
+		mfAmountDifference = fAmount - mfAmount;
+		mfRotationDifference = fRotation - mfRotation;
+		
+		mfAmount = fAmount;
+		mfRotation = fRotation;
+
+		//////////
+		// Calculate current offset
+		mvCurrentOffset = mvMainOffset * cVector2f(cMath_SigmoidCurve(1.0f - cMath_Abs(mfTime * 2.0f / mfDuration - 1.0f)));
+
+		if(mfTime >= mfDuration)
+		{
+			// Completed, remove it
+			return false;
+		}
+
+		return true;
+	}
+	
+	//------------------------------------------------------------
+
+	float mfTime;
+	float mfDuration;
+
+	cVector2f[] mvOffset = { 0, 0, 0, 0, 0 };
+	cVector2f mvMainOffset;
+
+	/////////////
+	// Current values
+	float mfAmount;
+	float mfRotation;
+	cVector2f mvCurrentOffset;
+
+	/////////////
+	// Difference from previous frame
+	float mfAmountDifference;
+	float mfRotationDifference;
+}
+
+//------------------------------------------------------------
+
+class cScrEffect_ChromaticAberration : iScrEffect, iScrEffect_Interface, iScrEffect_ChromaticAberration
+{
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// BASE
+	/////////////////////////////////////////
+	
+	//----------------------------------
+	
+	void Init()
+	{
+		mbEffectLoaded = false;
+		mlEffectID = 0;
+	//	CreatePostEffect();
+	}
+	
+	//----------------------------------
+	
+	void OnDestroy()
+	{
+		if(mpEffect is null) return;
+		
+		cLux_GetViewport().GetPostEffectComposite().RemovePostEffect(mpEffect);
+		cGraphics_DestroyPostEffect(mpEffect);
+		@mpEffect = null;
+	}
+	
+	//---------------------------------
+
+	void CreatePostEffect()
+	{
+		if(mbEffectLoaded == false)
+		{
+			//////////////////
+			// Create the post effect if null
+			@mpEffect = cast<cPostEffect_ChromaticAberration@>(cLux_GetViewport().GetPostEffectComposite().GetPostEffectFromType("ChromaticAberration"));
+
+			if(mpEffect is null)
+			{
+				@mpEffect = cGraphics_CreatePostEffect_ChromaticAberration();
+				cLux_GetViewport().GetPostEffectComposite().AddPostEffect(mpEffect, 25);
+			}
+
+			mbEffectLoaded = true;
+		}
+	}
+
+	void LoadUserConfig()
+	{
+		cConfigFile@ pConfig = cLux_GetUserConfig();
+		mbScreenDistortionsActive = pConfig.GetBool("Gameplay", "ColorSeparation", true);
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PUBLIC METHODS
+	/////////////////////////////////////////
+	
+	//----------------------------------
+	
+	void StartAnim(float afDuration, float afAmount, float afRandomness, cVector2f avDirection)
+	{
+		mBaseObj.SetActive(true);
+		mvAnimInstances.push_back(cRotateAnimInstance(afDuration, afAmount, afRandomness, avDirection));
+		CreatePostEffect();
+	}
+	
+	//---------------------------------
+	
+	void SetDirect(float afAmount, float afRotation, float afHue, const cVector2f&in avOffset)
+	{
+		mfDirectAmount = afAmount;
+		mfDirectRotation = afRotation;
+		mfDirectHue = afHue;
+		mvDirectOffset = avOffset;
+		mBaseObj.SetActive(true);
+		
+		CreatePostEffect();
+	}
+	
+	//---------------------------------
+	
+	int CreateInstance(float afAmount, float afRotation, float afHue, 
+							const cVector2f&in avOffset=cVector2f_Zero)
+	{
+		CreatePostEffect();
+		cChromaticEffectInstance pInst;
+		pInst.mlID = ++mlEffectID;
+		pInst.mfAmount = afAmount;
+		pInst.mfRotation = afRotation;
+		pInst.mfHue = afHue;
+		pInst.mvOffset = avOffset;
+		mvEffectInstances.push_back(pInst);
+		mBaseObj.SetActive(true);
+		return pInst.mlID;
+	}
+	
+	//---------------------------------
+	
+	void SetInstanceValues(int alID, float afAmount, float afRotation, float afHue, 
+							const cVector2f&in avOffset=cVector2f_Zero)
+	{
+		for (int i=0;i<mvEffectInstances.size();++i)
+		{
+			if (mvEffectInstances[i].mlID==alID)
+			{
+				cChromaticEffectInstance@ pInst = mvEffectInstances[i];
+				pInst.mfAmount = afAmount;
+				pInst.mfRotation = afRotation;
+				pInst.mfHue = afHue;
+				pInst.mvOffset = avOffset;
+				return;
+			}
+		}
+	}
+	
+	//---------------------------------
+	
+	void DestroyInstance(int alID)
+	{
+		for (int i=0;i<mvEffectInstances.size();++i)
+		{
+			if (mvEffectInstances[i].mlID==alID)
+			{
+				mvEffectInstances[i] = mvEffectInstances[mvEffectInstances.size()-1];
+				mvEffectInstances.pop_back();
+				return;
+			}
+		}
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL CALLBACKS
+	/////////////////////////////////////////
+	
+	
+	//----------------------------------
+	
+	void OnStart()
+	{
+	}
+
+	//----------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	}
+	
+	//----------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	}
+
+	//----------------------------------
+	
+	void Reset()
+	{
+		mvAnimInstances.resize(0);
+		mvEffectInstances.resize(0);
+		
+		mfDirectAmount =0;
+		
+		mfTotalAnimAmount=0;
+		mfTotalAnimRotation=0;
+
+		if(mbEffectLoaded)
+		{
+			float fAmount, fRotation, fHue;
+			cVector2f vOffset;
+			mpEffect.GetParams(fAmount, fRotation, fHue, vOffset);
+			fAmount = 0.0f;
+			if(_HPL3VR_HideComfortEffect("HideChromatic")) mpEffect.SetParams(0.0f,0.0f,0.0f,cVector2f(0));
+		else mpEffect.SetParams(fAmount, fRotation, fHue, vOffset);
+		}	
+	}
+
+	//----------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		CreatePostEffect();
+		
+		///////////////////////////////////
+		//Set up variables
+		float fAmount=0;
+		float fRotation=0;
+		float fHue=0;
+		cVector2f vOffset =0;
+
+		///////////////////////////////////
+		// Set up based on animations
+		if(mvAnimInstances.size()>0)
+		{
+			fAmount = mfTotalAnimAmount;
+			fRotation = mfTotalAnimRotation;
+		}
+
+		///////////////////////////////////
+		// Get the combined amount
+		for(int i = 0; i < mvAnimInstances.size(); ++i)
+		{
+			if(mvAnimInstances[i].Update(afTimeStep) == false)
+			{
+				////////////
+				// It has finished, remove it
+				mvAnimInstances[i--] = mvAnimInstances[mvAnimInstances.size()-1];
+				mvAnimInstances.pop_back();
+			}
+			else
+			{
+				///////////
+				// Apply the difference from the previous frame
+				fAmount += mvAnimInstances[i].mfAmountDifference;
+				fRotation += mvAnimInstances[i].mfRotationDifference;
+				vOffset = vOffset + mvAnimInstances[i].mvCurrentOffset;
+			}
+		}
+		
+		///////////////////////////////////
+		// Override instances
+		for(int i = 0; i < mvEffectInstances.size(); ++i)
+		{
+			cChromaticEffectInstance@ pInst = mvEffectInstances[i];
+			fAmount = cMath_Max(pInst.mfAmount, fAmount);
+			fRotation+=pInst.mfRotation;
+			fHue+=pInst.mfHue;
+			vOffset = vOffset+pInst.mvOffset;
+		}
+
+		
+		///////////////////////////////////
+		// Update total values
+		if(mvAnimInstances.size()>0)
+		{
+			mfTotalAnimAmount = fAmount;
+			mfTotalAnimRotation = fRotation;
+		}
+		else
+		{
+			mfTotalAnimAmount = 0;
+			mfTotalAnimRotation = 0;
+		}
+		
+		///////////////////////////////////
+		// Set up the values
+		if(mfDirectAmount > 0)
+		{
+			fAmount += mfDirectAmount;
+			fRotation += mfDirectRotation;
+			fHue += mfDirectHue;
+			vOffset += mvDirectOffset;
+		}
+		
+		///////////////////////////////////
+		// Check if active
+		mBaseObj.SetActive(mvEffectInstances.empty() == false || mvAnimInstances.empty() == false || mfDirectAmount>0);
+		if(mBaseObj.IsActive() == false) fAmount = 0.0f;
+		if(mbScreenDistortionsActive == false) fAmount = 0.0f;
+		if(Player_IsReading())
+		{
+			mfReadFade += afTimeStep * 2.0f;
+			if(mfReadFade > 1.0f) mfReadFade = 1.0f;
+		}
+		else
+		{
+			mfReadFade -= afTimeStep * 2.0f;
+			if(mfReadFade < 0.0f) mfReadFade = 0.0f;
+		} 
+
+		fAmount *= (1.0f - mfReadFade);
+
+		///////////////////////////////////
+		// Set the effect params
+		vOffset = cMath_Vector2Max(cVector2f(-1.0), cMath_Vector2Min(vOffset, cVector2f(1.0f)));
+		if(_HPL3VR_HideComfortEffect("HideChromatic")) mpEffect.SetParams(0.0f,0.0f,0.0f,cVector2f(0));
+		else mpEffect.SetParams(fAmount, fRotation, fHue, vOffset);
+	}
+	
+	//----------------------------------
+
+	void OnDraw(float afTimeStep)
+	{
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//----------------------------------
+	
+	[nosave] cPostEffect_ChromaticAberration@ mpEffect = null;
+	[nosave] bool mbEffectLoaded = false;
+	[nosave] bool mbScreenDistortionsActive= true;
+
+	array<cRotateAnimInstance> mvAnimInstances;
+	array<cChromaticEffectInstance> mvEffectInstances;
+	
+	int	mlEffectID;
+	float mfTotalAnimAmount=0;
+	float mfTotalAnimRotation=0;
+
+	float mfReadFade=0;
+	
+	float mfDirectAmount=0;
+	float mfDirectHue;
+	float mfDirectRotation;
+	cVector2f mvDirectOffset;
+
+	//----------------------------------
+}

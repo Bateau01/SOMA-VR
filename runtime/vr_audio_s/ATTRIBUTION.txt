@@ -1,0 +1,9 @@
+Steam Audio 4.8.1
+Copyright Valve Corporation.
+Official unmodified Windows x64 phonon.dll, used for binaural HRTF processing.
+https://github.com/ValveSoftware/steam-audio/releases/tag/v4.8.1
+See LICENSE-SteamAudio.md and THIRDPARTY-SteamAudio.md.
+
+The SOMA VR FMOD Ex adapter is separate mod code. It uses the FMOD library
+already installed with SOMA; no FMOD library is redistributed here.
+Penumbra VR rework was an architectural reference; no code was copied from it.

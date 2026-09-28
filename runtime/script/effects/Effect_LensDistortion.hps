@@ -1,0 +1,216 @@
+bool _HPL3VR_HideComfortEffect(const tString&in key)
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    if(!cScript_GetGlobalReturnBool()) return false;
+    return cScript_RunGlobalFunc("VRFX",key,"Q");
+}
+#include "effect/Effects.hps"
+
+/////////////////////////////////////////
+// SETTINGS - LENS DISTORTION
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+class cLuxEffect_LensDistInstance
+{
+	float mfAmount;
+	int mlID;
+}
+
+//------------------------------------------------------------
+
+class cScrEffect_LensDistortion : iScrEffect, iScrEffect_Interface, iScrEffect_LensDistortion
+{
+
+	//----------------------------------
+	
+	void Init()
+	{
+		mfDirectAmount = 0;
+	}
+	
+	//----------------------------------
+	
+	void OnDestroy()
+	{
+		if(mpEffect is null) return;
+		
+		cLux_GetViewport().GetPostEffectComposite().RemovePostEffect(mpEffect);
+		cGraphics_DestroyPostEffect(mpEffect);
+		@mpEffect = null;
+	}
+	
+	//---------------------------------
+
+	void CreatePostEffect()
+	{
+		if(mbEffectLoaded == false)
+		{
+			//////////////////
+			// Create the post effect if null
+			@mpEffect = cast<cPostEffect_LensDistortion@>(cLux_GetViewport().GetPostEffectComposite().GetPostEffectFromType("LensDistortion"));
+
+			if(mpEffect is null)
+			{
+				@mpEffect = cGraphics_CreatePostEffect_LensDistortion();
+				cLux_GetViewport().GetPostEffectComposite().AddPostEffect(mpEffect, 75);
+			}
+
+			mbEffectLoaded = true;
+		}
+	}
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PUBLIC METHODS
+	/////////////////////////////////////////
+	
+	//---------------------------------
+	
+	void SetDirectAmount(float afAmount)
+	{
+		mfDirectAmount = afAmount;
+		
+		mBaseObj.SetActive(true);
+	}
+	
+	//----------------------------------
+	
+	int Start(float afAmount)
+	{		
+		cLuxEffect_LensDistInstance instance;
+		instance.mfAmount = 0;		
+		instance.mlID = mlIdCounter++;
+
+		mvInstances.push_back(instance);
+
+		mBaseObj.SetActive(true);
+		
+		return instance.mlID;
+	}
+
+	bool Set(int alID, float afAmount)
+	{
+		for(int i=0; i<mvInstances.size(); ++i)
+		{
+			if(alID == mvInstances[i].mlID)
+			{
+				mvInstances[i].mfAmount = afAmount;
+
+				if(afAmount == 0.0f)
+				{
+					mvInstances[i] = mvInstances[mvInstances.size()-1];
+					mvInstances.resize(mvInstances.size()-1);
+				}
+			}
+		}
+
+		return false;
+	}
+		
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL CALLBACKS
+	/////////////////////////////////////////
+	
+	
+	//----------------------------------
+	
+	void OnStart()
+	{
+	}
+
+	//----------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	}
+	
+	//----------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	}
+
+	//----------------------------------
+	
+	void Reset()
+	{
+		mfDirectAmount =0;
+
+		mvInstances.resize(0);
+		
+		if(mbEffectLoaded)
+		{
+			mpEffect.SetParams(0.0f);
+		}	
+	}
+
+	//----------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		//////////////////////////////
+		// Make sure effect is created
+		CreatePostEffect();
+		
+				
+		//////////////////////////////
+		// Set up data
+		{
+			float fAmount = 0;
+			
+			/////////////////////////
+			// Get the largest instances
+			for(int i=0; i<mvInstances.size(); ++i)
+			{
+				if(fAmount * fAmount < mvInstances[i].mfAmount * mvInstances[i].mfAmount)
+				{
+					fAmount = mvInstances[i].mfAmount;
+				}
+			}
+			
+			/////////////////////////
+			// Add direct Amount
+			if(fAmount * fAmount < mfDirectAmount * mfDirectAmount)
+			{
+				fAmount = mfDirectAmount;
+			}
+			
+			/////////////////////////
+			// Set up params
+			mpEffect.SetParams(_HPL3VR_HideComfortEffect("HideDistortion") ? 0.0f : fAmount);
+			
+			/////////////////////////
+			// Set if active
+			mBaseObj.SetActive(fAmount!=0.0f);
+		}
+	}
+
+	void OnDraw(float afTimeStep)
+	{
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//----------------------------------
+
+	[nosave] cPostEffect_LensDistortion@ mpEffect = null;
+
+	float mfDirectAmount=0;
+	[nosave] bool mbEffectLoaded=false;
+
+	//----------------------------------
+	
+	array<cLuxEffect_LensDistInstance> mvInstances;
+	int mlIdCounter=0;
+		
+	//----------------------------------
+}

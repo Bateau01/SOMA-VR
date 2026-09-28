@@ -1,0 +1,27 @@
+# Local builds and test output
+/build/
+/audit/
+/dist/
+__pycache__/
+*.pyc
+.venv/
+zig-cache/
+.zig-cache/
+zig-out/
+.DS_Store
+Thumbs.db
+# Never copy the game, private runtime state or play-session logs into this repo.
+Soma.exe
+*.sav
+*.log
+*.dmp
+*.bak
+*.tmp
+hpl3vr_vr_settings.ini
+hpl3vr_hand_calibration.bin
+hpl3vr_hand_joints.bin
+hpl3vr_runtime_fov_cache.bin
+hpl3vr_hand_family_test.txt
+/runtime/hpl3vr_hand_calibration.ini
+.env
+.env.*

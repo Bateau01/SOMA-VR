@@ -1,0 +1,622 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+enum eTearType
+{
+	eTearType_Slide,
+	eTearType_Hinge,
+}
+
+//------------------------------------------------------------
+
+class cScrPropTear : iScrProp, iScrProp_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mTearPid.SetErrorNum(10);
+		mTearPid.p = 10.0f;
+		mTearPid.i = 0.0f;
+		mTearPid.d = 1.0f;
+		
+		m_idStressSound = tID_Invalid;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		mbGrab_UseCustomOffset = apVars.GetVarBool("Grab_UseCustomOffset", false);
+		mvGrab_CostumPositionOffset = apVars.GetVarVector3f("Grab_CustomPositionOffset", cVector3f(0,0,0));
+		mvGrab_CostumRotationOffset = apVars.GetVarVector3f("Grab_CustomRotationOffset", cVector3f(0,0,0));
+		mbGrab_UseCustomDepth = apVars.GetVarBool("Grab_UseCustomDepth", false);
+		mfGrab_CustomDepth = apVars.GetVarFloat("Grab_CustomDepth", 0);
+		mfGrab_MassMul = apVars.GetVarFloat("Grab_MassMul", 0.1);
+		mfGrab_MinDepth = apVars.GetVarFloat("Grab_MinDepth", 1);
+		mfGrab_MaxDepth = apVars.GetVarFloat("Grab_MaxDepth", 5);
+		mfGrab_ForceMul = apVars.GetVarFloat("Grab_ForceMul", 1);
+		mfGrab_TorqueMul = apVars.GetVarFloat("Grab_TorqueMul", 1);
+		mbGrab_IsHeavy = apVars.GetVarBool("Grab_IsHeavy", false);
+		mbGrab_CollisionWithPlayer = apVars.GetVarBool("Grab_CollisionWithPlayer", false);
+		
+		msTear_Joint = apVars.GetVarString("Tear_Joint", "");
+		mfTear_MoveMaxSpeed = apVars.GetVarFloat("Tear_MoveMaxSpeed", 0.1);
+		mfTear_MoveSlowDownSpeed = apVars.GetVarFloat("Tear_MoveSlowDownSpeed", 1);
+		mfTear_MoveSpeedFactor = apVars.GetVarFloat("Tear_MoveSpeedFactor", 0.05);
+		mbTear_LoseGripWhenTorn = apVars.GetVarBool("Tear_LoseGripWhenTorn", false);
+		mfTear_VelocityMulWhenTorn = apVars.GetVarFloat("Tear_VelocityMulWhenTorn", 1.f);
+		mfTear_HealthLossFactor = apVars.GetVarFloat("Tear_HealthLossFactor", 0.4);
+		mfTear_MaxSnapBackSpeed = apVars.GetVarFloat("Tear_MaxSnapBackSpeed", 1);
+		mfTear_MainBodyMassMul = apVars.GetVarFloat("Tear_MainBodyMassMul", 1);
+		msTear_StressSound = apVars.GetVarString("Tear_StressSound", "");
+		
+		////////////////////////////////////
+		// Get Joint and door body
+		mlJointIndex = 0;
+		if (msTear_Joint != "")
+		{
+			tString sActualName = mBaseObj.GetName() + "_" + msTear_Joint;
+			for (int i = 0; i < mBaseObj.GetJointNum(); i++)
+			{
+				if (mBaseObj.GetJoint(i).GetName() != sActualName)
+				{
+					continue;
+				}
+				
+				mlJointIndex = i;
+				break;
+			}
+		}
+		
+		iPhysicsJoint@ pJoint = mBaseObj.GetJoint(mlJointIndex);
+		iPhysicsBody @pBody = pJoint.GetChildBody();
+
+		pBody.SetMass(pBody.GetMass() * mfTear_MainBodyMassMul);
+		pJoint.SetStickyMinLimit(true);
+		if (cPhysics_ToJointHinge(pJoint) !is null)
+		{
+			mTearType = eTearType_Hinge;
+			mTearPid.p = 10;
+			mTearPid.d = 1.0f;
+			
+			iPhysicsJointHinge@ pHinge = cPhysics_ToJointHinge(pJoint);
+			mfJointMax = pHinge.GetMaxAngle();
+			pHinge.SetMaxAngle(0.001);
+		}
+		else
+		{
+			mTearType = eTearType_Slide;
+			mTearPid.p = 6;
+			mTearPid.d = 0.1f;
+			
+			iPhysicsJointSlider@ pSlider = cPhysics_ToJointSlider(pJoint);
+			mfJointMax = pSlider.GetMaxDistance();
+			pSlider.SetMaxDistance(0.001);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{			
+		////////////////////////////
+		// Check interaction
+		if(mbIsInteracting && !mBaseObj.IsInteractedWith())
+		{
+			mbIsInteracting = false;
+			mTearPid.Reset();
+			
+			if (m_idStressSound != tID_Invalid)
+			{	
+				cSoundEntity@ pStressSound = cLux_ID_SoundEntity(m_idStressSound);
+				if(pStressSound !is null) pStressSound.FadeOut(2.f);
+				m_idStressSound = tID_Invalid;
+			}
+		}
+		
+		if (mbJointBroken) return;
+		
+		iPhysicsJoint@ pJoint = mBaseObj.GetJoint(mlJointIndex);
+		float fFraction = GetJointFraction(pJoint);
+		iPhysicsBody @pBody = pJoint.GetChildBody();
+		
+		//////////////////////////////////////////////////////////////////
+		// Check if body has been moved enough to activate body again
+		if (!mbUpdateForces)
+		{
+			if (fFraction < 0.1) return;
+			
+			mbUpdateForces = true; 
+			pBody.Enable();
+			pBody.SetAutoDisable(false);
+		}	
+		
+		///////////////////////////////////////////////
+		// Get correct tear speed
+		float fTearSpeed = -mfTear_MaxSnapBackSpeed;
+		if (mbIsInteracting)
+		{
+			fTearSpeed = mBaseObj.GetVarFloat("TearSpeed"); // Use speed from interact state
+			
+			if (fTearSpeed > 0) fTearSpeed *= mfTear_MoveMaxSpeed;
+			else 				fTearSpeed *= mfTear_MaxSnapBackSpeed;
+		}
+		
+		//////////////////////////////////////////////
+		// Check if body should get locked in place
+		else if (fFraction < 0.01f)
+		{
+			mbUpdateForces = false;
+			pBody.SetAutoDisable(true);
+			
+			if (mTearType == eTearType_Hinge)
+				cPhysics_ToJointHinge(mBaseObj.GetJoint(mlJointIndex)).SetMaxAngle(0.001);
+			else
+				cPhysics_ToJointSlider(mBaseObj.GetJoint(mlJointIndex)).SetMaxDistance(0.001);
+				
+			return;
+		}	
+		
+		///////////////////////
+		// Slide joint
+		if (mTearType == eTearType_Slide)
+		{	
+			
+			//////////////////////////////
+			//Update force			
+			cVector3f vJointVel = pJoint.GetVelocity();
+			cVector3f vWantedVel = pJoint.GetPinDir() * fTearSpeed;
+			
+			cVector3f vForce = mTearPid.Output(vWantedVel - vJointVel, afTimeStep) * pBody.GetMass();
+			
+			vForce = cMath_Vector3MaxLength(vForce, mfMaxForce*pBody.GetMass());
+
+			pBody.AddForce(vForce);
+		}
+		
+		///////////////////////
+		// Hinge joint
+		else
+		{					
+			///////////////////////////////////
+			//Calculate torque
+			cVector3f vRotateDir = pJoint.GetPinDir() * -1;
+			cVector3f vBodyVel = pBody.GetAngularVelocity();
+			cVector3f vHingeVel = vRotateDir * cMath_Vector3Dot(vRotateDir, vBodyVel);
+			cVector3f vWantedVel = vRotateDir * fTearSpeed;
+			
+			cVector3f vTorque = mTearPid.Output(vWantedVel - vHingeVel, afTimeStep);
+			vTorque = cMath_MatrixMul(pBody.GetInertiaMatrix(), vTorque);
+			
+			vTorque = cMath_Vector3MaxLength(vTorque, mfMaxForce*pBody.GetMass());
+
+			pBody.AddTorque(vTorque);
+		}	
+		
+		//////////////////////////////////////////////
+		// Handle sound
+		if (fTearSpeed > 0)
+		{
+			if (m_idStressSound == tID_Invalid && msTear_StressSound != "" && !mbStressSoundAttemptFailed)
+			{
+				cSoundEntity@ pStressSound = mBaseObj.PlaySound("StressSound", msTear_StressSound, true, true);
+				if (pStressSound !is null)
+				{
+					pStressSound.FadeIn(2.f);
+					m_idStressSound = pStressSound.GetID();
+				}
+				else mbStressSoundAttemptFailed = true;
+			}
+			
+			if (m_idStressSound != tID_Invalid) 
+			{
+				cSoundEntity@ pStressSound = cLux_ID_SoundEntity(m_idStressSound);
+				if(pStressSound !is null) pStressSound.SetParam(0, fTearSpeed);
+			}
+		}
+		else if (m_idStressSound != tID_Invalid)
+		{
+			cSoundEntity@ pStressSound = cLux_ID_SoundEntity(m_idStressSound);
+			if(pStressSound !is null) pStressSound.FadeOut(2.f);
+			m_idStressSound = tID_Invalid;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/*void OnPostUpdate(float afTimeStep)
+	{
+		//mClimbHelper.PostUpdate(afTimeStep);
+	}*/
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in aContactData)
+	{
+		//Debug:
+		cLux_AddDebugMessage("Body "+apBody.GetName()+" vs "+apCollideBody.GetName() + "Nrm: " +aContactData.mfMaxContactNormalSpeed + " Tan: "+aContactData.mfMaxContactTangentSpeed, false);
+	}
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INTERACTION
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		if(mBaseObj.GetStaticPhysics()) return false;
+		if(mBaseObj.GetParentType() == eParentType_StickyStuck) return false;
+		if(apBody.GetMass()==0) return false;
+	
+		return true;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		// Retry a failed optional sound on a new interaction, never every update.
+		mbStressSoundAttemptFailed = false;
+		
+		if (mbJointBroken)
+		{
+			return SetupGrabInteract(alType, apBody, avFocusPos, asData);
+		}
+		else
+		{
+			iPhysicsJoint@ pJoint = mBaseObj.GetJoint(mlJointIndex);
+			if (mTearType == eTearType_Hinge)
+				cPhysics_ToJointHinge(pJoint).SetMaxAngle(mfJointMax);
+			else
+				cPhysics_ToJointSlider(pJoint).SetMaxDistance(mfJointMax);
+			
+			iPhysicsBody @pBody = pJoint.GetChildBody();
+			cVector3f vFocusPos = avFocusPos;
+			if (@apBody != pBody)
+			{
+				vFocusPos = pBody.GetWorldPosition();
+			}
+			
+			mbUpdateForces = true;
+			pBody.Enable();
+			pBody.SetAutoDisable(false);
+			return SetupTearInteract(alType, pBody, vFocusPos, asData);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	bool SetupGrabInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		mTearPid.Reset();
+		
+		///////////////////////////////
+		//Set up the grabstate
+		cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+		cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+		cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
+		cScript_SetGlobalArgBool(3, mbGrab_UseCustomOffset);	//Use custom offset
+		cScript_SetGlobalArgVector3f(4, mvGrab_CostumPositionOffset);	//Costum Position offset
+		cScript_SetGlobalArgVector3f(5, mvGrab_CostumRotationOffset);	//Costum Rotation offset
+		cScript_SetGlobalArgBool(6, mbGrab_UseCustomDepth);	//Use custom Depth
+		cScript_SetGlobalArgFloat(7, mfGrab_CustomDepth);	//Custom depth
+		cScript_SetGlobalArgFloat(8, mfGrab_MassMul);	//Grab mass mul
+		cScript_SetGlobalArgFloat(9, mfGrab_MinDepth);	//Min depth
+		cScript_SetGlobalArgFloat(10, mfGrab_MaxDepth);	//Max Depth
+		cScript_SetGlobalArgFloat(11, mfGrab_ForceMul);
+		cScript_SetGlobalArgFloat(12, mfGrab_TorqueMul);
+		cScript_SetGlobalArgBool(13, mbGrab_IsHeavy);
+		cScript_SetGlobalArgBool(14, mbGrab_CollisionWithPlayer);
+		
+		cScript_RunGlobalFunc("State_Interact_Grab", "", "SetupGrab");
+		
+		///////////////////////////////
+		//Set up the grabstate
+		cLux_GetPlayer().ChangeState(ePlayerState_Grab);	
+	
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool SetupTearInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		mTearPid.Reset();
+		
+		///////////////////////////////
+		//If body mass is 0, get a dynamic body
+		iPhysicsJoint@ pJoint = mBaseObj.GetJoint(mlJointIndex);
+		iPhysicsBody @pBody = pJoint.GetChildBody();
+		@apBody = pBody;
+
+		///////////////////////////////
+		//Check if in sticky area
+		//mBaseObj.GetMap().DetachBodyFromStickyArea(apBody); (not implemented!)
+		
+		///////////////////////////////
+		//Set up the slide state
+		cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+		cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+		cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
+		
+		cScript_SetGlobalArgFloat(3, mfTear_MoveSpeedFactor);
+		cScript_SetGlobalArgFloat(4, mfTear_MoveSlowDownSpeed);
+		cScript_SetGlobalArgFloat(5, mfTear_HealthLossFactor);
+		cScript_SetGlobalArgInt(6, mlJointIndex);
+
+		cScript_RunGlobalFunc("State_Interact_Tear", "", "SetupTear");
+		
+		///////////////////////////////
+		//Change the player state
+		cLux_GetPlayer().ChangeState(ePlayerState_Tear);	
+		mbIsInteracting = true;
+
+		return true;
+	}
+
+	//------------------------------------------------------------
+
+	void _Global_OnAddSpeed()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		if (!mbJointBroken)
+		{
+			if (mTearType == eTearType_Hinge)
+				return eCrossHairState_PullDoor;
+			else
+				return eCrossHairState_PullOut;
+		}
+		else if(mbGrab_IsHeavy)
+		{
+			return eCrossHairState_CarryTwoHanded;
+		}
+		else
+		{
+			return eCrossHairState_CarryOneHanded;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_Tear()
+	{
+		if (mbJointBroken) return;
+		
+		iPhysicsJoint@ pJoint = mBaseObj.GetJoint(mlJointIndex);
+		iPhysicsBody @pMainBody = pJoint.GetChildBody();
+		
+		pMainBody.SetAutoDisable(true);
+		pMainBody.SetMass(pMainBody.GetMass()/mfTear_MainBodyMassMul);
+		
+		// Sound
+		if (m_idStressSound != tID_Invalid)
+		{
+			cSoundEntity@ pStressSound = cLux_ID_SoundEntity(m_idStressSound);
+			if(pStressSound !is null) pStressSound.Stop(false);
+			m_idStressSound = tID_Invalid;
+		}
+		
+		int lBodyID = cScript_GetGlobalArgInt(0);
+		iPhysicsBody@ pBody = mBaseObj.GetBodyFromID(lBodyID);
+		
+		cVector3f vPinDir = pJoint.GetPinDir();
+		
+		if (mTearType == eTearType_Slide)
+		{
+			pBody.SetLinearVelocity(vPinDir*mfTear_VelocityMulWhenTorn);
+		}
+		else
+		{
+			cVector3f vBodyCenter = cMath_MatrixMul(pBody.GetLocalMatrix(), pBody.GetMassCenter());
+			cVector3f vJointToBody =  cMath_Vector3Normalize(vBodyCenter - pJoint.GetPivotPoint());
+			cVector3f vJointTurnFwd = cMath_Vector3Cross(vJointToBody, vPinDir);
+			
+			pBody.SetLinearVelocity(vJointTurnFwd*mfTear_VelocityMulWhenTorn);
+			pBody.SetAngularVelocity(vPinDir*-mfTear_VelocityMulWhenTorn);
+		}			
+		
+		// Handle changing of state here
+		if (mbIsInteracting)
+		{			
+			// Transfer interaction to Grab
+			if (!mbTear_LoseGripWhenTorn)
+			{
+				cVector3f vFocusPos = cScript_GetGlobalArgVector3f(1);
+				
+				SetupGrabInteract(1, pBody, vFocusPos, "");
+			}
+		}
+		
+		// Break joint
+		pJoint.Break();
+		mbJointBroken = true;
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// HELPERS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	float GetJointFraction(iPhysicsJoint@ apJoint)
+	{	
+		if (mTearType == eTearType_Hinge)
+		{
+			return apJoint.GetAngle()/mfJointMax;
+		}
+		else 
+		{
+			return apJoint.GetDistance()/mfJointMax;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	//bool 
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] int mlJointIndex;
+	[nosave] eTearType mTearType;
+	[nosave] tID m_idStressSound;
+	[nosave] bool mbStressSoundAttemptFailed = false;
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbGrab_UseCustomOffset;
+	[nosave] cVector3f mvGrab_CostumPositionOffset;
+	[nosave] cVector3f mvGrab_CostumRotationOffset;
+	[nosave] bool mbGrab_UseCustomDepth;
+	[nosave] float mfGrab_CustomDepth;
+	[nosave] float mfGrab_MassMul;
+	[nosave] float mfGrab_MinDepth;
+	[nosave] float mfGrab_MaxDepth;
+	[nosave] float mfGrab_ForceMul;
+	[nosave] float mfGrab_TorqueMul;
+	[nosave] bool mbGrab_IsHeavy;
+	[nosave] bool mbGrab_CollisionWithPlayer;
+	
+	[nosave] tString msTear_Joint;
+	[nosave] float mfTear_MoveMaxSpeed;
+	[nosave] float mfTear_MoveSlowDownSpeed;
+	[nosave] float mfTear_MoveSpeedFactor;
+	[nosave] bool mbTear_LoseGripWhenTorn;
+	[nosave] float mfTear_VelocityMulWhenTorn = 1.f;
+	[nosave] float mfTear_HealthLossFactor;
+	[nosave] float mfTear_MaxSnapBackSpeed;
+	[nosave] float mfTear_MainBodyMassMul;
+	[nosave] tString msTear_StressSound;
+	
+	//------------------------------------------------------------
+	
+	bool mbIsInteracting;
+	bool mbUpdateForces = true;
+	bool mbJointBroken = false;
+	float mfJointMax;
+	
+	cPidControllerVec3 mTearPid;
+	
+	//cProp_Helper_Climbing mClimbHelper;
+	
+	//------------------------------------------------------------
+	
+	float mfMaxForce = 1000;
+	
+	//------------------------------------------------------------
+}	

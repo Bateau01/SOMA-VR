@@ -1,0 +1,517 @@
+#include "player/PlayerState_Interact.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_map.hps"
+#include "helpers/helper_modules.hps"
+#include "player_types.hps"
+#include "base/InputHandler_Types.hps"
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+// H576BO_VR_FINGERTIP_TERMINAL: VR keeps the authored modal Terminal state but never snaps Simon/HMD to the screen.
+bool _HPL3VR_RuntimeActive_TerminalState()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+const float gfHeadMoveAcc = 6.0f;
+const float gfHeadMoveSpeed = 1.5f;
+const float gfHeadMoveSlowdownDist = 0.3f;
+
+const float gfHeadRotateAcc = 6.0f;
+const float gfHeadRotateMaxSpeed = 1.5f;
+const float gfHeadRotateSpeedMul = 2;
+
+const float gfCheckMaxPushDist = 2.5f;
+const float gfCheckPushDistTolerance = 0.1f;
+const int glCheckMaxPushTries = 3;
+
+//------------------------------------------------------------
+
+class cScrPlayerState_Interact_Terminal : iScrPlayerState_Interact, iScrPlayerState_Interface
+{
+    [nosave] float mfVRNoTouchTime=0;
+    [nosave] bool mbVRLeavePolicyChecked=false;
+    [nosave] bool mbVRLeaveOwnsSequence=false;
+    [nosave] bool mbVRCursorSaved=false;
+    [nosave] bool mbVRCursorWasVisible=false;
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+		mbVRLeavePolicyChecked=false;
+		mfVRNoTouchTime=0;
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+		mbVRLeavePolicyChecked=false;
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupTerminal()
+	{
+		////////////////////////////////
+		// Get basic params & setup
+		SetupInteractVars();
+		mfCurrentCameraSpeed = 0;
+		
+		////////////////////////////////
+		// Get specific params
+		cVector3f vDirection = cMath_Vector3Normalize(cScript_GetGlobalArgVector3f(3));
+		cVector3f vTerminalPosition = cScript_GetGlobalArgVector3f(4);
+		float vCameraDistance = cScript_GetGlobalArgFloat(5);
+		msLeaveCallback = cScript_GetGlobalArgString(6);
+		tString sPlayerPosEntity = cScript_GetGlobalArgString(7);
+
+		// VR preserves the authored Terminal state, focused GuiSet, callbacks and
+		// input ownership, but never relocates Simon or rotates/offsets the HMD.
+		// Flatscreen falls through into the original code below unchanged.
+		if (_HPL3VR_RuntimeActive_TerminalState())
+			return;
+
+		///////////////////////////////////////////
+		// Get target camera and feet positions
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		
+		cVector3f vCurrentFeetPos = pCharBody.GetFeetPosition();
+		mvTargetCameraPosition = vTerminalPosition + vDirection * vCameraDistance;
+		cVector3f vFeetPosition = mvTargetCameraPosition;
+		vFeetPosition.y = vCurrentFeetPos.y;
+		
+		///////////////////////////////////////////
+		// Get custom player position from instance
+		if (sPlayerPosEntity != "")
+		{
+			iLuxEntity@ pPosEntity = Map_GetEntity(sPlayerPosEntity);
+			if (pPosEntity !is null)
+			{
+				vFeetPosition = pPosEntity.GetPosition();
+				vFeetPosition.y -= gvBodySize.y*0.5f;
+			}
+			else
+			{
+				Error("Could not find entity with name "+sPlayerPosEntity+" to use as player position entity for terminal " + mBaseObj.GetName());
+			}
+		}
+	
+		////////////////////////////////////
+		//Try to find a position in front of terminal where the player fits
+		cVector3f vPushBack;
+		bool bFitting = false;
+		int lTries = 0;
+		while (lTries < glCheckMaxPushTries && vPushBack.y > -0.01 && vPushBack.Length() <= gfCheckMaxPushDist)
+		{
+			lTries++;
+			
+			bFitting = pCharBody.CheckCharacterFits(vFeetPosition, true,0, vPushBack);
+			if(bFitting) break;
+				
+			vFeetPosition += vPushBack;
+		}
+
+		if (bFitting || vPushBack.Length() < gfCheckPushDistTolerance)
+			pCharBody.SetFeetPosition(vFeetPosition, false);
+		
+		////////////////////////////////
+		// Move camera back to initial position
+		cVector3f vPosAdd = cLux_GetPlayer().GetCameraPosAdd(eCameraAddType_Terminal);
+		cVector3f vPosDifference = vCurrentFeetPos - pCharBody.GetFeetPosition();
+
+		cMatrixf mtxCharBodyRotation = cMath_MatrixInverse(cMath_MatrixUnitVectors(pCharBody.GetRight(), pCharBody.GetUp(), pCharBody.GetForward(), cVector3f(0)));
+		cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Terminal, cMath_MatrixMul(mtxCharBodyRotation, vPosDifference));
+		
+		////////////////////////////////
+		//Stop character body
+		pCharBody.SetMoveSpeed(eCharDir_Forward, 0);
+		pCharBody.SetMoveSpeed(eCharDir_Right, 0);
+		pCharBody.SetForceVelocity(cVector3f(0));
+
+		///////////////////////////////////////////
+		// Rotate camera towards screen
+		cLux_GetPlayer().RotateCameraTowards(gfHeadRotateAcc, gfHeadRotateSpeedMul, gfHeadRotateMaxSpeed, vDirection * -1, true);
+	}
+	
+	//------------------------------------------------------------
+	
+	void Exit()
+	{
+		mbExit=true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnEnterState(int alPrevStateId)
+	{
+		mbExit = false;
+        mfVRNoTouchTime=0;
+        mbVRLeavePolicyChecked=false;
+        mbVRCursorSaved=false;
+		EnterInteractState(alPrevStateId);
+		
+		// Disable screen shakes etc.
+		Effect_Shake_EnableAll(false);
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnLeaveState(int alNextStateId)
+	{	
+		bool bHPL3VR = _HPL3VR_RuntimeActive_TerminalState();
+
+		//////////////
+		// Restore fov only for the literal flatscreen path. VR never changed it.
+		if (!bHPL3VR)
+			Player_FadeFOVToDefault(4.0f);
+
+		// Enable screen shakes etc.
+		Effect_Shake_EnableAll(true);
+		
+		////////////////////////////////////////
+		// Reset prop
+		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+		// S26AQ: the prop can disappear before CheckShouldUpdate exits this state.
+		// Release native ownership in that case too; only touch a surviving GUI.
+		if (bHPL3VR)
+		{
+			// Release the VR-owned native mouse-down synchronously while this
+			// GuiSet is still focused, so drag widgets receive their authored MouseUp.
+			if(pProp !is null && pProp.GetGuiSet() !is null && pProp.GetGuiSet().GetImGui() !is null)
+                    pProp.GetGuiSet().GetImGui().SendAction(eImGuiAction_MouseLeft,false,false);
+			cScript_RunGlobalFunc("VRTERM", "", "L");
+		}
+		if (pProp !is null)
+		{
+            if(mbVRCursorSaved && pProp.GetGuiSet() !is null && pProp.GetGuiSet().GetImGui() !is null)
+            {
+                cGuiSet@ cursorSet=pProp.GetGuiSet().GetImGui().GetSet();
+                if(cursorSet !is null) cursorSet.SetDrawMouse(bHPL3VR ? false : mbVRCursorWasVisible);
+            }
+			pProp.SetGuiIsFocused(false);
+			ResetPropInteractVars();
+		}
+		mbVRCursorSaved=false;
+		
+		////////////////////////////////////////
+		// Callback
+		if(pProp !is null && msLeaveCallback!="")
+		{
+			cLuxMap @pMap = cLux_GetCurrentMap();
+			if((!bHPL3VR || pMap.ScriptMethodExists("void " + msLeaveCallback + "(const tString &in asEntityName)")) &&
+                pMap.ScriptPrepare("void " + msLeaveCallback + "(const tString &in asEntityName)" ) )
+			{
+				tString sName = pProp.GetName();
+				pMap.SetArgString(0, sName);
+				pMap.ScriptExecute();
+			}
+		}
+		
+		////////////////////////////////////////
+		// Reset camera only for literal flatscreen. VR never acquired this camera path.
+		if (!bHPL3VR)
+		{
+			cLux_GetPlayer().MoveCameraPosAdd(eCameraAddType_Terminal, cVector3f(0), gfHeadMoveAcc, gfHeadMoveSpeed, gfHeadMoveSlowdownDist);
+			cLux_GetPlayer().StopCameraRotate(0);
+		}
+	}
+		
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	void Update(float afTimeStep)
+	{
+		if(CheckShouldUpdate()==false) return;
+		
+		if(mbExit) {
+			mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+			return;
+		}
+
+		if (_HPL3VR_RuntimeActive_TerminalState())
+		{
+            // Resolve once per state entry (including restored saves). Stale
+            // optional callback names do not acquire scripted exit ownership.
+            if(!mbVRLeavePolicyChecked)
+            {
+                mbVRLeaveOwnsSequence=msLeaveCallback!="" && cLux_GetCurrentMap().ScriptMethodExists(
+                    "void " + msLeaveCallback + "(const tString &in asEntityName)");
+                mbVRLeavePolicyChecked=true;
+            }
+            if(cScript_RunGlobalFunc("VRTPRES","","")) mfVRNoTouchTime=0;
+            else mfVRNoTouchTime+=afTimeStep;
+            // S26AW: callback-owned terminals can control a chair or story sequence.
+            // Finger withdrawal releases input, never that authored ownership.
+            // Ordinary walk-up terminals retain automatic movement recovery.
+            if(!mbVRLeaveOwnsSequence && mfVRNoTouchTime>=0.5f){mBaseObj.mpPlayer.ChangeState(mlPreviousState);return;}
+			// Bind only this state's exact, focused terminal ImGui. The zero motion
+            // is swallowed by the verified native capture hook.
+            cLuxProp@ terminal=cLux_ID_Prop(mPropID);
+            if(terminal !is null && terminal.IsGuiFocused() && terminal.GetGuiSet() !is null)
+            {
+                cImGui@ gui=terminal.GetGuiSet().GetImGui();
+                if(gui !is null && gui.GetSet() !is null)
+                {
+                    cGuiSet@ cursorSet=gui.GetSet();
+                    if(!mbVRCursorSaved) {mbVRCursorWasVisible=cursorSet.GetDrawMouse();mbVRCursorSaved=true;}
+                    cursorSet.SetDrawMouse(false);
+                    gui.SetShowMouseAutomatically(false);
+                    // Native mouse visibility also gates widget hit testing.
+                    gui.SetShowMouse(true);
+                }
+                if(gui !is null && cScript_RunGlobalFunc("VRGUI","","C"))
+                {
+                    gui.SendMouseVirtualPosition(cVector2f(0),cVector2f(0));
+                    cScript_RunGlobalFunc("VRGUI","","E");
+                }
+            }
+            // The physical fingertip is the pointer; HMD pose remains untouched.
+			Player_SetCrossHairState(eCrossHairState_None);
+			return;
+		}
+				
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		
+		///////////////////////////////////////////
+		//Calculate direction to target position in the player's local space
+		cVector3f vPosAdd = cLux_GetPlayer().GetCameraPosAdd(eCameraAddType_Terminal);
+		cVector3f vToTarget = mvTargetCameraPosition - cLux_GetPlayer().GetCamera().GetPosition();
+		float fDist = vToTarget.Length();
+		cMatrixf mtxCharBodyRotation = cMath_MatrixUnitVectors(pCharBody.GetRight(), pCharBody.GetUp(), pCharBody.GetForward(), cVector3f(0));
+		cVector3f vLocalToTarget = cMath_MatrixMul(mtxCharBodyRotation, vToTarget);
+		vLocalToTarget.Normalize();
+		
+		///////////////////////////////////////////
+		//Move camera
+		vPosAdd += vLocalToTarget * cMath_Min(fDist, mfCurrentCameraSpeed*afTimeStep);
+		cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Terminal, vPosAdd);
+		
+		///////////////////////////////////////////
+		//Update camera speed
+		float fMaxSpeed = gfHeadMoveSpeed;
+		if (fDist < gfHeadMoveSlowdownDist)
+			fMaxSpeed *= fDist/gfHeadMoveSlowdownDist;
+		
+		mfCurrentCameraSpeed = cMath_Min(fMaxSpeed, mfCurrentCameraSpeed + gfHeadMoveAcc * afTimeStep);
+				
+		//Show no crosshair!
+		Player_SetCrossHairState(eCrossHairState_None);
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+		if(CheckShouldUpdate()==false) return;
+	}
+	
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+        if (_HPL3VR_RuntimeActive_TerminalState() &&
+            (alAction==eAction_Crouch || alAction==eAction_Jump || alAction==eAction_Run))
+        {
+            if(abPressed) mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+            return true;
+        }
+		if (alAction == eAction_Crouch || alAction == eAction_Jump)
+			return false;
+		
+		if(alAction == eAction_InteractCancel)
+		{
+			mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+    {
+        // VR touches retain the terminal GUI and story callbacks while the
+        // normal movement pipeline continues. Flatscreen remains modal.
+        if (_HPL3VR_RuntimeActive_TerminalState()) return true;
+		///////////////////////////////////
+		// Disable look and move
+		if(alAnalogId == eAnalogType_Look || alAnalogId == eAnalogType_GamepadMove || alAnalogId == eAnalogType_Move)
+		{			
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+		mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// BODY CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool AllowBuoyancy(iPhysicsBody @apBody)
+	{
+		return false;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	void SaveBodyProperties(iPhysicsBody @apBody)
+	{
+		
+	}
+
+	//-----------------------------------------------------------------------
+
+
+	bool BodyIsAdded(iPhysicsBody @apBody)
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	cVector3f mvTargetCameraPosition;
+	cVector3f mvOffset;
+	float mfCurrentCameraSpeed;
+	tString msLeaveCallback;
+	bool mbExit;
+	
+	//------------------------------------------------------------
+		
+}

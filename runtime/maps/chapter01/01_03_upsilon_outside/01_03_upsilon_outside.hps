@@ -1,0 +1,2235 @@
+#include "base/InputHandler_Types.hps"
+#include "interfaces/Map_Interface.hps"
+#include "helpers/helper_game.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_map.hps"
+#include "helpers/helper_areas.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_sequences.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_modules.hps"
+#include "helpers/helper_ai.hps"
+#include "helpers/helper_player.hps"
+#include "custom_depth/helper_custom_depth_audio.hps"
+
+#include "helper_custom_depth.hps"
+#include "helper_custom_depth_ai_kate.hps"
+#include "helper_custom_depth_ai.hps"
+
+const cColor gCommRoomFogColor = cColor(0.126,0.152,0.146,0.376);
+const cColor gOceanFogColor = cColor(0.009,0.028,0.035,1);
+
+class cScrMap : iScrMap
+{
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MAIN CALLBACKS
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// Set up map environment
+	void Setup()
+	{
+		GetBase().SetDisplayNameEntry("01-03-upsilon-outside");
+				
+		///////////////////////////////
+		// Setup presets
+		{
+			/////////////////////////////
+			//1.4 Map presets to fade to when transition
+			Map_Preset_SetupColorGrading("Level1.4", "textures/colorgrading/grading_01_04.dds");
+			//Map_Preset_SetupToneMapping("Level1.4", 0.5f, 0.0f, 3.5f);
+			//Map_Preset_SetupDirLight("Level1.4", false, cColor(0,0,0,0), 0, cVector3f(0,0,0), cColor(0,0,0,0), cColor(0,0,0,0));
+		}
+		
+		Entity_SetVarBool("AirlockPanelArea_1", "IsOmniPanel", true);
+		
+		CathTool_ResetScreen(eCathToolVariant_HelperJane);
+		cTerrain@ pTerrain = cLux_GetCurrentMap().GetWorld().GetTerrain();
+		if(pTerrain !is null) pTerrain.SetCheapMaterial("sand_wavy.mat", 0.5f);
+	}
+	
+	//-------------------------------------------------------
+		
+	void PreloadData()
+	{		
+		OmnitoolGui_Preload();
+
+		PlayerHands_PreloadHandModel_Diving();
+		PlayerHands_PreloadHandModel_Human();
+		
+		ParticleSystem_Preload("01_03_loop_bubbles_swoosh.ps");
+		ParticleSystem_Preload("01_03_oneshot_bubbles_player.ps");
+		ParticleSystem_Preload("drops_med_continuous_short.ps");
+		ParticleSystem_Preload("elec_spark_oneshot.ps");
+		ParticleSystem_Preload("loop_waterbubbles_large_cloud.ps");
+		ParticleSystem_Preload("oneshot_waterbubbles_big.ps");
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// Run first time starting map
+	void OnStart()
+	{
+		
+		/////////////////////////////////////////////////
+		// Audio setup
+		Sound_SetGlobalVolume(0.0f, eSoundEntryType_WorldAll);
+		Sound_PreloadProject("01_03_upsilon_outside");
+		Sound_PreloadGroup("Flashback/Level/01_03", true);
+		Sound_CreateAtEntity("TrapAlarm", "01_03_upsilon_outside/katebot/katebot_help", "InfectedKate_AI", 0.0f, false, 1.0f);
+
+		//--------------------------------------------------------------
+
+		Map_SetUnderwater(true);
+		
+		SetupTaintedPumpStation();
+		SetupSignalTowerArea();
+		SetupExitDoor();
+		SetupStuckKate();
+		
+		//SetupEndOfLevelWelding
+		{
+			Entity_SetEffectsActive("BunkerWeldingFlare", false, false);
+			LensFlare_SetVisible("BunkerWeldingFlare_LensFlare_*", false);
+		}
+		
+		bool bDoIntro = true;
+		
+		//////////////////////////////////////////
+		// Player setup
+		Player_SetAmbientLight_Outdoors();
+		
+		PlayerHands_SetHandModel_Diving();
+		
+		Player_SetFlashlightOnOffCallback("Flashlight_FirstTime");
+		Entity_SetInteractionDisabled("LaunchSiteDoor", true);
+		
+		///////////////////////////////////////////////////
+		//Airlock sound
+		Sound_CreateAtEntity("Pump_Idle_Loop_Underwater", "Entities_OceanBottom/airlock/uw/pump/idle_loop", "Pump_SoundSource", 1.0f, false, 1.0f);
+		
+		ParticleSystem_SetActive("airlock_drain_leak_*", false);
+		ParticleSystem_SetActive("airlock_drain_droplets_*", false);
+		ParticleSystem_SetActive("airlock_drain_droplets2_*", false);
+		
+		Lamp_SetLit("lamp_room_1_*", false, false);
+		
+		//----DEBUG----//
+		if(cLux_ScriptDebugOn())
+		{
+		//	OpenFinalDoor();
+			//Preload();
+			Entity_SetActive("CathTool", true);
+			
+			bDoIntro = false;
+			Sound_FadeGlobalVolume(1.0f, 1.0f);
+			/////////////////////////
+			// Debug AI
+			//mbPlayerAtCharger = true;
+			//KateCopyChargeEvent("", "", 1);
+		}
+		
+		if (bDoIntro)
+			SequenceIntro("");
+		
+		LastOnSoma_SetText("01_03_upsilon_outside_1");
+	}
+	
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when entering map
+	void OnEnter()
+	{
+        // S26BC: physical surface -> exact native tool-use target; refreshed on save entry.
+        Entity_SetVarString("AirlockPanel_1", "VRUseTarget", "AirlockPanelArea_1");
+
+		MainMenu_SetBGPhase(eMainMenuPhase_1_3_To_2_4);
+		
+		cLux_GetCurrentMap().GetWorld().SetFogUnderwater(true);
+		
+		float fFadeTime = 0.0;
+		Effect_Bloom_FadeBrightPass(0.00001, fFadeTime); //sets pixels over 127 (255 * 0.5) to add to bloom
+		Effect_Bloom_FadeBloomWidth(160, fFadeTime); //sets 128 pixels in bloom width, looks best within 32 - 512 pixels.
+		Effect_Bloom_FadeBloomTint(0.3, 0.3, 0.3, fFadeTime); //sets red tint to bloom
+		
+		Effect_DoF_Start(0.05, 12, 1.0f, 3);
+		
+		//iTexture@ pSkybox = cResources_CreateTextureCubeMap("grayscale_gradient_1_4_fog.dds",false);
+		cLux_GetCurrentMap().GetWorld().SetFogSkyboxTexture(null);
+
+		Tool_PickUp("CathTool", false, false); 
+	}
+	
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when leaving map
+	void OnLeave()
+	{
+		Music_Stop(1.0f, eMusicPrio_BgAmb);
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// This only used for pure debug purposes when info needs to printed.
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afY)
+	{
+		bool bHidden = cLux_GetPlayer().GetVisibilityMaxRange()>0 || cLux_GetPlayer().GetVisibilityRangeMul()<1;
+		afY = cLux_DrawDebugText("Hidden: "+bHidden, afY);
+		return afY;
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnGui(float afTimeStep)
+	{
+		if(cLux_ScriptDebugOn()==false) return;	
+		
+		ImGui_LayoutBegin(eImGuiLayout_XY, cVector3f(500, 0,0), cVector2f(400,0));
+		
+		ImGui_LayoutEnd();
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnAction(int alAction, bool abPressed)
+	{
+		if(abPressed==false)
+			return;
+			
+		if (alAction == eAction_Test1)
+		{					
+			Entity_SetActive("BunkerWeldingFlare", true);
+			Entity_SetEffectsActive("BunkerWeldingFlare", true, true);
+			LensFlare_SetVisible("BunkerWeldingFlare_LensFlare_*", true);
+		}
+			
+		if (alAction == eAction_Test2)
+		{
+			Button_SetSwitchedOn("AirlockPanel_1", true, false);
+			//Terminal_ForceCacheUpdate("AirlockPanel_1");
+		}
+		
+		if (alAction == eAction_Test3)
+		{			
+			Entity_SetActive("InfectedKate_AI", true);
+			Entity_SetEffectsActive("InfectedKate_AI", true, true);
+			Entity_PlaceAtEntity("InfectedKate_AI", "Player", cVector3f_Up*2);
+			
+			mbFinalDoorOpened = true;
+			
+			Kate_Investigate("InfectedKate_AI", "BunkerWeldingPos", "BunkerWeldingFlare", -1, "KateAtPanel_LaunchSite");
+			
+			Map_RemoveTimer("auto_weld");
+			Entity_SetActive("LaunchSiteEntranceProximity", false);
+			
+			Entity_SetPlayerInteractCallback("LaunchSiteDoor", "", false);
+		}
+		if (alAction == eAction_Test4)
+		{	
+			cParticleSystemIterator@ pIt = cLux_GetCurrentMap().GetWorld().GetParticleSystemIterator();
+			
+			cLux_AddDebugMessage("------- PS BEGIN ----------");
+			while(pIt.HasNext())
+			{
+				cParticleSystem@ pPS = pIt.Next();
+				
+				if(cString_GetLastStringPos(pPS.GetName(),"InfectedKate")>=0)
+				{
+					//pPS.SetActive(true);
+					
+					cLux_AddDebugMessage("Name: "+pPS.GetName());					
+				}
+			}
+			cLux_AddDebugMessage("------- END ----------");
+		}
+		if (alAction == eAction_Test5)
+		{
+			cLux_AddDebugMessage("PRELOAD");
+			Preload();
+		}
+		if (alAction == eAction_Test6)
+		{
+			iCharacterBody@ body = cLux_ToAgent(Map_GetEntity("InfectedKate_AI")).GetCharBody();
+			body.SetCollideFlags(cLux_GetCurrentMap().GetCollideFlag("-player"));
+			//Entity_SetCollideCharacter("InfectedKate_AI", false);
+			//cLux_AddDebugMessage(.GetName());
+			//cLux_ToAgent(Map_GetEntity("InfectedKate_AI")).GetCharBody().SetCollideCharacter(false);
+		}
+		if (alAction == eAction_Test7)
+		{
+			iCharacterBody@ body = cLux_ToAgent(Map_GetEntity("InfectedKate_AI")).GetCharBody();
+			body.SetCollideFlags(cLux_GetCurrentMap().GetCollideFlag("+player"));
+		}
+	}
+	
+	void Flashlight_FirstTime(bool abLit)
+	{	
+		cLux_AddDebugMessage("You discovered the flashlight!");
+		
+		Map_AddTimer("Timer_PlayFlashlightDiscoveryLine", 1, "Timer_PlayFlashlightDiscoveryLine");
+						
+		cScript_SetGlobalVarBool("PlayerActivatedFlashlight", true);
+		
+		Player_SetFlashlightOnOffCallback("");
+	}
+		
+	void Timer_PlayFlashlightDiscoveryLine(const tString &in asTimer)
+	{
+		Voice_PlayWhenPossible("GetFlashlightUnderwater", "", 15.0f, 2.0f, "Flashlight_OnCommentOver");
+	}
+	
+	void Flashlight_OnCommentOver(const tString&in asScene, const tString&in asSubject)
+	{
+		Map_AddTimer("", 2.0f, "Timer_ShowFlashlightHint");
+	}
+	
+	void Timer_ShowFlashlightHint(const tString &in asTimer)
+	{
+		Hint_ShowInfo("Hints","HintFlashlight", true, 1.5f, false);
+	}
+	
+	//-------------------------------------------------------
+	
+/*	void Update(float afTimeStep)
+	{
+		
+	}*/
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 1 EMERGE FROM COMM ROOM
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 1 INTRO
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mIntroSequence;
+	
+	void SequenceIntro(const tString &in asTimer)
+	{
+		Sequence_Begin("SequenceIntro", mIntroSequence);
+		
+		//SETUP DURING BLACK
+		if (Sequence_DoStepAndWait(2.5f))
+		{
+			cScript_SetGlobalArgInt(0,0);
+			cScript_RunGlobalFunc("PlayerHandsHandler","","HPL3VR_SetSceneOverride");
+			Player_SetFlashlightDisabled(true);
+			Effect_Fade_Out(0);
+			Effect_ImageTrail_Start(1.5, 0.2, 10, 2);
+			
+			////////////////////
+			// Set fog color
+			Map_FadeFogColor(gOceanFogColor,0);
+		}
+		if (Sequence_DoStepAndWait(5.508f))
+		{
+			Sound_CreateAtEntity("IntroDRONE", "01_03_upsilon_outside/SFX/intro/sequence/drone", "Player");
+			Sound_CreateAtEntity("IntroSFX", "01_03_upsilon_outside/SFX/intro/sequence/sfx", "Player");
+		}
+		
+		//BEGIN INTRO DURING BLACK
+		if (Sequence_DoStepAndWait(0.5f))
+		{
+			ParticleSystem_CreateAtEntityExt("bubblyBubbles", "loop_waterbubbles_large_cloud.ps", "PSCamBubbles", true, cColor(0.512,0.789,0.724, 1));
+			ParticleSystem_CreateAtEntityExt("bubblyFlow", "01_03_loop_bubbles_swoosh.ps", "PSIntroFlow", true, cColor(0.512,0.789,0.724, 1));
+			
+			CameraAnimation_Begin("AnimIntro", "", true);
+			CameraAnimation_SetAttachedEntity("PSCamBubbles", false, false, false);
+			Entity_SetActive("AMB_INT_DomeRoom", true);
+			////////////////////
+			// Play music
+			//TODO: Have some other type of music (need to check and work with end of 1.2) 
+			//Think it works fine if the music ends and then no music plays until you are closer 
+			//to the semi scary bot.
+			//Music_Play("01_03_intro", 0.45f, false, eMusicPrio_BigEvent);
+		}
+		
+		//FADE IN SCENE
+		else if (Sequence_DoStepAndWait(1.5))
+		{		
+			//Insta fade
+			Effect_Fade_In(0.0f);
+			Player_StartLookAt("AreaLookAtIntro", 1, 1, 1);
+			Sound_CreateAtEntity("IntroFoley", "01_03_upsilon_outside/SFX/intro/sequence/foley", "Player");
+		}
+		
+		//REMOVE PARTICLES (Not all) FROM INTRO AND STOP SHORT LOOK AT
+		else if (Sequence_DoStepAndWait(0.5))
+		{	
+			ParticleSystem_Destroy("bubblyBubbles");
+		}
+		else if (Sequence_DoStepAndWait(0.75))
+		{	
+			ParticleSystem_Destroy("bubblyFlow");
+			Player_StopLookAt(1);
+		}
+	
+		//REST OF EVENT DURING INTRO OUR CALLBACKS FROM CAM ANIMATION. FOUND BELOW.
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	//TRIGGERS AS PLAYER IS ON BACK LOOKING UP
+	bool IntroEnd(const tString &in asEntity, int alDirection)
+	{
+		//Fade up audio
+		Sound_FadeGlobalVolume(1.0f, 5.0f);
+		
+		cLux_AddTodoMessage("Sound: Player on ground thud.");
+		CameraAnimation_Begin("AnimIntroGettingUp", "", true);
+		
+		//Needs tweak but particle editor crashing too much at the moment
+		ParticleSystem_CreateAtEntityExt("bubblyBubbles02", "01_03_oneshot_bubbles_player.ps", "PSCamBubbles", true, cColor(0.512,0.789,0.724, 1));
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	//HALF WAY UP AFTER LYING ON BACK
+	bool IntroComment(const tString &in asEntity, int alDirection)
+	{
+		ParticleSystem_Destroy("bubblyBubbles02");
+		
+		cLux_AddTodoMessage("Sound: Player getting up.");
+		
+		Dialog_Begin();
+			Dialog_AddBranch("Intro");
+				Dialog_AddSubject("Intro_Breath");
+				Dialog_AddPause(3);
+				Dialog_AddSubject("LeftCommRoom");
+		Dialog_End();
+
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void LineOver_ShowPlayerHands(const tString&in asScene, const tString&in asSubject, int alLineIndex, bool abStartOfLine)
+	{
+		if(abStartOfLine) return;
+		Seq_ShowPlayerHands("");
+	}
+	
+	cSequenceStatesData mShowPlayerHandsSequence;
+	bool mbDistortionSweet = false;
+	void Seq_ShowPlayerHands(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_ShowPlayerHands", mShowPlayerHandsSequence);
+			
+		if (Sequence_DoStepAndWait(0.15))
+		{
+			PlayerHands_SetHandModel_Human();
+			PlayerHands_SetUseCustomPosition(false);
+			PlayerHands_SetUseCustomRotation(false);
+			PlayerHands_PlayAnimation("event_look_at_hands_1_3");
+			
+			cLux_AddDebugMessage("PLAY HAND ANIMATION!");
+			
+			Player_SetCrouchDisabled(false);
+			
+			Emotion_StartHeartbeat(0.6,1.0f,1, 15);
+			Emotion_StartBackgroundBreath(eBreathType_Fear, 1, 1, 1.25, 0.5, 0.2);
+			
+			Effect_VideoDistortion_Start(0.4, 0.25, 0.0, 0.2);
+		}
+		else if (Sequence_DoStepAndWait(0.5))
+		{
+			Sound_PlayGui("01_03_upsilon_outside/SFX/intro/looks_at_hands",1.0f, eSoundEntryType_Gui);
+		}
+		
+		///////////////////
+		// First flicker
+		SeqStep_ShowPlayerHands_StartDistortion(0.35);
+		if (SeqStep_ShowPlayerHands_SetHandModel(0.2, "Diving"))
+			Effect_Rumble_Start(0.4, 0.44);
+		SeqStep_ShowPlayerHands_SetHandModel(0.03, "Human");
+		SeqStep_ShowPlayerHands_SetHandModel(0.06, "Diving");
+		
+		if (Sequence_DoStepAndWait(0.01))
+		{
+			Depth_Audio_SimonGasp();
+		}
+		SeqStep_ShowPlayerHands_SetHandModel(0.1, "Human");
+		SeqStep_ShowPlayerHands_StopDistortion(0.65);
+		
+		///////////////////
+		// Second flicker
+		SeqStep_ShowPlayerHands_StartDistortion(0.25);
+		if (SeqStep_ShowPlayerHands_SetHandModel(0.05, "Diving"))
+			Effect_Rumble_Start(0.4, 0.9);
+		SeqStep_ShowPlayerHands_SetHandModel(0.075, "Human");
+		SeqStep_ShowPlayerHands_SetHandModel(0.06, "Diving");
+		SeqStep_ShowPlayerHands_SetHandModel(0.05, "Human");
+		SeqStep_ShowPlayerHands_SetHandModel(0.2, "Diving");
+		SeqStep_ShowPlayerHands_SetHandModel(0.1, "Human");
+		SeqStep_ShowPlayerHands_StopDistortion(0.15);
+		
+		///////////////////
+		// Third flicker
+		SeqStep_ShowPlayerHands_StartDistortion(0.1);
+		SeqStep_ShowPlayerHands_SetHandModel(0.15, "Diving");
+		if (Sequence_DoStepAndWait(0.01))
+		{
+			Depth_Audio_SimonGasp(2);
+		}
+		SeqStep_ShowPlayerHands_StopDistortion(3);
+		
+		if (Sequence_DoStepAndWait(0.01))
+		{
+			cLux_AddDebugMessage("Breathe");
+			Emotion_StartBackgroundBreath(eBreathType_Fear, 1, 1, 1, 0.25, 10);
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	bool SeqStep_ShowPlayerHands_StartDistortion(float afDelay)
+	{
+		if (Sequence_DoStepAndWait(afDelay))
+		{
+			cLux_AddDebugMessage("SeqStep_ShowPlayerHands_StartDistortion");
+			Effect_VideoDistortion_Start(1, -1, 0.0, 0, 0.8);
+			
+			if(mbDistortionSweet==false)
+			{
+				mbDistortionSweet = true;
+				Sound_CreateAtEntity("DistortionSweet", "01_03_upsilon_outside/SFX/hand_glitch", "Player");
+			}
+			
+			return true;
+		}
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool SeqStep_ShowPlayerHands_StopDistortion(float afDelay)
+	{
+		if (Sequence_DoStepAndWait(afDelay))
+		{
+			cLux_AddDebugMessage("SeqStep_ShowPlayerHands_StopDistortion");
+			Effect_VideoDistortion_FadeOut(-1, 0.2);
+			return true;
+		}
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool SeqStep_ShowPlayerHands_SetHandModel(float afDelay, const tString &in asModel)
+	{
+		if (Sequence_DoStepAndWait(afDelay))
+		{
+			Effect_Fade_Out(0.04);
+			Map_AddTimer("Timer_SetHandModelFadeIn", 0.025, "Timer_SetHandModelFadeIn");
+			
+			cAnimationState@ pAnimState = PlayerHands_GetCurrentAnimationState();
+			
+			if (asModel == "Human")
+				PlayerHands_SetHandModel_Human();
+			else
+				PlayerHands_SetHandModel_Diving();
+		
+			if (pAnimState !is null)
+			{
+				PlayerHands_PlayAnimation(pAnimState.GetName(), pAnimState.IsLooping(), false, 0, "", true, pAnimState.GetSpeed(), pAnimState.GetRelativeTimePosition());
+			}
+			return true;
+		}
+		return false;
+	}
+	
+	void Timer_SetHandModelFadeIn(const tString &in asTimer)
+	{
+		Effect_Fade_In(0.025);
+	}
+	
+	//-------------------------------------------------------
+
+	//STANDING BUT LOOKING DOWN, SOON AFTER FULLY STANDING AND INTRO OVER.
+	bool IntroHands(const tString &in asEntity, int alDirection)
+	{
+		Music_PlayExt("01_03_wakeupintro", false, 0.45f, 1.0f, 3.0f, 1.0f, eMusicPrio_MinorEvent, false);
+
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool IntroOver(const tString &in asEntity, int alDirection)
+	{
+		cScript_SetGlobalArgInt(0,-1);
+		cScript_RunGlobalFunc("PlayerHandsHandler","","HPL3VR_SetSceneOverride");
+
+		Player_SetFlashlightDisabled(false);
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 1A PLAYER CLIMBS OUT OF WINDOW
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbFirstTimeClimb = false;
+	bool mbSimonObjectiveLineSaid =false;
+	
+	void AreaClimbHole_OnPlayerInteract(const tString &in asEntity)
+	{		
+		Entity_AttachToEntity("ExitStartAnimation_2", "ExitStartAnimation_1", "", true);
+		CameraAnimation_Begin("ExitStartAnimation", "", false);
+		//PlayerHands_PlayAnimation("event_climb_of_dome_start_1_3", false, false, 0,"", false,1,-1);
+		
+		Sound_CreateAtEntity("PreClimb", "01_03_upsilon_outside/SFX/intro/player_preclimbout", "Player");
+		Sound_CreateAtEntity("PreClimbVO", "01_03_upsilon_outside/SFX/intro/player_preclimbout_vo", "Player");
+				
+		/////////////////////////////////
+		// Disable area so player can't climb from outside
+		Entity_SetActive(asEntity,false);	
+	}
+		
+	//-------------------------------------------------------
+	
+	bool CamAnim_ClimbJump(const tString &in asEntity, int alDirection)
+	{
+		
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	
+	bool CamAnim_StartExitAnim(const tString &in asEntity, int alDirection)
+	{
+		CameraAnimation_End();
+		cLux_AddDebugMessage("Animation start");
+		Player_SetGravityEnabled(false);
+		
+		Sound_Stop("PreClimb", 0.25f);
+		Sound_Stop("PreClimbVO", 0.25f);
+		
+		Sound_CreateAtEntity("ClimbAnim", "01_03_upsilon_outside/SFX/intro/player_climbout_building", "Player");
+		Emotion_PlayEventBreath("01_03_upsilon_outside/SFX/intro/player_climbout_building_vo", 2);
+		
+		PlayerHands_SetUseCustomPosition(true);
+		PlayerHands_SetCustomPositionFromEntity("ClimbAnimationOffset");
+		PlayerHands_SetUseCustomRotation(true);
+		PlayerHands_SetCustomRotation(cVector3f(0, cMath_PiDiv2, 0));
+		PlayerHands_PlayAnimation("event_climb_of_dome_1_3", false, true, 0,"", true,1,-1);
+		PlayerHands_SetAnimationOverCallback("HandAnimOver_ClimbedOut");
+		
+		PlayerHands_AttachCameraToSocket("Socket_Camera", 0, "", true,true,3, 
+										cVector3f(0,0,0), 0);
+												
+		Map_AddTimer("Timer_DomeClimbSound", 6.5, "Timer_DomeClimbSound");
+		
+		return true;
+	}
+		
+	//-------------------------------------------------------
+	
+	void Timer_DomeClimbSound(const tString &in asTimer)
+	{		
+		//Check if player has already climbed out window before, 
+		//if so, don't retrigger music
+		if (mbFirstTimeClimb==false)
+		{
+			cLux_AddDebugMessage("First time climb out - triggering music");
+			Music_Stop(6.0f, eMusicPrio_BgAmb);
+			Music_Stop(4.0f, eMusicPrio_MinorEvent);
+			Map_AddTimer("FirstExitMusic",5.5f, "ExitingDomeMusic");
+			mbFirstTimeClimb = true;
+			return;
+		}
+
+		cLux_AddDebugMessage("Player has already climbed out - not triggering music");
+	}
+		
+	//-------------------------------------------------------
+		
+	void HandAnimOver_ClimbedOut(const tString&in asAnim)
+	{
+		Player_SetGravityEnabled(true);
+		Player_Teleport("PlayerStart_DomeExit");
+		Player_SetActive(false);
+		Map_AddTimer("HandAnimOver_ActivatePlayer", 1.75, "HandAnimOver_ActivatePlayer");
+		
+		if(mbSimonObjectiveLineSaid==false)
+		{
+			Map_AddTimer("ExitHoleVoice", 18, "SimonUnderwaterComment");
+			mbSimonObjectiveLineSaid = true;
+		}
+	}
+		
+	//-------------------------------------------------------
+	
+	void HandAnimOver_ActivatePlayer(const tString &in asTimer)
+	{
+		Player_SetActive(true);
+	}
+		
+	//-------------------------------------------------------
+	
+	bool CollideHoleArea(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		/////////////////////////////////
+		// When near the hole activate the climbable area
+		// When leaving it - disable it!
+		cLux_AddDebugMessage("CollideHoleArea");
+		bool bClimbActive = alState == 1 ? true : false;
+		Entity_SetActive("AreaClimbHole",bClimbActive);
+		
+		///////////////////////////////////
+		// Always preserve this trigger in case the player comes back inside
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool FadeFogOnExit(const tString &in asEntity, int alDirection)
+	{
+		///////////////////////////////////
+		// Fade fog color to artists preference when leaving the comm room
+		Map_FadeFogColor(gOceanFogColor,5.0f);
+		return true;
+	}
+	//-------------------------------------------------------
+	
+	void SimonUnderwaterComment(const tString &in asTimer)
+	{
+		Voice_Play("LeftCommRoom_Objective");
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////////////////////
+	// FLASHLIGHT ACTIVATES
+	/////////////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollideTriggerFlashlight(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState != 1) return true;
+		
+		/*Player_SetFlashlightDisabled(false);
+		Player_SetFlashlightActive(true,false);*/
+		
+		
+		
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////////////////////
+	// BROKEN DOORS AT START
+	/////////////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void OnChangeBrokenDoors(const tString &in asEntity, int alState)
+	{
+		if(alState != 1) return;
+		
+		cLux_AddDebugMessage("Broken "+asEntity);
+		Sound_CreateAtEntity("PressButton", "Entities_OceanBottom/button/plastic_stiff", asEntity, 0.0f, false);
+		Map_AddTimer(asEntity, 1.25, "TimerBrokenDoorsEffects");
+		
+		///////////////////////////////////
+		//Cooldown timer to stop from sound spam
+		Entity_SetInteractionDisabled(asEntity, true);
+		Map_AddTimer(asEntity, 3.5, "EnabledButtonInteraction");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerBrokenDoorsEffects(const tString &in asTimer)
+	{
+		Button_SetSwitchedOn(asTimer, false, true);
+		Sound_CreateAtEntity("DoorJammed", "01_03_upsilon_outside/SFX/broken_airlock/broken_airlock", asTimer, 0.0f, false);
+	}
+		
+	//-------------------------------------------------------
+	
+	void EnabledButtonInteraction(const tString &in asTimer)
+	{
+		Entity_SetInteractionDisabled(asTimer, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////////////////////
+	// 1C SMALL ROBOT SIGHTED AND FLIES OFF
+	/////////////////////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollisionKateCopyEscape(const tString &in asParent, const tString &in asChild, int alState)
+	{	
+		Kate_SetMoveSpeedToFleeForLife("KateCopy");
+		
+		Pathfinder_Track_Add("KateCopy", "PathNode_82", 0);
+		Pathfinder_Track_Add("KateCopy", "PathNode_93", 0);
+		Pathfinder_Track_Start("KateCopy", false, 0.1f, "PathOverKateCopyNode1");
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void PathOverKateCopyNode1(const tString& in asEntityName)
+	{
+		Entity_SetActive("KateCopy", false);
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 2A FISHES SWEEP PAST
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------- 
+	
+	bool collisionDomeFish(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == -1) return true;
+	
+		Entity_SetActive("dome_fish_*", (alState==1));
+		return false;
+	}
+	
+	bool CollisionLeaveUpsilon(const tString &in asParent, const tString &in asChild, int alState)
+	{		
+		if (alState == -1) return true;
+		
+		// Make fishes swim away
+		Entity_PlaceAtEntity("AweFishTarget", "AweFishTarget_2");
+		return false;
+	}
+	
+	
+	/////////////////////////////////////////
+	// 2 C SCAVENGE ROBOT START
+	/////////////////////////////////////////
+		
+	//-------------------------------------------------------
+	
+	bool Collide_ScavengerCheckpoint(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		CheckPoint_Setup("");
+		return false;
+	}
+		
+	//-------------------------------------------------------
+	
+	bool Collide_StartScavenge(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("Scavenge for a player");
+		
+		Entity_SetActive("ScavengeRobot", true);
+		Entity_SetActive("AreaStartScavenge", true);
+		
+		Pathfinder_Track_Add("ScavengeRobot", "PathNodeArea_161");
+		Pathfinder_Track_Start("ScavengeRobot", false, 1, "ScavengeScavenges");
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void ScavengeScavenges(const tString &in asEntity)
+	{
+		cLux_AddDebugMessage("Scavenege mode starts!");
+		
+		Pathfinder_Track_Clear(asEntity);
+		Pathfinder_Track_Stop(asEntity);
+		
+		ConstructWorker_SetIdleMode_Scavenge(asEntity);
+		//ConstructWorker_SetIdleMode_Stalk(asEntity);
+		//Agent_RevealPlayerPosition(asEntity, true);
+		//cLux_AddDebugMessage("Reveal Player to:"+asEntity);
+		
+		Entity_SetActive("AreaStartScavenge", false);
+	}
+	
+	//-------------------------------------------------------
+	//Area that triggers reaching the patrol node, to make bot react better to a player near.
+	bool CollideStartScavenge(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		ScavengeScavenges("ScavengeRobot");
+		
+		return false;
+	}
+	
+	bool Doorway_DisableConstruct(const tString &in asArea, const tString &in asEntity, int alState)
+	{
+		Entity_SetActive("ScavengeRobot", alState==-1);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 3 THE PUMP STATION
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool Collide_EnterSteamPump(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Map_AddTimer("Audio_EndEncounter", 1.0f, "Audio_Encounters");
+		
+		Map_AddTimer("Pump3", cMath_RandRectf(0.5f, 2.0f), "TimerSpawnPumpBubbles");
+		Map_AddTimer("Pump4", cMath_RandRectf(0.5f, 2.0f), "TimerSpawnPumpBubbles");
+		Map_AddTimer("Pump5", cMath_RandRectf(0.5f, 2.0f), "TimerSpawnPumpBubbles");
+		
+		Entity_SetActive("HeadBanger", true);
+		Entity_SetActive("MonolithBot", true);
+		
+		return false;
+	}
+	
+	/////////////////////////////////////////
+	// 3A PUMPS PUMPING
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollidePlayerSteamPumpProximity(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//if(alState == 1)
+		//	Map_AddTimer(asChild, 5, "TimerSpawnSteamPumpSound");
+		//else 
+		//	Map_RemoveTimer(asChild);
+			
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollisionPistonUp(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == -1) return true;
+		//Breaks sound if speed is set any higher, fmod makes too many calls
+		MoveObject_SetStateExt(asChild, 1, 2.5, 0.5, 0, false);
+		Sound_CreateAtEntity("PipeDown", "Entities_OceanBottom/tech/pump_machine/action", asChild);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollisionPistonDown(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1) return true;
+		MoveObject_SetStateExt(asChild, 0, 4, 0.95, 0, false);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSpawnPumpBubbles(const tString&in asTimer)
+	{
+		
+		for(int i = 1; i <= 2; i++)
+			ParticleSystem_CreateAtEntity(asTimer+"PistonBubblePS_"+i, "oneshot_waterbubbles_big.ps", asTimer+"BubblePSArea_"+i, true);
+			
+		Map_AddTimer(asTimer, cMath_RandRectf(1.0f, 3.0f), "TimerSpawnPumpBubbles");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSpawnSteamPumpSound(const tString&in asTimer)
+	{
+		Sound_CreateAtEntity(asTimer+"SteamPumping", "Entities_OceanBottom/building/steam_pump", asTimer, 0.1f, false);
+		//Map_AddTimer(asTimer, cMath_RandRectf(3.0f, 7.0f), "TimerSpawnSteamPumpSound");
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 3E RESCUE INFECTED KATE ROBOT
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void SetupStuckKate()
+	{
+		Entity_SetAnimationPaused("InfectedKate_Static", "idle", true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void InteractKateRock(const tString &in asEntity)
+	{
+		Prop_SetStaticPhysics("InfectedKateRock_1", false);
+		Prop_SetStaticPhysics("InfectedKateRock_2", false);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollisionInfectedKateRockMoved(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1 || Entity_GetCollide(asParent, "InfectedKateRock_1") || 
+			Entity_GetCollide(asParent, "InfectedKateRock_2") || 
+			Entity_GetCollide(asParent, "InfectedKateRock_3"))
+			return true;
+		
+		SequenceInfectedKateRescued("");
+		
+		Entity_SetActive(asParent, false);
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mInfectedKateRescuedSequence;
+		
+	void SequenceInfectedKateRescued(const tString &in asTimer)
+	{
+		Sequence_Begin("SequenceInfectedKateRescued", mInfectedKateRescuedSequence);
+		
+		if (Sequence_DoStepAndWait(1.f))
+		{
+			Lamp_SetLit("PowerBox_Lamp", false, true);
+			Entity_SetInteractionDisabled("PowerCable_*", true);
+			Entity_SetActive("PowerCable_*_Aux", false);
+			
+			ParticleSystem_Destroy("KateInfected_Bubbles_1");
+			ParticleSystem_Destroy("KateInfected_Bubbles_2");
+		}
+		
+		else if (Sequence_DoStepAndWait(0.5))
+		{		
+			Prop_MoveLinearTo("InfectedKate_Static", "InfectedKateRiseTarget", 1, 1, 0.2, true);
+			Prop_AlignRotation("InfectedKate_Static", "InfectedKateRiseTarget", 1, 0.25, 0.2, false);
+			Entity_SetAnimationPaused("InfectedKate_Static", "idle", false);
+			Map_AddTimer("KateMusic", 0.25f, "TriggerKateMusic");
+			Sound_CreateAtEntity("RescueKateRise", "01_03_upsilon_outside/SFX/kate_rescue_rise", "InfectedKate_Static");
+		}
+		
+		else if (Sequence_DoStepAndWait(2.5f))
+		{
+			Entity_PlayAnimation("InfectedKate_Static", "idle_extra01", 0.1, false, true, "AnimationKateGreeting");
+		}
+		
+		else if (Sequence_DoStepAndPause(0))
+		{
+			//Kate rises up and says thanks
+			Sound_CreateAtEntity("SavedInfectedKate", "01_03_upsilon_outside/katebot/katebot_powerup", "InfectedKate_AI", 0, false);
+			Sound_Stop("TrapAlarm", 0.1);
+			Lamp_SetLit("InfectedKate_Static", false, true);
+		}
+	
+		// Toggle to AI controlled Kate.
+		else if (Sequence_DoStepAndWait(0.1f))
+		{
+			Entity_SetActive("InfectedKate_Static", false);
+			Entity_SetActive("InfectedKate_AI", true);
+			Entity_SetEffectsActive("InfectedKate_AI", true, true);
+			Entity_StopAnimation("InfectedKate_AI");
+			
+			mbKateRescued = true;
+			cScript_SetGlobalVarBool("RescuedKate", true);
+			
+			cLux_AddTodoMessage("Sound: Kate Copy reacting to being saved.");
+		}
+		
+		// Activate AI
+		else if (Sequence_DoStepAndWait(0))
+		{
+			if (mlPowerCableCount==0)
+				StopKateFollowing();
+			else
+				Kate_FollowPlayer("InfectedKate_AI");
+		}
+	
+		Sequence_End();
+	}
+
+	//-------------------------------------------------------
+	
+	void AnimationKateGreeting(const tString &in asEntityName, const tString &in asAnimName)
+	{
+		SequenceStates_Resume("SequenceInfectedKateRescued");
+	}
+
+	//-------------------------------------------------------
+	
+	void TriggerKateMusic(const tString&in asTimer)
+	{
+		Music_PlayExt("01_03_rescuekate.ogg", false, 0.85f, 1.0f, 0.0f, 0.0f, eMusicPrio_BigEvent, false);
+	}
+	
+	/////////////////////////////////////////
+	// 4 THE TAINTED PUMP STATION
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void SetupTaintedPumpStation()
+	{
+		//Voice_SetSource("HeadBanger", "HeadBanger", 5, 22, true, 22);
+		
+		// Sinking pump
+	//	ParticleSystem_SetActive("PumpSinkBubbles_*", false);
+	//	ParticleSystem_SetActive("PumpSinkDust_*", false);
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 4A HEAD POUNDING ROBOT
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollisionHeadBangerTarget(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			// Headbanger hits wall
+			Sound_CreateAtEntity("HeadBangImpactSound", "01_03_upsilon_outside/construct_headbang/construct_headbang", "HeadbangerBangArea", 0, true);
+			Sound_CreateAtEntity("HeadBangRattleSound", "01_03_upsilon_outside/construct_headbang/headbang_rattle_sweet", "HeadbangerRattleArea", 0, true);
+		}
+		
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 4B DYING ROBOT
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbDyingRobotFirstLine = true;
+	
+	//-------------------------------------------------------
+	
+	bool CollideDyingRobotProximity(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState>0)
+		{
+			cLux_AddDebugMessage("Near dying robot!");
+			
+			BarkMachine_SetActive("AttackBot", false);
+			Voice_SetSource("DyingRobot", "DyingRobot", 1.5, 15, true, 11);
+			Timer_DyingRobotTalking("");
+			Map_AddTimer("DyingFlickerOff", 0.1, "Timer_DyingFlickerOff");
+		}
+		else
+		{
+			cLux_AddDebugMessage("Away from dying robot.");
+			
+			Map_RemoveTimer("DyingRobotTalking");
+			Map_RemoveTimer("DyingFlickerOn");
+			Map_RemoveTimer("DyingFlickerOff");
+			
+			BarkMachine_SetActive("AttackBot", true);
+		}
+				
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_DyingFlickerOn(const tString&in asTimer)
+	{
+		Entity_SetEffectsActive("DyingRobot", true, false);
+		
+		if(cMath_RandRectl(0, 4)==0)		
+			Map_AddTimer("DyingFlickerOff", cMath_RandRectf(3, 5), "Timer_DyingFlickerOff");
+		else
+			Map_AddTimer("DyingFlickerOff", cMath_RandRectf(0.1f, 0.2f), "Timer_DyingFlickerOff");
+	}
+	
+	void Timer_DyingFlickerOff(const tString&in asTimer)
+	{
+		Entity_SetEffectsActive("DyingRobot", false, false);
+		Map_AddTimer("DyingFlickerOn", cMath_RandRectf(0.05f, 0.15f), "Timer_DyingFlickerOn");
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_DyingRobotTalking(const tString&in asTimer)
+	{
+		if(mbDyingRobotFirstLine)
+		{
+			Voice_Play("DyingRobot_FirstLine", -1, "SubjectOver_DyingRobot", 1);
+			mbDyingRobotFirstLine = false;
+		}
+		else
+		{
+			Voice_Play("DyingRobot_RandomLine", -1, "SubjectOver_DyingRobot");
+		}
+	}
+	
+	void SubjectOver_DyingRobot(const tString&in asScene, const tString&in asSubject)
+	{
+		Map_AddTimer("DyingRobotTalking", cMath_RandRectf(3, 7), "Timer_DyingRobotTalking");
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 4C PUMP CRUMBLES
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollisionPumpSinkTrigger(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		SequencePumpSinking("");
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mPumpSinkingSequence;
+		
+	void SequencePumpSinking(const tString &in asTimer)
+	{
+		Sequence_Begin("SequencePumpSinking", mPumpSinkingSequence);
+	
+		if (Sequence_DoStepAndWait(1))
+		{
+			cLux_AddTodoMessage("SOUND: Pump gets unsteady. @ SinkingPump");
+			
+			Prop_MoveLinearTo("SinkingPump", "SinkingPump_Target_1", 10, 1, 0, true);
+			Prop_AlignRotation("SinkingPump", "SinkingPump_Target_1", 10, 1, 0.00, false);
+			
+			int lID = Effect_Shake_Start(0.01, 1, 1, 0.1f);
+			Effect_Shake_SetSourceEntity(lID, "SinkingPump", 5, 20);
+		}
+		else if (Sequence_DoStepAndWait(4))
+		{
+			cLux_AddTodoMessage("SOUND: Pump sinks into the sound, bubbles emerge @ SinkingPump");
+			
+			Prop_MoveLinearTo("SinkingPump", "SinkingPump_Target_2", 0.5, 0.3, 0.1, true);
+			Prop_AlignRotation("SinkingPump", "SinkingPump_Target_2", 0.15, 0.12, 0.00, false);
+			ParticleSystem_SetActive("PumpSinkBubbles_*", true);
+			ParticleSystem_SetActive("PumpSinkDust_*", true);
+			
+			int lID = Effect_Shake_Start(0.03, 4, 0.3, 1);
+			Effect_Shake_SetSourceEntity(lID, "SinkingPump", 5, 20);
+		}
+		else if (Sequence_DoStepAndWait(0))
+		{
+			ParticleSystem_Destroy("PumpSinkDust_*");
+		}
+	
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 5 SIGNAL TOWER
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbSignalTowerActive = true;
+	
+	//-------------------------------------------------------
+	
+	void SetupSignalTowerArea()
+	{	
+		Voice_SetSource("Unknown", "SignalTowerWheel", 3.f, 20.f, false, 20.f);
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// 7A EXIT DOOR
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	int mlPowerCableCount = 3;
+	bool mbFinalDoorOpened = false;
+	
+	void SetupExitDoor()
+	{
+		StickyArea_AttachBody("PowerCableSticky_1", "PowerCable_1_Body_11");
+		StickyArea_AttachBody("PowerCableSticky_2", "PowerCable_2_Body_11");
+		StickyArea_AttachBody("PowerCableSticky_3", "PowerCable_3_Body_11");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_EndAutoSave(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Game_AutoSave();
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnTriggerMapPreload(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(asChild == "TriggerMapPreload_1") Preload();
+		if(asChild == "TriggerMapPreload_2") PreloadSetPrioNormal();
+		
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	void OnPowerCableDetach(const tString &in asStickyArea, const tString &in asBodyName)
+	{
+		cLux_AddDebugMessage("Detach cable.");
+		Sound_CreateAtEntity("DetachCableSound", "01_03_upsilon_outside/SFX/cable_unplug/cable_unplug", asStickyArea, 0, false);
+		Entity_SetActive(asStickyArea, false);
+		ParticleSystem_CreateAtEntity("PowerCableSpark_"+asStickyArea, "elec_spark_oneshot.ps", asStickyArea, true);
+		mlPowerCableCount--;
+		if ((mlPowerCableCount==0)&&(!mbFinalDoorOpened))
+		{
+			Map_AddTimer("delta_ceiling_large_1", 0.3, "TimerTurnOffLamp");
+			Map_AddTimer("delta_ceiling_large_2", 0.6, "TimerTurnOffLamp");
+			Map_AddTimer("TimerPowerCablesComplete",1.0f,"TimerPowerCablesComplete");
+			Entity_SetActive("LaunchSiteEntranceProximity",false);
+			
+			//Added these as otherwise door will lock if player closes it after using alternate solution.
+			SwingDoor_SetBlocked("LaunchSiteDoor", false, false);
+			SwingDoor_SetLocked("LaunchSiteDoor", true, false);
+		}
+		else if(mlPowerCableCount==1)
+		{
+			//Graceful fade out for ending music
+			mbIsAmbientMusicPlaying = false;
+			Entity_SetActive("CableAmbientMusicStart", true);
+			Entity_SetActive("CableAmbientMusicStop", true);
+			Music_Stop(4.0f, eMusicPrio_BgAmb);
+		}
+		
+		tString sCable = Body_GetEntityName(asBodyName);
+		int lIdx = Entity_GetVarInt(sCable,"");
+		Lamp_SetLit("PowerCable_"+lIdx+"_Lamp", false, true);
+		Entity_SetActive("PowerCable_"+lIdx+"_Aux", false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerPowerCablesComplete(const tString &in asTimer)
+	{
+		mbFinalDoorOpened = true;
+		OpenFinalDoor();
+		StopKateFollowing();
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// X ADDENDUM
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_RobotConstraint(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1) return true;
+		
+		cLux_AddDebugMessage("Constrain MonolithBot");
+		
+		ConstructWorker_SetMoodDocile("MonolithBot");
+		Pathfinder_MoveToNode("MonolithBot", "PathNodeArea_181");
+		Map_AddTimer("ConstrainTimeout", 5, "Timer_ConstrainMonolithBot");
+		Map_AddTimer("ConstrainReset", 0.5, "Timer_ConstrainMonolithBot");
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_ConstrainMonolithBot(const tString &in asTimer)
+	{
+		if (asTimer == "ConstrainTimeout")
+		{
+			if (Entity_GetCollide("MonolithBot", "RobotConstraint"))
+			{
+				cLux_AddDebugMessage("MonolithBot Constrained");
+				ConstructWorker_SetMoodCautious("MonolithBot");
+				Map_RemoveTimer("ConstrainReset");
+			}
+			else
+			{
+				cLux_AddDebugMessage("MonolithBot not Constrained");
+				Map_AddTimer("ConstrainTimeout", 2, "Timer_ConstrainMonolithBot");
+			}
+			return;
+		}
+		
+		Pathfinder_MoveToNode("MonolithBot", "PathNodeArea_94");
+		Map_AddTimer("ConstrainReset", 0.5, "Timer_ConstrainMonolithBot");
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERIC TIMERS
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void TimerEnableInteraction(const tString &in asTimer)
+	{
+		Entity_SetInteractionDisabled(asTimer, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void Timer_RemoveParticleSystem(const tString &in asTimer)
+	{
+		ParticleSystem_Destroy(asTimer);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTurnOnEffects(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive(asTimer, true, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTurnOffEffects(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive(asTimer, false, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTurnOnLamp(const tString &in asTimer)
+	{
+		Lamp_SetLit(asTimer, true, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTurnOffLamp(const tString &in asTimer)
+	{
+		Lamp_SetLit(asTimer, false, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PATH MARKERS
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollidePathHelper(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Sound_CreateAtEntity("LightsOn", "01_03_upsilon_outside/SFX/light_pole/light_on", "Lamp"+asChild, 0.0f, false, 1.0f);
+		Lamp_SetLit("Lamp"+asChild, true, true);
+		
+		
+		return false;
+	}
+	
+	 //-------------------------------------------------------
+ 
+    /////////////////////////////////////////
+    // Locked exit
+    /////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	void InteractDisabledButton(const tString &in asEntity, int alState)
+	{
+		if(alState==1)
+			Sound_CreateAtEntity("PressButton", "Entities_OceanBottom/button/plastic_stiff", asEntity, 0.0f, false);
+		
+		TimerKateDoorWelding("");
+	}
+ 
+	//-------------------------------------------------------
+
+	void InteractDisabledButton_KateDone(const tString &in asEntity, int alState)
+	{
+		if(alState==1)
+			Sound_CreateAtEntity("PressButton", "Entities_OceanBottom/button/plastic_stiff", asEntity, 0.0f, false);
+	}
+ 
+	//-------------------------------------------------------
+	
+	void InteractBunkerDoor(const tString &in asEntity)
+	{
+		TimerKateDoorWelding("");
+	}
+ 
+	//-------------------------------------------------------
+	bool mbKateRescued = false;
+	
+	void TimerKateDoorWelding(const tString &in asTimer)
+	{
+		if (!mbKateRescued || mbWeldingActive || mlPowerCableCount==0) return;
+		
+		mbFinalDoorOpened = true;
+		
+		cLux_AddDebugMessage("Welding investigation triggered");
+		
+		Map_AddTimer("HelpfulSoundTimer", 0.75, "TimerKateHelpfulSound");
+		Kate_Investigate("InfectedKate_AI", "BunkerWeldingPos", "BunkerWeldingFlare", -1, "KateAtPanel_LaunchSite");
+		
+		Map_RemoveTimer("auto_weld");
+		Entity_SetActive("LaunchSiteEntranceProximity", false);
+		
+		//Entity_SetInteractionDisabled("TransportStationPanel_Outside", true);
+		Entity_SetPlayerInteractCallback("LaunchSiteDoor", "", false);
+		Entity_SetConnectionStateChangeCallback("TransportStationPanel_Outside", "InteractDisabledButton_KateDone");
+	}
+ 
+	//-------------------------------------------------------
+	
+	void TimerKateHelpfulSound(const tString &in asTimer)
+	{
+		Sound_CreateAtEntity("HelpfulKate", "NPC_Kate/talk/katebot_idle_talk", "InfectedKate_AI", 0, false);
+	}
+
+	//-------------------------------------------------------
+
+	bool CollideOpenDoor(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (mlPowerCableCount==0)
+		{
+			StopKateFollowing();
+			return false;
+		}
+		
+		if (!mbKateRescued) return true;
+		
+		mbFinalDoorOpened = true;
+		
+		Map_AddTimer("auto_weld", 5, "TimerKateDoorWelding");
+		
+		return false;
+	}
+	
+	//-------------------------------------------------------
+ 
+    /////////////////////////////////////////
+    // Scene 3 Event B *Enter Control Bunker; Robot Unlocks*
+    /////////////////////////////////////////
+ 
+    //-------------------------------------------------------
+	
+	void KateAtPanel_LaunchSite(const tString &in asEntity)
+	{
+		SwingDoor_SetBlocked("LaunchSiteDoor", false, false);
+		SwingDoor_SetLocked("LaunchSiteDoor", true, false);
+		
+		mbWeldingActive = true;
+		
+		Map_AddTimer("KateWeldsBunker", 0.75, "SequenceKateUnlocksLaunchSite");
+	}
+ 
+    //-------------------------------------------------------
+	
+	cSequenceStatesData mKateUnlocksLaunchSiteSequence;
+	bool mbWeldingActive = false;
+	void SequenceKateUnlocksLaunchSite(const tString &in asTimer)
+	{
+		Sequence_Begin("SequenceKateUnlocksLaunchSite", mKateUnlocksLaunchSiteSequence);
+			
+		if (Sequence_DoStepAndPause(0))
+		{
+			//Graceful fadeout of ambience music for door open reveal piece
+			Music_Stop(4.0f, eMusicPrio_BgAmb);
+			mbIsAmbientMusicPlaying = false;
+			
+			Kate_Weld("InfectedKate_AI", "BunkerWeldingFlare_Attach", "BunkerWeldTarget", "BunkerWeldingDonePos", "KateWeldingCallback", 0.5);
+		}
+		if (Sequence_DoStepAndWait(0.25))
+		{		
+			// Make sure player can't push kate into the airlock
+			iCharacterBody@ body = cLux_ToAgent(Map_GetEntity("InfectedKate_AI")).GetCharBody();
+			body.SetCollideFlags(cLux_GetCurrentMap().GetCollideFlag("-player"));
+		}
+		if (Sequence_DoStepAndWait(1.25))
+		{
+			OpenFinalDoor();
+		}
+		else if (Sequence_DoStepAndWait(1.25))
+		{
+			mbWeldingActive = false;
+		}
+		else if (Sequence_DoStepAndWait(0.9f))
+		{
+			cLux_AddDebugMessage("LookAtPlayer");
+			if (Entity_GetCollide("InfectedKate_AI", "KateBlocker_2"))
+			{
+				Entity_PlaceAtEntity("InfectedKate_AI", "BunkerWeldingDoneFailSafe");
+			}
+			Entity_SetActive("KateBlocker_2", true);
+			CharMover_SetDirection("InfectedKate_AI", eLuxCharMoveDirection_Forward);
+			Kate_LookAt("InfectedKate_AI", "Player");
+			
+			iCharacterBody@ body = cLux_ToAgent(Map_GetEntity("InfectedKate_AI")).GetCharBody();
+			body.SetCollideFlags(cLux_GetCurrentMap().GetCollideFlag("+player"));
+		}
+		else if (Sequence_DoStepAndWait(2))
+		{			
+			cLux_AddDebugMessage("StopKateFollowing");
+			StopKateFollowing();
+			
+			//Enable ambient music areas if the player wishes to go back and explore
+			Entity_SetActive("CableAmbientMusicStart", true);
+			Entity_SetActive("CableAmbientMusicStop", true);
+		}
+		else if (Sequence_DoStepAndWait(0))
+		{	
+			
+			Voice_Play("ThankKateBot");
+		}
+		
+		Sequence_End();
+	}
+	
+	void KateWeldingCallback(int alState)
+	{
+		if (alState == 0) SequenceStates_Resume("SequenceKateUnlocksLaunchSite");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OpenFinalDoor()
+	{
+		Terminal_ForceCacheUpdate("AirlockPanel_1");
+		
+		//final music stop for players pulling cables
+		Music_Stop(4.0f, eMusicPrio_BgAmb);
+		mbIsAmbientMusicPlaying = false;
+		
+		cLux_AddTodoMessage("Sound: Launch Site Door welded open");
+			
+		Map_AddTimer("TimerFinishFinalDoor",1.25,"TimerFinishFinalDoor");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerFinishFinalDoor(const tString& in asName)
+	{
+		TimerOpenDoor("poof");
+		Sound_CreateAtEntity("DoorOpenSweetener", "01_03_upsilon_outside/sweeteners/station_door_sweetener", "LaunchSiteDoor", 0, false);
+		
+		Entity_SetInteractionDisabled("LaunchSiteDoor", false);
+		ParticleSystem_CreateAtEntity("LaunchSiteDoorParticles_1", "oneshot_waterbubbles_big.ps", "LaunchSiteDoorPSArea_1", false);
+		ParticleSystem_CreateAtEntity("LaunchSiteDoorParticles_2", "oneshot_waterbubbles_big.ps", "LaunchSiteDoorPSArea_2", false);
+		ParticleSystem_CreateAtEntity("LaunchSiteDoorParticles_3", "oneshot_waterbubbles_big.ps", "LaunchSiteDoorPSArea_3", false);
+		
+		Sound_Play("airlock_bubbles_1",1.0f);
+		
+		// Trigger spooky reveal music
+		Music_Play("01_03_stationhatch.ogg", 0.7f, false, eMusicPrio_BigEvent);
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	void StopKateFollowing()
+	{
+		cLux_AddDebugMessage("StopKateFollowing");
+		Agent_SetSensesActive("InfectedKate_AI", false);
+			
+		Kate_Investigate("KateInfected_AI", "PathNodeArea_167", "Player", -1, "");
+		Pathfinder_Track_Add("InfectedKate_AI", "PathNodeArea_517");
+		Pathfinder_Track_Add("InfectedKate_AI", "PathNodeArea_165");
+		Pathfinder_Track_Add("InfectedKate_AI", "PathNodeArea_167");
+		Pathfinder_Track_Start("InfectedKate_AI", false, 0.1, "RemoveInfectedKate");
+			
+		Sound_CreateAtEntity("InfectedKateScared", "01_03_upsilon_outside/katebot/katebot_scared", "InfectedKate_AI", 0, false);
+	}
+ 
+	//-------------------------------------------------------
+	
+	void RemoveInfectedKate(const tString &in asEntity)
+	{
+		Entity_SetActive(asEntity, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool CollisionBunkerWeldTarget(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//SequenceStates_Resume("SequenceKateUnlocksLaunchSite");
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	//Game keeps crashing if trying to have a dynamic cable, temp skiping and only having opening a locker as solution.
+	void InteractLocker(const tString &in asEntity)
+	{
+		if(mbKateRescued) return;
+		
+		mbWeldingActive = true;
+		Map_AddTimer("poof", 3, "TimerOpenDoor");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerOpenDoor(const tString &in asTimer)
+	{
+		Sound_CreateAtEntity("LaunchDoorUnlocked", "shipwreck/doors/cabin_slide_door/open", "LaunchSiteDoor", 0, true);
+		SwingDoor_SetLocked("LaunchSiteDoor", false, true);
+		SwingDoor_SetDisableAutoClose("LaunchSiteDoor", true);
+		SwingDoor_SetClosed("LaunchSiteDoor", false, true);
+		Entity_AddImpulse("LaunchSiteDoor", cVector3f_Back*0.3, true, true);
+		Entity_SetInteractionDisabled("LaunchSiteDoor", false);
+		Entity_SetActive("BunkerWeldingFlare", false);
+	}
+		
+	//----------------------------------------------------------------------
+	
+	 //////////////////////////////////////////////////////////////////////////////////////////
+	 // ==============
+	 // AIR LOCK (FROM 1.4)
+	 // ==============
+	 //{//////////////////////////////////////////////////////////////////////////////////////
+	
+	//----------------------------------------------------------------------
+	//-------------------------------------------------------
+
+		/////////////////////////////////////////
+		// Scene 1 Event A *Flush Airlock*
+		//{///////////////////////////////////////
+
+		//-------------------------------------------------------
+
+		/**
+		 * Pumping out water and opening the entrance to the station
+		 **/
+		cSequenceStatesData mSequencePumpOutWater;
+		void SequencePumpOutWater(const tString &in asX)
+		{
+			Sequence_Begin("SequencePumpOutWater", mSequencePumpOutWater);
+
+			if(Sequence_DoStepAndWait(1.0))
+			{
+				//slight delay for omnitool confirmation beep
+				//AirlockDoorSweetener();
+			}
+
+			else if(Sequence_DoStepAndWait(1.0))
+			{
+				Entity_AddImpulse("LaunchSiteDoor", cVector3f_Forward*2, true, true);
+			}
+			else if(Sequence_DoStepAndWait(2.5))
+			{
+				Sound_CreateAtEntity("AirlockAlarm", "Entities_OceanBottom/airlock/alarms/draining_alarm", "AirlockAlarm_SoundSource");
+				Map_AddTimer("AirlockAlarmTimer", 1.0f, "AirlockAlarmTimer");
+				
+				SwingDoor_SetClosed("LaunchSiteDoor", true, true);
+				SwingDoor_SetLocked("LaunchSiteDoor", true, true);
+			}
+			else if(Sequence_DoStepAndWait(0.75))
+			{
+				FogArea_SetVisible("EndLiquidArea_Fog", false);
+				Entity_SetActive("LiquidArea_1", true);
+				
+				
+				Map_RemoveTimer("reset_pump");
+				Map_RemoveTimer("TimerButtonBlink");
+				
+				Light_FadeTo("warning_lamp_room_1_rot_SpotLight_*", cColor(-1,-1,-1,-1), 8, 3);
+				Prop_RotateToSpeed("warning_lamp_room_1_rot", 4, 4, cVector3f(1,0,0), false, "");
+
+				//////////////////////////
+				///Airlock draining sound
+				Sound_CreateAtEntity("PumpUW", "Entities_OceanBottom/airlock/uw/pump/pump_loop", "Pump_SoundSource", 0.0f, false, 1.0f);
+				Depth_Audio_AirlockDrainLeadInUW();
+				Sound_Stop("airlock_bubbles_1",1.0f);
+				
+				/////////////////////////////
+				//Disable player jump during sequence to stop them from clipping through water and breaking sound
+				Player_SetJumpDisabled(true);
+				Player_SetCrouchDisabled(true);
+			}
+
+			else if(Sequence_DoStepAndWait(1.0))
+			{
+				PreloadLightFix();
+				Depth_Audio_AirlockDrainLoopUW();
+				
+			}
+				
+				
+			//Water begins to drain out of room.
+			else if(Sequence_DoStepAndWait(7))
+			{
+				PreloadDeload();
+				
+				//Remove more water particles.
+				ParticleSystem_Destroy("ParticleSystem_47");
+				for(int i=1;i<7;i++) ParticleSystem_Destroy("waterbubbles_"+i);
+				ParticleSystem_Destroy("ParticleSystem_1"); //a missing bubbles particle.
+				LiquidArea_MoveLinearTo("LiquidArea_1", "LiquidArea_EndPos", 0.1, 1, 0.5, false);
+				
+				Map_AddTimer("AirlockDrainUWStopTimer", 6.75f, "AirlockDrainUWStop");
+			}
+			
+			else if(Sequence_DoStepAndWait(2))
+			{
+				PreloadFadePresets();
+				PreloadFadeGlobals();
+				PreloadChangeLevelEffects();
+			
+				Effect_Screen_Start("water_splash_screen.mat", cVector2f(0.5, 0.5), cVector2f(1.8, 1.8), 1, 0.4f, 0.2f, 0.6f);  
+				Effect_Screen_Start("water_drip_screen.mat", cVector2f(0.5, 0.5), cVector2f(1.8, 1.8), 1, 1, 2, 1);
+				ParticleSystem_SetActive("airlock_drain_leak_*", true);
+				ParticleSystem_SetActive("airlock_drain_droplets_*", true);
+				ParticleSystem_SetActive("airlock_drain_droplets2_*", true);
+				
+				Player_SetJumpDisabled(false);
+				Map_SetUnderwater(false);
+			}
+			
+			//Water gone and entrancer to level opens.
+			else if(Sequence_DoStepAndWait(6.0))
+			{
+				Player_SetCrouchDisabled(false);
+				
+				ParticleSystem_Destroy("airlock_drain_leak_*");
+				ParticleSystem_Destroy("airlock_drain_droplets2_*");
+				Prop_RotateToSpeed("warning_lamp_room_1_rot", 1, 0, cVector3f(1,0,0), false, "");
+				Light_FadeTo("warning_lamp_room_1_rot_SpotLight_*", cColor(-1,-1,-1,-1), 0, 4);
+				ParticleSystem_CreateAtEntityExt("drops1", "drops_med_continuous_short.ps", "AreaDrops_1", true, cColor(1,1,1,1), 1.f, true, 1, 4, 10, 15);
+				ParticleSystem_CreateAtEntityExt("drops2", "drops_med_continuous_short.ps", "AreaDrops_2", true, cColor(1,1,1,1), 1.f, true, 1, 4, 10, 15);
+			}
+			
+			else if(Sequence_DoStepAndWait(0.15f))
+			{
+				Sound_FadeGlobalVolume(0.5f, 1.25f, eSoundEntryType_WorldAll);
+				Map_RemoveTimer("AirlockAlarmTimer");
+			}
+			
+			else if(Sequence_DoStepAndWait(0.0f))
+			{
+				ParticleSystem_Destroy("airlock_drain_droplets_*");
+				
+				PreloadChangeOfMap();
+			}
+			
+			Sequence_End();
+		}
+		
+		void AirlockDoorSweetener()
+		{
+			cLux_AddDebugMessage("Airlock Door Sweetener");
+			Sound_CreateAtEntity("AirlockDoorSweet", "shipwreck/doors/heavy_metal_door/airlock_close_sweetener", "LaunchSiteDoor");
+			Entity_SetActive("Trigger_AirlockCloseSweetener", true);
+		}
+		
+		bool Trigger_AirlockCloseSweetener(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			Sound_Stop("AirlockDoorSweet", 0.35f);
+			Sound_CreateAtEntity("AirlockLockingSweet", "shipwreck/doors/heavy_metal_door/bulkhead_airlock_door_locking_sweetener", "Trigger_AirlockCloseSweetener");
+			Entity_SetActive("Trigger_AirlockCloseSweetener", false);
+			return true;
+		}
+			
+		//------------------------------------------------------------
+		
+		void AirlockDrainUWStop(const tString &in asTimer)
+		{
+			////////////////////////////////////
+			//Switch sound areas from uw to air and stop scuba sounds
+			Entity_SetActive("AMB_Airlock_Water", false);
+			Entity_SetActive("AMB_Airlock_Air", true);
+			Sound_Stop("Pump_Idle_Loop_Underwater", 1.0f);
+			Depth_Audio_PlayLeaveWater();
+			Sound_Stop("PumpUW", 0.55f);
+			Sound_CreateAtEntity("PumpingAirLoop", "Entities_OceanBottom/airlock/air/pump/pump_loop_nointro", "Pump_SoundSource", 0.55f, false, 1.0f);
+			
+			Depth_Audio_AirlockDrainLoopUWStop();
+			Depth_Audio_AirlockDrainLoopAir();
+			Map_AddTimer("AirlockDrainingAirStopTimer", 3.0f, "AirlockDrainingAirStop");
+		}
+
+		void AirlockDrainingAirStop(const tString &in asTimer)
+		{
+			Depth_Audio_AirlockDrainLoopAirStop();
+			Depth_Audio_AirlockDrainLeadOutAir();
+			Sound_Stop("PumpingAirLoop", 0.25f);
+			Sound_CreateAtEntity("PumpAirLeadOut", "Entities_OceanBottom/airlock/air/pump/pump_end", "Pump_SoundSource", 0.0f, false, 1.0f);
+		}
+		
+		void AirlockAlarmTimer(const tString &in asTimer)
+		{
+			Sound_CreateAtEntity("AirlockAlarm", "Entities_OceanBottom/airlock/alarms/draining_alarm", "AirlockAlarm_SoundSource");
+			Map_AddTimer("AirlockAlarmTimer", 1.0f, "AirlockAlarmTimer");
+		}
+		
+		//-------------------------------------------------------
+		//} EVENT
+	
+	//} END SCENE 1
+	
+	//-------------------------------------------------------
+
+		/////////////////////////////////////////
+		// Omnitool
+		//{///////////////////////////////////////
+
+		//-------------------------------------------------------
+	
+		bool CanUseCathTool(const tString &in asTool, const tString &in asEntity)
+		{
+			return asEntity=="AirlockPanelArea_1";
+		}
+		
+		//------------------------------------------------------------
+		
+		bool OnUseCathTool(const tString &in asTool, const tString &in asEntity)
+		{
+			// Use omnitool in the first airlock
+			if (asEntity=="AirlockPanelArea_1")
+			{
+				CathTool_UseOnPanel(asTool, "AirlockPanel_1");
+				
+				Entity_SetActive("AirlockPanelArea_1", false);
+				Entity_SetActive("AirlockToolArea_1", false);
+		
+				return false;
+			}
+			
+			return false;
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnChangePumpWater(const tString &in asEntity, int alState)
+		{
+			SequencePumpOutWater("pumping_water_not_iron");
+
+			//Entity_AddImpulse("LaunchSiteDoor", cVector3f_Forward*2, true, true);
+			
+			Entity_SetActive("AirlockDoorBlocker", true);
+			SlideDoor_SetClosed("InnerAirlockDoor_*", true);
+		}
+		
+		//} End omnitool
+		
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PRELOADING
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool PreloadDisabled(bool abCheckIfPreloading = true)
+	{
+		if(cLux_ScriptDebugOn())
+		{
+			cLux_AddDebugMessage("PRELOAD DISABLED!"); 
+			
+			return true;
+		}
+
+		if(abCheckIfPreloading == true && Map_IsPreloading() == false)
+			return true;
+			
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Preload()
+	{
+		if(PreloadDisabled(false)) return;
+		
+		Map_Preload("01_04_transport_station.hpm", eWorldStreamPriority_Low);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadSetPrioNormal()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_SetPreloadPriority(eWorldStreamPriority_Normal);
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////////
+	//pointlights bleeding through walls.
+	void PreloadLightFix()
+	{
+		Light_FadeTo("PointLight_35", cColor(0), 0, 0.05);
+		Light_FadeTo("PointLight_20", cColor(0), 0, 0.05);
+		Light_FadeTo("PointLight_36", cColor(0), 0, 0.05);
+		Light_FadeTo("PointLight_28", cColor(0), 0, 0.05);
+		Light_FadeTo("PointLight_27", cColor(0), 0, 0.05);
+		Light_FadeTo("SpotLight_23", cColor(0), 0, 0.05);
+		Light_FadeTo("SpotLight_16", cColor(0), 0, 0.05);
+		
+		/////////////////////
+		//Also added disable some objects that otherwise will teleport to 1.4
+		Entity_SetActive("PowerBox", false);
+		Entity_SetActive("PowerBox_Lamp", false);
+		Entity_SetActive("01_03_power_box__door_1", false);
+		Entity_SetActive("PowerCable_*", false);
+	}
+	
+	//-------------------------------------------------------
+
+	void PreloadDeload()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_Deload("Transfer0304");
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadFadePresets()
+	{
+		Map_Preset_Fade("Level1.4", 1);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadFadeGlobals()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_AddTimer("FadeGlobal", 1.1, "PreloadTimer");
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadChangeLevelEffects()
+	{
+		Map_SetEnvironmentParticlesActive(false);
+		
+		cLux_GetCurrentMap().GetWorld().SetFogUnderwater(false);
+		
+		float fFadeTime = 0.1;
+		Effect_Bloom_FadeBrightPass(0.75f, fFadeTime);
+		Effect_Bloom_FadeBloomWidth(128.0f, fFadeTime);
+		Effect_Bloom_FadeBloomTint(1, 1, 1, fFadeTime);
+	}
+	
+	//-------------------------------------------------------
+
+	void PreloadChangeOfMap()
+	{
+		if(PreloadDisabled()) 
+		{
+			PreloadManualChangeMap();
+			return;
+		}
+		
+		Map_SetPreloadPriority(eWorldStreamPriority_High);
+
+		Map_AddTimer("ChangeMap", 0.25, "PreloadTimer");
+		Map_AddTimer("ChangeMapNotReady", 3, "PreloadTimer");
+	}
+	
+	//-------------------------------------------------------
+	bool mbGlobalCopyCompleted = false;
+	void PreloadTimer(const tString &in asTimer)
+	{
+		////////////////////////////
+		//Preload - Change map globals when possible.
+		if(asTimer == "FadeGlobal")
+		{
+			if(mbGlobalCopyCompleted) return;
+			
+			mbGlobalCopyCompleted = Map_CopyGlobalSettings(Map_GetPreloadMap(), 1);
+			
+			Map_AddTimer("FadeGlobal", 1.1, "PreloadTimer");
+		}
+		
+		if(asTimer == "ChangeMapNotReady")
+		{
+			Description_Add("02_05_theta_inside", "ScanRoom_Legacy_Loading", 10, false);
+			Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+		}
+		
+		////////////////////////////
+		//Preload - Change map when possible
+		if(asTimer == "ChangeMap")
+		{
+			if(Map_IsPreloadCompleted())
+			{
+				Description_SetForceFading(true);
+				Map_ChangeMap("01_04_transport_station.hpm", "", "Transfer0304", "", "");
+			}
+			else Map_AddTimer("ChangeMap", 0.25f, "PreloadTimer");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	//////////////////////
+	//Manually load next level if preload fails,  preload disabled.
+	void PreloadManualChangeMap()
+	{
+		Map_ChangeMap("01_04_transport_station.hpm", "PlayerStartArea_1", "", "");
+	}
+	
+	//----------------------------------------------------------------------
+	
+	 //////////////////////////////////////////////////////////////////////////////////////////
+	 // ==============
+	 // AUDIO
+	 // ==============
+	 //{//////////////////////////////////////////////////////////////////////////////////////
+	
+	//----------------------------------------------------------------------
+	
+	//MUSIC
+	//Player leaves dome for the first time
+	void ExitingDomeMusic(const tString &in asTimer)
+	{
+		Music_PlayExt("02_07_flush", false, 0.65f, 1.0f, 0.0f, 0.0f, eMusicPrio_BigEvent, false);
+		Sound_FadeGlobalVolume(0.8f, 8.0f, eSoundEntryType_WorldClean);
+		Map_AddTimer("AmbientMusicFirst", cMath_RandRectf(45.f, 50.f), "AmbientMusic");
+		Map_AddTimer("FadeUpMusic", 15.0f, "FadeUpWorldClean");
+	}
+	
+	bool mbIsAmbientMusicPlaying = false;
+	
+	void AmbientMusic(const tString &in asTimer)
+	{
+		if(asTimer=="AmbientMusicFirst" && mbIsAmbientMusicPlaying==false && mbStopFirstAmbienceFromPlaying==false)
+		{
+			mbIsAmbientMusicPlaying = true;
+			Music_PlayExt("01_03_introambient", true, 0.35f, 1.0f, 0.0f, 0.0f, eMusicPrio_BgAmb, true);
+			cLux_AddDebugMessage("First Ambient Music Triggered");
+		}
+		
+		if(asTimer=="AmbientMusicSecond" && mbIsAmbientMusicPlaying==false)
+		{
+			mbIsAmbientMusicPlaying = true;
+			Music_PlayExt("01_03_extendedambience", true, 0.35f, 1.0f, 0.0f, 0.0f, eMusicPrio_BgAmb, true);
+			cLux_AddDebugMessage("Second Ambient Music Triggered");
+		}
+		if(asTimer=="AmbientMusicStop" && mbIsAmbientMusicPlaying==true)
+		{
+			mbIsAmbientMusicPlaying = false;
+			Music_Stop(7.0f, eMusicPrio_BgAmb);
+			cLux_AddDebugMessage("Ambient music stopping");
+		}
+	}
+	
+	bool mbStopFirstAmbienceFromPlaying = false;
+	
+	bool StopAmbientMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		mbStopFirstAmbienceFromPlaying = true;
+		Map_AddTimer("AmbientMusicStop", 1.0f, "AmbientMusic");
+		return false;
+	}
+	
+	//---------------------------------------------------
+	
+	bool EncounterMusicTrigger(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Map_AddTimer("Audio_StartEncounter", 0.5f, "Audio_Encounters");
+		return false;
+	}
+		
+	void Audio_Encounters(const tString &in asTimer)
+	{
+		if(asTimer=="Audio_StartEncounter")
+		{
+			if(mbIsAmbientMusicPlaying==true)
+			{
+				mbIsAmbientMusicPlaying = false;
+				Music_Stop(5.0f, eMusicPrio_BgAmb);
+			}
+			//Encounter music tense here
+			cLux_AddDebugMessage("Encounter Music Triggered");
+			Music_PlayExt("NPC_construct_short3", false, 0.55f, 1.f, 0.0f, 0.0f, eMusicPrio_OverrideAll, false);
+		}
+		
+		else if(asTimer=="Audio_EndEncounter")
+		{
+			Music_Stop(3.0f, eMusicPrio_BgAmb);
+			Map_AddTimer("AmbientMusicSecond", 3.0f, "AmbientMusic");
+			cLux_AddDebugMessage("End Encounter Music");
+		}
+	}
+	
+	//---------------------------------------------------
+	
+	bool HeadbangerMusicTriggerSpawn(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1){
+			Entity_SetActive("HeadbangerMusicLookAt", true);
+			cLux_AddDebugMessage("Headbanger look at area enabled");
+		}
+		else{
+			Entity_SetActive("HeadbangerMusicLookAt", false);
+			cLux_AddDebugMessage("Headbanger look at area disabled");
+		}
+		return true;
+	}
+	
+	void HeadBangerMusic(const tString &in asEntity, int alState)
+	{
+		Music_PlayExt("NPC_construct_react3", false, 0.55f, 1.0f, 0.0f, 0.0f, eMusicPrio_MinorEvent, false);
+		Sound_FadeGlobalVolume(0.55f, 5.0f, eSoundEntryType_WorldClean);
+		Map_AddTimer("HeadbangerMusicFadeUp", 8.f, "FadeUpWorldClean");
+		cLux_AddDebugMessage("Headbanger music triggered & fading down worldclean");
+	}
+	
+	void FadeUpWorldClean(const tString &in asTimer)
+	{
+		cLux_AddDebugMessage("Fading up worldclean");
+		Sound_FadeGlobalVolume(1.f, 5.0f, eSoundEntryType_WorldClean);
+	}
+	
+	bool Cables_StopAmbientMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("Stop Amb Music");
+		mbIsAmbientMusicPlaying = false;
+		Music_Stop(4.0f, eMusicPrio_BgAmb);
+		return true;
+	}
+	
+	bool Cables_StartAmbientMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("Restart Amb Music");
+		Map_AddTimer("AmbientMusicSecond", 3.0f, "AmbientMusic");
+		return true;
+	}
+		
+	//----------------------------------------------------------------------
+	
+	//} END AUDIO
+}

@@ -1,0 +1,264 @@
+#include "interfaces/Prop_Interface.hps"
+#include "player/Player_Types.hps"
+#include "helper_audio.hps"
+
+bool _HPL3VR_RuntimeActive_LevelDoor()
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+    return cScript_GetGlobalReturnBool();
+}
+
+class cScrPropLevelDoor : iScrProp, iScrProp_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mfLockedCount = 0;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		///////////////////////////
+		// Type vars
+		msEnterSound = apVars.GetVarString("EnterSound", "");
+		msExitSound = apVars.GetVarString("ExitSound", "");
+		
+		///////////////////////////
+		// Instance vars
+		msMapFile = apInstanceVars.GetVarString("MapFile","");
+		msStartPos = apInstanceVars.GetVarString("StartPos","");
+
+		mbLocked = apInstanceVars.GetVarBool("Locked",false);
+		msLockedSound = apInstanceVars.GetVarString("LockedSound","");
+		msLockedTextCat = apInstanceVars.GetVarString("LockedTextCat","");
+		msLockedTextEntry = apInstanceVars.GetVarString("LockedTextEntry","");
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{
+		if(mfLockedCount >0)
+		{
+			mfLockedCount -= afTimeStep;
+		}
+		else
+		{
+			mBaseObj.SetAutoSleep(true);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/*void OnPostUpdate(float afTimeStep)
+	{
+	
+	}*/
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+	
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
+	{
+	
+	}	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+        if (_HPL3VR_RuntimeActive_LevelDoor())
+        {
+            if (!mBaseObj.IsActive() || mBaseObj.GetInteractionDisabled()) return false;
+            // Empty destinations are present on unused exit geometry. Keep
+            // locked-door feedback and real map callbacks, but do not advertise
+            // an unconfigured, unlocked exit as a physical interaction.
+            if (msMapFile=="" && !mbLocked && !mBaseObj.HasPlayerInteractCallback()) return false;
+        }
+		return true;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+        // Native general callbacks run before this method. A callback-only
+        // exit owns its transition; do not then fade out for an empty target.
+        // Return handled even if that callback removed itself during dispatch.
+        if (_HPL3VR_RuntimeActive_LevelDoor() && msMapFile=="" && !mbLocked) return true;
+	
+		if(mbLocked)
+		{
+			//Wait until last locked message until showing a new.
+			if(mfLockedCount <=0)
+			{
+				Sound_PlayGui(msLockedSound, 1.0f);
+				mfLockedCount = 2.0f;
+
+				mBaseObj.SetAutoSleep(false);
+			}
+		}
+		else
+		{
+			cLux_GetPlayer().SetActive(false);
+			Map_FadeOut(1.5f); 
+			mBaseObj.Timer_Add(0, 1.5f, "Timer_FadeOver");
+		}
+
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void Timer_FadeOver(uint64 alId)
+	{
+		cLux_GetPlayer().SetActive(true);
+		cLux_ChangeMap(msMapFile, msStartPos, "", msEnterSound, msExitSound);
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_ExitLevel;
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// SPECIFIC ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+
+	void _Global_SetLocked()
+	{
+		mbLocked = cScript_GetGlobalArgBool(0);
+	}
+	
+	void _Global_GetLocked()
+	{
+		cScript_SetGlobalReturnBool(mbLocked);
+	}
+
+	//------------------------------------------------------------
+
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] tString msEnterSound;
+	[nosave] tString msExitSound;
+	
+	//------------------------------------------------------------
+	
+	tString msMapFile;
+	tString msStartPos;
+
+	bool mbLocked;
+	tString msLockedSound;
+	tString msLockedTextCat;
+	tString msLockedTextEntry;
+	
+	float mfLockedCount;
+}	

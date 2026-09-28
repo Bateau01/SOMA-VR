@@ -1,0 +1,2627 @@
+#include "interfaces/Map_Interface.hps"
+#include "base/Inputhandler_Types.hps"
+
+#include "helpers/helper_game.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_sequences.hps"
+#include "helpers/helper_areas.hps"
+#include "helpers/helper_ai.hps"
+#include "helpers/helper_player.hps"
+#include "helper_imgui_station.hps"
+
+#include "helper_custom_depth.hps"
+#include "helper_custom_depth_ai_puppet.hps"
+
+//-------------------------------------------------
+ 
+class cScrMap : iScrMap
+{
+	//--------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN CALLBACKS
+	// ==============
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	void PreloadData()
+	{
+		// Gui
+		StationGui_PreloadDefault();
+		OmnitoolGui_Preload();
+
+		ImGui_PreloadImage("urban/tv/00_05_tv_no_disc", eImGuiGfx_Image);
+		ImGui_PreloadImage("wakeup.dds", eImGuiGfx_Texture);
+
+		// Player hands
+		PlayerHands_PreloadHandModel_Diving();
+		
+		// Particles
+		ParticleSystem_Preload("elevator_crash_cloud.ps");
+		ParticleSystem_Preload("oneshot_waterbubbles_explosion.ps");
+		ParticleSystem_Preload("elec_spark_physics_oneshot.ps");
+		ParticleSystem_Preload("tunnel_flood.ps");
+		ParticleSystem_Preload("loop_waterbubbles_large_cloud.ps");
+		ParticleSystem_Preload("mindcoral_escape.ps");
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// Run first time starting map
+	void OnStart()
+	{
+		CathTool_ResetScreen(eCathToolVariant_CathDelta);
+		
+		SetupWakeUp();
+		SetupPowerStation();
+		SetupPool();
+		SetupFlood();
+		SetupPumpRoom();
+		SetupCatherine();
+		SetupEntities();
+		SetupConsoles();
+		
+		Map_AddTimer("SetupWaterfall", 1, "SetupWaterfallAudio");
+
+		if (!cLux_ScriptDebugOn())
+		{
+			EyeTracking_SetExtendedViewMul(0.4f);
+			StartWakeUp();
+		}
+		
+		/////////////////////////
+		// Debug
+		
+		Light_SetVisible("DebugBoxLight",mbDebugBoxLight);
+		
+		if(cLux_ScriptDebugOn())
+		{
+			
+		}
+		
+		// Reset volumes
+		Music_Stop(0, eMusicPrio_BgAmb);
+		Music_FadeVolumeMul(1, 0);
+
+		//Set sound to 0 for intro
+		Sound_SetGlobalVolume(0.0f, eSoundEntryType_World);
+		if(cLux_ScriptDebugOn())	{
+			Sound_SetGlobalVolume(1.0f, eSoundEntryType_All);
+		}
+		
+		//////////////////////////////////////////
+		// Player setup
+		Player_SetAmbientLight_Indoors();
+		
+		PlayerHands_SetHandModel_Diving();
+		
+		//////Level Audio and Preloads	
+		Sound_PreloadProject("02_07_theta_exit_a");
+		Sound_PreloadGroup("Flashback/Level/02_07", true);
+		
+		LastOnSoma_SetText("02_07_theta_exit_1");
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when entering map
+
+	// S26AQ: this legacy Trigger has no handler and no independent climb action.
+	// Retire only its false VR prompt; collision/story areas and working climbs stay active.
+	void VR_RemoveUnusedClimbPrompt()
+	{
+		cScript_SetGlobalReturnBool(false);
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		if (!cScript_GetGlobalReturnBool()) return;
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if (pMap is null || pMap.ScriptMethodExists("void OnInteractCrateLadder_2(const tString &in)")) return;
+		Entity_SetPlayerInteractCallback("TriggerLadderTop_2", "", false);
+	}
+
+	// S26AU: these rigid props retain callback names absent from this map.
+	// A nonempty name alone advertises interaction. Clear only these known
+	// stale prompts in VR; preserve a real implementation if one is present.
+	// No per-frame lookup and no change to damage, collision or story events.
+	void VR_RemoveUnusedRigidPrompts()
+	{
+		cScript_SetGlobalReturnBool(false);
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		if(!cScript_GetGlobalReturnBool()) return;
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if(pMap is null) return;
+		if(!pMap.ScriptMethodExists("void InteractPickJacket(const tString &in)"))
+			Entity_SetPlayerInteractCallback("Jacket", "", false);
+	}
+
+	void OnEnter()
+	{
+		VR_RemoveUnusedRigidPrompts();
+		VR_RemoveUnusedClimbPrompt();
+		MainMenu_SetBGPhase(eMainMenuPhase_2_4_To_3_3);
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when leaving map
+	void OnLeave()
+	{
+	}
+
+	//-------------------------------------------------------
+
+	bool mbDebugBoxLight = false;
+
+	////////////////////////////
+	// To get when player makes input (mostly used for debug)
+
+	void OnAction(int alAction, bool abPressed) 
+	{
+		if(abPressed==false) return;
+		
+		if (alAction == eAction_Test1)
+		{
+			array<iLuxEntity@> vEnts;
+			cLux_GetCurrentMap().GetEntityArray("*", eLuxEntityType_Agent,"",vEnts);
+			for(int i=0; i<vEnts.size(); ++i)
+			{
+				iLuxEntity@ pEnt = vEnts[i];
+				if(pEnt.IsActive())
+					cLux_AddDebugMessage("Agent: "+pEnt.GetName());
+			}
+		}
+		
+		if (alAction == eAction_Test2)
+		{
+			Player_SetHealth(0.1f);
+		}
+		
+		if (alAction == eAction_Test3)
+		{
+			ParticleSystem_CreateAtEntity("ElevatorCrashParticles", "elevator_crash_cloud.ps", "ElevatorCrashPSArea", false);
+			ParticleSystem_CreateAtEntity("ElevatorCrashParticles2", "elevator_crash_cloud_blast.ps", "ElevatorCrashPSArea", false);
+		}
+	
+		if (alAction == eAction_Test4)
+		{
+			CoralBreak_Start();
+		}
+		
+		if (alAction == eAction_Test5)
+		{
+			mbShowingEnd = !mbShowingEnd;
+		}
+		
+		if (alAction == eAction_Test6)
+		{
+			mbDebugBoxLight = !mbDebugBoxLight;
+			Light_SetVisible("DebugBoxLight",!mbDebugBoxLight);
+		}
+		
+		if (alAction == eAction_Test7)
+		{
+			//Player_SetHealth(0.1);
+			Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+			Preload();
+		}
+		
+		if (alAction == eAction_Test8)
+		{
+			SlideDoor_SetClosed("TunnelDoor",false);
+			Sequence_Flood("");
+		}
+		
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// This only used for pure debug purposes when info needs to printed.
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afY)
+	{
+		//afY = cLux_DrawDebugText("Player Crouch", afY);
+		return afY;
+	}
+
+	//-------------------------------------------------------
+	
+	void Update(float afTimestep)
+	{
+		UpdatePowerLevel(afTimestep);
+	}
+	
+	//-------------------------------------------------------
+	
+	void Setup()
+	{	
+		GetBase().SetDisplayNameEntry("02-07-theta-exit");
+		
+		////////////////
+		//3.1 transition preset
+		Map_Preset_SetupBloom("Omicron3.1", 256, 0.00001, 0,cColor(0.5, 0.37, 0.37, 0));
+		Map_Preset_SetupDepthOfField("Omicron3.1", true, 0, 12, 0.25);
+	}
+	//-------------------------------------------------------
+	
+	//} END MAIN CALLBACKS
+	
+	/////////////////////////////////////////
+	// ==============
+	// MAIN FUNCTIONS
+	// ==============
+	//{//////////////////////////////////////
+
+	
+	//-------------------------------------------------------
+
+	bool mbShowingEnd = false;
+
+	//-------------------------------------------------------
+
+	void SetupCatherine()
+	{
+		Tool_PickUp("CathTool", false, false);
+	}
+	
+	//-------------------------------------------------------
+
+	void TimerDeactivateEntity(const tString &in asTimer)
+	{
+		Entity_SetActive(asTimer, false);
+	}
+	
+	//-------------------------------------------------------
+
+	void TimerSetLampLit(const tString &in asTimer)
+	{
+		Lamp_SetLit(asTimer, true, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSetLampUnlit(const tString &in asTimer)
+	{
+		Lamp_SetLit(asTimer, false, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END MAIN FUNCTIONS
+	
+	//////////////////////////////////////////////
+	// CHECKPOINTS
+	//{///////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool CollideSetupCheckpoint_Vent(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		CheckPoint_Setup("CheckpointVent");
+		return false;
+	}
+
+	//-------------------------------------------------------
+
+	void CheckpointVent(int alRecentDeaths, const tString&in asDeathSource)
+	{
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END CHECKPOINTS
+	
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 1: Wake Up Inside Coral
+	// ==============
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+
+		/////////////////////////////////////////
+		// Event: Wake up
+		//{//////////////////////////////////////
+
+		//-------------------------------------------------------
+		
+		int mlFadeDistortionID = -1;
+
+		//-------------------------------------------------------
+		
+		void SetupWakeUp()
+		{
+			Entity_SetActive("Ashley", true);
+			
+			Entity_PlayAnimation("SimonArms", "event_escape_coral_infection", 0.0, false, false);
+			Entity_SetAnimationPaused("SimonArms", "event_escape_coral_infection");
+		}
+		
+		//-------------------------------------------------------
+			
+		void StartWakeUp()
+		{
+			Effect_Fade_Out(0.0f);
+			Map_AddTimer("SequenceWakeup", 2.0, "SequenceWakeup");
+		}
+		
+		//-------------------------------------------------------
+		
+		cSequenceStatesData mSequenceWakeup;
+		bool mbAwake = false;
+		int mlIntroDOF = 0;
+		
+		void SequenceWakeup(const tString& in asName)
+		{
+			Sequence_Begin("SequenceWakeup", mSequenceWakeup);
+			
+			if (Sequence_DoStepAndWait(6.0))
+			{
+				//DO NOT REMOVE THIS STEP - IT STOPS SEQUENCE FROM GOING OUT OF SYNC ON PS4
+				CameraAnimation_Begin("IntroAnimRoom", "", false);
+				Sound_PreloadProject("02_07_theta_exit_a");
+				
+				// Player health to 1.0 no matter what has happened up til this point
+				Player_SetHealth(1.0f);
+				Player_SetFlashlightActive(false,true);
+				Player_SetFlashlightDisabled(true);
+				
+				Entity_SetActive("SimonDreamHands",true);
+			}
+			else if (Sequence_DoStepAndWait(13.f))
+			{			
+				//Fade filter and reset audio from last level
+				Music_FadeVolumeMul(1.0, 0.1f);
+				
+				//Long start for intro drone - to space the difference between the last level
+				Sound_CreateAtEntity("IntroDrone", "02_07_theta_exit_a/SFX/intro/drone", "Player");
+				
+				Wake_SetAsleep(true);
+			}
+			else if (Sequence_DoStepAndWait(2.5))
+			{
+				Effect_Fade_In(0);
+			}
+			else if (Sequence_DoStepAndWait(0.5f))
+			{			
+				mlIntroDOF = Effect_DoF_Start(0, 0.5f, 1.0f, 0.01f);
+				Wake_StartWakeup(5.0f);
+						
+				Voice_Play("WakeUp_1", -1, "VoiceAshleyIllusionOver");
+				
+				// Conversation hand anim will start here
+				Entity_PlayAnimation("SimonDreamHands", "dream_sequence_ashley",0.0,false,false,"");	
+			}
+			else if (Sequence_DoStepAndWait(24.0f))
+			{
+
+			}
+			else if (Sequence_DoStepAndWait(0.25f))
+			{	
+				cLux_AddDebugMessage("resume conversation");
+				Effect_ImageTrail_Start(1.5, 0.5, 0.5, 2);
+			}
+			//changing the timing will knock audio out of sync
+			else if (Sequence_DoStepAndWait(4.5f))
+			{
+				Sound_PreloadGroup("02_07_theta_exit_a/SFX/coral_cocoon/hand_anim", true);
+			}
+			
+			// Explode
+			else if (Sequence_DoStepAndWait(0.25f))
+			{			
+			    // Conversation hand anim will end here
+				Effect_Flash_Start(0.25, 0.25, 0.5);
+				
+				// Player health to 0.75 no matter what has happened up til this point
+				Player_SetHealth(0.75f);
+			
+				Sound_FadeGlobalVolume(1.0f, 2.0f, eSoundEntryType_All);
+				Entity_SetActive("Ashley", false);
+				Effect_Shake_Start(0.15f,0.5f,0.1f,0.75f);
+				Entity_SetActive("SimonDreamHands",false);
+				
+				Effect_Rumble_Start(0.9, 1.0f,0.0f,0.75f);
+			}
+			
+			else if (Sequence_DoStepAndWait(4.75f))
+			{		
+				ParticleSystem_CreateAtEntity("ElevatorCrashParticles", "elevator_crash_cloud.ps", "ElevatorCrashPSArea", false);
+				ParticleSystem_CreateAtEntity("ElevatorCrashParticles2", "elevator_crash_cloud_blast.ps", "ElevatorCrashPSArea", false);
+				CameraAnimation_End();
+				Effect_DoF_FadeOut(mlIntroDOF,3.0f);
+				CoralBreak_Start();
+			}
+			
+			else if (Sequence_DoStepAndWait(3.0f))
+			{
+				//Voice removed due to new animation
+			}
+			else if (Sequence_DoStepAndWait(0.0f))
+			{
+				Player_SetFlashlightDisabled(false);
+				
+				LastOnSoma_SetText("02_07_theta_exit_2");
+			}
+			
+			Sequence_End();
+		}
+		
+		//-------------------------------------------------------
+		
+		void TimerDisplayCounter(const tString &in asTimer)
+		{
+			cLux_AddDebugMessage("Time: "+(1000-Map_GetTimerTime("Counter")));
+			Map_AddTimer("DisplayCounter", 1, "TimerDisplayCounter");
+		}
+		
+		
+		//-------------------------------------------------------
+		
+		void VoiceAshleyIllusionOver(const tString&in asScene, const tString&in asSubject)
+		{
+			SequenceStates_Resume("SequenceWakeup");
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnGuiApartmentTV(const tString&in asEntityName, float afTimeStep)
+		{
+			ImGui_DoImage(cImGuiGfx("urban/tv/00_05_tv_no_disc"),ImGui_NrmPos(cVector3f(0.35,0.2,1.0)),ImGui_NrmSize(cVector2f(0.315,0.5)));
+		}
+
+		//-------------------------------------------------------
+		
+		//} END Event Wake up
+		
+		/////////////////////////////////////////
+		// Event: Get free from Mind Coral
+		//{//////////////////////////////////////
+
+		//-------------------------------------------------------
+
+		int mlCoralTrailID = 0;
+		int mlCoralDOF = 0;
+
+		void CoralBreak_Start()
+		{
+			CameraAnimation_Begin("IntroEndAnim", "", false);
+			mlCoralTrailID = Effect_ImageTrail_Start(3.0f,0.0f,-1,0.0f);
+			mlCoralDOF = Effect_DoF_Start(0, 0.5, 1, 0);
+			EyeTracking_SetExtendedViewMul(0.0f);
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnBreakCoral(const tString &in asEntity, int alDirection)
+		{
+			Sound_FadeGlobalVolume(0.45f, 3.0f);
+			CameraAnimation_End();
+			CoralBreak_PlayAnim();
+			CoralBreak_StartParticles();
+			Map_AddTimer("CoralRumble0", 0.5f, "Timer_CoralRumbleLongShake");
+			Map_AddTimer("CoralRumble1", 7.9f, "Timer_CoralRumbleMedium");
+			Map_AddTimer("CoralRumble2", 10.5f, "Timer_CoralRumbleLarge");
+			Map_AddTimer("CoralRumble2", 11.6f, "Timer_CoralRumbleMedium");
+			return false;
+		}
+		
+		//---------------------------------------------------------------------
+
+		void CoralBreak_StartParticles()
+		{
+			Map_AddTimer("CoralPSArea_1", 3.3f, "CoralBreak_TimerErupt");
+			Map_AddTimer("CoralPSArea_2", 3.8f, "CoralBreak_TimerErupt");
+			Map_AddTimer("CoralPSArea_3", 4.5f, "CoralBreak_TimerErupt");
+			Map_AddTimer("CoralPSArea_4", 5.5f, "CoralBreak_TimerErupt");
+			Map_AddTimer("CoralPSArea_5", 6.3f, "CoralBreak_TimerErupt");
+			Map_AddTimer("CoralPSArea_6", 6.7f, "CoralBreak_TimerErupt");
+		}
+		
+		void Timer_CoralRumbleLongShake(const tString&in asTimer)
+		{
+			Effect_Rumble_Start(0.25, 13, 3, 1);
+		}
+		
+		void Timer_CoralRumbleMedium(const tString&in asTimer)
+		{
+			Effect_Rumble_Start(0.8, 1, 0, 0.3);
+		}
+		
+		void Timer_CoralRumbleLarge(const tString&in asTimer)
+		{
+			Effect_Rumble_Start(1.5, 2, 0, 0.3);
+		}
+		
+		//---------------------------------------------------------------------
+		
+		void CoralBreak_TimerErupt(const tString& in asName)
+		{
+			ParticleSystem_CreateAtEntity(asName+"_PS", "mindcoral_escape.ps", asName, true);
+			Effect_Rumble_Start(0.6, 0.7f, 0.1f, 0.1f);
+		}
+		
+		//---------------------------------------------------------------------
+				
+		void CoralBreak_PlayAnim()
+		{					
+			PlayerHands_SetUseCustomPosition(true);
+			PlayerHands_SetCustomPositionFromEntity("CoralAnim");
+			PlayerHands_SetUseCustomRotation(true);	
+			PlayerHands_SetCustomRotationFromEntity("CoralAnim");
+			PlayerHands_PlayAnimation("event_escape_coral_infection",false,true,0.0f,"");
+			
+			Entity_SetActive("SimonArms", false);
+			PlayerHands_AttachCameraToSocket("Socket_Camera", 2.0f, "CoralBreak_CameraAttachDone", true,true,1.0f);
+		}
+		//---------------------------------------------------------------------
+		
+		void CoralBreak_CameraAttachDone()
+		{
+			PlayerHands_SetAnimationOverCallback("CoralBreak_HandAnimOver");
+			Effect_DoF_FadeOut(mlCoralDOF, 20.0f);
+			Effect_ImageTrail_FadeOut(mlCoralTrailID,25.0f);
+			Player_Teleport("CoralAnimEnd");
+		}
+		
+		//---------------------------------------------------------------------
+		
+		void CoralBreak_HandAnimOver(const tString&in asAnim)
+		{
+			Entity_SetActive("SimonDivingSuit", false);
+			Entity_SetActive("CoralBlock_*",true);
+			Map_AddTimer("CamBreak_TimerResetPos",5.0f,"CamBreak_TimerResetPos");
+			
+			Map_AddTimer("SimonCommentBreakOut", 1.0f, "SimonCommentsBreakOut");
+			Sound_FadeGlobalVolume(1.0f, 2.5f);
+			EyeTracking_SetExtendedViewMul(1.0f);
+		}
+				
+		//---------------------------------------------------------------------
+		
+		void SimonCommentsBreakOut(const tString &in asTimer)
+		{
+			Emotion_StartBackgroundBreath(eBreathType_Normal, 0.6f, 3, 8, 0, 3);
+		}
+		
+		//---------------------------------------------------------------------
+		
+		void CamBreak_TimerResetPos(const tString&in asName)
+		{
+			PlayerHands_SetUseCustomPosition(false);
+			PlayerHands_SetUseCustomRotation(false);	
+			
+			Game_AutoSave();
+		}	
+
+		//-------------------------------------------------------
+		
+		//} END Event Wake up
+		
+	//-------------------------------------------------------
+	
+	//} END SCENE 1
+	
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 2: Find way out past puppets
+	// ==============
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+		
+		/////////////////////////////////////////
+		// Event: Dreamers
+		//{//////////////////////////////////////
+		
+		//-------------------------------------------------------
+		
+		bool OnTriggerVictim(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			int lUnderscorePos = cString_GetFirstCharPos(asChild,'_');
+			tString sVictimName = cString_Sub(asChild,lUnderscorePos+1);
+			
+			if (alState==1)
+			{
+				// ===============================
+				// Start victim
+				// ===============================
+				cLux_AddTodoMessage("SOUND: Start 'dreamer nearby' loop @"+sVictimName);
+				
+				Sound_PreloadGroup("02_07_theta_exit_a/SFX/dreamers/VO_FX", true);
+				
+				// Start distortion
+				int lDistortionID = Effect_VideoDistortion_Start(0.25f, -1.0f, 1.0f, 1.0f);
+				Entity_SetVarInt(sVictimName, "DistortionID", lDistortionID);
+				
+				// Start speech
+				Map_AddTimer(sVictimName, cMath_RandRectf(2.0f,4.0f), "TimerVictimTalk");
+				
+				Entity_SetVarBool(sVictimName, "VictimTalking", true);
+				
+				if(mbVictimAudioActive==false)
+				{
+					Sound_CreateAtEntity("DreamerLoop", "02_07_theta_exit_a/SFX/dreamers/loop", sVictimName, 3.0f, false, 1.0f);
+					VictimAudio();
+				}
+			}
+			else
+			{
+				// ===============================
+				// Stop victim
+				// ===============================
+				cLux_AddTodoMessage("SOUND: Stop 'dreamer nearby' loop.");
+				
+				VictimAudioEnd();
+				
+				// Stop distortion
+				int lDistortionID = Entity_GetVarInt(sVictimName, "DistortionID");
+				Effect_VideoDistortion_FadeOut(lDistortionID, 1.0f);
+				
+				// Stop speech
+				Map_RemoveTimer(sVictimName);
+				
+				Entity_SetVarBool(sVictimName, "VictimTalking", false);
+			}
+			return true;
+		}
+		
+		//-------------------------------------------------------
+		
+		void TimerVictimTalk(const tString& in asEntity)
+		{
+			int lTalkLine = Entity_GetVarInt(asEntity, "TalkLine");
+			lTalkLine++;
+			Entity_SetVarInt(asEntity,"TalkLine",lTalkLine);
+			
+			tString sSubject = asEntity+"_"+lTalkLine;
+			if (!Voice_SubjectExists(sSubject))
+				sSubject = asEntity+"_Random";
+			
+
+			Voice_SetSource(asEntity, asEntity, 1, 5, true, 0, 110, 400, eLuxVoiceSourceFreqencyFlag_HighPass);
+			Voice_Play(sSubject, -1, "OnVictimTalkDone");
+			
+			if(Sound_Exists("DreamerLoop"))
+			{
+				Sound_Fade("DreamerLoop", 0.65f, 3.0f);
+				if(mbVictimAudioActive==true)
+				{
+					Sound_FadeGlobalVolume(0.35f, 3.0f, eSoundEntryType_World);
+					Sound_FadeGlobalVolume(0.65f, 3.0f, eSoundEntryType_GuiWorld);
+				}
+				
+			}
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnVictimTalkDone(const tString&in asScene, const tString&in asSubject)
+		{
+			int lUnderscorePos = cString_GetFirstCharPos(asSubject,'_');
+			tString sVictimName = cString_Sub(asSubject,0,lUnderscorePos);
+			
+			if(Sound_Exists("DreamerLoop"))
+			{
+				Sound_Fade("DreamerLoop", 1.0f, 3.0f);
+				if(mbVictimAudioActive==true)
+				{
+					Sound_FadeGlobalVolume(0.65f, 3.0f, eSoundEntryType_World);
+					Sound_FadeGlobalVolume(1.0f, 3.0f, eSoundEntryType_GuiWorld);
+				}
+			}
+			
+			if (Entity_GetVarBool(sVictimName, "VictimTalking"))
+			{
+				Map_AddTimer(sVictimName, cMath_RandRectf(2.0f,8.0f), "TimerVictimTalk");
+			}
+		}
+				
+		//-------------------------------------------------------
+		bool mbVictimAudioActive = false;
+		void VictimAudio()
+		{
+			if(mbVictimAudioActive==false)
+			{
+				Sound_FadeGlobalVolume(0.65f, cMath_RandRectf(3.f,5.f), eSoundEntryType_WorldAll);
+				mbVictimAudioActive = true;
+			}
+		}
+		
+		void VictimAudioEnd()
+		{
+			if(mbVictimAudioActive==true)
+			{
+				Sound_Stop("DreamerLoop", cMath_RandRectf(3.f,5.f));
+				Sound_FadeGlobalVolume(1.0f, 3.0f, eSoundEntryType_WorldAll);
+				mbVictimAudioActive = false;
+			}
+			
+		}
+		
+		void StateChangeTrainSwitch(const tString &in asEntity, int alState)
+		{
+			Sound_CreateAtEntity("TrainSwitch", "Entities_Station/object/train/console_switch", asEntity, 0.0f, false, 1.0f);
+		}
+        
+        void StateChangeTrainButton(const tString &in asEntity, int alState)
+		{
+            Sound_CreateAtEntity("TrainSwitch", "Entities_Station/tech/control_board_pplant_button/interact", asEntity, 0.0f, false, 1.0f);
+		}
+		
+		//-------------------------------------------------------
+		//Alice look at stinger
+		
+		bool AliceLookAtEnable(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			Entity_SetActive("AliceLookAtMusic", true);
+			return false;
+		}
+		
+		
+		bool mbAliceLookAtMusic = false;
+		void AliceMusicLookAt(const tString &in asEntity, int alState)
+		{
+			if(mbAliceLookAtMusic==false)
+			{
+				Music_Play("04_03_ross_kill_intro", 0.55f, false, eMusicPrio_BigEvent);
+				mbAliceLookAtMusic = true;
+			}
+		}
+		
+		//} END Dreamers
+	
+		/////////////////////////////////////////
+		// Event: Puppet Control
+		//{//////////////////////////////////////
+		
+		//-------------------------------------------------------
+		// SECTION 1
+		//-------------------------------------------------------
+		
+		bool mbSection1Entered=false;
+		
+		bool Collide_TriggerStartPuppet1(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			cLux_AddDebugMessage("Start Puppet 1");
+			
+			mbSection1Entered = true;
+			
+			Entity_SetActive("Puppet_1",true);
+			Pathfinder_Track_Clear("Puppet_1");
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_20",1, 8);
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_15",1, 8);
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_22",1, 8);
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_133",1, 8);
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_111",1, 8);
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_145",1, 8);
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_21",1, 8);
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_118",1, 8);
+			Pathfinder_Track_Add("Puppet_1", "PathNodeSection1_139",1, 8);
+			Pathfinder_Track_Start("Puppet_1",true,1,"");
+			
+			AttackMeter_SetAttackerTeleportPosition("Spawn_Section1_*");
+					
+			return false;
+		}
+		
+		bool Collide_TriggerRestartSection1(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			if(alState !=1) return true;
+			if(mbSection1Entered ==false) return true;
+			
+			if (Entity_IsActive("Puppet_1")==false)
+			{
+				cLux_AddDebugMessage("Restarting Puppet1!");
+				
+				Agent_SetAutoDisableWhenOutOfSightActive("Puppet_*", true, 7);
+				Agent_SetAutoDisableWhenOutOfSightActive("Puppet_1", false, 0);
+				Entity_SetActive("Puppet_1",true);
+				Pathfinder_Track_Start("Puppet_1",true,1,"");
+				
+				AttackMeter_SetAttackerTeleportPosition("Spawn_Section1_*");
+				
+				SlideDoor_SetClosed("hatch_3", true);
+			}
+			else
+			{
+				cLux_AddDebugMessage("Restarting Puppet1, but puppet already active.");
+			}
+			return true;
+		}
+		
+		bool Collide_TriggerStopSection1(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			if(alState !=1) return true;
+			if (Entity_IsActive("Puppet_1"))
+			{
+				cLux_AddDebugMessage("Stop Puppet1!");
+				
+				Agent_SetAutoDisableWhenOutOfSightActive("Puppet_1", true, 7);
+			}
+			
+			SlideDoor_SetClosed("hatch_4", true, true);
+			
+			return true;
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnChangeStateLight(const tString &in asEntity, int alState)
+		{
+			Lamp_SetLit("FailingCeilingLamp", true, true);
+			Map_AddTimer("TimerLampFail",5.0f,"TimerLampFail");
+		}
+		
+		//-------------------------------------------------------
+		
+		void TimerLampFail(const tString&in asFail)
+		{
+			Lamp_SetLit("FailingCeilingLamp", false, false);
+			ParticleSystem_CreateAtEntity("ElecPS1", "elec_spark_physics_oneshot.ps", "FailingCeilingLamp", true);
+			Sound_CreateAtEntity("LampFail", "02_07_theta_exit_a/SFX/lights_spark_out", "FailingCeilingLamp");
+			Button_SetDisabled("LightSwitch",true,false);
+			ParticleSystem_CreateAtEntity("ElecPS2", "elec_spark_physics_oneshot.ps", "LightSwitch", true);
+			cLux_AddTodoMessage("SOUND: Lamp and switch break");
+		}
+		
+		//-------------------------------------------------------
+		
+		void SetupConsoles()
+		{
+			Entity_SetEffectsActive("ConsoleMeters",false,false);
+			Entity_SetEffectBaseColor("Console",cColor(0));
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnConsoleButtonStateChange(const tString &in asEntity, int alState)
+		{
+			Entity_SetEffectsActive("ConsoleMeters",(alState==1), true);
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnConsoleKnobStateChange(const tString &in asEntity, int alState)
+		{
+			float val = (3+Wheel_GetState("ConsoleKnob_1") + Wheel_GetState("ConsoleKnob_2") + Wheel_GetState("ConsoleKnob_3"))/6.0f;
+			Entity_FadeEffectBaseColor("Console",cColor(val*5.0f),1.0f);
+		}
+
+		//-------------------------------------------------------
+		// SECTION 2
+		//-------------------------------------------------------
+		
+		bool mbSection2Entered=false;
+		
+		bool Collide_TriggerStartPuppet2(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			Entity_SetActive("Puppet_2",true);
+			
+			cLux_AddDebugMessage("Start Puppet 2");
+			
+			mbSection2Entered=true;
+				
+			Pathfinder_Track_Clear("Puppet_2");
+			Pathfinder_Track_Add("Puppet_2", "PathNodeSection2_16",1, 8);
+			Pathfinder_Track_Add("Puppet_2", "PathNodeSection2_80",1, 8);
+			Pathfinder_Track_Add("Puppet_2", "PathNodeSection2_92",1, 8);
+			Pathfinder_Track_Add("Puppet_2", "PathNodeSection2_104",1, 8);
+			Pathfinder_Track_Add("Puppet_2", "PathNodeSection2_81",1, 8);
+			Pathfinder_Track_Add("Puppet_2", "PathNodeSection2_107",1, 8);
+			Pathfinder_Track_Add("Puppet_2", "PathNodeSection2_10",1, 8);
+			Pathfinder_Track_Start("Puppet_2",true,1,"");
+			
+			AttackMeter_SetAttackerTeleportPosition("Spawn_Section2_*");
+			
+			return false;
+		}
+		
+		bool Collide_TriggerRestartSection2(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			if(alState !=1) return true;
+			if(mbSection2Entered==false) return true;
+			
+			if (Entity_IsActive("Puppet_2")==false)
+			{
+				cLux_AddDebugMessage("Restarting Puppet2!");
+				
+				Agent_SetAutoDisableWhenOutOfSightActive("Puppet_*", true, 9);
+				Agent_SetAutoDisableWhenOutOfSightActive("Puppet_2", false, 0);
+				Entity_SetActive("Puppet_2",true);
+				Pathfinder_Track_Start("Puppet_2",true,1,"");
+				
+				AttackMeter_SetAttackerTeleportPosition("Spawn_Section2_*");
+			}
+			else
+			{
+				cLux_AddDebugMessage("Restarting Puppet2, but puppet already active.");
+			}
+			
+			return true;
+		}
+		
+		bool Collide_TriggerStopSection2(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			if(alState !=1) return true;
+			if (Entity_IsActive("Puppet_2"))
+			{
+				cLux_AddDebugMessage("Stop Puppet2!");
+				
+				Agent_SetAutoDisableWhenOutOfSightActive("Puppet_2", true, 9);
+				
+				if(mbSection3Entered)
+				{
+					Agent_SetAutoDisableWhenOutOfSightActive("Puppet_3", false, 0);
+					Entity_SetActive("Puppet_3",true);
+					Pathfinder_Track_Start("Puppet_3",true,1,"");
+					
+					AttackMeter_SetAttackerTeleportPosition("Spawn_Section3_*");
+				}
+			}
+			
+			return true;
+		}
+		
+		//-------------------------------------------------------
+		// SECTION 3
+		//-------------------------------------------------------
+		
+		bool mbSection3Entered=false;
+				
+		bool Collide_TriggerStartPuppet3(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			mbSection3Entered=true;
+			
+			Entity_SetActive("Puppet_3",true);
+			Pathfinder_Track_Clear("Puppet_3");
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_40",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_56",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_46",4,9);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_40",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_41",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_45",4,9);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_59",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_138",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_46",4,9);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_54",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_37",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_61",2,5);
+			Pathfinder_Track_Add("Puppet_3","PathNodeSection2_46",3,9);
+			
+			Pathfinder_Track_Start("Puppet_3",true,1,"");
+			
+			AttackMeter_SetAttackerTeleportPosition("Spawn_Section3_*");
+			
+			return true;
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnUseHatchButton(const tString &in asEntity, int alState)
+		{
+			Entity_SetActive(Entity_GetVarString(asEntity, ""), (alState==1));
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnWauFlowerDrained(const tString &in asEntity)
+		{
+			Sound_CreateAIEventAtEntity(asEntity,25.0f,3);
+		}
+		
+		//-------------------------------------------------------
+		
+		//} END Event Puppet control
+		
+		/////////////////////////////////////////
+		// Event: Turn on power station
+		//{/////////////////////////////////////
+
+		//-------------------------------------------------------
+
+		bool mbPowerOn = false;
+		float mfPowerLevel = 0;
+		
+		//-------------------------------------------------------
+
+		void SetupPowerStation()
+		{
+			//////////////////////////
+			// Power stations and door
+			SlideDoor_SetClosed("PowerDoor_Door",true);
+			mbPowerOn=false;
+					
+			SetDoorPowerOn(false);
+			
+			//////////////////
+			// Lamps
+			Lamp_SetLit("PowerLampOff",true,false);
+			
+			Entity_PlayAnimation("GeneratorFan", "switchoff");
+			
+			Entity_SetEffectsActive("turbine_huge_1",false,false);
+			Entity_SetEffectsActive("Generator_Habitat_9",false,false);
+		}
+		
+		//-------------------------------------------------------
+		
+		int mlLightLevel = -1;
+		float mfPowerLeverVel = 0;
+		
+		float mfPowerLastStateAmount=0.0f;
+		
+		void UpdatePowerLevel(float afTimestep)
+		{
+			float fPowerStateAmount = MovingButton_GetStateAmount("PowerStation");
+			float fSlideVel = fPowerStateAmount-mfPowerLastStateAmount;
+			mfPowerLastStateAmount = fPowerStateAmount;
+			
+			fSlideVel*=-25.0f;
+
+			if (fSlideVel>0.0f)	
+				mfPowerLevel=cMath_Clamp(mfPowerLevel+fSlideVel*afTimestep, 0.0f, 1.0f);
+			
+			if ( (mfPowerLevel<1.0f) && (mfPowerLevel>0.0f) )
+			{
+				mfPowerLevel=cMath_Clamp(mfPowerLevel-0.1f*afTimestep, 0.0f, 1.0f);
+			}
+
+			int lLightLevel = cMath_RoundToInt(mfPowerLevel*15.0f);
+			if (lLightLevel==mlLightLevel)
+				return;
+			mlLightLevel = lLightLevel;
+			mfPowerLeverVel = fSlideVel;
+				
+			for (int i=1;i<=15;i++)
+			{
+				Lamp_SetLit("PowerLamp_"+i, i<=lLightLevel, true);
+			}
+			
+			float fr=1.0f;
+			float fg=1.0f;
+			
+			if (lLightLevel<=8)
+			{
+				fg = lLightLevel/8.0f;
+			}
+			if (lLightLevel>=7)
+			{
+				fr = (15-lLightLevel)/8.0f;
+			}
+			
+			Light_FadeTo("PowerLight", cColor(fr,fg,0.0f),-1,0.1f);
+			
+			if ((lLightLevel==15) && (!mbPowerOn))
+			{
+				TurnPowerOn();
+			}
+			else if ((lLightLevel<8) && (mbPowerOn))
+			{
+				TurnPowerOff();
+			}
+		}
+		
+		//Sound
+		bool PowerLevelSound(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			cLux_AddDebugMessage("Power Level Pulled in direction "+alState);
+			if (alState != 1) return true;
+			
+			if(mfPowerLeverVel>=0.225)
+			{
+				if(mlLightLevel<=4 && mbPowerOn==false && Map_TimeHasPassed("LowPush", 0.5f))
+				{
+					Sound_CreateAtEntity("LowPush", "02_07_theta_exit_a/SFX/power_charger/power_charge_pump_small", "PowerStation");
+					Sound_CreateAtEntity("LowCharge", "02_07_theta_exit_a/SFX/power_charger/power_clunk_02", "PowerStation");
+					Sound_Stop("MediumPush", 0.5f);
+					Sound_Stop("HighPush", 0.5f);
+					cLux_AddDebugMessage("Low Push Triggered");
+				}
+				else if(mlLightLevel<=8 && mbPowerOn==false && Map_TimeHasPassed("MediumPush", 0.5f))
+				{
+					Sound_CreateAtEntity("MediumPush", "02_07_theta_exit_a/SFX/power_charger/power_charge_pump_med", "PowerStation");
+					Sound_CreateAtEntity("MediumCharge", "02_07_theta_exit_a/SFX/power_charger/power_clunk_03", "PowerStation");
+					Sound_Stop("LowPush", 0.5f);
+					Sound_Stop("HighPush", 0.5f);
+					cLux_AddDebugMessage("Med Push Triggered");
+				}
+				else if(mlLightLevel<=16 && mbPowerOn==false && Map_TimeHasPassed("HighPush", 0.5f))
+				{
+					Sound_CreateAtEntity("HighPush", "02_07_theta_exit_a/SFX/power_charger/power_charge_pump_large", "PowerStation");
+					Sound_CreateAtEntity("HighCharge", "02_07_theta_exit_a/SFX/power_charger/power_clunk_04", "PowerStation");
+					Sound_Stop("MediumPush", 0.5f);
+					Sound_Stop("LowPush", 0.5f);
+					cLux_AddDebugMessage("High Push Triggered");
+				}	
+			}
+			return true;
+		}	
+		
+		
+		//-------------------------------------------------------
+
+		int mlGeneratorShake = -1;
+		
+		//-------------------------------------------------------
+		
+		void TurnPowerOn()
+		{
+			/////////////////////////
+			// Station turned on
+			mbPowerOn=true;
+			mfPowerLevel=1.0f;
+			Sound_CreateAtEntity("GeneratorStart", "02_07_theta_exit_a/SFX/power_charger/generator_powerup", "PowerStation");
+			Map_AddTimer("GeneratorShake", 5.0f, "GeneratorLoopSound");
+				
+			SetDoorPowerOn(true);
+			DoorUnlockMusic();
+			
+			Terminal_ForceCacheUpdate("PowerDoorPanel_Screen");
+			
+			Entity_PlayAnimation("GeneratorFan", "spin",1.0f,true);
+
+			Entity_SetEffectsActive("turbine_huge_1",true,false);
+			Entity_SetEffectsActive("Generator_Habitat_9",true,false);
+			
+			/////////////
+			// Start preloading
+			Preload();
+		}
+		
+		void GeneratorLoopSound(const tString &in asTimer)
+		{
+			Sound_CreateAtEntity("GeneratorStartLoop", "02_07_theta_exit_a/SFX/power_charger/generator_powerup_loop", "PowerStation", 1.0f, true);
+			Map_AddTimer("FadeGeneratorLoop", 5.0f, "FadeGeneratorLoop");
+		}
+		
+		void FadeGeneratorLoop(const tString &in asTimer)
+		{
+			Sound_Fade("GeneratorStartLoop", 0.65f, 15.0f);
+		}
+		
+		//-------------------------------------------------------
+		
+		void TurnPowerOff()
+		{
+			////////////////////////
+			// Station turned off
+			mbPowerOn=false;
+			Effect_Shake_FadeOut(mlGeneratorShake,1.0f);
+			mlGeneratorShake = 0;
+			cLux_AddTodoMessage("SOUND: Generator stops.");
+				
+			Entity_PlayAnimation("GeneratorFan", "switchoff");
+				
+			Entity_SetEffectsActive("turbine_huge_1",false,false);
+			Entity_SetEffectsActive("Generator_Habitat_9",false,false);
+			Entity_SetEffectsActive("strut_open_1",false,false);
+			
+			SetDoorPowerOn(false);
+		}
+
+		//-------------------------------------------------------
+		
+		void SetDoorPowerOn(bool abState)
+		{	
+			if (Button_IsLocked("PowerDoor_PanelInside")!=abState)
+				return;
+
+			Button_SetLocked("PowerDoor_PanelInside", !abState);
+			if (!abState)
+			{
+				cLux_AddTodoMessage("SOUND: Door powers off @PowerDoor_PanelInside.");
+				Map_RemoveTimer("TimerTurnOnDoorLamps");
+				
+				Lamp_SetLit("ExitLamp_*",false,true);
+				
+				SlideDoor_SetOpenableByAgent("PowerDoor_Door", false);
+			}
+			else
+			{
+				cLux_AddTodoMessage("SOUND: Door powers on @PowerDoor_PanelInside.");
+				Map_AddTimer("TimerTurnOnDoorLamps",0.5f,"TimerTurnOnDoorLamps");
+				
+				Sound_CreateAIEventAtEntity("PowerStation",30.0f,3);
+				Lamp_SetLit("ExitLamp_*",true,true);
+				
+				SlideDoor_SetOpenableByAgent("PowerDoor_Door", true);
+			}
+		}
+		
+		//-------------------------------------------------------
+		
+		void TimerTurnOnDoorLamps(const tString& in asName)
+		{
+			Lamp_SetLit("ExitLamp_*",true,true);
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnGuiDoorPowerStatus(const tString&in asEntityName, float afTimeStep)
+		{
+			ImGui_SetTransCategory("02_07_theta_exit");
+			
+			StationGuiBG_Scanlines();
+			StationGuiBG_Backdrop();
+			
+			cStationGui_BigStatusMessageSettings settings;
+			
+			if (Button_IsLocked("PowerDoor_PanelInside"))
+			{
+				settings.mfTextSizeMul = 1.5;
+				StationGui_BigStatusMessage("DoorPower_Off", settings);
+			}
+			else
+			{
+				settings.mfTextSizeMul = 1.75;
+				settings.mColor = gStationGuiColor_Highlight;
+				StationGui_BigStatusMessage("DoorPower_On", settings);
+			}
+		}
+		
+		//} END Turn on power station
+		
+	//-------------------------------------------------------
+
+	//} END SCENE 2
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 3: Escape Through Pipes; Get Flushed Out
+	// ==============
+	//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+		/////////////////////////////////////////
+		// Event: Enter flooded Tunnel Hub; jump & climb through water
+		//{//////////////////////////////////////
+
+		//-------------------------------------------------------
+
+		void SetupPool()
+		{
+			Prop_SetStaticPhysics("moss_float*",true);
+			
+			// Turn off main liquid area for speed
+			Entity_SetActive("LiquidPool",false);
+			
+			// Animations on theta doors
+			Entity_StopAnimation("theta_gate_inner_layer*");
+		}
+			
+		//-------------------------------------------------------
+		
+		bool DoorwayShowHidePool(const tString &in asArea, const tString &in asEntity, int alState)
+		{	
+			Entity_SetActive("LiquidPool",alState==1);
+			// Show/hide fog areas which will be reflected in the pool if they're active (ask Marc)
+			FogArea_SetVisible("PuppetFogArea_*",(alState==-1));
+			Prop_SetStaticPhysics("moss_float*",(alState==-1));
+			return true;
+		}
+
+		//-------------------------------------------------------
+
+		bool mbFirstTimeInWater = true;
+		
+		bool OnPlayerHitPool(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			// Splash as we hit the water
+			if (alState==1)
+			{
+				if (Player_GetVelocity().y < -6.5f)
+				{	
+					Effect_Rumble_Start(0.7, 1.7, 0,  0.7);
+					Sound_PlayGui("Player/liquid/enter_high", 1.0f);
+					ParticleSystem_CreateAtEntity("PlayerSplashPS","oneshot_waterbubbles_explosion.ps","player",true);
+				}
+				// Shut down AI in section 2
+				Agent_SetAutoDisableWhenOutOfSightActive("Puppet_*", true, 5);
+				
+				if (mbFirstTimeInWater)
+				{
+					// Save after being in the maze
+					Map_AddTimer("TimerSaveHitPool",2.0f,"TimerSaveHitPool");
+					mbFirstTimeInWater = false;
+				}
+			}
+			else
+			{
+				ParticleSystem_Destroy("PlayerSplashPS");
+			}
+			return true;
+		}
+		
+		//-------------------------------------------------------
+		
+		void CameraCollide_Pool(int alState)
+		{
+			if (alState==1)
+			{
+				Effect_Screen_Start("water_splash_screen.mat", cVector2f(0.5, 0.5), cVector2f(1.8, 1.8), 1, 0.1f, 0.7f, 0.7f); 
+			}
+		}
+		
+		//-------------------------------------------------------
+		
+		void TimerSaveHitPool(const tString&in asName)
+		{
+			Game_AutoSave();
+		}
+
+		//-------------------------------------------------------
+
+		bool OnTriggerFixHealth(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			float fHealthDiff = 0.6f-Player_GetHealth();
+			if (fHealthDiff<=0.0f)
+				return false;
+				
+			int lSteps=fHealthDiff/0.1f;
+			for(int i=0;i<=lSteps;i++)
+			{
+				Map_AddTimer("Timer_FixHealth",i*0.5f,"Timer_FixHealth");
+			}
+			return false;
+		}
+
+		//-------------------------------------------------------
+		
+		void Timer_FixHealth(const tString& in asName)
+		{
+			cLux_AddDebugMessage("Add health");
+			Player_AddHealth(0.1f);
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnInteractLadder(const tString &in asEntity)
+		{
+			tString sLadderArea = Entity_GetVarString(asEntity,"");
+			Entity_CallEntityInteract(sLadderArea);
+		}
+		
+		//-------------------------------------------------------
+
+		bool OnToolboxLeftScaffold(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			
+			if (alState==-1)
+			{
+				Entity_SetActive("TriggerScaffoldLadderActivate",true);
+				Entity_SetActive("TriggerScaffoldLadder",true);
+			}
+			else
+			{
+				Entity_SetActive("TriggerScaffoldLadderActivate",false);
+				Entity_SetActive("TriggerScaffoldLadder",false);
+			}
+			return true;
+		}
+
+		//-------------------------------------------------------
+
+		void OnClimbScaffoldLadder(const tString &in asEntity)
+		{
+			Entity_CallEntityInteract("ScaffoldLadder");
+			Entity_SetActive("TriggerScaffoldLadder",false);
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnTriggerScaffoldLadderActivate(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			Entity_SetActive("TriggerScaffoldLadder",(alState==1));
+			return true;
+		}
+	
+		//-------------------------------------------------------
+	
+		int mlSwayCount=0;
+		
+		bool OnTriggerSwayArea(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			if (alState==1)
+			{
+				cLux_AddDebugMessage("Enter sway area: "+asChild);
+				StartSwaySound();
+				float fAmount = Entity_GetVarFloat(asChild,"");
+				cMatrixf matArea=Map_GetEntity(asChild).GetMatrix().GetRotation().GetTranspose();
+				cVector3f vAngles = cMath_MatrixToEulerAngles(matArea);
+				float fAngle = cMath_ToDeg(vAngles.y);
+				Effect_Sway_FadeIn(fAmount, 1.0f, 1.0f, fAngle,-1.0f,0.25f,0.997f,0.5f);
+				mlSwayCount++;
+
+				//if(Platform_IsPS4() == false) //Dof casued problems on PS4 (KISS solution)
+				{
+					int lDoF = Entity_GetVarInt(asChild,"DoF");
+					if(lDoF == 0) lDoF = Effect_DoF_Start(0.0f, 10.0f, 1.0f, 0.25f);
+
+					Entity_SetVarInt(asChild,"DoF",lDoF);
+				}
+				StartSwaySound();
+			}
+			else
+			{
+				cLux_AddDebugMessage("Exit sway area.");
+				StopSwaySound();
+				mlSwayCount--;
+				if (mlSwayCount==0)
+				{
+					Effect_Sway_FadeOut(1.0f);
+				}
+				//if(Platform_IsPS4() == false) //Dof casued problems on PS4 (KISS solution)
+				{
+					int lDoF = Entity_GetVarInt(asChild,"DoF");
+					Effect_DoF_FadeOut(lDoF,1.0f);
+					Entity_SetVarInt(asChild,"DoF",0);
+				}
+			}
+			return true;
+		}
+		
+		//-------------------------------------------------------
+		bool mbSwaySoundActive = false;
+		void StartSwaySound()
+		{
+			if(mbSwaySoundActive==false)
+			{
+				if(Sound_Exists("ScafCreak")==false)
+				{
+					Sound_CreateAtEntity("ScafCreak", "02_07_theta_exit_a/amb/spot/scaffolding_creak", "Player", cMath_RandRectf(1.f,3.f), true, 1.0f);
+				}
+				Map_RemoveTimer("Timer_StopSwaySound");
+				mbSwaySoundActive = true;
+			}
+		}
+				
+		//-------------------------------------------------------
+		
+		void StopSwaySound()
+		{
+			if(mbSwaySoundActive==true)
+			{
+				Map_AddTimer("Timer_StopSwaySound", cMath_RandRectf(1.f,3.f), "Timer_StopSwaySound");
+			}
+		}
+		
+		void Timer_StopSwaySound(const tString &in asTimer)
+		{
+			Sound_Stop("ScafCreak", 3.0f);
+			mbSwaySoundActive = false;
+		}
+				
+		//-------------------------------------------------------
+		
+		//} END Event Enter flooded Tunnel Hub
+		
+		/////////////////////////////////////////
+		// Event: Enter Tunnel; Akers chases
+		//{//////////////////////////////////////
+		
+		//-------------------------------------------------------
+		
+		void OnGrabBlocker(const tString &in asEntity)
+		{
+			Prop_SetStaticPhysics("PropPipe_*",false);
+		}
+			
+		//-------------------------------------------------------
+		
+		//} END Event Enter Tunnel
+		
+		/////////////////////////////////////////
+		// Event: Flush water and get flushed away
+		//{//////////////////////////////////////
+		
+		//-------------------------------------------------------
+
+		void SetupPumpRoom()
+		{				
+			Lamp_SetLit("HatchLamp_*", false, false);
+			Puppet_SetAttackFatal("EndChasePuppet", true);
+		}
+		
+		//------------------------------------------------------
+		
+		void SetupFlood()
+		{
+			////////////////////////
+			// Tunnel water
+			Entity_SetActive("WaterSheet_*",false);
+			Entity_SetActive("TunnelFloodWaterArea_*",false);
+			Entity_AttachToEntity("WaterSheet_1","TunnelFloodArea","",false,false);
+			Entity_AttachToEntity("WaterSheet_2","TunnelFloodArea","",false,false);
+			Entity_AttachToEntity("WaterSheet_3","TunnelFloodArea","",false,false);
+			Entity_AttachToEntity("TunnelFloodWaterArea_1","TunnelFloodArea","",false,false);
+			Entity_AttachToEntity("TunnelFloodPS_1","TunnelFloodArea","",false,false);
+			Entity_AttachToEntity("TunnelFloodPS_2","TunnelFloodArea","",false,false);
+			Entity_AttachToEntity("TunnelFloodPS_3","TunnelFloodArea","",false,false);
+			
+			/////////////////////////
+			// Room water
+			Entity_SetActive("FloorFloodArea",false);
+			
+			////////////////////////
+			// Side tunnel
+			Entity_SetActive("SideWaterSheet_*",false);
+			Entity_SetActive("SideFloodWaterArea_*",false);
+			Entity_AttachToEntity("SideWaterSheet_1","SideFloodArea","",false,false);
+			Entity_AttachToEntity("SideWaterSheet_2","SideFloodArea","",false,false);
+			Entity_AttachToEntity("SideWaterSheet_3","SideFloodArea","",false,false);
+			Entity_AttachToEntity("SideFloodWaterArea_1","SideFloodArea","",false,false);
+			Entity_AttachToEntity("SideFloodPS_1","SideFloodArea","",false,false);
+			Entity_AttachToEntity("SideFloodPS_2","SideFloodArea","",false,false);
+			Entity_AttachToEntity("SideFloodPS_3","SideFloodArea","",false,false);
+			
+			// Lever
+			Entity_SetEffectBaseColor("FloodLeverLamp", cColor(1.0f,0.7f,0.0f,1.0f));
+			Lamp_SetupFlicker("FloodLeverLamp",0.5f,0.5f,0.5f,0.5f,true);
+		}
+		
+		//-------------------------------------------------------
+		
+		void OnFlushLeverStateChange(const tString &in asEntity, int alState)
+		{
+			if (alState!=1)
+				return;
+				
+			Map_AddTimer("TimerBreakWauFlower",1.5f,"TimerBreakWauFlower");
+			
+			Entity_SetEffectBaseColor("FloodLeverLamp", cColor(4.0f,0.0f,0.0f,1.0f));
+			Lamp_SetupFlicker("FloodLeverLamp",1.0f,1.0f,0.5f,0.5f,true);
+				
+			SequenceOpenFloodDoor("");
+		}
+		
+		//-------------------------------------------------------
+		
+		void TimerBreakWauFlower(const tString& in asName)
+		{
+			// Wau flower fails
+			EnergySource_SetEnergy("wau_flower_4",0);
+			ParticleSystem_CreateAtEntity("SparksWF", "elec_spark_physics_oneshot.ps", "WauFlowerEffectArea", false);
+			Sound_CreateAtEntity("SparksWF", "02_05_theta/amb/spots/small_spark_hallway_falloff", "WauFlowerEffectArea");
+		}
+		
+		//-------------------------------------------------------
+		
+		cSequenceStatesData mSequenceOpenFloodDoor;
+		void SequenceOpenFloodDoor(const tString& in asSequence)
+		{
+			Sequence_Begin("SequenceOpenFloodDoor", mSequenceOpenFloodDoor);
+			
+			if (Sequence_DoStepAndWait(1.0f))
+			{
+				Sound_CreateAtEntity("FlushValveOpenBeep", "02_07_theta_exit_a/SFX/flood_sequence/flush_valve_terminal_confirmed", "computer_panel_medium_reboot_prompt_1");
+				Sound_CreateAtEntity("FlushValveOpen", "02_07_theta_exit_a/SFX/flood_sequence/flush_valve_open", "Player");
+				Sound_CreateAtEntity("DrainingLoop", "02_07_theta_exit_a/SFX/flood_sequence/flush_valve_drain_loop", "DrainingLoopSoundSource", 3.0f, false, 1.0f);
+				
+				Entity_SetActive("StartEndChaseTrigger_*",true);
+				Entity_SetActive("TriggerAkersScream",true);
+				Entity_SetActive("EndChasePuppet",true);
+				BarkMachine_SetActive("EndChasePuppet", false);
+				Puppet_ChangeState_Patrol("EndChasePuppet");
+				
+				//Preload flooding sounds
+				Sound_PreloadGroup("02_07_theta_exit_a/SFX/flood_sequence/breach", true);
+			}
+			else if (Sequence_DoStepAndWait(0.5f))
+			{
+				cLux_AddTodoMessage("SOUND: Akers entering tunnel back at the flooded room.");
+			}
+			else if (Sequence_DoStepAndWait(0.1f))
+			{
+				///////////////
+				// Door fails
+				cLux_AddTodoMessage("SOUND: Start grinding noise @DoorFailArea_1 as the door fails");
+			}
+			else if (Sequence_DoStepAndWait(0.1f))
+			{
+				///////////////
+				// Door sparks 1
+				ParticleSystem_CreateAtEntity("SparksPS1", "elec_spark_physics_oneshot.ps", "DoorFailArea_1", false);
+				Sound_CreateAtEntity("Sparks", "02_05_theta/amb/spots/small_spark_hallway_falloff", "DoorFailArea_1");
+				
+			}
+			else if (Sequence_DoStepAndWait(2.4f))
+			{
+				///////////////
+				// Door sparks 2
+				ParticleSystem_CreateAtEntity("SparksPS2", "elec_spark_physics_oneshot.ps", "DoorFailArea_2", false);
+				Sound_CreateAtEntity("Sparks", "02_05_theta/amb/spots/small_spark_hallway_falloff", "DoorFailArea_2");
+				
+				////////////////
+				// Start lights flashing
+				cLux_AddDebugMessage("FLOOD: Start flashing lights");
+			
+				cLux_AddTodoMessage("SOUND: Start siren @FlushPump");			
+				
+				Lamp_SetLit("HatchLamp_*",true,true);
+				Lamp_SetupFlicker("HatchLamp_*",0.5f,0.5f,0.5f,0.5f, false, "Entities_Station/object/siren_alarm/upsilon_blink_louder");
+				Lamp_SetFlickerActive("HatchLamp_*",true);
+				
+			}
+			else if (Sequence_DoStepAndWait(1.0f))
+			{
+				Sound_CreateAtEntity("DoorOpens", "02_07_theta_exit_a/SFX/flood_sequence/flush_door_open_sweet", "TunnelDoor");
+				
+			}
+			else if (Sequence_DoStepAndWait(2.0f))
+			{
+				SlideDoor_SetClosed("TunnelDoor",false);
+				StartFloodAlarm();
+				Sound_FadeGlobalVolume(0.65f, 3.0f, eSoundEntryType_WorldAll);
+			}
+			
+			Sequence_End();
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnTriggerAkersScream(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			if(mbFloodEventSound==false)
+			{
+				Sound_CreateAtEntity("AkersScream", "02_07_theta_exit_a/SFX/flood_sequence/akers_scream_sweet", "EndChasePuppet");
+			}
+			return false;
+		}
+
+		//-------------------------------------------------------
+
+		void OnLookAtChaseTrigger(const tString &in asEntity, int alState)
+		{
+			cLux_AddDebugMessage("Player sees Akers.");
+			Depth_Audio_Fear_MediumIntensity();
+			Sound_CreateAtEntity("SirenLoopAlarm", "02_07_theta_exit_a/SFX/flood_sequence/flush_valve_siren_loop", "sirensource");
+			
+			Sequence_StartEndChase("");
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnTriggerEndChase(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			cLux_AddDebugMessage("Player sets too close to the door.");
+			Sequence_StartEndChase("");
+			return false;
+		}
+
+		//-------------------------------------------------------
+		
+		bool AkersChaseSweet(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(mbFloodEventSound==false)
+		{
+			Sound_Stop("AkersScream", 2.0f);
+			Sound_CreateAtEntity("AkersChasing", "02_07_theta_exit_a/SFX/flood_sequence/akers_chase_sweet", "EndChasePuppet");
+		}
+		return false;
+	}
+		
+		//-------------------------------------------------------
+		
+		cSequenceStatesData mSeqEndChase;
+		void Sequence_StartEndChase(const tString& in asName="")
+		{
+			Sequence_Begin("Sequence_StartEndChase", mSeqEndChase);
+			
+			if (Sequence_DoStepAndWait(3.0f))
+			{	
+				cLux_AddDebugMessage("Akers starts chasing player!");
+				BarkMachine_SetActive("EndChasePuppet", false);
+				Entity_SetActive("StartEndChaseTrigger_*",false);
+				
+				
+				Agent_SetSensesActive("EndChasePuppet", true);
+			
+				AttackMeter_SetAttackerTeleportPosition("");
+				AttackMeter_SetAfterDamageCallback("AkersKnocksDownPlayer");
+				
+				Pathfinder_Track_Add("EndChasePuppet", "PathNodeArea_1"); //Needs a path node to use proper mode!
+				Puppet_ChangeState_Hunt("EndChasePuppet");
+				Puppet_Hunt_RevealCurrentPlayerPos("EndChasePuppet");
+				TimerPuppetChasePlayer("");
+											
+				//Tense music
+				Sound_FadeGlobalVolume(0.65f, 3.0f, eSoundEntryType_World);
+				
+				Entity_SetActive("TriggerMainFlood_*", true);
+				Map_AddTimer("Timer_TriggerMainFlood",4.0f,"Timer_TriggerMainFlood");
+			}
+			Sequence_End();
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnTriggerMainFlood(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			Map_RemoveTimer("Timer_TriggerMainFlood");
+			Sequence_Flood("");
+			return true;
+		}
+		
+		//-------------------------------------------------------
+		
+		void Timer_TriggerMainFlood(const tString& in asName)
+		{
+			Entity_SetActive("TriggerMainFlood_*", false);
+			Sequence_Flood("");
+		}
+		
+		//-------------------------------------------------------
+
+		void OnAkersDamage(const tString&in asEntityName)
+		{
+			if (cLux_GetExplorationModeActive() == false)
+			{
+				Player_SetHealth(0);
+				return;
+			}
+		}
+		
+		//-----------------------------------------------------
+		
+		void Timer_ExplorationModeFakeKnockOut(const tString &in asTimer)
+		{			
+			Entity_SetActive("EndChasePuppet", false);
+			Map_RemoveTimer("TimerPuppetChasePlayer");
+			
+			Map_AddTimer("ForceFloodResumeTimer", 4.f, "Timer_ForceFloodResume");
+		}
+		
+		//------------------------------------------------------
+		
+		void Timer_ForceFloodResume(const tString &in asTimer)
+		{
+			Effect_Fade_In(15.f);
+			
+			cLux_AddDebugMessage("Water hits player!");
+			SequenceStates_Resume("Sequence_Flood");
+		}
+			
+		//-------------------------------------------------------
+		
+		void TimerPuppetChasePlayer(const tString &in asTimer)
+		{
+			//cLux_AddDebugMessage("UPDATE HUNT!!");
+			Puppet_Hunt_RevealCurrentPlayerPos("EndChasePuppet");
+			Map_AddTimer(asTimer, 0.2f, "TimerPuppetChasePlayer");
+		}
+		
+		//-------------------------------------------------------
+		
+		int mlBreathID;
+		int mlHeartbeatID;
+		int mlShakeID;
+		bool mbFloodEventSound = false;
+		
+		cSequenceStatesData mSequenceFlood;
+		void Sequence_Flood(const tString& in asSequence)
+		{
+			Sequence_Begin("Sequence_Flood", mSequenceFlood);
+			
+			if (Sequence_DoStepAndWait(0.5f))
+			{
+				// Start shake
+				mlShakeID = Effect_Shake_Start(0.1f, 50.0f, 3.0f, 0.0f);
+				
+				Effect_Rumble_Start(0.6f, 4, 1, 2.0f);
+				
+				//End Chase Music
+				StopFloodAlarm();
+				Music_StopAll(0.05f);
+				Sound_FadeGlobalVolume(0.0f, 0.5f, eSoundEntryType_WorldAll);
+				Sound_Stop("AkersChasing", 0.5f);
+				
+				if(mbFloodEventSound==false)
+				{
+					Sound_CreateAtEntity("FloodEvent", "02_07_theta_exit_a/SFX/flood_sequence/breach/FloodSequence_Breach", "Player");
+					mbFloodEventSound = true;
+				}
+				
+			}
+			else if (Sequence_DoStepAndPause())
+			{
+				// Start pump
+				int lPumpShake = Effect_Shake_Start(0.005f,10.0f,3.0f,1.0f);
+				Effect_Shake_SetSourceEntity(lPumpShake,"FlushPump",3.0f,15.0f);
+				
+				// Start flood
+				Entity_SetActive("WaterSheet_*",true);
+				Entity_SetActive("TunnelFloodWaterArea_*",true);
+				ParticleSystem_CreateAtEntity("TunnelFloodPS1","tunnel_flood.ps","TunnelFloodPS_1",true);
+				ParticleSystem_CreateAtEntity("TunnelFloodPS2","tunnel_flood.ps","TunnelFloodPS_2",true);
+				ParticleSystem_CreateAtEntity("TunnelFloodPS3","tunnel_flood.ps","TunnelFloodPS_3",true);
+				Area_MoveLinearTo("TunnelFloodArea", "TunnelFloodTarget", 30.0f, 30.0f, 0.0f, false);
+			}
+			else if (Sequence_DoStepAndPause())	// When main flood hits TunnelFloodTarget (OnTunnelTriggerSideFlood)
+			{
+				Map_RemoveTimer("TimerPuppetChasePlayer");
+				
+				Entity_SetActive("SideWaterSheet_*",true);
+				Entity_SetActive("SideFloodWaterArea_*",true);
+				ParticleSystem_CreateAtEntity("SideFloodPS1","tunnel_flood.ps","SideFloodPS_1",true);
+				ParticleSystem_CreateAtEntity("SideFloodPS2","tunnel_flood.ps","SideFloodPS_2",true);
+				ParticleSystem_CreateAtEntity("SideFloodPS3","tunnel_flood.ps","SideFloodPS_3",true);
+				Area_MoveLinearTo("SideFloodArea", "SideFloodTarget", 30.0f, 30.0f, 0.0f, false);
+			}
+			else if (Sequence_DoStepAndPause(0.4)) // When side flood hits player (OnWaterHitPlayer)
+			{
+				cLux_AddDebugMessage("FLOOD: Hit player");
+				
+				Sound_Stop("FloodEvent", 0.5f);
+				Sound_CreateAtEntity("FloodHitsPlayer", "02_07_theta_exit_a/SFX/flood_sequence/breach/FloodSequence_WaterHits", "Player");
+				
+				Effect_Screen_Start("water_splash_screen.mat", cVector2f(0.5, 0.5), cVector2f(1.8, 1.8), 1, 0.4f, 0.0f, 0.6f); 
+			
+				// Kill the shake - we're in the water.
+				Effect_Shake_FadeOut(mlShakeID,0.0f);
+				
+				Effect_Rumble_Start(1.0f,0.5f,0,0.25f);
+		
+				// The player is panicking from here on in...
+				mlHeartbeatID = Emotion_StartHeartbeat(0.75f,0.75f, 1, -1, 1.0f, 1.0f);
+				mlBreathID = Emotion_StartBackgroundBreath(eBreathType_Fear,0.5f, 1, -1, 1.0f, 1.0f);
+				
+				if (Player_GetHealth()>0.7f)
+					Player_SetHealth(0.7f);
+				
+				cLux_AddDebugMessage("Water hit player.");
+				
+				// Water hit player - suck them down
+				AttachPlayerBubbles();
+				
+				if (cLux_GetExplorationModeActive() == false ||
+					cLux_GetExplorationModeActive() && Entity_IsInPlayerFOV("EndChasePuppet") == false)
+				{
+					Entity_SetActive("EndChasePuppet", false);
+				}
+				else
+				{
+					Agent_SetAutoDisableWhenOutOfSightActive("EndChasePuppet", true, 0.5f);
+				}
+				
+				AttackMeter_SetPlayerIsRecovering(false);
+				Effect_Fade_Out(0.4f);
+			}
+			else if (Sequence_DoStepAndWait(1.0f))
+			{
+				cLux_AddDebugMessage("FLOOD: Flood areas turn on.");
+				
+				// Turn on proper flood area
+				Entity_SetActive("FloorFloodArea",true);
+				StartPlayerBubbles();
+				ParticleSystem_CreateAtEntity("FlushBubblesPS", "oneshot_waterbubbles_explosion.ps", "FlushBubblesArea", true);
+
+				// Turn off other flood areas
+				Entity_SetActive("SideFloodWaterArea_*",false);
+				Entity_SetActive("TunnelFloodWaterArea_*",false);
+				
+				Emotion_StopBackgroundBreath(mlBreathID);
+				Emotion_StopHeartbeat(mlHeartbeatID);
+			}
+			else if (Sequence_DoStepAndWait(0.0f))
+			{
+				cLux_AddDebugMessage("FLOOD: Trigger flush sequence.");
+				SequenceFlush("");
+			}
+			
+			Sequence_End();
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnTriggerSideFlood(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			cLux_AddDebugMessage("OnTriggerSideFlood");
+			SequenceStates_Resume("Sequence_Flood");
+			return false;
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnTunnelFloodComplete(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			Entity_SetActive("WaterSheet_*",false);
+			ParticleSystem_Destroy("TunnelFloodPS1");
+			ParticleSystem_Destroy("TunnelFloodPS2");
+			ParticleSystem_Destroy("TunnelFloodPS3");
+			return false;
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnWaterHitPlayer(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			cLux_AddDebugMessage("Water hits player.");
+			SequenceStates_Resume("Sequence_Flood");
+			return false;
+		}
+		
+		//-------------------------------------------------------
+		
+		bool OnSideFloodComplete(const tString &in asParent, const tString &in asChild, int alState)
+		{
+			cLux_AddDebugMessage("OnSideFloodComplete");
+			Entity_SetActive("SideWaterSheet_*",false);
+			ParticleSystem_Destroy("SideFloodPS1");
+			ParticleSystem_Destroy("SideFloodPS2");
+			ParticleSystem_Destroy("SideFloodPS3");
+			
+			SequenceStates_Resume("Sequence_Flood");
+			return false;
+		}
+		
+		
+		//-------------------------------------------------------
+		
+		//} END Event Flush water and get flushed away
+		
+		/////////////////////////////////////////
+		// Event: Travel through water streams
+		//{//////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	/*Put any variables that are only used in Scene X, Event X here.*/
+
+	//-------------------------------------------------------
+
+	cSequenceStatesData mSequenceFlush;
+	void SequenceFlush(const tString& in asSequence)
+	{
+		Sequence_Begin("SequenceFlush", mSequenceFlush);
+		
+		if (Sequence_DoStepAndPause())
+		{
+			PreloadDeload();
+			
+			Effect_Fade_Out(0.0f);
+			
+			Effect_Rumble_Start(0.5f,1.0f,0.5,0.5f);
+			
+			StartFlushAnim("Flush1", 0.65f, 0.7f);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			cLux_AddDebugMessage("Flush 1 complete.");
+			Effect_Fade_Out(0.0f);
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			StartFlushAnim("Flush2", 0.5f, 0.8f);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			PreloadFadeGlobal();
+			
+			cLux_AddDebugMessage("Flush 2 complete.");
+			Effect_Fade_Out(0.0f);
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			StartFlushAnim("Flush3", 0.75f, 0.6f);
+		}
+		else if (Sequence_DoStepAndWait(0.0f))
+		{
+			cLux_AddDebugMessage("Flush 3 complete.");
+			Effect_Fade_Out(0.0f);
+		}
+		else if (Sequence_DoStepAndWait(1.0f))
+		{
+			StopPlayerBubbles();
+		
+			Emotion_StopBackgroundBreath(mlBreathID);
+			Emotion_StopHeartbeat(mlHeartbeatID);
+		
+			cLux_AddDebugMessage("Flush complete.");
+			cLux_AddTodoMessage("END OF LEVEL - GO TO NEXT");
+			// Temp!
+			mbShowingEnd = true;
+		}
+		else if (Sequence_DoStepAndWait(0.0f))
+		{
+			PreloadChangeOfMap();
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	// Bunch of similar things happen for each flush, so lets collect them together...
+	void StartFlushAnim(const tString&in asName, float afHeartbeatTime, float afFearLevel)
+	{
+		Effect_Fade_In(1.0f);
+		
+		// Panicking!
+		mlHeartbeatID = Emotion_StartHeartbeat(afHeartbeatTime,0.75f,1, -1, 1.0f, 1.0f);
+		mlBreathID = Emotion_StartBackgroundBreath(eBreathType_Fear, afFearLevel, 1, 1.0f, 1.0f);
+		
+		CameraAnimation_End();
+		CameraAnimation_Begin(asName,"", false);
+		AttachPlayerBubbles();
+		
+		cLux_AddTodoMessage("SOUND: Fade in player struggling as carried through through water flow");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnFlushFade(const tString &in asEntity, int alDirection)
+	{
+		Effect_Fade_Out(1.0f);
+		
+		Emotion_StopBackgroundBreath(mlBreathID);
+		Emotion_StopHeartbeat(mlHeartbeatID);
+			
+		cLux_AddTodoMessage("SOUND: Fade out player struggling as carried through through water flow");
+		Sound_Stop("TEMPFLOOD", 8.0f);
+						
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnFlushComplete(const tString &in asEntity, int alDirection)
+	{
+		SequenceStates_Resume("SequenceFlush");
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void StartPlayerBubbles()
+	{
+		ParticleSystem_CreateAtEntity("PlayerBubblesPS", "loop_waterbubbles_large_cloud.ps", "PlayerBubblesArea", true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void AttachPlayerBubbles()
+	{
+		CameraAnimation_SetAttachedEntity("PlayerBubblesArea", false, false, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void StopPlayerBubbles()
+	{
+		ParticleSystem_Destroy("PlayerBubblesPS");
+		CameraAnimation_RemoveAttachedEntity();
+	}
+	
+	//-------------------------------------------------------
+	
+	//} END Event Flush water and get flushed away
+	
+	//-------------------------------------------------------
+	
+	//} END SCENE 3
+ 
+    /////////////////////////////////////////
+    // ==============
+    // PRELOAD
+    // ==============
+    //{//////////////////////////////////////
+ 
+    //-------------------------------------------------------
+	
+	bool PreloadDisabled(bool abCheckIfPreloading = true)
+	{
+		if(cLux_ScriptDebugOn())
+		{
+			cLux_AddDebugMessage("PRELOAD DISABLED!"); 
+			
+			return true;
+		}
+
+		if(abCheckIfPreloading == true && Map_IsPreloading() == false)
+			return true;
+			
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Preload()
+	{
+		if(PreloadDisabled(false)) return;
+		
+		Map_Preload("03_01_omicron_outside.hpm", eWorldStreamPriority_Low);
+	}
+	
+	//-------------------------------------------------------
+		
+	void PreloadChangePrioNormal()
+	{
+		Map_SetPreloadPriority(eWorldStreamPriority_Normal);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadDeload()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_Deload("transfer2731");
+		Map_SetPreloadPriority(eWorldStreamPriority_High);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadFadeGlobal()
+	{
+		if(PreloadDisabled(false)) return;
+		
+		Map_AddTimer("FadeGlobal", 0, "PreloadTimer");
+		Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadChangeOfMap()
+	{
+		if(PreloadDisabled()) 
+		{
+			PreloadManualChangeMap();
+			return;
+		}
+		
+		Map_AddTimer("ChangeMap", 0.6f, "PreloadTimer");
+		Map_AddTimer("ChangeMapNotReady", 2, "PreloadTimer");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool mbGlobalCopyCompleted = false;
+	void PreloadTimer(const tString &in asTimer)
+	{
+		////////////////////////////
+		//Preload - Change map globals when possible.
+		if(asTimer == "FadeGlobal")
+		{
+			if(mbGlobalCopyCompleted)
+			{
+				Map_Preset_Fade("Omicron3.1", 0.1); 
+				Map_FadeEnvironmentParticleColor("*", cColor(0.295,0.556,0.59,1.0), 0.1);
+				return;
+			}
+			
+			mbGlobalCopyCompleted = Map_CopyGlobalSettings(Map_GetPreloadMap(), 0.4);
+			
+			Map_AddTimer("FadeGlobal", 0.5, "PreloadTimer");
+		}
+
+		////////////////////////////
+		//Preload - Change map when possible
+		if(asTimer == "ChangeMap")
+		{
+			if(Map_IsPreloadCompleted())
+			{
+				Description_SetForceFading(true);
+				Map_ChangeMap("03_01_omicron_outside.hpm", "", "transfer2731", "", "");
+			}
+			else Map_AddTimer("ChangeMap", 0.6f, "PreloadTimer");
+		}
+		
+		if(asTimer == "ChangeMapNotReady")
+		{
+			Description_Add("02_05_theta_inside", "ScanRoom_Legacy_Loading", 10, false);
+			Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadManualChangeMap()
+	{
+		Map_ChangeMap("03_01_omicron_outside.hpm", "PlayerStartArea_1", "", "");
+	}
+
+
+	//-------------------------------------------------------
+	
+	//} END PRELOAD
+	
+	 //////////////////////////////////////////////////////////////////////////////////////////
+	 // ==============
+	 // AUDIO
+	 // ==============
+	 //{//////////////////////////////////////////////////////////////////////////////////////
+
+	//----------------------------------------------------------------------
+	//{Music
+	
+	bool mbAmbientMusicPlaying = false;
+	bool mbAmbientMusicFirstStage = true;
+	bool mbAmbientMusicAllowed = true;
+	float gfAmbientMusicMul = 1.0f;
+	
+	void AmbientMusicHandler(const tString &in asTimer)
+	{		
+		if (asTimer=="StartAmbient" && mbAmbientMusicPlaying==false && mbAmbientMusicAllowed==true)
+		{
+			if(mbAmbientMusicFirstStage==false)
+			{
+				Music_PlayExt("02_07_ambience_stage1", true, 0.65f, 1.0f, cMath_RandRectf(3.f,5.f), 0.0f, eMusicPrio_BgAmb, true);
+			}
+			else if(mbAmbientMusicFirstStage==true)
+			{
+				Music_PlayExt("02_07_ambience_stage2", true, 0.65f, 1.0f, cMath_RandRectf(3.f,5.f), 0.0f, eMusicPrio_BgAmb, true);
+			}
+			
+			cLux_AddDebugMessage("Ambient music triggering");
+			
+			mbAmbientMusicPlaying = true;
+			
+			//Dynamic fades
+			Map_AddTimer("RandomFadeRider", cMath_RandRectf(10.f,20.f), "AmbientMusicHandler");
+			Map_AddTimer("FadeOut", cMath_RandRectf(120.f,180.f), "AmbientMusicHandler");
+			Map_RemoveTimer("StopAmbientMusic");
+			Map_RemoveTimer("StopAmbientMusicQuickly");
+		}
+		
+		else if (asTimer=="StartAmbient" && mbAmbientMusicPlaying==false && mbAmbientMusicAllowed==false)
+		{
+			Map_AddTimer("StartAmbient", cMath_RandRectf(10.f,20.f), "AmbientMusicHandler");
+		}
+		
+		else if (asTimer=="StopAmbientMusic" && mbAmbientMusicPlaying==true)
+		{
+			Music_Stop(4.5f, eMusicPrio_BgAmb);
+			Map_RemoveTimer("RandomFadeRider");
+			Map_RemoveTimer("FadeOut");
+			Map_RemoveTimer("StartAmbient");
+			Music_FadeVolumeMul(1.0f,1.0f);
+			mbAmbientMusicPlaying = false;
+		}
+		else if (asTimer=="StopAmbientMusicQuickly" && mbAmbientMusicPlaying==true)
+		{
+			cLux_AddDebugMessage("Stop Ambient Music Quickly Triggered");
+			Music_Stop(1.5f, eMusicPrio_BgAmb);
+			Map_RemoveTimer("StartAmbient");
+			Map_RemoveTimer("RandomFadeRider");
+			Map_RemoveTimer("FadeOut");
+			Music_FadeVolumeMul(1.0f,1.0f);
+			mbAmbientMusicPlaying = false;
+		}
+		
+		else if(asTimer=="RandomFadeRider")
+		{
+			if(mbAmbientMusicFirstStage==false)
+			{
+				Music_PlayExt("02_07_ambience_stage1", true, 0.5f*gfAmbientMusicMul, 1.0f, cMath_RandRectf(5.f,8.f), 0.0f, eMusicPrio_BgAmb, true);
+			}
+			else if(mbAmbientMusicFirstStage==true)
+			{
+				Music_PlayExt("02_07_ambience_stage2", true, 0.5f*gfAmbientMusicMul, 1.0f, cMath_RandRectf(5.f,8.f), 0.0f, eMusicPrio_BgAmb, true);
+			}
+			
+			cLux_AddDebugMessage("Ambient Music Fading");
+			gfAmbientMusicMul = cMath_RandRectf(0.35f, 1.2f);
+			Map_AddTimer("RandomFadeRider", cMath_RandRectf(10.f,15.f), "AmbientMusicHandler");
+		}
+		
+		else if(asTimer=="FadeOut")
+		{	
+			cLux_AddDebugMessage("Ambient Music Fading Out");
+			Music_Stop(cMath_RandRectf(8.f,12.f), eMusicPrio_BgAmb);
+			mbAmbientMusicPlaying = false;
+			
+			Map_RemoveTimer("RandomFadeRider");
+			Map_AddTimer("StartAmbient", cMath_RandRectf(60.f,90.f), "AmbientMusicHandler");
+		}
+		
+		cLux_AddDebugMessage("Ambient Music Playing is "+mbAmbientMusicPlaying);
+	}
+		
+	//---------------------------------------------------------------------
+	
+	bool Trigger_EnterMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		mbAmbientMusicPlaying = false;
+		Music_PlayExt("02_07_enterthecorridor", false, 0.55f, 1.0f, 0.0f, 0.0f, eMusicPrio_BigEvent, false);
+		Map_AddTimer("StartAmbient", 15.0f, "AmbientMusicHandler");
+		return false;
+	}
+		
+	//---------------------------------------------------------------------
+	
+	bool SecondStageAmbientMusicStart(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Entity_SetActive("BeginSecondStageAmbientMusic", false);
+		Entity_SetActive("BeginSecondStageAmbientMusic_1", false);
+		Music_Stop(5.0f, eMusicPrio_BgAmb);
+		mbAmbientMusicFirstStage = false;
+		mbAmbientMusicPlaying = false;
+		Map_AddTimer("StartAmbient", cMath_RandRectf(8.0f, 12.5f), "AmbientMusicHandler");
+		return false;
+	}
+			
+	//---------------------------------------------------------------------
+	bool mbDoorUnlockMusicTriggered = false;
+	void DoorUnlockMusic()
+	{
+		if(mbDoorUnlockMusicTriggered == false)
+		{
+			Music_Play("02_07_unlockdoor", 0.95f, false, eMusicPrio_BigEvent);
+			mbDoorUnlockMusicTriggered = true;
+		}
+	}
+				
+	//---------------------------------------------------------------------
+	
+	bool StopAmbientMusicTrigger(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Map_AddTimer("StopAmbientMusic", 1.0f, "AmbientMusicHandler");
+		return false;
+	}
+				
+	//---------------------------------------------------------------------
+	
+	bool EnterHallMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Music_Play("02_07_entergianthall", 0.75f, false, eMusicPrio_BigEvent);
+		Sound_FadeGlobalVolume(0.55f, 4.0f);
+		Map_AddTimer("EnterHallFadeUp", 5.0f, "FadeUpSound");
+		
+		PreloadChangePrioNormal();
+		return false;
+	}
+	
+	void FadeUpSound(const tString &in asTimer)
+	{
+		if(asTimer=="EnterHallFadeUp")
+		{
+			Sound_FadeGlobalVolume(1.0f, 5.0f);
+		}
+	}
+	
+	//} END Music
+
+	//----------------------------------------------------------------------
+	//{Waterfall logic
+	bool mbWaterfallsAudible = false;
+	bool mbWaterfallsPlayerBehindBulkhead = false;
+	
+	//Start waterfall sounds but make them inaudible
+	void SetupWaterfallAudio(const tString &in asTimer)
+	{
+		Sound_Play("waterfall_top_1", 0.0f);
+		Sound_Play("waterfall_top_2", 0.0f);
+		Sound_Play("waterfall_top_3", 0.0f);
+		Sound_Play("waterfall_top_m_1", 0.0f);
+		Sound_Play("waterfall_top_m_2", 0.0f);
+		Sound_Fade("waterfall_top_1", 0.0f, 1.0f);
+		Sound_Fade("waterfall_top_2", 0.0f, 1.0f);
+		Sound_Fade("waterfall_top_3", 0.0f, 1.0f);
+		Sound_Fade("waterfall_top_m_1", 0.0f, 1.0f);
+		Sound_Fade("waterfall_top_m_2", 0.0f, 1.0f);
+		
+		mbWaterfallsAudible = false;
+	}
+
+	//Stop waterfall audio when player exits area
+	bool StopWaterfallAudio(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState ==1 && mbWaterfallsAudible==true)
+		{
+			cLux_AddDebugMessage("Fading waterfall sounds");
+			
+			Sound_Fade("waterfall_top_1", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_2", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_3", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_m_1", 0.0f, 1.0f);
+			Sound_Fade("waterfall_top_m_2", 0.0f, 1.0f);
+			
+			mbWaterfallsAudible = false;
+		}
+		else
+		{
+			cLux_AddDebugMessage("Waterfall Stop - nothing to do");
+		}
+		return true;
+	}
+	
+	//Start waterfall audio when player enters area
+	bool StartWaterfallAudio(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState==1 && mbWaterfallsAudible==false && mbWaterfallBulkheadOpen==true)
+		{
+			cLux_AddDebugMessage("Starting waterfall sounds");
+			
+			Sound_Fade("waterfall_top_1", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_2", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_3", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_m_1", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_m_2", 1.0f, 1.5f);
+			
+			mbWaterfallsAudible = true;
+		}
+		else
+		{
+			cLux_AddDebugMessage("Waterfall Start - nothing to do");
+		}
+		return true;
+	}
+	
+	//If player behind bulkhead door then start/stop sounds based on door open/closed
+	bool mbWaterfallBulkheadOpen = false;
+	
+	bool WaterfallDoor(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==-1 && mbWaterfallsAudible==false && mbWaterfallsPlayerBehindBulkhead==true)
+		{
+			cLux_AddDebugMessage("Door Opening - starting waterfall sound");
+			Sound_Fade("waterfall_top_1", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_2", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_3", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_m_1", 1.0f, 1.0f);
+			Sound_Fade("waterfall_top_m_2", 1.0f, 1.0f);
+			mbWaterfallBulkheadOpen = true;
+			mbWaterfallsAudible = true;
+		}
+		else if (mbWaterfallsPlayerBehindBulkhead==true && mbWaterfallsAudible==true)
+		{
+			cLux_AddDebugMessage("Fading waterfall sounds");
+			Sound_Fade("waterfall_top_1", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_2", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_3", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_m_1", 0.0f, 1.5f);
+			Sound_Fade("waterfall_top_m_2", 0.0f, 1.5f);
+			mbWaterfallBulkheadOpen = false;
+			mbWaterfallsAudible = false;
+		}
+		return true;
+	}
+	
+	void SetupEntities()
+	{
+		//////////////////////////
+		// setup entity animations
+		Entity_PlayAnimation("alice_body", "alice02_breathing",0,true,true);
+		Entity_PlayAnimation("dreamer_2", "stuck_on_wall",0,true,true);
+		Entity_PlayAnimation("VictimStrohmeier", "",0,true,true);
+		Entity_PlayAnimation("VictimGoya", "stuck_on_wall",0,true,true);
+		Entity_PlayAnimation("VictimFrost", "stuck_on_wall",0,true,true);
+		Entity_PlayAnimation("mvictim_stading_02", "stuck_on_wall",0,true,true);
+		Entity_PlayAnimation("mind_coral_victim01_23", "stuck_on_wall",0,true,true);
+		Entity_PlayAnimation("mvictim_stading_01", "stuck_on_wall",0,true,true);
+	}
+	
+	//Determines if player is behind bulkhead
+	bool Trigger_BehindBulkheadArea(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState==1)
+		{
+			mbWaterfallsPlayerBehindBulkhead = true;
+			cLux_AddDebugMessage("Player behind bulkhead door is "+mbWaterfallsPlayerBehindBulkhead);
+		}
+		else
+		{
+			mbWaterfallsPlayerBehindBulkhead = false;
+			cLux_AddDebugMessage("Player behind bulkhead door is "+mbWaterfallsPlayerBehindBulkhead);
+		}
+		return true;
+	}
+	
+	//Sewer pipes area
+	bool StopWaterfallAudioSewer(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if(alState==1 && mbWaterfallsAudible==true)
+		{
+			cLux_AddDebugMessage("Fading waterfall sounds");
+			
+			Sound_Fade("waterfall_top_1", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_2", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_3", 0.0f, 3.0f);
+			Sound_Fade("waterfall_top_m_1", 0.0f, 1.0f);
+			Sound_Fade("waterfall_top_m_2", 0.0f, 1.0f);
+			
+			mbWaterfallsAudible = false;
+		}
+		else
+		{
+			cLux_AddDebugMessage("Waterfall Stop - nothing to do");
+		}
+		return true;
+	}
+	
+	bool StartWaterfallAudio_Sewer(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState==1 && mbWaterfallsAudible==false)
+		{
+			cLux_AddDebugMessage("Starting waterfall sounds");
+			
+			Sound_Fade("waterfall_top_1", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_2", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_3", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_m_1", 1.0f, 1.5f);
+			Sound_Fade("waterfall_top_m_2", 1.0f, 1.5f);
+			
+			mbWaterfallsAudible = true;
+		}
+		else
+		{
+			cLux_AddDebugMessage("Waterfall Start - nothing to do");
+		}
+		return true;
+	}
+	//} END WATERFALL Logic
+	
+	bool Trigger_RemoveHatch(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Sound_CreateAtEntity("RemovePanel", "02_07_theta_exit_a/SFX/power_charger/power_hatch_remove", "Player");	
+		return false;
+	}
+	
+	//Enter Sweet
+	bool Trigger_EnterSweet(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Sound_CreateAtEntity("EnterSweetener", "02_07_theta_exit_a/SFX/enter_sweet", "Player");
+		return false;
+	}
+	
+	//Scaffolding Creaks
+	bool ScaffoldingCreak(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Entity_SetActive("ScaffoldingCreak_*", false);
+		Sound_CreateAtEntity("ScaffoldingCreak", "level_amb_shared_interior/amb/sfx/metal/scaffolding_creak_louder_2D", "Player");
+		Map_AddTimer("ActivateScaffoldCreakAreas", cMath_RandRectf(2.5f,4.5f), "ActivateScaffoldCreakAreas");
+		cLux_AddDebugMessage("Scaffolding creak triggered, areas disabled");
+		return true;
+	}
+	
+	void ActivateScaffoldCreakAreas(const tString &in asTimer)
+	{
+		Entity_SetActive("ScaffoldingCreak_*", true);
+		cLux_AddDebugMessage("Scaffolding creak areas active");
+	}
+	
+	bool CollideEnterFloodRoom(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Sound_PreloadGroup("02_07_theta_exit_a/SFX/flood_sequence", true);
+		return false;
+	}
+	
+	void StartFloodAlarm()
+	{
+		Map_AddTimer("FloodAlarmRing", 2.5, "FloodAlarmRing");
+		Sound_CreateAtEntity("FloodAlarmRinging", "02_07_theta_exit_a/SFX/flood_sequence/flush_valve_alarm_bell", "BellSource");
+		Sound_CreateAtEntity("TerminalAlarm", "02_07_theta_exit_a/SFX/flood_sequence/flush_valve_terminal_alarm" ,"computer_panel_medium_reboot_prompt_1");
+	}
+	
+	bool mbKlaxonActive = false;
+	void FloodAlarmRing(const tString &in asTimer)
+	{
+		Sound_CreateAtEntity("FloodAlarmRinging", "02_07_theta_exit_a/SFX/flood_sequence/flush_valve_alarm_bell", "BellSource");
+		
+		if(mbKlaxonActive==false)
+		{
+			Sound_CreateAtEntity("Klaxon", "02_07_theta_exit_a/SFX/flood_sequence/flush_valve_klaxon", "klaxonsource");
+			mbKlaxonActive = true;
+		}
+		
+		Map_AddTimer("FloodAlarmRing", 2.5, "FloodAlarmRing");
+	}
+	
+	void StopFloodAlarm()
+	{
+		Map_RemoveTimer("FloodAlarmRing");
+		Sound_Stop("TerminalAlarm", 0.05f);
+		Sound_Stop("SirenLoopAlarm", 0.05f);
+		Sound_Stop("Klaxon", 0.05f);
+	}
+	
+	//} END AUDIO
+}

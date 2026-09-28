@@ -1,0 +1,235 @@
+#include "interfaces/Area_Interface.hps"
+#include "player/player_types.hps"
+
+class cScrAreaInteractAux : iScrArea, iScrArea_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject @apVars)
+	{
+		msInteractParent = apVars.GetVarString("InteractParent", "");
+		mbPassMainBody = apVars.GetVarBool("UseParentMainBody",true);
+		
+		float fMaxInteractDist = apVars.GetVarFloat("MaxFocusDistance", -1);
+		if(fMaxInteractDist>=0) mBaseObj.SetMaxInteractDistance(fMaxInteractDist);
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnAfterWorldLoad()
+	{
+		if(msInteractParent != "")
+		{
+			iLuxEntity @pEntity = mBaseObj.GetMap().GetEntityByName(msInteractParent);
+			if(pEntity is null)
+			{
+				Error("Entity '"+msInteractParent+"' used by InteractAux '"+mBaseObj.GetName()+"' does not exist!");
+				return;
+			}
+			
+			m_idInteractParent = pEntity.GetID();
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnPostUpdate(float afTimeStep)
+	{
+	
+	}
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INTERACTION
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+    // Publish only exact script-resolved identities while VR is active.
+    void HPL3VR_CaptureParent(iLuxEntity@ pInteractEntity)
+    {
+        // Capture the forwarding Area and its exact authored parent, never a nearby hinge.
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        if(cScript_GetGlobalReturnBool())
+        {
+            cScript_RunGlobalFunc("VRAUX","","A");
+            iPhysicsBody@ areaBody=mBaseObj.GetMainBody();
+            cScript_RunGlobalFunc("VRAUX","","P");
+            iPhysicsBody@ parentBody=pInteractEntity.GetMainBody();
+            cScript_RunGlobalFunc("VRAUX","","E");
+        }
+    }
+
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		iLuxEntity@ pInteractEntity = cLux_ID_Entity(m_idInteractParent);
+		if (pInteractEntity is null)
+			return false;
+		
+		if (pInteractEntity.GetInteractionDisabled())
+			return false;
+
+		if (mbPassMainBody)
+			@apBody = pInteractEntity.GetMainBody();
+			
+		// Hacky fix for GDC to make levers work!
+		cScript_SetGlobalVarBool("UsingInteractAuxArea",true);
+		bool bCanInteract = pInteractEntity.CanInteract(alType, apBody);
+		cScript_SetGlobalVarBool("UsingInteractAuxArea",false);
+        if(bCanInteract)HPL3VR_CaptureParent(pInteractEntity);
+		return bCanInteract;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		iLuxEntity@ pInteractEntity = cLux_ID_Entity(m_idInteractParent);
+        if(pInteractEntity is null)return false;
+		if (pInteractEntity.GetInteractionDisabled())
+			return false;
+			
+		if (mbPassMainBody)
+			@apBody = pInteractEntity.GetMainBody();
+        HPL3VR_CaptureParent(pInteractEntity);
+		return pInteractEntity.OnInteract(alType, apBody, avFocusPos, asData);
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		iLuxEntity@ pInteractEntity = cLux_ID_Entity(m_idInteractParent);
+		if (mbPassMainBody)
+			@apBody = pInteractEntity.GetMainBody();
+		return pInteractEntity.GetInteractIconId(alType, apBody);
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//-----------------------------------------------------------------------
+	
+		//-----------------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// COLLISIONS
+	/////////////////////////////////////////
+	
+	//-----------------------------------------------------------------------
+
+	bool OnStartCheckCollision(float afTimeStep, float afTimeSinceCheck)
+	{
+		return false;
+	}
+	
+	//-----------------------------------------------------------------------
+
+	bool OnCheckCollision(iPhysicsBody@ apBody, iLuxEntity@ apEntity)
+	{
+		return true;
+	}
+	
+	//-----------------------------------------------------------------------
+
+	void OnEndCheckCollision(float afTimteStep)
+	{
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//-----------------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//-----------------------------------------------------------------------
+	
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+		if(alState==0) return;
+	}
+	
+	
+	//-----------------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	tString msInteractParent;
+	tID m_idInteractParent;
+	bool mbPassMainBody;
+	
+	//------------------------------------------------------------
+		
+}	

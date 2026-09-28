@@ -1,0 +1,29 @@
+#include "props/Prop_Grab.hps"
+class cScrPropVRTracerCap : cScrPropGrab
+{
+	void SetupAfterLoad(cWorld@ apWorld,cResourceVarsObject@ apVars,cResourceVarsObject@ apInstanceVars)
+	{
+		cScrPropGrab::SetupAfterLoad(apWorld,apVars,apInstanceVars);
+		cMeshEntity@ pMesh = mBaseObj.GetMeshEntity();
+		for (int i=0;i<pMesh.GetSubMeshEntityNum();++i)
+			pMesh.GetSubMeshEntity(i).SetVisible(false);
+		cSubMeshEntity@ pCap=pMesh.GetSubMeshEntityName("cap");
+		if (pCap !is null) pCap.SetVisible(true);
+	}
+    void OnAfterWorldLoad() { mBaseObj.SetActive(false); }
+	bool OnInteract(int alType,iPhysicsBody@ apBody,const cVector3f &in avFocusPos,const tString &in asData)
+	{
+		if (!cScrPropGrab::CanInteract(alType,apBody)) return false;
+		if (mBaseObj.GetParentName()=="Tracer_Fluid")
+		{
+			cScript_SetGlobalReturnBool(false);
+			cScript_RunGlobalFunc("VROMNIINV","Tracer_Fluid","K");
+			if (!cScript_GetGlobalReturnBool()) return false;
+			mBaseObj.RemoveEntityAttachment();
+			apBody.SetGravity(true); apBody.SetMass(0.05f);
+			cLuxMap@ pMap=cLux_GetCurrentMap();
+			if (pMap.ScriptPrepare("void HPL3VR_TracerCapRemoved()")) pMap.ScriptExecute();
+		}
+		return cScrPropGrab::OnInteract(alType,apBody,avFocusPos,asData);
+	}
+}

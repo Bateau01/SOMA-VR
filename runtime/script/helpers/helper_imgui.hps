@@ -1,0 +1,2104 @@
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// GENERAL
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Clears all states, timers, variables, etc.
+ **/
+void ImGui_ClearStates()
+{
+	cLux_GetCurrentImGui().ClearStates();
+}
+
+/**
+ * If the current ImGui is in focus.
+ **/
+bool ImGui_InFocus()
+{
+	return cLux_GetInputFocusImGui() is cLux_GetCurrentImGui();
+}
+
+/**
+ * If the current ImGui just got focus
+ **/
+bool ImGui_BecameInFocus()
+{
+	return 	(cLux_GetInputFocusImGui() is cLux_GetCurrentImGui()) &&
+			(cLux_GetPrevInputFocusImGui() !is cLux_GetCurrentImGui());
+}
+
+/**
+ * If the current ImGui had focus the previous update
+ **/
+bool ImGui_WasInFocus()
+{
+	return 	(cLux_GetInputFocusImGui() !is cLux_GetCurrentImGui()) &&
+			(cLux_GetPrevInputFocusImGui() is cLux_GetCurrentImGui());
+}
+
+
+/**
+ * If am  in-game gui exit, then the current gui is exited. Do not need to be called in a OnGui function.
+ **/
+void ImGui_Exit()
+{
+	if(cLux_GetPlayer().GetCurrentStateName() == "State_Interact_Terminal")
+	{
+		cScript_RunGlobalFunc("State_Interact_Terminal","","Exit");
+		return;
+	}
+	
+	if (cLux_GetPlayer().GetCurrentStateName() == "State_Interact_HandheldTerminal")
+	{
+		cScript_RunGlobalFunc("State_Interact_HandheldTerminal","","Exit");
+		return;
+	}
+}
+
+//-------------------------------------------------
+
+/**
+ * @returns true if the mouse is clicked outside the current ImGui
+ **/
+ 
+bool ImGui_ClickedMouseOutside()
+{
+	//////////////////////////////////
+	// Check to see if user has clicked outside the GUI
+	if (ImGui_ActionTriggered(eImGuiAction_MouseLeft))
+	{
+		cVector2f vMousePos = ImGui_GetMousePosition();
+		// User has clicked outside the GUI
+		if ((vMousePos.x<0.0f) && (vMousePos.y<0.0f))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+//-------------------------------------------------
+
+tString gsCurrentImGuiTransCat;
+tWString gsCurrentImGuiTextOverride;
+/**
+ * This sets the current translation category, if "" then all text params will used as text, else as entry names in a Translate(cat, entry)
+ **/
+ void ImGui_SetTransCategory(const tString&in asCat)
+{
+	gsCurrentImGuiTransCat = asCat;
+}
+/**
+ * This gets the current translation category.
+ **/
+tString ImGui_GetTransCategory()
+{
+	return gsCurrentImGuiTransCat;
+}
+
+/**
+ * Translate using the currently set trans category
+ **/
+tWString ImGui_Translate(const tString&in asEntry)
+{
+	if(gsCurrentImGuiTransCat=="") return cString_To16Char(asEntry);
+	return cResources_Translate(gsCurrentImGuiTransCat, asEntry);
+}
+
+/**
+ * This sets a literal text to use in place of any empty strings.
+ **/
+ void ImGui_SetTextOverride(const tWString&in asText)
+{
+	gsCurrentImGuiTextOverride = asText;
+}
+
+/**
+ * Just clears the currently set text override.
+ **/
+ void ImGui_ClearTextOverride()
+{
+	gsCurrentImGuiTextOverride = tWString("");
+}
+
+/**
+ * Internal
+ **/
+tWString _ImGui_GetTextString(const tString&in asText)
+{
+	if(gsCurrentImGuiTextOverride != tWString("") && asText=="") return gsCurrentImGuiTextOverride;
+	else if(gsCurrentImGuiTransCat == "" || asText == "") 	return tWString(asText);
+	else								return cResources_Translate(gsCurrentImGuiTransCat, asText);
+}
+
+
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// SIZES AND POSITION
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Get the size (in pixels) of the GUI screen
+ **/
+cVector2f ImGui_GetSize()
+{
+	return cLux_GetCurrentImGui().GetSet().GetVirtualSize();
+}
+
+/**
+ * Input should be normalized, 0-1, and a position in screen space is returned.
+ **/
+cVector3f ImGui_NrmPos(const cVector3f&in avPos)
+{
+	cGuiSet @pSet = cLux_GetCurrentImGui().GetSet();
+		
+	cVector3f vOut = avPos;
+	vOut.x *= pSet.GetVirtualSize().x;
+	vOut.y *= pSet.GetVirtualSize().y;
+	
+	vOut.x -= pSet.GetVirtualSizeOffset().x;
+	vOut.y -= pSet.GetVirtualSizeOffset().y;
+	
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a position in screen space is returned.
+ **/
+cVector3f ImGui_NrmPos(float afX, float afY, float afZ)
+{
+	cGuiSet @pSet = cLux_GetCurrentImGui().GetSet();
+	
+	return ImGui_NrmPos(cVector3f(afX, afY, afZ));
+}
+
+/**
+ * Input should be normalized, 0-1, and a position in screen space is returned.
+ **/
+cVector2f ImGui_NrmPos2(float afX, float afY)
+{
+	cGuiSet @pSet = cLux_GetCurrentImGui().GetSet();
+	
+	cVector2f vOut = cVector2f(afX, afY);
+	vOut.x *= pSet.GetVirtualSize().x;
+	vOut.y *= pSet.GetVirtualSize().y;
+	
+	vOut -= pSet.GetVirtualSizeOffset();
+	
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in screen space is returned.
+ **/
+cVector2f ImGui_NrmSize(const cVector2f&in avSize)
+{
+	cVector2f vOut = avSize;
+	vOut.x *= cLux_GetCurrentImGui().GetSet().GetVirtualSize().x;
+	vOut.y *= cLux_GetCurrentImGui().GetSet().GetVirtualSize().y;
+	 
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in screen space is returned.
+ **/
+cVector2f ImGui_NrmSize(float afX, float afY)
+{
+	cVector2f vOut = cVector2f(afX, afY);
+	vOut.x *= cLux_GetCurrentImGui().GetSet().GetVirtualSize().x;
+	vOut.y *= cLux_GetCurrentImGui().GetSet().GetVirtualSize().y;
+	 
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a position in the current group space is returned.
+ **/
+cVector3f ImGui_NrmPosGroup(const cVector3f&in avPos, bool abOffsetInsideGroup=false)
+{
+	cVector3f vOut = avPos;
+	vOut.x *= cLux_GetCurrentImGui().GetCurrentGroupSize().x;
+	vOut.y *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	
+	if(abOffsetInsideGroup) vOut += cLux_GetCurrentImGui().GetCurrentGroupPos();
+	
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in the current group space is returned.
+ **/
+cVector3f ImGui_NrmPosGroup(float afX, float afY, float afZ, bool abOffsetInsideGroup=false)
+{
+	cVector3f vOut = cVector3f(afX, afY, afZ);
+	vOut.x *= cLux_GetCurrentImGui().GetCurrentGroupSize().x;
+	vOut.y *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	
+	if(abOffsetInsideGroup) vOut += cLux_GetCurrentImGui().GetCurrentGroupPos();
+	
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in the current group space is returned.
+ **/
+cVector2f ImGui_NrmPos2Group(float afX, float afY, bool abOffsetInsideGroup=false)
+{
+	cVector2f vOut = cVector2f(afX, afY);
+	vOut.x *= cLux_GetCurrentImGui().GetCurrentGroupSize().x;
+	vOut.y *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	
+	if(abOffsetInsideGroup)
+	{
+		vOut.x += cLux_GetCurrentImGui().GetCurrentGroupPos().x;
+		vOut.y += cLux_GetCurrentImGui().GetCurrentGroupPos().y;
+	}
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in the current group space is returned.
+ **/
+cVector2f ImGui_NrmSizeGroup(const cVector2f&in avSize)
+{
+	cVector2f vOut = avSize;
+	vOut.x *= cLux_GetCurrentImGui().GetCurrentGroupSize().x;
+	vOut.y *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in the current group space is returned.
+ **/
+cVector2f ImGui_NrmSizeGroup(float afX, float afY)
+{
+	cVector2f vOut = cVector2f(afX, afY);
+	vOut.x *= cLux_GetCurrentImGui().GetCurrentGroupSize().x;
+	vOut.y *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in screen space is returned.
+ **/
+cVector2f ImGui_NrmSizeKeepRatio(const cVector2f&in avSize)
+{
+	cVector2f vOut = avSize;
+	vOut.x *= cLux_GetCurrentImGui().GetSet().GetVirtualSize().y;
+	vOut.y *= cLux_GetCurrentImGui().GetSet().GetVirtualSize().y;
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in screen space is returned.
+ **/
+cVector2f ImGui_NrmSizeKeepRatio(float afX, float afY)
+{
+	cVector2f vOut = cVector2f(afX, afY);
+	vOut.x *= cLux_GetCurrentImGui().GetSet().GetVirtualSize().y;
+	vOut.y *= cLux_GetCurrentImGui().GetSet().GetVirtualSize().y;
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in screen space is returned.
+ **/
+cVector2f ImGui_NrmSizeGroupKeepRatio(const cVector2f&in avSize)
+{
+	cVector2f vOut = avSize;
+	vOut.x *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	vOut.y *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	return vOut;
+}
+
+/**
+ * Input should be normalized, 0-1, and a size in screen space is returned.
+ **/
+cVector2f ImGui_NrmSizeGroupKeepRatio(float afX, float afY)
+{
+	cVector2f vOut = cVector2f(afX, afY);
+	vOut.x *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	vOut.y *= cLux_GetCurrentImGui().GetCurrentGroupSize().y;
+	return vOut;
+}
+
+/**
+ * Given an input width and a Gfx object, a size in screen space is returned, being aspect ratio correct according to input Gfx object.
+ **/
+cVector2f ImGui_GetRatioCorrectSizeByWidth(const cImGuiGfx &in aGfx, float afWidth)
+{
+	cVector2f vGfxSize = cLux_GetCurrentImGui().GetGfxSize(aGfx);
+	if (vGfxSize.x==0)
+	{
+		vGfxSize.x=1;
+		vGfxSize.y=1;
+	}
+	
+	float fRatio = vGfxSize.y/vGfxSize.x;
+	
+	return cVector2f(afWidth, afWidth*fRatio);
+}
+
+/**
+ * Input width should be normalized, 0-1, and a size in screen space is returned, being aspect ratio correct according to input Gfx object.
+ **/
+cVector2f ImGui_GetRatioCorrectSizeByNrmWidth(const cImGuiGfx &in aGfx, float afWidth)
+{
+	return ImGui_GetRatioCorrectSizeByWidth(aGfx, afWidth*ImGui_GetCurrentGroupSize().x);
+}
+
+/**
+ * Given an input height and a Gfx object, a size in screen space is returned, being aspect ratio correct according to input Gfx object.
+ **/
+cVector2f ImGui_GetRatioCorrectSizeByHeight(const cImGuiGfx &in aGfx, float afHeight)
+{
+	cVector2f vGfxSize = cLux_GetCurrentImGui().GetGfxSize(aGfx);
+	if (vGfxSize.x==0)
+	{
+		vGfxSize.x=1;
+		vGfxSize.y=1;
+	}
+	
+	float fRatio = vGfxSize.y/vGfxSize.x;
+	
+	return cVector2f(afHeight/fRatio, afHeight);
+}
+/**
+ * Input height should be normalized, 0-1, and a size in screen space is returned, being aspect ratio correct according to input Gfx object.
+ **/
+cVector2f ImGui_GetRatioCorrectSizeByNrmHeight(const cImGuiGfx &in aGfx, float afHeight)
+{
+	return ImGui_GetRatioCorrectSizeByHeight(aGfx, afHeight*ImGui_GetCurrentGroupSize().y);
+}
+
+/**
+ * Given an input rect and a Gfx object, the maximum size in screen space to fit within said rect is returned, being aspect ratio correct according to input Gfx object.
+ **/
+cVector2f ImGui_GetRatioCorrectSizeByRect(const cImGuiGfx &in aGfx, const cVector2f &in aRect, bool abCompensateForUV = false)
+{
+	cVector2f vGfxSize = cLux_GetCurrentImGui().GetGfxSize(aGfx);
+	
+	if (vGfxSize.x==0)
+	{
+		vGfxSize.x=1;
+		vGfxSize.y=1;
+	}
+	
+	if (abCompensateForUV)
+	{
+		vGfxSize *= (aGfx.mvUVMax-aGfx.mvUVMin);
+	}
+
+	cVector2f vDrawSize = aRect;
+	float fRatio = vGfxSize.y/vGfxSize.x;
+	
+	vDrawSize.y = aRect.x*fRatio;
+	if (vDrawSize.y > aRect.y)
+	{
+		vDrawSize.y = aRect.y;
+		vDrawSize.x = aRect.y/fRatio;
+	}
+	return vDrawSize;
+}
+
+//-------------------------------------------------
+
+void ImGui_SetupWidgetRect(const cVector3f &in avInPos, const cVector2f &in avInSize, cVector3f &out avOutPos, cVector2f &out avOutSize,
+									const cVector2f &in avDefaultSize, const cImGuiGfx &in aGfx)
+{
+	cLux_GetCurrentImGui().SetupWidgetRect(avInPos, avInSize, avOutPos, avOutSize, avDefaultSize, aGfx);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// INPUT
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * See if an action (sent to ImGui by game) has been triggered (just became down).
+ * 
+ * @param aAction The action type.
+ * @param abCheckIfUsed If true, then false is returned if any other class for this action have been made.
+ **/
+bool ImGui_ActionTriggered(eImGuiAction aAction, bool abCheckIfUsed=false)
+{
+	return cLux_GetCurrentImGui().ActionTriggered(aAction, abCheckIfUsed);
+}
+
+//-------------------------------------------------
+
+/**
+ * See if an action (sent to ImGui by game) is down.
+ * 
+ * @param aAction The action type.
+ * @param abCheckIfUsed If true, then false is returned if any other class for this action have been made.
+ **/
+bool ImGui_ActionIsDown(eImGuiAction aAction, bool abCheckIfUsed=false)
+{
+	return cLux_GetCurrentImGui().ActionIsDown(aAction, abCheckIfUsed);
+}
+
+//-------------------------------------------------
+
+/**
+ * the relative mouse movement.
+ **/
+cVector2f ImGui_GetMouseRel()
+{
+	return cLux_GetCurrentImGui().GetMouseRel();
+}
+
+//-------------------------------------------------
+
+/**
+ * The relative mouse movement as 3D vector (z=0)
+ **/
+cVector3f ImGui_GetMouseRel3D()
+{
+	return cLux_GetCurrentImGui().GetMouseRel3D();
+}
+
+//-------------------------------------------------
+
+/**
+ * The absolute mouse position
+ **/
+cVector2f ImGui_GetMousePosition()
+{
+	return cLux_GetCurrentImGui().GetMousePosition();
+}
+
+//-------------------------------------------------
+
+/**
+ * The absolute mouse position as 3D vector (z=0)
+ **/
+cVector3f ImGui_GetMousePosition3D()
+{
+	return cLux_GetCurrentImGui().GetMousePosition3D();
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns true if the mouse has been moved.
+ **/
+bool ImGui_CheckMouseHasMoved()
+{
+	return cLux_GetCurrentImGui().CheckMouseHasMoved();
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// WIDGET CONTROL
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Sets the widget that should be in focus.
+ **/
+void ImGui_SetFocus(const tString&in asWidgetName)
+{
+	cLux_GetCurrentImGui().SetFocus(asWidgetName);
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the alignment of the widget regarding the postion (if positon is top-left corner, center, etc).
+ * Applies to any widget declared after this call.
+ **/
+void ImGui_SetAlignment(eImGuiAlign aAlign)
+{
+	cLux_GetCurrentImGui().SetAlignment(aAlign);
+}
+
+//-------------------------------------------------
+
+/**
+ * This sets what move group(s) the widget will belong to. When using keyboard/gamepad movement, it is only possible to move between widget that share the same group.
+ * This is a bitflag, that it is not the number, but binary bits that matter. To set it, use one or more, eFlagBit_* combined with the bitwise-or-opterator "|".
+ * Example: SetUIMoveGroupFlags(eFlagBit_0 | eFlagBit_2); //This will make widgets belong to group 0 and 2.
+ * Applies to any widget declared after this call.
+ **/
+void ImGui_SetUIMoveGroupFlags(int alGroupFlags)
+{
+	cLux_GetCurrentImGui().SetUIMoveGroupFlags(alGroupFlags);
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the keyboard/gamepad movement wrap mode, ie what happens when "off the edge". 
+ * This is takes effect to any widgets that are defined after it is called.
+ * Default is always XY at the start of an OnGui call!
+ **/
+void ImGui_SetUIMoveWrapMode(eImGuiWrap aWrap)
+{
+	cLux_GetCurrentImGui().SetUIMoveWrapMode(aWrap);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// STATE VARIABLES
+/////////////////////////////////////////
+
+//-------------------------------------------------
+int ImGui_GetStateInt(const tString&in asVarName, int alDefault=0) {
+	return cLux_GetCurrentImGui().GetStateInt(asVarName, alDefault);
+}
+float ImGui_GetStateFloat(const tString&in asVarName, float afDefault=0.0f){
+	return cLux_GetCurrentImGui().GetStateFloat(asVarName, afDefault);
+}
+cVector3f ImGui_GetStateVector3f(const tString&in asVarName, const cVector3f&in avDefault){
+	return cLux_GetCurrentImGui().GetStateVector3f(asVarName, avDefault);
+}
+cColor ImGui_GetStateColor(const tString&in asVarName, const cColor&in aDefault) { 
+	return cLux_GetCurrentImGui().GetStateColor(asVarName, aDefault);
+}
+
+bool ImGui_GetStateBool(const tString&in asVarName, bool abDefault) { 
+	return cLux_GetCurrentImGui().GetStateInt(asVarName, abDefault ? 1 : 0)==1;
+}
+
+//-------------------------------------------------
+
+void ImGui_SetStateInt(const tString&in asVarName , int alVal){
+	cLux_GetCurrentImGui().SetStateInt(asVarName, alVal);
+}
+void ImGui_SetStateFloat(const tString&in asVarName , float afVal){ 
+	cLux_GetCurrentImGui().SetStateFloat(asVarName, afVal);
+}
+void ImGui_SetStateVector3f(const tString&in asVarName , const cVector3f&in avVal){
+	cLux_GetCurrentImGui().SetStateVector3f(asVarName, avVal);
+}
+void ImGui_SetStateColor(const tString&in asVarName , const cColor&in aVal){
+	cLux_GetCurrentImGui().SetStateColor(asVarName, aVal);
+}
+
+void ImGui_SetStateBool(const tString&in asVarName , bool abVal){
+	cLux_GetCurrentImGui().SetStateInt(asVarName, abVal ? 1 : 0);
+}
+
+//-------------------------------------------------
+
+void ImGui_IncStateInt(const tString&in asVarName , int alVal){ 
+	cLux_GetCurrentImGui().IncStateInt(asVarName, alVal);
+}
+void ImGui_IncStateFloat(const tString&in asVarName , float afVal){
+	cLux_GetCurrentImGui().IncStateFloat(asVarName, afVal);
+}
+void ImGui_IncStateVector3f(const tString&in asVarName , const cVector3f&in avVal){
+	cLux_GetCurrentImGui().IncStateVector3f(asVarName, avVal);
+}
+void ImGui_IncStateColor(const tString&in asVarName , const cColor&in aVal){
+	cLux_GetCurrentImGui().IncStateColor(asVarName, aVal);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// FADING
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Adds a fade that will fade a float variable from its current value to goal over time.
+ * 
+ * @param asVarName The name of the state var.
+ * @param afGoalVal The goal value to fade to.
+ * @param afTime How long the fade will take.
+ * @param aType the type of fade, meaning in what way the transiation will be. Sigmoid is default as this means the starts and ends smoothly. 
+ * @param abReplaceIfExist if the variable is currently fading, that fade is replaced if true, else the function call will have no effect.
+ **/
+void ImGui_FadeStateFloat(	const tString&in asVarName, float afGoalVal,float afTime, 
+							eEasing aType=eEasing_QuadInOut, bool abReplaceIfExist=true)
+{
+	cLux_GetCurrentImGui().FadeStateFloat(asVarName, afGoalVal, afTime, aType, abReplaceIfExist);
+}
+//-------------------------------------------------
+
+/**
+ * Adds a fade that will fade a Vector3f variable from its current value to goal over time.
+ * 
+ * @param asVarName The name of the state var.
+ * @param avGoalVal The goal value to fade to.
+ * @param afTime How long the fade will take.
+ * @param aType the type of fade, meaning in what way the transiation will be. Sigmoid is default as this means the starts and ends smoothly. 
+ * @param abReplaceIfExist if the variable is currently fading, that fade is replaced if true, else the function call will have no effect.
+ **/
+void ImGui_FadeStateVector3f(const tString&in asVarName, const cVector3f&in avGoalVal,float afTime, 
+							eEasing aType=eEasing_QuadInOut, bool abReplaceIfExist=true)
+{
+	cLux_GetCurrentImGui().FadeStateVector3f(asVarName, avGoalVal, afTime, aType, abReplaceIfExist);
+}
+//-------------------------------------------------
+
+/**
+ * Adds a fade that will fade a Color variable from its current value to goal over time.
+ * 
+ * @param asVarName The name of the state var.
+ * @param aGoalVal The goal value to fade to.
+ * @param afTime How long the fade will take.
+ * @param aType the type of fade, meaning in what way the transiation will be. Sigmoid is default as this means the starts and ends smoothly. 
+ * @param abReplaceIfExist if the variable is currently fading, that fade is replaced if true, else the function call will have no effect.
+ **/
+void ImGui_FadeStateColor(	const tString&in asVarName, const cColor&in aGoalVal,float afTime, 
+							eEasing aType=eEasing_QuadInOut, bool abReplaceIfExist=true)
+{
+	cLux_GetCurrentImGui().FadeStateColor(asVarName, aGoalVal, afTime, aType, abReplaceIfExist);
+}
+
+//-------------------------------------------------
+
+/**
+ * Stops the fading in the fader.
+ **/
+void ImGui_StopFade(const tString&in asVarName)
+{
+	cLux_GetCurrentImGui().StopFade(asVarName);
+}
+
+//-------------------------------------------------
+
+/**
+ * Checks if the fader is fading.
+ **/
+bool ImGui_IsFading(const tString&in asVarName)
+{
+	return cLux_GetCurrentImGui().IsFading(asVarName);
+}
+
+//-------------------------------------------------
+
+/**
+ * See if a fader ended this update. Mainly to do what ever event happens when FadeState is over.
+ **/
+bool ImGui_FadeOver(const tString&in asName)
+{
+	return cLux_GetCurrentImGui().FadeOver(asName);
+}
+
+//-------------------------------------------------
+
+/**
+ * This will fade a float state var value back and forth between two values and returns the current value.
+ * 
+ * @param asVarName The name of the state var.
+ * @param afStart The start value
+ * @param afGoal The goal value
+ * @param afTime the time it takes to go from Start to Goal (or the opposite)
+ * @param aType The type of fade between the values.
+ **/
+float ImGui_FadeOscillateFloat(	const tString&in asVarName, float afStart, float afGoal, float afTime, 
+								eEasing aType=eEasing_QuadInOut)
+{
+	return cLux_GetCurrentImGui().FadeOscillateFloat(asVarName, afStart, afGoal, afTime, aType);
+}
+
+//-------------------------------------------------
+
+/**
+ * This will fade a float cVector3f var value back and forth between two values and returns the current value.
+ * 
+ * @param asVarName The name of the state var.
+ * @param avStart The start value
+ * @param avGoal The goal value
+ * @param afTime the time it takes to go from Start to Goal (or the opposite)
+ * @param aType The type of fade between the values.
+ **/
+cVector3f ImGui_FadeOscillateVector3f(const tString&in asVarName, const cVector3f&in avStart, const cVector3f&in avGoal, 
+									float afTime, eEasing aType=eEasing_QuadInOut)
+{
+	return cLux_GetCurrentImGui().FadeOscillateVector3f(asVarName, avStart, avGoal, afTime, aType);
+}
+
+//-------------------------------------------------
+
+/**
+ * This will fade a float cColor var value back and forth between two values and returns the current value.
+ * 
+ * @param asVarName The name of the state var.
+ * @param aStart The start value
+ * @param aGoal The goal value
+ * @param afTime the time it takes to go from Start to Goal (or the opposite)
+ * @param aType The type of fade between the values.
+ **/
+cColor ImGui_FadeOscillateColor(const tString&in asVarName, const cColor&in aStart, const cColor&in aGoal, float afTime, 
+								eEasing aType=eEasing_QuadInOut)
+{
+	return cLux_GetCurrentImGui().FadeOscillateColor(asVarName, aStart, aGoal, afTime, aType);							
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// TIMERS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Adds a timer, that ends of afTime time
+ **/
+void ImGui_AddTimer(const tString&in asName, float afTime)
+{
+	cLux_GetCurrentImGui().AddTimer(asName, afTime);
+}
+
+//-------------------------------------------------
+
+/**
+ * This will create a timer that is recreated when over. It returns true whenver the timer ends.
+ * Example: if(ImGui_RepeatTimer("mytime", 2)){EventThatHappensEvery2Secs();}
+ **/
+bool ImGui_RepeatTimer(const tString&in asName, float afTime)
+{
+	return cLux_GetCurrentImGui().RepeatTimer(asName, afTime);
+}
+
+//-------------------------------------------------
+
+/**
+ * Stops an active timer.
+ **/
+void ImGui_StopTimer(const tString&in asName)
+{
+	cLux_GetCurrentImGui().StopTimer(asName);
+}
+
+//-------------------------------------------------
+
+/**
+ * See if a timer ended this update. Mainly to do what ever event happens when AddTimer is over.
+ **/
+bool ImGui_TimerOver(const tString&in asName)
+{
+	return cLux_GetCurrentImGui().TimerOver(asName);
+}
+
+//-------------------------------------------------
+
+/**
+ * See if a timer is running.
+ **/
+bool ImGui_TimerExists(const tString&in asName)
+{
+	return cLux_GetCurrentImGui().TimerExists(asName);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// WIDGET MODIFIERS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Sets a color modifier to any widgets defined below. Default: (1,1,1,1)
+ **/
+void ImGui_SetModColorMul(const cColor&in aCol){
+ cLux_GetCurrentImGui().SetModColorMul(aCol);
+}
+/**
+ * Sets a text color modifier to any widgets defined below. Default: (1,1,1,1)
+ **/
+void ImGui_SetModTextColorMul(const cColor&in aCol){
+	cLux_GetCurrentImGui().SetModTextColorMul(aCol);
+}
+/**
+ * Sets if the widgets below should be possible to navigate to using keyboard/gamepad movement. Default: true
+ **/
+void ImGui_SetModUseUIPos(bool abX){
+	cLux_GetCurrentImGui().SetModUseUIPos(abX);
+}
+
+/**
+ * Expands (or contracts, use negative values) the size of the UI Pos size horitzontally. 
+ * Use this to make a small UI element reachable with keyboard/gamepad movement, but by making the UI box line up with the other widgets.
+ * Turn on the debug feature Draw GUI debug to see the boxes.
+ **/
+void ImGui_SetModUISizeHoriExpansion(float afNeg, float afPos)
+{
+	cLux_GetCurrentImGui().SetModUISizeHoriExpansion(afNeg, afPos);
+}
+
+/**
+ * Expands (or contracts, use negative values) the size of the UI Pos size vertically. 
+ * Use this to make a small UI element reachable with keyboard/gamepad movement, but by making the UI box line up with the other widgets.
+ * Turn on the debug feature Draw GUI debug to see the boxes.
+ **/
+void ImGui_SetModUISizeVertExpansion(float afNeg, float afPos)
+{
+	cLux_GetCurrentImGui().SetModUISizeVertExpansion(afNeg, afPos);
+}
+
+/**
+ * Sets if the widgets below should use any input. Default: true
+ **/
+void ImGui_SetModUseInput(bool abX){
+	cLux_GetCurrentImGui().SetModUseInput(abX);
+}
+/**
+ * Sets the rotatation angle for any widgets below. Default: 0. Applies to ImGui_DrawGfx too
+ **/
+void ImGui_SetModRotateAngle(float afX){
+	cLux_GetCurrentImGui().SetModRotateAngle(cMath_ToRad(afX));
+}
+/**
+ * Sets if a custom pivot should be used for widget below when rotating. Default: false. Applies to ImGui_DrawGfx too
+ **/
+void ImGui_SetModRotateCustomPivot(bool abX){ 
+	cLux_GetCurrentImGui().SetModRotateCustomPivot(abX);
+}
+/**
+ * Sets the custom pivot used for widget below when rotating. Default: false. Applies to ImGui_DrawGfx too
+ * ImGui_SetModRotateCustomPivot must be true for it to have effect.
+ **/
+void ImGui_SetModRotatePivot(const cVector2f&in avPivot){ 
+	cLux_GetCurrentImGui().SetModRotatePivot(avPivot);
+}
+
+/**
+ * Sets an additional image to widgets below, only used by Buttons so far. Default "".
+ **/
+void ImGui_SetModGfx(const cImGuiGfx&in aGfx){ 
+	cLux_GetCurrentImGui().SetModGfx(aGfx);
+} 
+
+//-------------------------------------------------
+
+/**
+ * Resets all modifiers to default values.
+ **/
+void ImGui_ResetModifiers(){ 
+	cLux_GetCurrentImGui().ResetModifiers();
+}
+/**
+ * Saves the currently set modifiers on a stack.
+ **/
+void ImGui_PushModifiers(){ 
+	cLux_GetCurrentImGui().PushModifiers();
+}
+/**
+ * Reverts all SetMod* settings to the latest one pushed on the stack.
+ **/
+void ImGui_PopModifiers(){
+	cLux_GetCurrentImGui().PopModifiers();
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// PREVIOUS WIDGET STATES
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Checks if the previously defined widget is being pressed.
+ **/
+bool ImGui_PrevPressed(){
+	return cLux_GetCurrentImGui().PrevPressed();
+}
+/**
+ * Checks if the previously defined widget just became pressed.
+ **/
+bool ImGui_PrevBecamePressed(){
+	return cLux_GetCurrentImGui().PrevBecamePressed();
+}
+/**
+ * Checks if the previously defined widget is in focus.
+ **/
+bool ImGui_PrevInFocus(){ 
+	return cLux_GetCurrentImGui().PrevInFocus();
+}
+/**
+ * Gets the previously defined widget final position (might not be what is supplied as argument)
+ **/
+cVector3f ImGui_PrevPosition(){
+	return cLux_GetCurrentImGui().PrevPosition();
+}
+/**
+ * Gets the previously defined widget final size (might not be what is supplied as argument)
+ **/
+cVector2f ImGui_PrevSize(){
+	return cLux_GetCurrentImGui().PrevSize();
+}
+/**
+ * Checks if the previously defined widget just became in focus.
+ **/
+bool ImGui_PrevBecameInFocus(){ 
+	return cLux_GetCurrentImGui().PrevBecameInFocus();
+}
+/**
+ * Checks if the previously defined widget just lost focus
+ **/
+bool ImGui_PrevWasInFocus(){ 
+	return cLux_GetCurrentImGui().PrevWasInFocus();
+}
+/**
+ * Checks if the previously defined widget has the mouse over it.
+ **/
+bool ImGui_PrevMouseOver(){ 
+	return cLux_GetCurrentImGui().PrevMouseOver();
+}
+/**
+ * Checks if the previously defined widget's internal values was updated somehow.
+ **/
+bool ImGui_PrevUpdated(){ 
+	return cLux_GetCurrentImGui().PrevUpdated();
+}
+/**
+ * This resets any data retrieved by ImGui_Prev* to the default values. Mostly used when creating custom Widget types.
+ **/
+void ImGui_ClearPrevData() {
+	cLux_GetCurrentImGui().ClearPrevData();
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// GROUPS AND LAYOUT
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Begins the definition of a group which all subsequent Widgets will be relative to. Must be ended with ImGui_GroupEnd
+ * Nested groups are possible
+ * 
+ * @param avPos the position of the group (relative to any groups and layout already defined)
+ * @param avSize The size of the group. Mostly useful when adding groups in a layout or when clipping.
+ * @param abClip if the widgets inside the group should be clipped.
+ **/
+void ImGui_GroupBegin(const cVector3f&in avPos, const cVector2f&in avSize=cVector2f_MinusOne, bool abClip=false)
+{
+	cLux_GetCurrentImGui().GroupBegin(avPos, avSize, abClip);
+}
+/**
+ * Ends a group started with ImGui_GroupBegin
+ **/
+void ImGui_GroupEnd()
+{
+	cLux_GetCurrentImGui().GroupEnd();
+}
+
+//-------------------------------------------------
+
+cVector3f ImGui_GetCurrentGroupPos()
+{
+	return cLux_GetCurrentImGui().GetCurrentGroupPos();
+}
+
+cVector2f ImGui_GetCurrentGroupSize()
+{
+	return cLux_GetCurrentImGui().GetCurrentGroupSize();
+}
+
+//-------------------------------------------------
+
+/**
+ * Begins the definition of a layout which will affect the placement of all subsequence Widgets. Must be ended with ImGui_LayoutEnd
+ * Nested groups are possible
+ * 
+ * @param aType the type of the layout. X=Align horizontally, Y=Align Vertically, XY=Align left to right and go down when widget does not fit width
+ * @param avPos the position of the layout. (relative to any groups and layout already defined)
+ * @param avSize the size of the group. Mostly useful for XY-type or when inside another layout.
+ * @param avSpacing spacing between the widgets in the layout.
+ **/
+void ImGui_LayoutBegin(eImGuiLayout aType, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne, const cVector2f&in avSpacing=cVector2f_Zero)
+{
+	cLux_GetCurrentImGui().LayoutBegin(aType, avPos, avSize, avSpacing);
+}
+/**
+ * Ends a layout started with ImGui_LayoutBegin
+ **/
+void ImGui_LayoutEnd()
+{
+	cLux_GetCurrentImGui().LayoutEnd();
+}
+
+//-------------------------------------------------
+
+/**
+ * Adds a horizontal space in a layout. Height is useful in XY-type of layout.
+ **/
+void ImGui_AddLayoutHorizontalSpace(float afWidth, float afHeight=0)
+{
+	cLux_GetCurrentImGui().AddLayoutHorizontalSpace(afWidth, afHeight);
+}
+/**
+ * Adds a horizontal space in a layout
+ **/
+void ImGui_AddLayoutVerticalSpace(float afHeight)
+{
+	cLux_GetCurrentImGui().AddLayoutVerticalSpace(afHeight);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// WIDGET ARRAY PROPERTIES
+/////////////////////////////////////////
+
+//-------------------------------------------------
+/**
+ * Adds a string item to a list. Used by some widgets like MultiToggle and MultiSelect
+ **/
+void ImGui_AddItemStringW(const tWString&in asStr)
+{
+	cLux_GetCurrentImGui().AddItemString(asStr);
+} 
+
+/**
+ * Adds a string item to a list. Used by some widgets like MultiToggle and MultiSelect
+ *  
+ * @param asStr The text to use, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ **/
+void ImGui_AddItemString(const tString&in asStr)
+{
+	cLux_GetCurrentImGui().AddItemString(_ImGui_GetTextString(asStr));
+} 
+
+
+
+/**
+ * Adds many strings as single list. Seperate items by space or comma.
+ **/
+void ImGui_AddItemStringList(const tWString&in asStrList)
+{
+	cLux_GetCurrentImGui().AddItemStringList(asStrList);
+}
+
+//-------------------------------------------------
+
+/**
+ * Adds a gfx item to list. Used by some widgets like MultiToggle
+ **/
+void ImGui_AddItemGfx(const cImGuiGfx&in aGfx)
+{
+	cLux_GetCurrentImGui().AddItemGfx(aGfx);
+}
+
+//-------------------------------------------------
+
+/**
+ * Clears all item list. Done automatically by widgets, so should mostly be used for custom widgets only.
+ **/
+void ImGui_ClearItems()
+{
+	cLux_GetCurrentImGui().ClearItems();
+}
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// WIDGETS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Draws the mouse. If not called and ShowMouseAutomatically the default mouse will be shown.
+ * 
+ * @param aGfx the image to draw
+ * @param avOffset the offset in regards to the current mouse postion.
+ * @param avSize size of the mouse, if negative then size of image is used.
+ **/
+void ImGui_DoMouse(const cImGuiGfx &in aGfx, const cVector3f&in avOffset=0, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	cLux_GetCurrentImGui().DoMouse(aGfx, avOffset, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Button Widget. Returns true if it became pressed.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param aData properties of the button
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+bool ImGui_DoButtonExt(const tString&in asName,const tString&in asText, const cImGuiButtonData &in aData, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoButton(asName, _ImGui_GetTextString(asText), aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Button Widget using default data. Returns true if it became pressed.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+bool ImGui_DoButton(const tString&in asName,const tString&in asText, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoButton(asName, _ImGui_GetTextString(asText), avPos, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Repeat Button Widget. Returns true while the button is pressed.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param aData properties of the button
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+bool ImGui_DoRepeatButtonExt(const tString&in asName,const tString&in asText, const cImGuiButtonData &in aData, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoRepeatButton(asName, _ImGui_GetTextString(asText),aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Repeat Button Widget using default data. Returns true while the button is pressed.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+bool ImGui_DoRepeatButton(const tString&in asName,const tString&in asText, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoRepeatButton(asName, _ImGui_GetTextString(asText), avPos, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and does logic for a Toggle Button Widget. Returns true if button is toggled on else false.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param abDefaultChecked The default toggle value
+ * @param aData properties of the widget
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+bool ImGui_DoToggleButtonExt(const tString&in asName,const tString&in asText, bool abDefaultChecked, const cImGuiButtonData &in aData, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoToggleButton(asName, _ImGui_GetTextString(asText), abDefaultChecked, aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Toggle Button Widget using default data. Returns true if button is toggled on else false.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param abDefaultChecked The default toggle value
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+bool ImGui_DoToggleButton(const tString&in asName,const tString&in asText, bool abDefaultChecked, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoToggleButton(asName, _ImGui_GetTextString(asText), abDefaultChecked, avPos, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Horizontal Slider Widget. Returns the current value.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param afDefaultValue the default value used on the slider.
+ * @param afMin The default toggle value
+ * @param afMax The max value of the slider.
+ * @param afStepSize the steps the values will change if using keyboard/gamepad.
+ * @param aData properties for the widget.
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+float ImGui_DoSliderHorizontalExt(const tString&in asName, float afDefaultValue, float afMin, float afMax, float afStepSize, const cImGuiSliderData &in aData, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoSliderHorizontal(asName, afDefaultValue, afMin, afMax, afStepSize, aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Horizontal Slider Widget using default data. Returns the current value.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param afDefaultValue the default value used on the slider.
+ * @param afMin The default toggle value
+ * @param afMax The max value of the slider.
+ * @param afStepSize the steps the values will change if using keyboard/gamepad.
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+float ImGui_DoSliderHorizontal(const tString&in asName, float afDefaultValue, float afMin, float afMax, float afStepSize=-1, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoSliderHorizontal(asName, afDefaultValue, afMin, afMax, afStepSize, avPos, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Vertical Slider Widget. Returns the current value.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param afDefaultValue the default value used on the slider.
+ * @param afMin The default toggle value
+ * @param afMax The max value of the slider.
+ * @param afStepSize the steps the values will change if using keyboard/gamepad.
+ * @param aData properties for the widget.
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+float ImGui_DoSliderVerticalExt(const tString&in asName, float afDefaultValue, float afMin, float afMax, float afStepSize, const cImGuiSliderData &in aData, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoSliderVertical(asName, afDefaultValue, afMin, afMax, afStepSize, aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Vertical Slider Widget using default data. Returns the current value.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param afDefaultValue the default value used on the slider.
+ * @param afMin The default toggle value
+ * @param afMax The max value of the slider.
+ * @param afStepSize the steps the values will change if using keyboard/gamepad.
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+float ImGui_DoSliderVertical(const tString&in asName, float afDefaultValue, float afMin, float afMax, float afStepSize=-1, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoSliderVertical(asName, afDefaultValue, afMin, afMax, afStepSize, avPos, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Label Widget.
+ * 
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else the text string is taken from the translation file
+ * @param aData properties for the widget
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ * @param afFontSizeMul Multiplier for font size
+ **/
+void ImGui_DoLabelExt(const tString&in asText, const cImGuiLabelData &in aData, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne, float afFontSizeMul=1)
+{
+	cLux_GetCurrentImGui().DoLabel(_ImGui_GetTextString(asText), aData, avPos, avSize, afFontSizeMul);
+}
+
+/**
+ * Draw and do logic for a Label Widget using default data.
+ * 
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ * @param afFontSizeMul Multiplier for font size
+ **/
+ void ImGui_DoLabel(const tString&in asText, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne, float afFontSizeMul=1)
+{
+	cLux_GetCurrentImGui().DoLabel(_ImGui_GetTextString(asText), avPos, avSize, afFontSizeMul);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for an Image Widget
+ * 
+ * @param aGfxImage graphics image displayed.
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the size of aGfxImage is used.
+ **/
+void ImGui_DoImage(const cImGuiGfx&in aGfxImage, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	cLux_GetCurrentImGui().DoImage(aGfxImage, avPos, avSize);
+}
+
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for an Image Widget with the image's native aspect ratio, fitting it into the specified size.
+ * 
+ * @param aGfxImage graphics image displayed.
+ * @param avPos Position of the rectangle that the image sgould fit into. Image will be centered in the rectangle.
+ * @param avSize Size of rectangle that the image should fit within.
+ **/
+void ImGui_DoImageCorrectAspect(const cImGuiGfx&in aGfxImage, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	cVector2f vDrawSize = ImGui_GetRatioCorrectSizeByRect(aGfxImage, avSize);
+	
+	cVector3f vDrawPos = avPos;
+	vDrawPos.x = vDrawPos.x+(avSize.x-vDrawSize.x)*0.5;
+	vDrawPos.y = vDrawPos.y+(avSize.y-vDrawSize.y)*0.5;
+	
+	cLux_GetCurrentImGui().DoImage(aGfxImage, vDrawPos, vDrawSize);
+	
+	//Draw rectangle
+	//cLux_GetCurrentImGui().DoImage(cImGuiGfx(""), avPos-cVector3f(0,0,0.1), avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Multi Toggle Widget. Returns currently selected button.
+ * use ImGui_AddItem and/or ImGui_AddGfx to add text and/or images to the buttons in the grid.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param alDefaultSelectedItem default button to be active.
+ * @param alColumnNum number of buttons per row.
+ * @param avSpacing the spacing between the buttons
+ * @param aData properties for the buttons that make up the grid.
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget (negative not allowed)
+ **/
+int ImGui_DoMultiToggleExt(const tString&in asName, int alDefaultSelectedItem, uint alColumnNum, const cVector2f&in avSpacing, const cImGuiButtonData &in aData, const cVector3f&in avPos, const cVector2f&in avSize)
+{
+	return cLux_GetCurrentImGui().DoMultiToggle(asName, alDefaultSelectedItem, alColumnNum, avSpacing, aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Multi Toggle Widget using default button data. Returns currently selected button.
+ * use ImGui_AddItem and/or ImGui_AddGfx to add text and/or images to the buttons in the grid.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param alDefaultSelectedItem default button to be active.
+ * @param alColumnNum number of buttons per row.
+ * @param avSpacing the spacing between the buttons
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget (negative not allowed)
+ **/
+int ImGui_DoMultiToggle(const tString&in asName, int alDefaultSelectedItem, uint alColumnNum, const cVector2f&in avSpacing, const cVector3f&in avPos, const cVector2f&in avSize)
+{
+	return cLux_GetCurrentImGui().DoMultiToggle(asName, alDefaultSelectedItem, alColumnNum, avSpacing, avPos, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Check Box Widget. Return if checked or not.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param abDefaultChecked the default state of the widget
+ * @param aData properties for the widget
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+bool ImGui_DoCheckBoxExt(const tString&in asName, const tString&in asText, bool abDefaultChecked, const cImGuiCheckBoxData &in aData, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoCheckBox(asName, _ImGui_GetTextString(asText), abDefaultChecked, aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Check Box Widget using default data. Return if checked or not.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param abDefaultChecked the default state of the widget
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+bool ImGui_DoCheckBox(const tString&in asName, const tString&in asText, bool abDefaultChecked, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoCheckBox(asName, _ImGui_GetTextString(asText), abDefaultChecked, avPos, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Text Frame Widget. 
+ * Returns the number of rows (might be fractional) that does not fit the frame, useful when making scroll slider.
+ * 
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param avEdgeSpacing The spacing around the edges of the frame
+ * @param afRowSpace Space between the row
+ * @param afStartRowOffset The offset for when the first row begins (can be negative, which is useful for scrolling text)
+ * @param aData properties for the widget
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, (must be postive)
+ **/
+float ImGui_DoTextFrameExt(const tString&in asText,const cVector2f&in avEdgeSpacing, float afRowSpace, float afStartRowOffset, const cImGuiTextFrameData &in aData, const cVector3f&in avPos, const cVector2f&in avSize)
+{
+	return cLux_GetCurrentImGui().DoTextFrame(_ImGui_GetTextString(asText), avEdgeSpacing, afRowSpace, afStartRowOffset, aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Text Frame Widget using default data. 
+ * Returns the number of rows (might be fractional) that does not fit the frame, useful when making scroll slider.
+ * 
+ * @param asText The text to display, if ImGui_SetTransCategory "" the actual string is used, else it is taken form the current tranlation file
+ * @param avEdgeSpacing The spacing around the edges of the frame
+ * @param afRowSpace Space between the row
+ * @param afStartRowOffset The offset for when the first row begins (can be negative, which is useful for scrolling text)
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, (must be postive)
+ **/
+float ImGui_DoTextFrame(const tString&in asText,const cVector2f&in avEdgeSpacing, float afRowSpace, float afStartRowOffset, const cVector3f&in avPos, const cVector2f&in avSize)
+{
+	return cLux_GetCurrentImGui().DoTextFrame(_ImGui_GetTextString(asText), avEdgeSpacing, afRowSpace, afStartRowOffset, avPos, avSize);
+}
+//-------------------------------------------------
+
+/**
+ * Draw and do logic for a Multi Select Widget. Returns currently selected item.
+ * use ImGui_AddItem* to add selection options.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param alDefaultSelectedItem the default state of the widget
+ * @param aData properties for the widget
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+int ImGui_DoMultiSelectExt(const tString&in asName, int alDefaultSelectedItem, const cImGuiMultiSelectData &in aData, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoMultiSelect(asName, alDefaultSelectedItem, aData, avPos, avSize);
+}
+
+/**
+ * Draw and do logic for a Multi Select Widget using default data. Returns currently selected item.
+ * use ImGui_AddItem* to add selection options.
+ * 
+ * @param asName name of widger, must be unique.
+ * @param alDefaultSelectedItem the default state of the widget
+ * @param aData properties for the widget
+ * @param avPos Position of the widget (will be relative if gruoup or layout is declared)
+ * @param avSize Size of widget, if negative the default size declared in data is used.
+ **/
+int ImGui_DoMultiSelect(const tString&in asName, int alDefaultSelectedItem, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne)
+{
+	return cLux_GetCurrentImGui().DoMultiSelect(asName, alDefaultSelectedItem, avPos, avSize);
+}
+//-------------------------------------------------
+/**
+ * Begins the definition of a Window which will affect the placement of all subsequence Widgets. Must be ended with ImGui_DoWindowEnd
+ * 
+ * @param asCaption the window caption.
+ * @param aData properties for the widget.
+ * @param avPos position of the widget (will be relative if group or layout is declared).
+ * @param avSize Size of widget, if negative the  default size declared in data is used.
+ * @param abClip true = the window will clip any widgets declared between the window start and end that lie outside its boundaries - false = every widget will be drawn.
+ * @param abForceCaptionFit (?).
+ **/
+void ImGui_DoWindowStart(const tString &in asCaption, const cImGuiWindowData &in aData, const cVector3f &in avPos=cVector3f_Zero, const cVector2f &in avSize=cVector2f_MinusOne, bool abClip=true, bool abForceCaptionFit = true)
+{
+	cImGuiWindowData window = aData;
+	
+	if (abForceCaptionFit)
+	{
+		float fWidth = GetFontLengthW(window.mFont, window.mfCaptionSizeMul, asCaption);
+		float fWindowLabelWidth = avSize.x-window.mfLabelPaddingLeft-window.mfLabelPaddingRight;
+		if (fWidth > fWindowLabelWidth)
+		{
+			window.mFont.mvSize *= fWindowLabelWidth/fWidth;
+		}
+	}
+		
+	cLux_GetCurrentImGui().DoWindowStart(_ImGui_GetTextString(asCaption), window, avPos, avSize, abClip); 
+}
+
+/**
+ * Draw and do logic for a Window. Must be previously started with ImGui_DoWindowStart.
+ **/
+void ImGui_DoWindowEnd()
+{
+	cLux_GetCurrentImGui().DoWindowEnd();
+}
+
+//-------------------------------------------------
+/**
+ * Draw and do logic for a gauge (progress bar).
+ * 
+ * @param aData properties for the widget.
+ * @param afFillAmount Value in the [0,1] range that sets how full the bar will be drawn
+ * @param avPos position of the widget (will be relative if group or layout is declared).
+ * @param avSize Size of widget, if negative the  default size declared in data is used.
+ **/
+void ImGui_DoGauge(const cImGuiGaugeData &in aData, float afFillAmount, const cVector3f &in avPos=cVector3f_Zero, const cVector2f &in avSize=cVector2f_MinusOne)
+{
+	cLux_GetCurrentImGui().DoGauge(aData, afFillAmount, avPos, avSize); 
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// WIDGETS DEFAULTS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+void ImGui_SetDefaultButton(const cImGuiButtonData &in aData){
+	cLux_GetCurrentImGui().SetDefaultButton(aData);
+}
+cImGuiButtonData ImGui_GetDefaultButton(){ 
+	return cLux_GetCurrentImGui().GetDefaultButton();
+}
+void ImGui_SetDefaultSliderHorizontal(const cImGuiSliderData &in aData){ 
+	cLux_GetCurrentImGui().SetDefaultSliderHorizontal(aData);
+}
+cImGuiSliderData ImGui_GetDefaultSliderHorizontal(){ 
+	return cLux_GetCurrentImGui().GetDefaultSliderHorizontal();
+}
+void ImGui_SetDefaultSliderVertical(const cImGuiSliderData &in aData){
+	cLux_GetCurrentImGui().SetDefaultSliderVertical(aData);
+}
+cImGuiSliderData ImGui_GetDefaultSliderVertical(){
+	return cLux_GetCurrentImGui().GetDefaultSliderVertical();
+}
+void ImGui_SetDefaultLabel(const cImGuiLabelData &in aData){ 
+	cLux_GetCurrentImGui().SetDefaultLabel(aData);
+}
+cImGuiLabelData ImGui_GetDefaultLabel(){
+	return cLux_GetCurrentImGui().GetDefaultLabel();
+}
+void ImGui_SetDefaultCheckBox(const cImGuiCheckBoxData &in aData){
+	cLux_GetCurrentImGui().SetDefaultCheckBox(aData);
+}	
+cImGuiCheckBoxData ImGui_GetDefaultCheckBox(){ 
+	return cLux_GetCurrentImGui().GetDefaultCheckBox();
+}
+void ImGui_SetDefaultTextFrame(const cImGuiTextFrameData &in aData){
+	cLux_GetCurrentImGui().SetDefaultTextFrame(aData);
+}
+cImGuiTextFrameData ImGui_GetDefaultTextFrame(){
+	return cLux_GetCurrentImGui().GetDefaultTextFrame();
+}
+void ImGui_SetDefaultMultiSelect(const cImGuiMultiSelectData &in aData){
+	cLux_GetCurrentImGui().SetDefaultMultiSelect(aData);
+}
+cImGuiMultiSelectData ImGui_GetDefaultMultiSelect(){
+	return cLux_GetCurrentImGui().GetDefaultMultiSelect();
+}
+void ImGui_SetDefaultMouse(const cImGuiGfx&in aGfx){
+	cLux_GetCurrentImGui().SetDefaultMouse(aGfx);
+}
+void ImGui_SetDefaultFont(const cImGuiFont&in aFont){
+	cLux_GetCurrentImGui().SetDefaultFont(aFont);
+}
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// GENERAL PROPERTIES
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Get name of the ImGui
+ **/
+tString ImGui_GetName(){
+	return cLux_GetCurrentImGui().GetName();
+}
+
+/**
+ * Set if default mouse should be drawn if not rendered with DoMouse
+ **/
+void ImGui_SetShowMouseAutomatically(bool abX){
+	cLux_GetCurrentImGui().SetShowMouseAutomatically(abX);
+}
+/**
+ * Get if default mouse should be drawn if not rendered with DoMouse
+ **/
+bool ImGui_GetShowMouseAutomatically(){
+	return cLux_GetCurrentImGui().GetShowMouseAutomatically();
+}
+/**
+ * Get if this is the first update for the ImGui
+ **/
+bool ImGui_IsFirstRun(){
+	return cLux_GetCurrentImGui().IsFirstRun();
+}
+/**
+ * Get the current timestep
+ **/
+float ImGui_GetTimeStep(){
+	return cLux_GetCurrentImGui().GetTimeStep();
+}
+/**
+ * Get the time that has passed since first run.
+ **/
+float ImGui_GetTimeCount(){
+	return cLux_GetCurrentImGui().GetTimeCount();
+}
+
+
+/**
+ * Get if the mouse is currently visible
+ **/
+bool ImGui_GetMouseVisible(){
+	return cLux_GetCurrentImGui().GetShowMouse();
+}
+
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// DRAWING
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Draw a line between two positions. Is not affected by Layout or Group.
+ * 
+ * @param avStart start position.
+ * @param avEnd end position.
+ * @param afZ the z value
+ * @param afThickness the thicnkess of the line
+ * @param aCol color of the line
+ **/
+void ImGui_DrawLine(const cVector2f&in avStart, const cVector2f&in avEnd,float afZ, float afThickness=1.0f, 
+					const cColor&in aCol=cColor_White)
+{
+	cLux_GetCurrentImGui().DrawLine(avStart, avEnd, afZ, afThickness, aCol, cImGuiGfx(""));
+}
+
+/**
+ * Draw a line between two positions. Is not affected by Layout or Group.
+ * 
+ * @param avStart start position.
+ * @param avEnd end position.
+ * @param afZ the z value
+ * @param afThickness the thicnkess of the line
+ * @param aCol color of the line
+ * @param aGfx an Image streched across the line. It is aligned horizontally.
+ **/
+void ImGui_DrawLineExt(	const cVector2f&in avStart, const cVector2f&in avEnd,float afZ, float afThickness, 
+				const cColor&in aCol,const cImGuiGfx &in aGfx)
+{
+	cLux_GetCurrentImGui().DrawLine(avStart, avEnd, afZ, afThickness, aCol, aGfx);
+}
+//-------------------------------------------------
+
+/**
+ * Add a vertex to a line strip for drawing. Is not affected by Layout or Group.
+ * 
+ * @param avVertex line vertex.
+ **/
+void ImGui_AddLineStripVertex(const cVector2f&in avVertex)
+{
+	cLux_GetCurrentImGui().AddLineStripVertex(avVertex);
+}
+
+/**
+ * Add a vertex to a line strip for drawing in normalized coords. Is not affected by Layout or Group.
+ * 
+ * @param avVertex line vertex.
+ **/
+void ImGui_AddLineStripNrmVertex(const cVector2f&in avVertex)
+{
+	ImGui_AddLineStripVertex(ImGui_NrmSize(avVertex));
+}
+
+/**
+ * Draws and clears the current line strip set up through AddLineStripVertex. Is not affected by Layout or Group.
+ * 
+ * @param afZ Z coord for the line.
+ * @param afThickness the thicnkess of the line
+ * @param aCol Color multiplier
+ * @param aGfx the gfx used for a line segment
+ **/
+void ImGui_DrawAndClearLineStrip(float afZ, float afThickness, const cColor &in aCol=cColor_White, const cImGuiGfx &in aGfx=cImGuiGfx())
+{
+	cLux_GetCurrentImGui().DrawAndClearLineStrip(afZ, afThickness, aCol, aGfx);
+}
+
+//-------------------------------------------------
+
+/**
+ * Draw an image. Is not affected by Alignment, Layout or Group.
+ * 
+ * @param aGfx the image to be displayed
+ * @param avPos The position of the images upper left corner.
+ * @param avSize The size of the image, if negative then size of aGfx is used.
+ * @param aCol Color multiplier
+ **/
+void ImGui_DrawGfx(	const cImGuiGfx &in aGfx, const cVector3f&in avPos, const cVector2f&in avSize=cVector2f_MinusOne, 
+				const cColor&in aCol=cColor_White)
+{
+	cLux_GetCurrentImGui().DrawGfx(aGfx, avPos, avSize, aCol);
+}
+
+/**
+ * Draw an aligned image. Is not affected by Alignment, Layout or Group.
+ * 
+ * @param aGfx the image to be displayed
+ * @param avPos The position of the pivot the image will be aligned to.
+ * @param aAlignment Alignment mode
+ * @param avSize The size of the image, if negative then size of aGfx is used.
+ * @param aCol Color multiplier
+ **/
+void ImGui_DrawAlignedGfx(const cImGuiGfx &in aGfx, const cVector3f&in avPos, eImGuiAlign aAlignment, const cVector2f&in avSize=cVector2f_MinusOne, 
+				const cColor&in aCol=cColor_White)
+{
+	cLux_GetCurrentImGui().DrawAlignedGfx(aGfx, avPos, aAlignment, avSize, aCol);
+}
+
+//-------------------------------------------------
+
+/**
+ * Draw font. Is not affected by Alignment, Layout or Group.
+ * 
+ * @param asText the text to be displayed.
+ * @param aFont the font to displayed the text with
+ * @param avPos The position of the images upper right corner.
+ * @param aAlign The alignment of the text.
+ * @param avSizeMul A size multiplier for the text.
+ * @param aColMul Color multiplier
+ **/
+void ImGui_DrawFontW(	const tWString&in asText, const cImGuiFont &in aFont, const cVector3f&in avPos, eFontAlign aAlign, 
+				const cVector2f&in avSizeMul=1, const cColor&in aColMul=1.0f)
+{
+	cLux_GetCurrentImGui().DrawFont(asText, aFont, avPos, aAlign, avSizeMul, aColMul);
+}
+//-------------------------------------------------
+
+/**
+ * Draw font. Is not affected by Alignment, Layout or Group.
+ * 
+ * @param asText the text to be displayed.
+ * @param aFont the font to displayed the text with
+ * @param avPos The position of the images upper right corner.
+ * @param aAlign The alignment of the text.
+ * @param avSizeMul A size multiplier for the text.
+ * @param aColMul Color multiplier
+ **/
+void ImGui_DrawFontW(const tString&in asText, const cImGuiFont &in aFont, const cVector3f&in avPos, eFontAlign aAlign, 
+				const cVector2f&in avSizeMul=1, const cColor&in aColMul=1.0f)
+{
+	cLux_GetCurrentImGui().DrawFont(_ImGui_GetTextString(asText), aFont, avPos, aAlign, avSizeMul, aColMul);
+}
+
+//-------------------------------------------------
+
+/**
+ * Draw frame. Is not affected by Alignment, Layout or Group.
+ * 
+ * @param aGfx The cImGuiFrameGfx object to use for drawing the frame.
+ * @param avPos The position of the frame's upper left corner.
+ * @param avSize Size of the frame to draw.
+ * @param aCol Color multiplier
+ **/
+void ImGui_DrawFrame(const cImGuiFrameGfx &in aGfx, const cVector3f&in avPos, const cVector2f&in avSize=cVector2f_MinusOne, const cColor&in aCol=cColor_White)
+{
+	cLux_GetCurrentImGui().DrawFrame(aGfx, avPos, avSize, aCol);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// WIDGET CREATION HELPERS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Check if a widget has been just pressed by confirm and/or mouse, sets internal vars for this too
+ **/
+bool CheckCurrentWidgetBecamePressed(const tString&in asName, bool abCheckConfirm, bool abCheckMouseLeft)
+{
+	return cLux_GetCurrentImGui().CheckCurrentWidgetBecamePressed(asName, abCheckConfirm, abCheckMouseLeft);
+}
+
+/**
+ * Check if a widget is being pressed by confirm and/or mouse, sets internal vars for this too
+ **/
+bool CheckCurrentWidgetIsPressed(const tString&in asName, bool abCheckConfirm, bool abCheckMouseLeft)
+{
+	return cLux_GetCurrentImGui().CheckCurrentWidgetIsPressed(asName, abCheckConfirm, abCheckMouseLeft);
+}
+
+/**
+ * Quick way to check if confirm and/or mouse was just pressed.
+ **/
+bool CheckIsPressedAction(bool abCheckConfirm, bool abCheckMouseLeft)
+{
+	return cLux_GetCurrentImGui().CheckIsPressedAction(abCheckConfirm, abCheckMouseLeft);
+}
+
+/**
+ * Quick way to check if confirm and/or mouse is being pressed.
+ **/
+bool CheckBecamePressedAction(bool abCheckConfirm, bool abCheckMouseLeft)
+{
+	return cLux_GetCurrentImGui().CheckBecamePressedAction(abCheckConfirm, abCheckMouseLeft);
+}
+//-------------------------------------------------
+
+/**
+ * Gets the int value from the CurrentVar, if the value in default equals alDefaultVarId, else alDefaultVarId is returned.
+ * Used as a helper to have default param values.
+ **/
+int GetDefaultOrCurrentInt(uint64 alDefaultVarId, uint64 alCurrentVarId, int alDefaultValue)
+{
+	return cLux_GetCurrentImGui().GetDefaultOrCurrentInt(alDefaultVarId, alCurrentVarId, alDefaultValue);
+}
+
+/**
+ * Gets the float value from the CurrentVar, if the value in default equals alDefaultVarId, else alDefaultVarId is returned.
+ * Used as a helper to have default param values.
+ **/
+float GetDefaultOrCurrentFloat(uint64 alDefaultVarId, uint64 alCurrentVarId, float afDefaultValue)
+{
+	return cLux_GetCurrentImGui().GetDefaultOrCurrentFloat(alDefaultVarId, alCurrentVarId, afDefaultValue);
+}
+//-------------------------------------------------
+
+/**
+ * When this is called, the focus will not change during this or the next update.
+ **/
+void LockMouseFocus()
+{
+	cLux_GetCurrentImGui().LockMouseFocus();
+}
+
+/**
+ * See if mouse is locked
+ **/
+bool MouseFocusIsLocked()
+{
+	return cLux_GetCurrentImGui().MouseFocusIsLocked();
+}
+
+//-------------------------------------------------
+
+/**
+ * If an element in ArgSize is negative, the output for the element will have the value of DefaultSize instead.
+ **/
+cVector2f CalcWidgetSize(const cVector2f&in avArgSize, const cVector2f&in avDefaultSize)
+{
+	return cLux_GetCurrentImGui().CalcWidgetSize(avArgSize, avDefaultSize);
+}
+
+/**
+ * Gets the final postion and size for a widget taking into account aligntment, groups, layout, etc.
+ **/
+void SetupWidgetRect(	const cVector3f&in avInPos, const cVector2f&in avInSize, cVector3f&out avOutPos, cVector2f&out avOutSize,
+						const cVector2f&in avDefaultSize, const cImGuiGfx &in aGfx)
+{
+	cLux_GetCurrentImGui().SetupWidgetRect(avInPos, avInSize, avOutPos, avOutSize, avDefaultSize, aGfx);
+}
+
+//-------------------------------------------------
+
+/**
+ * Get the size of a graphics by using axis value of aGfx instead of custom, if the custom value is negative.
+ **/
+cVector2f GetUsedGfxSize(const cImGuiGfx&in aGfx, const cVector2f&in avCustomSize)
+{
+	return cLux_GetCurrentImGui().GetUsedGfxSize(aGfx, avCustomSize);
+}
+
+/**
+ * Get the size of a gfx.
+ **/
+cVector2f GetGfxSize(const cImGuiGfx&in aGfx)
+{
+	return cLux_GetCurrentImGui().GetGfxSize(aGfx);
+}
+
+/**
+ * Get the length that a string will be given a certain font.
+ **/
+float GetFontLengthW(const cImGuiFont&in aFont, float afSizeMul, const tWString&in asText)
+{
+	return cLux_GetCurrentImGui().GetFontLength(aFont, afSizeMul, asText);
+}
+
+/**
+ * Get the length that a string will be given a certain font.
+ **/
+float GetFontLengthW(const cImGuiFont&in aFont, float afSizeMul, const tString&in asText)
+{
+	return cLux_GetCurrentImGui().GetFontLength(aFont, afSizeMul, _ImGui_GetTextString(asText));
+}
+
+/**
+ * Get an array containing each line of a text using word wrap.
+ **/
+void GetFontWordWrapRows(const cImGuiFont&in aFont, float afSizeMul, const tString&in asText, float afLineWidth, array<tWString> &out avLines)
+{
+	cLux_GetCurrentImGui().GetFontWordWrapRows(aFont, afSizeMul, _ImGui_GetTextString(asText), afLineWidth, avLines);
+}
+
+/**
+ * Get an array containing each line of a text using word wrap.
+ **/
+void GetFontWordWrapRowsW(const cImGuiFont&in aFont, float afSizeMul, const tWString&in asText, float afLineWidth, array<tWString> &out avLines)
+{
+	cLux_GetCurrentImGui().GetFontWordWrapRows(aFont, afSizeMul, asText, afLineWidth, avLines);
+}
+
+//-------------------------------------------------
+	
+/**
+ * Modifies the size of the font so that it will fit within the specified width.
+ **/
+float ImGui_ResizeFontToFit(const tString &in asText, cImGuiFont& aFont, float afMaxWidth = -1, float afSizeMultiplier = 1.0f)
+{
+	return ImGui_ResizeFontToFit(_ImGui_GetTextString(asText), aFont, afMaxWidth, afSizeMultiplier);
+}
+	
+/**
+ * Modifies the size of the font so that it will fit within the specified width.
+ **/
+float ImGui_ResizeFontToFit(const tWString &in asText, cImGuiFont& aFont, float afMaxWidth = -1, float afSizeMultiplier = 1.0f)
+{
+	float fWidth = GetFontLengthW(aFont, afSizeMultiplier, asText);
+	float fMaxWidth = afMaxWidth < 0 ? ImGui_GetCurrentGroupSize().x : afMaxWidth;
+	if (fWidth > fMaxWidth)
+	{
+		aFont.mvSize *= (fMaxWidth/fWidth);
+		fWidth = fMaxWidth;
+	}
+	return fWidth;
+}
+
+//-------------------------------------------------
+
+/**
+ * Check if mouse if over a certain rect. This will take rotation into account.
+ **/
+bool CheckMouseOver(const cVector3f&in avPos, const cVector2f &in avSize)
+{
+	return cLux_GetCurrentImGui().CheckMouseOver(avPos, avSize);
+}
+
+/**
+ * This gets the id for a name while also checking for hash collision. Used when you want get ids directly.
+ * Table index is the type of id you want: 0: gfx, 1: font, 2: widget, 3: state var
+ **/
+uint64 GetIdFromNameAndCheckCollision(const tString&in asName, int alTableIdx)
+{
+	return cLux_GetCurrentImGui().GetIdFromNameAndCheckCollision(asName, alTableIdx);
+}
+
+//------------------------------------------------------------
+
+const float gfReadableBackgroundAlpha = 0.75f;
+
+void ImGui_DrawReadableBackground(cVector3f vPos, cVector2f vSize, float fAlpha)
+{
+	ImGui_SetModColorMul(cColor(1.0f,1.0f,1.0f,gfReadableBackgroundAlpha*fAlpha));
+	cImGuiGfx blackImage("advanced_black.dds", eImGuiGfx_Texture);
+	ImGui_DoImage(blackImage, vPos, vSize);
+	ImGui_ResetModifiers();
+}
+
+//------------------------------------------------------------
+
+void ImGui_DrawReadableLabel(const tString& in asText, cVector3f vPos, cVector2f vSize, float fAlpha, cColor aColor=cColor(1,1,1), float afFontSize=20.0f)
+{
+	cImGuiLabelData data;
+	data.mFont.mvSize = cVector2f(afFontSize);
+	data.mFontAlign = eFontAlign_Center;
+		
+	ImGui_DrawReadableBackground(vPos, vSize, fAlpha);
+	aColor.a*=fAlpha;
+	ImGui_SetModColorMul(cColor(1.0f,1.0f,1.0f,fAlpha));
+	
+	ImGui_DoLabelExt(asText, data, vPos, vSize, 1.0f);
+			
+	ImGui_ResetModifiers();
+}
+
+//------------------------------------------------------------
+
+void ImGui_DrawReadableTextFrame(const tString& in asText, cVector3f vPos, cVector2f vSize, float fAlpha, cColor aColor=cColor(1,1,1), float afFontSize=20.0f)
+{
+	cImGuiTextFrameData data;
+	data.mFont.mvSize = cVector2f(afFontSize);
+	data.mFontAlign = eFontAlign_Center;
+	data.mbUseBackgroundGfx = false;
+		
+	ImGui_DrawReadableBackground(vPos, vSize, fAlpha);
+	aColor.a*=fAlpha;
+	ImGui_SetModColorMul(cColor(1.0f,1.0f,1.0f,fAlpha));
+	
+	float fPadding = 20.0f;
+	
+	ImGui_DoTextFrameExt(asText, cVector2f_Zero, 5, 0, data, vPos+cVector3f(fPadding,fPadding,0), vSize-cVector2f(fPadding*2,fPadding*2));
+			
+	ImGui_ResetModifiers();
+}
+
+//------------------------------------------------------------
+
+/**
+ * Preloads an image
+ * 
+ * @param asFile image file to preload
+ * @param aType Type of the image
+ **/
+void ImGui_PreloadImage(const tString &in asFile, eImGuiGfx aType = eImGuiGfx_Image)
+{
+	cLux_PreloadGuiGfx(asFile, aType);
+}
+
+//------------------------------------------------------------
+
+/////////////////////////////////////////
+// CAMERA TEXTURE
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+/**
+ * Creates a special gui texture that gets its image from a second camera
+ * To access the texture using ImGui you created use: cImGuiGfx(asName, eImGuiGfx_Special)
+ * The texture only gets refrehsed if the texture has been used on a gui lately
+ *
+ * asName, Name of the special texture
+ * avSize, Resolution of the camera
+ * alFrameRatem, Frame rate of the camera, never higher than the games frame rate
+ * afFOV, Field of view
+ * afNearPlane, Near plane used for culling
+ * afFarPlane, Max distance the camera can render, lower = faster!
+ **/
+void Gui_CreateCameraTexture(tString asName, cVector2l avSize, uint alFrameRate, float afFOV, float afNearPlane, float afFarPlane)
+{
+	cLux_GetGuiHandler().CreateCameraTexture(asName, avSize, alFrameRate, afFOV, afNearPlane, afFarPlane);
+}
+
+/**
+ * Destroys camera texture
+ */
+void Gui_DestroyCameraTexture(tString asName)
+{
+	cLux_GetGuiHandler().DestroyCameraTexture(asName);
+}
+
+/**
+ * Use a matrix to set the location and rotation of the camera
+ * *IMPORANT* Dont point the camera toward the terminal that uses the texture
+ */
+void Gui_SetCameraTextureMatrix(tString asName, cMatrixf a_mtxCamera)
+{
+	cLux_GetGuiHandler().SetCameraTextureMatrix(asName, a_mtxCamera);
+}
+
+/**
+ * Attach the camera that renders the image to an entity, the camera will follow the entitys position
+ * *IMPORANT* Dont point the camera toward the terminal that uses the texture
+ *
+ * asName, Name of the texture
+ * asEntity, Name of the entity to attach to, works with CameraAnimationAreas!
+ **/
+void Gui_AttachCameraTextureToEntity(tString asName, tString asEntity)
+{
+	iLuxEntity@ pEnt = cLux_GetCurrentMap().GetEntityByName(asEntity, eLuxEntityType_LastEnum, "");
+
+	if(pEnt is null)
+	{
+		Error("Cant find entity '"+asEntity+"' for Gui_SetCameraTextureMatrixFromEntity");
+	}
+	else
+	{
+		cLux_GetGuiHandler().AttachCameraTextureToEntity(asName, pEnt);
+	}
+}

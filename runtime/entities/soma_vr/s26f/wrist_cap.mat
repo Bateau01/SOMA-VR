@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Material><Main DepthTest="true" Type="SolidDiffuse" PhysicsMaterial="Default" /><TextureUnits><Diffuse File="entities/soma_vr/s26f/wrist_cap.dds" Type="2D" MipMaps="false" Wrap="Repeat" /></TextureUnits></Material>

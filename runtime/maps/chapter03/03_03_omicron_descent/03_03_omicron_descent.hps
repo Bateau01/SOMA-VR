@@ -1,0 +1,2982 @@
+#include "interfaces/Map_Interface.hps"
+#include "base/Inputhandler_Types.hps"
+#include "base/RichPresenceHandler_Types.hps"
+
+#include "helpers/helper_game.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_areas.hps"
+#include "helpers/helper_sequences.hps"
+#include "helpers/helper_ai.hps"
+#include "helpers/helper_player.hps"
+#include "helper_imgui_station.hps"
+
+#include "helper_custom_depth.hps"
+
+#include "helper_font.hps"
+
+//--------------------------------------------------
+ 
+const float gfDepthDisplayStart = 115.0f;	// Depth we're starting at
+const float gfStationDepth = 4109.0f;		// Depth station is at
+const float gfDepthDisplayHeight = 4400.0f; 
+const float gfDofMax = 10.0f;
+const float gfElevatorMaxSpeed = 12.75f;
+const int glElevatorNumLoops = 2;
+const float gfLoopWallsMultiplier = 1.5f;	// Thomas wanted the walls to appear faster
+
+// Probes
+const int glProbeCount = 3;
+const float gfProbeMaxRange = 150.0f;
+const float gfProbeDisplayRange = 150.0f;
+const float gfProbe1Depth = 400.0f;
+const float gfProbe2Depth = 1700.0f;
+const float gfProbe3Depth = 2900.0f;
+
+// Zones
+const float gfZone1 = 200.0f;
+const float gfZone2 = 1000.0f;
+const float gfZone3 = 3000.0f;
+
+const float gfFloodLightDepth = 1000.0f;
+
+const cVector2f[] gvZoneGuiDataTop = 
+{
+	cVector2f(40.0f, 20.0f),
+	cVector2f(40.0f, 100.0f),
+	cVector2f(40.0f, 180.0f),
+	cVector2f(40.0f, 280.0f),
+	cVector2f(40.0f, 380.0f),
+};
+	
+const cVector2f[] gvZoneGuiDataBottom = 
+{
+	cVector2f(40.0f, 20.0f),
+	cVector2f(40.0f, 660.0f),
+	cVector2f(60.0f, 740.0f),
+	cVector2f(120.0f, 820.0f),
+	cVector2f(190.0f, 900.0f),
+};
+
+//--------------------------------------------------
+ 
+class cScrMap : iScrMap
+{
+	//--------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN CALLBACKS
+	// ==============
+	/////////////////////////////////////////
+
+		//-------------------------------------------------------
+
+	////////////////////////////
+	// Preload
+	void PreloadData()
+	{
+		// Gui
+		OmnitoolGui_Preload();
+
+		ImGui_PreloadImage("03_03_depth", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_elevator", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe", eImGuiGfx_Texture);
+
+		ImGui_PreloadImage("03_03_zone0", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_zone1", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_zone2", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_zone3", eImGuiGfx_Texture);
+
+		ImGui_PreloadImage("03_03_zone0_info", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_zone1_info", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_zone2_info", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_zone3_info", eImGuiGfx_Texture);
+
+		ImGui_PreloadImage("03_03_probe1_1", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe1_2", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe1_3", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe2_1", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe2_2", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe2_3", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe3_1", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe3_2", eImGuiGfx_Texture);
+		ImGui_PreloadImage("03_03_probe3_3", eImGuiGfx_Texture);
+	
+		// Player hands
+		PlayerHands_PreloadHandModel_DeepSea();
+		
+		// Particles
+		//ParticleSystem_Preload("loop_waterbubbles_plateaustation_huge_stream.ps");
+	}
+	
+	//-------------------------------------------------------
+	
+	int mlDofID = -1;
+	int mlOceanZone = 0;
+	int mlProbe = 0;
+	int mlProbeImage = 1;
+	float mfProbeImageTimer = 0.0f;
+	bool mbFlesherAttacked = false;
+	bool mbIsElevatorAudioRunning = false;
+	//-------------------------------------------------------
+			
+			
+	////////////////////////////
+	// Set up map environment
+	void Setup()
+	{
+		////////////////////
+		//4.1 Preset for transition
+		Map_Preset_SetupColorGrading("Preset4.1", "textures/colorgrading/grading_04_01.dds");
+		Map_Preset_SetupBloom("Preset4.1", 64, 0.00001, 1, cColor(0.6, 0.6, 0.6, 0));
+		Map_Preset_SetupDirLight("Preset4.1", true, cColor(0.397,0.508,0.448,1), 0.1f, cVector3f(0.008,-0.852,-0.523), cColor(0.046,0.164,0.078,1), cColor(0.4,0.84,0.634,1));
+		
+		GetBase().SetDisplayNameEntry("03-03-omicron-descent");
+		RichPresence_SetCurrent(eRichPresence_TheDescent );
+		
+		cLux_GetCurrentMap().GetWorld().SetFogUnderwater(true);
+		
+		mlDofID = Effect_DoF_Start(0.0f, gfDofMax, 0.1, 0.0);
+		
+		float fFadeTime = 0.5;
+		Effect_Bloom_FadeBrightPass(0.00001, fFadeTime);
+		Effect_Bloom_FadeBloomWidth(160, fFadeTime);
+		Effect_Bloom_FadeBloomTint(0.3, 0.3, 0.3, fFadeTime);
+		
+		if(cLux_ScriptDebugOn())
+		{
+			
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	////////////////////////////
+	// Run first time starting map
+	void OnStart()
+	{
+		CathTool_ResetScreen(eCathToolVariant_CathDelta);
+		
+		SetupElevator();
+		SetupElevatorControls();
+		SetupProbes();
+		SetupCreatures();
+		SetupFlesher();
+		SetupBot();
+		SetupResetPuzzle();
+		
+		/////////////////////////////
+		//Level Fade
+	//	Effect_Fade_Out(0.0f);
+	//	Map_AddTimer("TimerFadeInLevel",2.0f,"TimerFadeInLevel");
+				
+		/////////////////////////////
+		// Voices
+		Voice_SetSource("Catherine", "CathSocket", 6, 24, true, 20);
+		Voice_SetSource("Player", "player", 1, 1, false, 1);
+		Voice_SetSource("Flesher", "flesher", 6, 24, true, 20);
+		Light_SetVisible("DebugBoxLight",false); 
+		
+		////////////////////////////
+		//Audio
+		Sound_FadeGlobalVolume(1.0f, 2.0f, eSoundEntryType_WorldClean);
+		Sound_FadeGlobalVolume(1.0f, 2.0f, eSoundEntryType_World);
+		Sound_PreloadProject("03_03_omicron_descent");
+		Sound_PreloadGroup("Flashback/Level/03_03", true);
+		Sound_PreloadGroup("Flashback/Ross/3.3", true);
+				
+		Entity_SetActive("CathTool",true);
+		Tool_PickUp("CathTool", false, false);
+		PlayerHands_SetHandModel_DeepSea();
+		
+		Map_AddTimer("OpenAirLock", 2, "TimerOpenAirLock");
+		
+		/////////////////////////
+		// Debug
+		if(cLux_ScriptDebugOn())
+		{
+			//Add any debug stuff here
+			
+			cLux_SetDebugInfoWindowText("Text that should show up when pressing F1");
+		}
+		
+		
+		LastOnSoma_SetText("03_03_omicron_descent_1");
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when entering map
+	void OnEnter()
+	{
+		MainMenu_SetBGPhase(eMainMenuPhase_3_3_To_End);
+		Player_SetFlashlightEnvParticleMul(10);
+		Map_SetUnderwater(true);
+		Map_AddTimer("TimerDoorSound",1.0f,"TimerDoorSound");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDoorSound(const tString &in asName)
+	{
+		
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when leaving map
+	void OnLeave()
+	{
+		Effect_DoF_Reset();
+		Player_FadeFOVMulTo(1.0f,10000.0f);
+		StopFlicker();
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// The player has died.
+	void OnPlayerDead(int aType, const tString&in asSource)
+	{
+	}
+
+	//-------------------------------------------------------
+
+	bool mbDebugLight = false;
+	
+	////////////////////////////
+	// To get when player makes input (mostly used for debug)
+	void OnAction(int alAction, bool abPressed) 
+	{
+		if(abPressed==false) return;
+		
+		if(alAction == eAction_Test1)
+		{
+			FadeElevatorSpeed(gfElevatorMaxSpeed,1.0f);
+		}
+		else if (alAction == eAction_Test2)
+		{
+			FadeElevatorSpeed(0.0f,-1.0f);
+		}
+		else if (alAction == eAction_Test3)
+		{
+			EnterNextLoop();
+		}
+		else if (alAction == eAction_Test4)
+		{
+			OnUseCathTool("CathTool","CathSocket");
+			mlSeat = 1;
+			SequenceElevator();
+		}
+		else if (alAction == eAction_Test5)
+		{
+			StartCreatures("Creature1");
+		}
+		else if (alAction == eAction_Test6)
+		{
+			StartCreatures("Creature2");
+		}
+		else if (alAction == eAction_Test7)
+		{
+			//Voice_StopAll();
+			SequenceFlesherAttack();
+		}
+		else if (alAction == eAction_Test8)
+		{
+			SequenceBlackout();
+		}
+		else if (alAction == eAction_Test9)
+		{
+
+		}
+		else if (alAction == eAction_Test0)
+		{
+			mbDebugLight = !mbDebugLight;
+			Light_SetVisible("DebugBoxLight",mbDebugLight); 
+		}
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// This only used for pure debug purposes when info needs to printed.
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afY)
+	{
+		//afY = cLux_DrawDebugText("My Debug value:"+..., afY);
+		return afY;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN FUNCTIONS
+	// ==============
+	/////////////////////////////////////////
+
+	bool mbFlesherPulse = false;
+	
+	//-------------------------------------------------------
+
+	void Update(float afTimeStep)
+	{
+		UpdateElevatorControls(afTimeStep);
+		UpdateElevator(afTimeStep);
+		if (mbFlesherPulse)
+			UpdateFlesherPulse(afTimeStep);
+	}
+
+	void VariableUpdate(float afDeltaTime)
+	{
+		UpdateCreatures(afDeltaTime);
+	}
+	
+	//-------------------------------------------------------
+
+	void TimerOpenAirLock(const tString&in asTimer)
+	{
+		SlideDoor_SetClosed("slidedoor_airlock_5",false,false);
+		
+		Sound_FadeGlobalVolume(1.0f, 2.0f, eSoundEntryType_WorldClean);
+		Sound_FadeGlobalVolume(1.0f, 2.0f, eSoundEntryType_World);
+	}
+	
+	
+	//-------------------------------------------------------
+
+	void TimerFadeInLevel(const tString&in asTimer)
+	{
+		cLux_AddDebugMessage("Fade in!");
+		Effect_Fade_In(3.0f);
+	}
+	
+	//-------------------------------------------------------
+
+	bool mbElevatorRunning = false;
+	bool mbInElevator = false;
+	bool mbOnElevator = false;
+	bool mbSuppressSway = false;
+	bool mbBlackoutHappened = false;
+	
+	float mfElevatorStartY = 0.0f;
+	cVector3f mvElevatorStartPos;
+	float mfElevatorLoopY = 0.0f;
+	
+	float mfElevatorSpeed = 0.0f;
+	float mfElevatorAccel = 0.0f;
+	float mfElevatorTargetSpeed = 0.0f;
+	float mfElevatorDepth = 0.0f;		// Virtual position inc loops
+	float mfElevatorPrevDepth = 0.0f;
+	
+	float mfPressure = 0.0f;
+	
+	int mlElevatorLoop = -1;
+	bool mbSeatsCanBeInteractedWith = true;
+	//-------------------------------------------------------
+
+	void SetupElevator()
+	{
+		mbFloodLightsOn = false;
+		mbElevatorRunning = false;
+		mfElevatorAccel = 0.0f;
+		mvElevatorStartPos = Map_GetEntity("Elevator").GetPosition();
+		mfElevatorStartY = mvElevatorStartPos.y;
+		mfElevatorLoopY = Map_GetEntity("LoopPoint").GetPosition().y;
+		mlElevatorLoop = -1;
+		
+		Button_SetSwitchedOn("LiftExitPanel",false,false);
+		Button_SetDisabled("LiftExitPanel",true);
+		
+		Entity_AttachToEntity("DescentCameraAnim*", "Elevator", "", false, false);
+		Entity_AttachToEntity("SeatCameraAnim*", "Elevator", "", false, false);
+		Entity_AttachToEntity("SeatInteract*", "Elevator", "", false, false);
+		
+		Entity_SetActive("ElevatorCableLoopPoint",true);
+		Entity_SetActive("ElevatorCableLoopStart*",false);
+		
+		ParticleSystem_SetVisible("Elevator_ParticleSystem_1",false);
+		ParticleSystem_SetActive("Elevator_ParticleSystem_1", false);
+		
+		//////////////////////////////
+		// Fix up loop objects
+		for (int i=0;i<glElevatorNumLoops*2;++i)
+		{
+			iLuxEntity@ pLoopEntity = Map_GetEntity("Loop"+i);
+			
+			if (pLoopEntity==null)
+			{
+				Error("Missing loop entity for elevator loop: Loop"+i);
+				continue;
+			}
+	
+			// Make sure entities are attached
+			Entity_AttachToEntity("Loop"+i+"_*", "Loop"+i, "", false, false);
+			
+			// Don't need these active in level
+			SetLoopActive(i, false);
+		}
+		
+		/////////////////////////////////////
+		// Set up restraints
+		for (int i=1;i<=5;++i)
+		{
+			Entity_PlayAnimation("seat_restraint_"+i, "chair_03_03_idle_up_restraint",0.0f,true,false,"");
+			Entity_SetVarBool("seat_restraint_"+i, "SeatState", false);
+			Entity_SetActive("SeatInteract"+i,true);
+		}
+		Entity_PlayAnimation("seat_restraint_6", "chair_03_03_idle_restraint",0.0f,true,false,"");
+		Entity_SetActive("SeatInteract6",false);
+		Entity_SetVarBool("seat_restraint_6", "SeatState", true);
+		
+		////////////////////////////////////
+		// Turn off spots
+		Lamp_SetLit("CageSpot*", false, false);
+		
+		////////////////////////////////////
+		// Make sure first part of the loop is active
+		Entity_SetActive("LoopStart",true);
+	}
+
+	//-------------------------------------------------------
+	
+	void FadeElevatorSpeed(float afTargetSpeed, float afAccel)
+	{
+		mfElevatorTargetSpeed = afTargetSpeed;
+		mfElevatorAccel = afAccel;
+	}
+	
+	//-------------------------------------------------------
+	
+	float mfSwayTimer = 0.0f;
+	
+	void UpdateElevator(float afTimeStep)
+	{
+		/////////////////////////
+		// Update status
+		if ((mfElevatorAccel==0.0f) && (mfElevatorSpeed==0.0f))
+		{
+			if (mbElevatorRunning)
+			{
+				mbElevatorRunning = false;
+						
+				// Detach player from elevator to avoid head bob etc.
+				Entity_RemoveEntityAttachment("player");
+				Effect_Sway_FadeOut(1.0f);
+				ParticleSystem_SetActive("Elevator_ParticleSystem_1", false);
+				ParticleSystem_SetVisible("Elevator_ParticleSystem_1",false);
+				
+				Effect_Rumble_SetScreenShakeMul(1);
+				
+				if (mlShakeID!=-1)
+				{
+					Effect_Shake_FadeOut(mlShakeID, 0.5f);
+					mlShakeID = -1;
+				}
+			}
+		}
+		else 
+		{
+			if (!mbElevatorRunning)
+			{
+				mbElevatorRunning = true;
+				
+				// Attach player to elevator to avoid head bob etc.
+				Entity_AttachToEntity("player","Elevator","",false,false);
+				
+				ParticleSystem_SetActive("Elevator_ParticleSystem_1", true);
+				ParticleSystem_SetVisible("Elevator_ParticleSystem_1",true);
+				
+				Effect_Rumble_SetScreenShakeMul(0);
+			}
+		}
+		
+		if (mbInElevator)
+		{
+			UpdateSway(afTimeStep);
+		}
+			
+		if (!mbElevatorRunning)
+			return;
+		
+		/////////////////////////
+		// Update speeds
+		mfElevatorSpeed+=mfElevatorAccel*afTimeStep;
+		if (mfElevatorAccel>0.0f)
+		{
+			if (mfElevatorSpeed>mfElevatorTargetSpeed)
+			{
+				mfElevatorSpeed = mfElevatorTargetSpeed;
+				mfElevatorAccel = 0.0f;
+			}
+		}
+		else if (mfElevatorAccel<0.0f)
+		{
+			if (mfElevatorSpeed<mfElevatorTargetSpeed)
+			{
+				mfElevatorSpeed = mfElevatorTargetSpeed;
+				mfElevatorAccel = 0.0f;
+			}
+		}
+		
+		/////////////////////////
+		// Update logical elevator position
+		mfElevatorPrevDepth = mfElevatorDepth;
+		mfElevatorDepth += mfElevatorSpeed*afTimeStep;	// Virtual position, inc loops
+		
+		/////////////////////////
+		// Figure out physical position
+		float fElevatorY = mfElevatorStartY-mfElevatorDepth;
+		
+		// Handle loops
+		if ( fElevatorY > mfElevatorLoopY )
+		{
+			// Not in a loop - still in the initial phase - nothing to do.
+			mlElevatorLoop = -1;
+		}
+		else
+		{
+			fElevatorY = mfElevatorLoopY;
+			
+			Map_SetEnvironmentParticleGravityVelocity(cVector3f(0.0f,mfElevatorSpeed,0.0f));
+			Entity_SetActive("ElevatorCableLoopPoint", false);
+			Entity_SetActive("ElevatorCableLoopStart*", true);
+			
+			// If we're not in the first loop, switch into it now
+			if (mlElevatorLoop==-1)
+			{
+				EnterNextLoop();
+			}
+			
+			////////////////////////////////////
+			// Update all active loops
+			for (int i=0;i<=(mlElevatorLoop+1);++i)
+			{
+				UpdateLoop(i, mfElevatorSpeed*afTimeStep);
+			}
+		}
+			
+		/////////////////////////
+		// Update physical position
+		cLuxProp@ pElevator = Map_GetProp("Elevator");
+		cVector3f vPos = pElevator.GetPosition();
+		
+		////////////////////////
+		// Only adjust positions if we haven't hit the loop point
+		if (vPos.y!=mfElevatorLoopY)
+		{
+			vPos.y=fElevatorY;
+			pElevator.SetPosition(vPos);
+		}
+		
+		UpdateDepthEvents();
+		UpdateProbes(afTimeStep);
+	}
+
+	//-------------------------------------------------------
+
+	void UpdateSway(float afTimeStep)
+	{
+		float fSwaySpeed = mfElevatorSpeed/gfElevatorMaxSpeed;
+		mfSwayTimer+=afTimeStep*(10.0f+5.0f*fSwaySpeed);
+		float fSwaySize = 0.03f-fSwaySpeed*0.02f;
+		float fSwayRate = 1.0f+fSwaySpeed*1.5f;
+		if (mbFlesherAttacked)
+		{
+			fSwaySize = 0.1f;
+			fSwayRate = 3.0f;
+		}
+		if (mbSuppressSway || (Player_GetCurrentStateName()=="State_Ladder") )
+		{
+			fSwaySize*=0.1f;
+			fSwayRate*=0.1f;
+		}
+		if (mbOnElevator && mbBlackoutHappened)
+		{
+			fSwaySize*=4.0f;
+			fSwayRate*=2.0f;
+		}
+		Effect_Sway_SetDirect(fSwaySize, fSwayRate, mfSwayTimer, 
+								1.0f, 0.25f, 1.0f, 0.0f);
+								
+		cLuxProp@ pElevator = Map_GetProp("Elevator");
+		cVector3f vPos = mvElevatorStartPos;
+		vPos.y = pElevator.GetPosition().y;
+		cVector3f vOffs = Effect_Sway_GetOffset()*0.5f;
+		vPos.x+=vOffs.x;
+		vPos.z+=vOffs.z;
+		pElevator.SetPosition(vPos);
+	}
+	
+	//-------------------------------------------------------
+
+	void EnterNextLoop()
+	{
+		if (mlElevatorLoop==-1)
+			mlElevatorLoop = 0;
+		else
+			mlElevatorLoop +=2;
+		
+		// Changed loops
+		cLux_AddDebugMessage("Changed loop to:"+mlElevatorLoop);
+
+		// Make all the relevant entities visible
+		SetLoopActive(mlElevatorLoop, true);
+		SetLoopActive(mlElevatorLoop+1, true);
+		
+		////////////////////////////////////////////
+		// Positions for loops 0 and 1 should be in level
+		if (mlElevatorLoop==0)
+			return;
+			
+		////////////////////////////////////////////
+		// Find start position
+		iLuxEntity@ pLoop = Map_GetEntity("Loop"+mlElevatorLoop);
+		cBoundingVolume@ pVol = pLoop.GetMainBody().GetBoundingVolume();
+		
+		iLuxEntity@ pPrevLoop = Map_GetEntity("Loop"+(mlElevatorLoop-1));
+		cBoundingVolume@ pPrevVol = pPrevLoop.GetMainBody().GetBoundingVolume();
+		float fStartY = pPrevVol.GetMin().y;
+		
+		////////////////////////////////////////////
+		// Move loop object 1 to start point
+		cVector3f vPos = pLoop.GetPosition();
+		vPos.y = fStartY - pVol.GetSize().y*0.5f;
+		pLoop.SetPosition(vPos);
+		
+		////////////////////////////////////////////
+		// Move loop object 2 to start point
+		iLuxEntity@ pLoop2 = Map_GetEntity("Loop"+(mlElevatorLoop+1));
+		cBoundingVolume@ pVol2 = pLoop2.GetMainBody().GetBoundingVolume();
+		
+		fStartY-=pVol.GetSize().y;
+		
+		cVector3f vPos2 = pLoop2.GetPosition();
+		vPos2.y = fStartY - pVol.GetSize().y*0.5f;
+		pLoop2.SetPosition(vPos2);
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetLoopActive(int alLoop, bool abActive)
+	{
+		Entity_SetActive("Loop"+alLoop, abActive);
+		Entity_SetActive("Loop"+alLoop+"_*", abActive);
+		if (alLoop==0)
+		{
+			Entity_SetActive("LoopStart", abActive);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void UpdateLoop(int alLoop, float afMovement)
+	{
+		//////////////////////////////
+		// Is the loop active?
+		iLuxEntity@ pLoop = Map_GetEntity("Loop"+alLoop);
+		if (!pLoop.IsActive())
+			return;
+	
+		//////////////////////////////
+		// Appear to move slightly faster
+		afMovement*=gfLoopWallsMultiplier;
+		
+		//////////////////////////////
+		// Move master loop object
+		cVector3f vPos = pLoop.GetPosition();
+		vPos.y+=afMovement;
+		
+		cBoundingVolume@ pBounds = pLoop.GetMainBody().GetBoundingVolume();
+		
+		if (alLoop == mlElevatorLoop || alLoop == mlElevatorLoop+1)
+		{
+			///////////////////////////////////////////////
+			// Check to see if we've reached the wrap point
+			float fLowerEdge = pBounds.GetMin().y;	
+			if (fLowerEdge+afMovement>mfElevatorLoopY+pBounds.GetSize().y*0.5f)	// Lower edge of wrap point reached - wrap!
+			{
+				cLux_AddDebugMessage("Wrap:"+(mlElevatorLoop));
+				vPos.y-=pBounds.GetSize().y*2.0f;
+			}
+		}
+		else
+		{
+			///////////////////////////////////////////////
+			// Check to see if this old loop has moved far enough away
+			// to deactivate
+			float fLowerEdge = pBounds.GetMin().y;
+			if (fLowerEdge+afMovement>mfElevatorLoopY+pBounds.GetSize().y)
+			{
+				cLux_AddDebugMessage("Gone:"+(mlElevatorLoop));
+				SetLoopActive(alLoop,false);
+			}
+		}
+		
+		pLoop.SetPosition(vPos);
+		
+		if (alLoop==0)
+		{
+			iLuxEntity@ pLoopStart = Map_GetEntity("LoopStart");
+			vPos = pLoopStart.GetPosition();
+			vPos.y+=afMovement;
+			pLoopStart.SetPosition(vPos);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	bool mbBotTriggered = false;
+	
+	bool OnTriggerInElevator(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		mbInElevator = (alState==1);
+		cLux_AddDebugMessage("IN ELEVATOR:"+mbInElevator);
+		
+		if (!mbBotTriggered)
+		{
+			mbBotTriggered = true;
+			StartBot();
+		}
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnTriggerOnElevator(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		mbOnElevator = (alState==1);
+		cLux_AddDebugMessage("ON ELEVATOR:"+mbOnElevator);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnTriggerSwayControls(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		mbSuppressSway = (alState==1);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 1 - Starting the elevator
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbCathPluggedIn = false;
+	bool mbElevatorReady = false;
+	int mlSeat = -1;
+	
+	//-------------------------------------------------------
+
+	void SetupElevatorControls()
+	{
+		mbCathPluggedIn = false;
+		mbElevatorReady = false;
+		mlSeat = -1;
+		
+		Entity_FadeEffectBaseColor("CathSocket", cColor(1,0,0,1), 0.1f);
+		
+		Entity_SetEffectsActive("Slider*",false,false);
+		Slide_SetSlideAmount("Slider1", 1.0f);
+		Slide_SetSlideAmount("Slider2", 0.7f);
+		Entity_SetInteractionDisabled("Slider*",true);
+		
+		Slide_SetSlideAmount("RepSlider1", 0.0f);
+		Slide_SetSlideAmount("RepSlider2", 0.0f);
+		
+		Entity_SetActive("RepSlider*", false);
+		Entity_SetActive("RepElevatorHatch", false);
+		
+		Terminal_SetGuiActive("TerminalElevatorStart",false);
+		Terminal_SetGuiActive("TerminalElevatorMain",false);
+		Terminal_SetGuiActive("TerminalElevatorDepth*",false);
+		
+		Lamp_SetLit("ControlsLight*",false, false);
+	} 
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event A Walking Out To The Elevator
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	bool mbSwayFirstTime = true;
+	bool OnTriggerSwayArea(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState==1)
+		{
+			cLux_AddDebugMessage("Enter sway area.");
+			Effect_Sway_FadeIn(0.05f, 1.0f, 1.0f, 0.0f);
+			if(mbSwayFirstTime==true)
+			{
+				Sound_CreateAtEntity("Sway", "03_03_omicron_descent/AMB/platform_sway", "Player");
+				mbSwayFirstTime = false;
+			}
+			
+			Map_AddTimer("SwaySounds", cMath_RandRectf(6.0f,8.0f), "PlatformSway");
+		}
+		else
+		{
+			cLux_AddDebugMessage("Exit sway area.");
+			Effect_Sway_FadeOut(1.0f);
+			Map_RemoveTimer("SwaySounds");
+		}
+		return true;
+	}
+	
+	void PlatformSway(const tString &in asTimer)
+	{
+		Sound_CreateAtEntity("Sway", "03_03_omicron_descent/AMB/platform_sway", "Player");
+		Map_AddTimer("SwaySounds", cMath_RandRectf(6.0f,8.0f), "PlatformSway");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnInteractLadder(const tString &in asEntity)
+	{
+		//Entity_CallEntityInteract("LadderArea_1");
+	}
+	
+	/////////////////////////////////////////
+	// Scene 1 Event Aa - Hello little robot
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	void SetupBot()
+	{
+		Entity_SetActive("Bot*",false);
+		mbBotTriggered = false;
+	}
+	
+	//-------------------------------------------------------
+
+	void StartBot()
+	{
+		Entity_SetActive("Bot1",true);
+		
+		Pathfinder_Stop("Bot1");
+		Pathfinder_Track_Clear("Bot1");
+		for (int i=1;i<=7;++i)
+		{
+			Pathfinder_Track_Add("Bot1", "NodeBot1_"+i, 0.25f, 1.0f);
+		}
+		Pathfinder_Track_Start("Bot1", true, 0.5f, "BotDone");
+	}
+	
+	//-------------------------------------------------------
+	
+	void BotDone(const tString& in asEntityName)
+	{
+		Entity_SetActive("Bot1",false);
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event B Turn On Cath
+	/////////////////////////////////////////
+
+	/////////////////////////////////////////
+	// Cath tool
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool CanUseCathTool(const tString &in asTool, const tString &in asEntity)
+	{
+		return asEntity == "CathSocket" || asEntity == "CathSocketInteractAux";
+	}
+
+	//-------------------------------------------------------
+	
+	bool OnUseCathTool(const tString &in asTool, const tString &in asEntity)
+	{
+		if (asEntity == "CathSocket" || asEntity == "CathSocketInteractAux")
+		{
+			mbCathPluggedIn = true;
+			Entity_FadeEffectBaseColor("CathSocket", cColor(0,1,0,1), 0.1f);
+			Entity_SetEffectsActive("Slider*",true,true);
+			Entity_SetInteractionDisabled("Slider*",false);
+			CathTool_Insert("CathTool", "CathSocket");
+			Lever_SetStuckState("StartLever", 0, true);
+			
+			Entity_AttachToEntity("CathTool","Elevator","",false,false);
+				
+			Map_AddTimer("TerminalElevatorStart", 0.5f, "TimerTurnOnTerminal");
+			
+			Map_AddTimer("CathIntro", 0.5f, "TimerCathSpeak");
+		}
+			
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerTurnOnTerminal(const tString& in asName)
+	{
+		Terminal_SetGuiActive(asName,true,0.5f);
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event C Start Elevator
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	int mlKnob1State = 0;
+	int mlKnob2State = 0;
+
+	//-------------------------------------------------------
+	
+	void UpdateElevatorControls(float afTimeStamp)
+	{
+		tString sRoot = "Slider";
+		if (mbBlackoutHappened)
+			sRoot = "RepSlider";
+		float fKnob1 = Slide_GetSlideAmount(sRoot+"1");
+		mlKnob1State = cMath_Clamp(fKnob1*3.0f,0,2);
+		
+		float fKnob2 = Slide_GetSlideAmount(sRoot+"2");
+		mlKnob2State = cMath_Clamp(fKnob2*6.0f,0,5);
+	}
+	
+	//-------------------------------------------------------
+
+	void OnStartLeverChangeState(const tString &in asEntity, int alState)
+	{
+		cLux_AddDebugMessage("Lever state changed:"+alState);
+		
+		if (alState!=1)
+			return;
+			
+		if (!mbCathPluggedIn)
+		{
+			cLux_AddDebugMessage("Cath not plugged in!");
+			Map_AddTimer(asEntity, 0.5f, "TimerSwitchLeverOff");
+			return;
+		}
+		
+		Entity_SetInteractionDisabled("StartLever",true);
+		
+		// Update seats
+		{
+			int lTarget = mlKnob2State+1;
+			cLux_AddDebugMessage("New number of seats:"+lTarget);
+			int lOld = 0;
+			for (int i=1;i<=6;i++)
+			{
+				if (!Entity_GetVarBool("seat_restraint_"+i, "SeatState"))
+					lOld=i;
+			}
+			
+			if (lOld<lTarget)
+			{
+				cLux_AddDebugMessage("Opening restraints:"+lOld+","+lTarget);
+				
+				//Sound_CreateAtEntity("OpenRestraintSingle", "03_03_omicron_descent/SFX/elevator/shoulder_restraint/single/raise", "seat_restraint_"+lTarget);
+				
+				OpenRestraints(lOld+1,lTarget);
+			}
+			else
+			{
+				cLux_AddDebugMessage("Closing restraints:"+lOld+","+lTarget);
+				
+				//Sound_CreateAtEntity("CloseRestraintSingle", "03_03_omicron_descent/SFX/elevator/shoulder_restraint/single/lower", "seat_restraint_"+lTarget);
+				
+				CloseRestraints(lTarget+1,lOld);
+			}
+		}
+		
+		if ((mlKnob1State!=0)||(mlKnob2State!=0))
+		{
+			cLux_AddDebugMessage("Knobs set wrong.");
+			Map_RemoveTimer(asEntity);
+			
+			Map_AddTimer(asEntity, 0.5f, "TimerSwitchLeverOff");
+			Lamp_SetLit("ControlsLightBad", true, true);
+			Lamp_SetLit("ControlsLightGood", false, true);
+			Map_AddTimer("TimerControlsReset", 1.0f, "TimerControlsReset");
+			return;
+		}
+		
+		Entity_SetInteractionDisabled("Slider*",true);
+		
+		Lamp_SetLit("ControlsLightGood", true, true);
+		Lamp_SetLit("ControlsLightBad", false, true);
+
+		Lamp_SetFlickerActive("ControlsLightGood", true);
+		
+		Map_AddTimer("CathElevatorReady", 0.5f, "TimerCathSpeak");
+		Map_AddTimer("TimerCathSitDown",20.0f,"TimerCathSitDown");
+		
+		Depth_Audio_PuzzleBeeps_AbyssElevator_Positive("ControlsLightGood");
+		
+		Lever_SetAutoMoveTarget(asEntity,1);
+		Lever_SetAutoMoveEnabled(asEntity,true);
+		Lever_SetStuckState(asEntity,1,true);
+
+		mbElevatorReady = true;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerCathSpeak(const tString& in asName)
+	{
+		Voice_Play(asName);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerControlsReset(const tString& in asName)
+	{
+		Entity_SetInteractionDisabled("StartLever",false);
+		Lamp_SetLit("ControlsLightBad", false, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	int mlSitDown = 0;
+	
+	void TimerCathSitDown(const tString& in asName)
+	{
+		mlSitDown++;
+		Voice_Play("CathSitDown");
+		if (mlSitDown<3)
+			Map_AddTimer("TimerCathSitDown",20.0f,"TimerCathSitDown");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSwitchLeverOff(const tString& in asName)
+	{
+		cLux_AddDebugMessage("Switch lever off.");
+		Lever_SetAutoMoveTarget(asName, -1);
+		Lever_SetAutoMoveEnabled(asName, true);
+	}
+	
+	//-------------------------------------------------------
+
+	void OnSeatInteract(const tString &in asEntity)
+	{
+		mlSeat = cString_ToInt(cString_GetLastChar(asEntity),-1);
+		CameraAnimation_Begin("SeatCameraAnim"+mlSeat, "", true);
+		Sound_CreateAtEntity("PlayerSeating", "03_03_omicron_descent/SFX/player/seating_elevator", "Player", 0.0f, false, 1.0f);
+		EyeTracking_SetExtendedViewMul(0.0f);
+	}
+	
+	//-------------------------------------------------------
+	bool mbHasPlayerSeatedBefore = false;
+	bool mbPlayerSeated = false;
+	bool OnSeated(const tString &in asEntity, int alDirection)
+	{
+		mbSeatsCanBeInteractedWith = false;
+		
+		cLux_AddDebugMessage("[Elevator] Seated.");
+		mbPlayerSeated = true;
+		
+		if (mbHasPlayerSeatedBefore==false)
+		{
+			//Map_AddTimer("ElevatorAlarmTimer", 5.5f, "ElevatorAlarm");
+			mbHasPlayerSeatedBefore = true;
+		}
+		if (mbBlackoutHappened)
+		{
+			if (mbElevatorReady)
+			{
+				if (!Voice_AnySceneIsActive())
+					SequenceStates_Resume("SequenceCathConversation");
+				SequenceStates_Resume("SequenceBlackout");
+			}
+			return true;
+		}
+			
+		// First time around
+		if (!mbElevatorReady)
+		{
+			cLux_AddDebugMessage("[Elevator] Elevator not ready.");
+			EyeTracking_SetExtendedViewMul(0.6f);
+			return true;
+		}
+		
+		Map_RemoveTimer("TimerCathSitDown");
+		
+		SequenceElevator();
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool mbBlackoutSaveDone = false;
+	
+	bool OnGotUp(const tString &in asEntity, int alDirection)
+	{
+		cLux_AddDebugMessage("Got Up");
+		mbSeatsCanBeInteractedWith = true;
+		Entity_SetActive("SeatInteract"+mlSeat, true);
+		mbPlayerSeated = false;
+		Entity_SetActive("SimonLegs_"+mlSeat,false);
+		mlSeat = -1;
+		EyeTracking_SetExtendedViewMul(1.0f);
+		
+		if (mbBlackoutHappened)
+		{
+			if (!mbBlackoutSaveDone)
+			{
+				Map_AddTimer("TimerAutosave",1.0f,"TimerAutosave");
+				mbBlackoutSaveDone = true;
+			}
+		}
+			
+		return true;
+	}
+	
+	// S26AO: preserve the scheduled callback spelling and the authored save handler.
+	void TimerAutosave(const tString& in asName)
+	{
+		TimerAutoSave(asName);
+	}
+	
+	void TimerAutoSave(const tString& in asName)
+	{
+		Game_AutoSave();
+	}
+	
+	bool GotUpSound(const tString &in asEntity, int alDirection)
+	{
+		Sound_CreateAtEntity("PlayerRising", "03_03_omicron_descent/SFX/player/rising_elevator", "Player", 0.0f, false, 1.0f);
+		return true;
+	}
+	
+	bool OnNearlySatDown(const tString &in asEntity, int alDirection)
+	{
+		Entity_SetActive("SimonLegs_"+mlSeat,true);
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	 
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 2 - The Descent
+	// ==============
+	/////////////////////////////////////////
+
+	int mlActionRestraintsStart = -1;
+	int mlActionRestraintsEnd = -1;
+	int mlSeatNo = 0;
+	//-------------------------------------------------------
+
+	void CloseRestraints(int alStart=1, int alEnd=1)
+	{
+		mlActionRestraintsStart = alStart;
+		mlActionRestraintsEnd = alEnd;
+		
+		
+		int nSeatsMoving = 0;
+		for (int i=alStart;i<=alEnd;i++)
+		{
+			if (!Entity_GetVarBool("seat_restraint_"+i, "SeatState"))
+			{
+				nSeatsMoving++;
+				Entity_PlayAnimation("seat_restraint_"+i, "chair_03_03_enter_restraint",0.3f,false,false,"OnSeatClosed");
+				Entity_SetVarBool("seat_restraint_"+i, "SeatState",true);
+			}
+			Entity_SetActive("SeatInteract"+i,false);
+			
+			mlSeatNo = i;
+		}
+		
+		if (mbPlayerSeated)
+		{
+			Map_AddTimer("Lower", 0.0f, "ShoulderRestraintAudio");
+		}
+		else
+		{
+			// Current sound - probably needs removing!
+			
+			
+			if (nSeatsMoving==1)
+			{
+				Map_AddTimer("LowerRestraintSoundSingle", 0.75f, "LowerRestraintSound");
+			}
+			else
+			{
+				Map_AddTimer("LowerRestraintSoundMulti", 2.0f, "LowerRestraintSound");
+				
+			}
+		}
+	}
+	
+	
+	bool mbSoundPreloaded = false;
+	void LowerRestraintSound(const tString &in asTimer)
+	{
+		if(mbSoundPreloaded==false)
+		{
+			Sound_PreloadGroup("03_03_omicron_descent/SFX/elevator", true);
+			mbSoundPreloaded = true;
+		}
+		
+		if(asTimer=="LowerRestraintSoundMulti")
+		{
+			Sound_CreateAtEntity("LowerRestraintMulti", "03_03_omicron_descent/SFX/elevator/shoulder_restraint/multi/lower", "SeatMultipleSoundArea");
+		}
+		
+		if(asTimer=="LowerRestraintSoundSingle")
+		{
+			Sound_CreateAtEntity("LowerRestraintSingle", "03_03_omicron_descent/SFX/elevator/shoulder_restraint/single/lower", "seat_restraint_"+mlSeatNo);
+		}
+		
+		if(asTimer=="RaiseRestraintSound")
+		{
+			Sound_CreateAtEntity("OpenRestraintSingle", "03_03_omicron_descent/SFX/elevator/shoulder_restraint/multi/raise", "seat_restraint_3");
+		}
+		
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnSeatClosed(const tString &in asEntityName, const tString &in asAnimName)
+	{
+		Entity_PlayAnimation(asEntityName, "chair_03_03_idle_restraint",0.3f,true,false,"");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OpenRestraints(int alStart=1, int alEnd=1)
+	{
+		mlActionRestraintsStart = alStart;
+		mlActionRestraintsEnd = alEnd;
+		
+		//////////////////
+		//Small buffer timer to allow for sound of mechanism whirring away
+		Map_AddTimer("RestraintsOpenTimer", 0.5f, "OpenRestraintsAction");
+		
+		if(mbPlayerSeated==true)
+		{
+			Map_AddTimer("Raise", 0.0f, "ShoulderRestraintAudio");
+		}
+		else
+		{
+			Map_AddTimer("RaiseRestraintSound", 1.0f, "LowerRestraintSound");
+		}
+		
+		cLux_AddDebugMessage("[Elevator] Opening restraints...");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OpenRestraintsAction(const tString& in asTimer)
+	{
+		for (int i=mlActionRestraintsStart;i<=mlActionRestraintsEnd;i++)
+		{
+			if (Entity_GetVarBool("seat_restraint_"+i, "SeatState"))
+			{
+				Entity_PlayAnimation("seat_restraint_"+i, "chair_03_03_leave_restraint",0.3f,false,false,"OnSeatOpen");
+				Entity_SetVarBool("seat_restraint_"+i, "SeatState",false);
+			}
+			Entity_SetActive("SeatInteract"+i, mbSeatsCanBeInteractedWith);
+		}
+	}
+	
+	void OnSeatOpen(const tString &in asEntityName, const tString &in asAnimName)
+	{
+		Entity_PlayAnimation(asEntityName, "chair_03_03_idle_up_restraint",0.3f,true,false,"");
+	}
+	
+	//-------------------------------------------------------
+	
+	void PlayPlayerRestraintsClosing()
+	{
+		Entity_SetActive("SeatedHands",true);
+		Entity_PlayAnimation("SeatedHands", "chair_03_03_enter",0.0f,false,false,"OnPlayerRestraintsClosed");
+		Sound_CreateAtEntity("SeatedHands", "03_03_omicron_descent/SFX/elevator/shoulder_restraint/handanim/lower01", "Player");
+		cLux_AddTodoMessage("SOUND: Hand animation closing.");
+	}
+
+	void OnPlayerRestraintsClosed(const tString &in asEntityName, const tString &in asAnimName)
+	{
+		EyeTracking_SetExtendedViewMul(0.6f);
+		Entity_PlayAnimation("SeatedHands", "chair_03_03_idle",0.3f,true,false,"");
+	}
+	
+	//-------------------------------------------------------
+	
+	void PlayPlayerRestraintsOpening()
+	{
+		Entity_SetActive("SeatedHands",true);
+		Entity_PlayAnimation("SeatedHands", "chair_03_03_leave",0.3f,false,false,"OnPlayerRestraintsOpened");
+		Sound_CreateAtEntity("SeatedHands", "03_03_omicron_descent/SFX/elevator/shoulder_restraint/handanim/raise", "Player");
+		cLux_AddTodoMessage("SOUND: Hand animation opening.");
+	}
+
+	void OnPlayerRestraintsOpened(const tString &in asEntityName, const tString &in asAnimName)
+	{
+		Entity_SetActive("SeatedHands",false);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool TrippedDepth(float afDesiredDepth)
+	{
+		return (mfElevatorPrevDepth<(afDesiredDepth-gfDepthDisplayStart) && 
+				mfElevatorDepth>=(afDesiredDepth-gfDepthDisplayStart));
+	}
+	
+	//-------------------------------------------------------
+	
+	void UpdateDepthEvents()
+	{
+		//////////////////////////
+		// Depths we care about!
+		if (TrippedDepth(gfProbe1Depth-gfProbeMaxRange))
+		{
+			StartProbe(1);
+		}
+		else if (TrippedDepth(gfFloodLightDepth))
+		{
+			// Floodlights come on
+			SequenceStates_Resume("SequenceElevator");
+		}
+		else if (TrippedDepth(gfProbe2Depth-gfProbeMaxRange))
+		{
+			StartProbe(2);
+		}
+		else if (TrippedDepth(gfProbe3Depth-gfProbeMaxRange))
+		{
+			StartProbe(3);
+		}
+	/*	else if (TrippedDepth(3200.0f))
+		{
+			// Flesher attack
+			cLux_AddDebugMessage("Tripped depth 3200!");
+			SequenceStates_Resume("SequenceElevator");		
+		}*/
+		
+		///////////////////////////
+		// Zones
+		if (TrippedDepth(gfZone1)||TrippedDepth(gfZone2)||TrippedDepth(gfZone3))
+		{
+			mlOceanZone++;
+		}
+		
+		///////////////////////////
+		// Loops
+		// First loop automatically happens, so go to loop 2
+		if (TrippedDepth(1900.0f))
+		{
+			EnterNextLoop();
+		}
+		else if (TrippedDepth(500.0f))
+		{
+			//EnterNextLoop();
+		}
+		
+		///////////////////////////
+		// Light - gets darker as we go down...
+		float fLightLevel = cMath_Clamp(1.0f - (mfElevatorDepth/(1000.0f-gfDepthDisplayStart)), 0.0f, 1.0f);
+		Light_SetBrightness("LevelBoxLight", fLightLevel);
+		Light_SetBrightness("Elevator_SpotLight_1", fLightLevel);
+		if (!mbFloodLightsOn)
+			Light_SetBrightness("Elevator_SpotLight_2", fLightLevel);
+		else
+			Light_SetBrightness("Elevator_SpotLight_2", 1.0f);
+		
+		///////////////////////////
+		// Pressure effects
+		UpdatePressureEffects();
+	}
+	
+	//-------------------------------------------------------
+	
+	int mlShakeID = -1;
+	
+	void UpdatePressureEffects()
+	{
+		float fPressure = cMath_Clamp((mfElevatorDepth+gfDepthDisplayStart)/3300.0f, 0.0f, 1.0f);
+
+		int lOldPress = cMath_Easing(eEasing_CubicIn, mfPressure, 0.0f, 1.0f)*20.0f;
+		int lCurrPress = cMath_Easing(eEasing_CubicIn, fPressure, 0.0f, 1.0f)*20.0f;
+		
+		if (lOldPress!=lCurrPress)
+		{
+			//////////////////////////////////////////
+			// Blurriness
+			float fBurstEnd = gfDofMax - fPressure*(gfDofMax-0.5f);
+			float fBurstStart = cMath_Max(0.1f, fBurstEnd-1.0f);
+			if (mlDofID!=-1)
+				Effect_DoF_FadeOut(mlDofID,1.0f);
+			mlDofID = Effect_DoF_Start(0.0f, fBurstStart, 1.0f, 0.25f);
+			Effect_DoF_FadeFocus(mlDofID, 0.0f , fBurstEnd, 5.0f);
+			Player_FadeFOVMulTo(1.0f-mfPressure*0.1f, 2.0f);
+			Effect_ChromaticAberration_StartAnim(5.0f, fPressure*0.01f, 0.2f, cVector2f_Zero);
+			Map_AddTimer("TimerEndBurst",1.0f,"TimerEndBurst");
+		}
+		
+		if ( (lOldPress!=lCurrPress) || (mbElevatorRunning&&mlShakeID==-1) )
+		{
+			//////////////////////////////////////////
+			// Shaking
+			// Okay, shaking isn't a pressure effect, but seems a good place to do this
+			if (mlShakeID!=-1)
+				Effect_Shake_FadeOut(mlShakeID,1.0f);
+			mlShakeID = Effect_Shake_Start(fPressure*0.005f, 1000.0f, 1.0f, 1.0f,
+						cVector3f(0.2,1,0.2), mfElevatorSpeed*0.5f);
+		}
+		
+		mfPressure = fPressure;
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerEndBurst(const tString& in asName)
+	{
+		Player_FadeFOVMulTo(1.0f, 1.0f/5.25f);
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSequenceElevator;
+	void SequenceElevator(const tString& in asName="")
+	{
+		Sequence_Begin("SequenceElevator", mSequenceElevator);
+		
+		if (Sequence_DoStepAndWait(1.0f))
+		{
+			cLux_AddDebugMessage("[Elevator] Sat down");
+			CameraAnimation_End();
+			CameraAnimation_Begin("DescentCameraAnim"+mlSeat, "", true);
+			CameraAnimationNode_SetInteractiveMovement("SeatCameraAnim*", false);
+			
+			Prop_SetStaticPhysics("Slider*",true);
+			Entity_SetInteractionDisabled("Slider*",true);
+			Entity_SetInteractionDisabled("StartLever",true);
+			Prop_SetStaticPhysics("StartLever", true);
+		}
+		if (Sequence_DoStepAndWait(3.0f))
+		{
+			Lamp_SetFlickerActive("ControlsLightGood", false);
+			
+			CloseRestraints();
+			PlayPlayerRestraintsClosing();
+		}
+		if (Sequence_DoStepAndWait(2.0f))
+		{	
+			Map_AddTimer("TerminalElevatorMain", 0.75f, "TimerTurnOnTerminal");
+			Map_AddTimer("TerminalElevatorDepth*", 1.0f, "TimerTurnOnTerminal");
+			
+			Sound_CreateAtEntity("ScreensOn", "03_03_omicron_descent/SFX/elevator/screens_on", "TerminalElevatorMain", 0.0f, false, 1.0f);
+		}
+		if (Sequence_DoStepAndWait(1.0f))
+		{
+			Prop_SetStaticPhysics("ElevatorHatch",false);
+			Slide_AutoMoveTo("ElevatorHatch", 0.0f);
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			cLux_AddDebugMessage("[Elevator] Starting ride");
+			ElevatorAudio_Start();
+			Player_SetCameraUseSmoothing(false);
+			FadeElevatorSpeed(gfElevatorMaxSpeed, 1.0f);
+			Prop_SetStaticPhysics("ElevatorHatch", true);
+			Entity_SetActive("Ladder2_*",true);
+			Entity_SetActive("Ladder1_*",false);
+			Entity_AttachToEntity("Ladder2_Main","Elevator","",true,false);
+			Entity_AttachToEntity("Ladder2_Top","Elevator","",true,false);
+			
+			Effect_Rumble_Start(0.5f,0.5f);
+			
+			SequenceCathConversation();
+			
+			cLux_AddTodoMessage("MARCUS: Add new particles here!");
+			ParticleSystem_CreateAtEntity("ElevatorStartPS","03_03_oneshot_waterbubbles_elevator_release.ps","Elevator",false);
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			//////////////////////
+			// Floodlights come on
+			SequenceFloodlights();
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			//////////////////////
+			// Flesher Attack
+			SequenceFlesherAttack();
+		}
+		else if (Sequence_DoStepAndWait(0))
+		{
+			//////////////////////
+			// Journey's end
+			cScript_SetGlobalVarInt("ElevatorSeat",mlSeat);
+			
+			ElevatorAudio_LevelEnd();
+			Effect_VideoDistortion_SetDirectAmount(0.0f);
+			Effect_Fade_Out(0.0f);
+			
+			Effect_Rumble_Start(0.9f,0.7f);
+			
+			////////enough fade out time for audio to finish
+			cLux_AddDebugMessage("[Elevator] Start loading next level");
+			Map_AddTimer("LoadNextLevel", 11.0f, "LoadNextMap");
+			
+			PreloadDeload();
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void LoadNextMap(const tString &in asTimer)
+	{
+		PreloadChangeOfMap();
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event A Conversation with Cath
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+
+	cSequenceStatesData mSequenceCathConversation;
+	void SequenceCathConversation(const tString& in asName="")
+	{
+		Sequence_Begin("SequenceCathConversation", mSequenceCathConversation);
+		
+		if (Sequence_DoStepAndWait(3.0f))
+		{
+			Sound_FadeGlobalVolume(0.55f, 6.0f, eSoundEntryType_WorldClean);
+		}
+		else if (Sequence_DoStepAndPause(4.0f))
+		{
+			cLux_AddDebugMessage("Cath Conversation starts - Simon leads on from what happened in 3.2.");
+			bool bPlayerKilledOmicronSimon = cScript_GetGlobalVarBool("PlayerKilledOmicronSimon");
+			if (bPlayerKilledOmicronSimon)
+			{
+				Dialog_Begin("SimonDiscussion_Killed");
+					Dialog_AddBranchAndSubject("SimonDiscussion_Killed", "", "OnCathChatDone");
+				Dialog_End();
+			}
+			else
+			{
+				Dialog_Begin("SimonDiscussion_Left");
+					Dialog_AddBranchAndSubject("SimonDiscussion_Left", "", "OnCathChatDone");
+				Dialog_End();			
+			}
+
+			///////////////
+			// Start preloading next map here
+			Preload();
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			Sound_FadeGlobalVolume(0.55f, 5.0f, eSoundEntryType_WorldClean);
+			cLux_AddDebugMessage("Cath carries on conversation.");
+			Dialog_Begin("CatherineStartChat");
+				Dialog_AddBranchAndSubject("CatherineStartChat", "", "OnCathChatDone");
+			Dialog_End();
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			cLux_AddDebugMessage("Cath Conversation interrupted.");
+			SequenceBlackout();
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			cLux_AddDebugMessage("Cath Conversation about power.");
+			Dialog_Begin("CatherineResumeChat");
+				Dialog_AddBranchAndSubject("CatherineResumeChat", "", "OnCathPowerChatDone");
+			Dialog_End();
+		}
+		else if (Sequence_DoStepAndPause(10.0f))
+		{
+			cLux_AddDebugMessage("Cath Conversation restarts.");
+			Dialog_Begin("CatherinePart2Chat");
+				Dialog_AddBranchAndSubject("CatherinePart2Chat", "", "OnCathChatDone");
+			Dialog_End();
+			
+			PreloadFadeGlobal();
+		}
+		else if (Sequence_DoStepAndWait(0))
+		{
+			cLux_AddDebugMessage("Cath Conversation complete.");
+			// Flesher attack
+			SequenceStates_Resume("SequenceElevator");	
+		}
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnCathPowerChatDone(const tString&in asSubject, bool abStartOfSubject)
+	{
+		if (abStartOfSubject)
+			return;
+			
+		cLux_AddDebugMessage("Cath power chat done");
+		if (mlSeat!=-1)
+		{
+			cLux_AddDebugMessage("Resuming sequence");
+			SequenceStates_Resume("SequenceCathConversation");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnCathChatDone(const tString&in asSubject, bool abStartOfSubject)
+	{
+		if (abStartOfSubject)
+			return;
+		
+		cLux_AddDebugMessage("Cath chat done");
+		cLux_AddDebugMessage("Resuming sequence");
+		SequenceStates_Resume("SequenceCathConversation");
+		Sound_FadeGlobalVolume(1.0f, 3.5f, eSoundEntryType_WorldClean);
+	}
+	
+	//-------------------------------------------------------
+	
+	void LineStart_Part2ChatStart(const tString &in asScene, const tString &in asSubject, int alLineIndex, bool abStart)
+	{
+		if (abStart==false)
+			return;
+			
+		Sound_FadeGlobalVolume(0.65f, 6.0f, eSoundEntryType_WorldClean);
+	}
+	
+	void LineOver_Part2ChatEnd(const tString &in asScene, const tString &in asSubject, int alLineIndex, bool abStart)
+	{
+		if (abStart==false)
+			return;
+			
+		Sound_FadeGlobalVolume(1.0f, 4.0f, eSoundEntryType_WorldClean);
+	}
+
+	/////////////////////////////////////////
+	// Scene 2 Event B Probes Pass
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void SetupProbes()
+	{
+		for(int i=1;i<=glProbeCount;++i)
+			SetProbeActive(i,false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetProbeActive(int alProbe, bool abActive)
+	{
+		Entity_SetActive("Probe"+alProbe+"*", abActive);
+	}
+	
+	//-------------------------------------------------------
+	
+	void StartProbe(int alProbe)
+	{
+		cLux_AddDebugMessage("[Probes] Started probe:"+alProbe);
+		
+		mlProbe = alProbe;
+		mlProbeImage = 1;
+		mfProbeImageTimer = 0.0f;
+		
+		SetProbeActive(alProbe, true);
+		iLuxEntity@ pProbe = Map_GetEntity("Probe"+alProbe);
+		cVector3f vPos = pProbe.GetPosition();
+		vPos.y = cLux_GetPlayer().GetCamera().GetPosition().y - gfProbeMaxRange;
+		pProbe.SetPosition(vPos);
+		pProbe.SetVarFloat("ProbeDist",0.0f);
+	}
+	
+	//-------------------------------------------------------
+
+	void UpdateProbes(float afTimeStep)
+	{
+		iLuxEntity@ pProbe;
+		cVector3f vPos;
+		for(int i=1;i<=glProbeCount;++i)
+		{
+			@pProbe = Map_GetEntity("Probe"+i);
+			if (!pProbe.IsActive())
+				continue;
+			
+			float fDist = pProbe.GetVarFloat("ProbeDist");
+			fDist+=mfElevatorSpeed*afTimeStep;
+			if (fDist>(gfProbeMaxRange*2.0f))
+			{
+				cLux_AddDebugMessage("[Probes] Finished probe:"+i);
+				SetProbeActive(i, false);
+				mlProbe = 0;
+				return;
+			}
+			pProbe.SetVarFloat("ProbeDist",fDist);
+				
+			vPos = pProbe.GetPosition();
+			if (mlElevatorLoop!=-1)
+				vPos.y+=mfElevatorSpeed*afTimeStep;
+			pProbe.SetPosition(vPos);
+		}
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event C Lights Come On
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool mbFloodLightsOn = false;
+	bool mbLightsOnFirstTime = true;
+	
+	cSequenceStatesData mSequenceFloodlights;
+	void SequenceFloodlights(const tString& in asName="")
+	{
+		Sequence_Begin("SequenceFloodlights", mSequenceFloodlights);
+		
+		if (Sequence_DoStepAndWait(1.0f))
+		{
+			////////////////////////////////////
+			// Turn on spots
+			Lamp_SetLit("CageSpot*", true, true);
+			mbFloodLightsOn = true;
+			Sound_CreateAtEntity("LightsOn", "03_03_omicron_descent/SFX/elevator/lights_on", "Player", 0.0f, false, 1.0f);
+			
+			////////////////////
+			//bool for lights on to control music
+			ConversationMusic();
+			mbLightsOnFirstTime = false;
+			cLux_AddDebugMessage("Lights on!");
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+
+	void ConversationMusic()
+	{
+		if (mbLightsOnFirstTime==true)
+		{
+			//Music_PlayExt("03_03_conversation", false, 0.45f, 1.0f, 0.0f, 0.0f, eMusicPrio_BigEvent, false);
+			//Sound_FadeGlobalVolume(0.5f, 8.0f);
+			//Map_AddTimer("FadeAudioUp", 50.0f, "FadeAudio");
+			//cLux_AddDebugMessage("First time lights");
+		}
+		
+		else if (mbLightsOnFirstTime==false)
+		{
+			cLux_AddDebugMessage("Not first time lights - no music");
+			return;
+		}
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event D Blackout
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	bool OnWalkwayCheckpoint(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		CheckPoint_Setup("CheckPointCallback");
+		cLux_AddDebugMessage("Set checkpoint");
+		return false;
+	}
+				
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSequenceBlackout;
+	void SequenceBlackout(const tString& in asName="")
+	{
+		Sequence_Begin("SequenceBlackout", mSequenceBlackout);
+		if (Sequence_DoStepAndWait(0.01f))
+		{			
+			////////////////
+			// Black Out
+			cLux_AddDebugMessage("[Elevator] All goes dark");
+			SwitchElevatorLights(false,false);
+			
+			Sound_PreloadGroup("03_03_omicron_descent/SFX/elevator/shoulder_restraint", true);
+			
+			// Sudden stop
+			mfElevatorAccel = 0.0f;
+			mfElevatorSpeed = 0.0f;
+			mfElevatorTargetSpeed = 0.0f;
+			
+			Effect_Shake_Start(0.25f, 0.25f, 0.25f, 0.5f, cVector3f(0.3,1,0.3), 12.0f);
+			Effect_Rumble_Start(0.5f,1.0f,0.25f,0.5f);
+			
+			mbBlackoutHappened = true;
+			
+			////////////////////
+			// Replacements
+			// These objects will be swapped in when the elevator stops in blackout, due to
+			// physics issues
+			Entity_AttachToEntity("RepElevatorHatch","Elevator","",false,false);
+			Entity_AttachToEntity("RepElevatorDoor","Elevator","",false,false);
+			Entity_AttachToEntity("RepSlider1","Elevator","",false,false);
+			Entity_AttachToEntity("RepSlider2","Elevator","",false,false);
+			Entity_SetEffectsActive("RepSlider*",false,false);
+			cLux_AddTodoMessage("Interrupt Cath conversation");
+			
+			ElevatorAudio_Stop(0.25f, true);
+			
+			// Make sure box can be opened.
+			Lever_SetStuckState("ResetBox",0,true);
+			
+			Entity_SetEffectsActive("TerminalElevatorStart",false,false);
+			CathTool_SetScreen("CathTool",eCathToolScreen_Disconnected);
+			Lamp_SetLit("omnislot_deepdiving_left_light_1",false,false);
+		}
+		else if (Sequence_DoStepAndWait(0.99f))
+		{
+			Map_SetEnvironmentParticleGravityVelocity(cVector3f(0.0f,0.0f,0.0f));
+		}
+		else if (Sequence_DoStepAndWait(5.0f))
+		{
+			////////////////////
+			// Swap in replacement objects (due to physics issues)
+			Entity_SetActive("ElevatorHatch", false);
+			Entity_SetActive("RepElevatorHatch", true);
+			Slide_AutoMoveTo("RepElevatorHatch", 1.0f);
+			Entity_SetActive("Slider*", false);
+			Entity_SetActive("RepSlider*", true);
+			Entity_SetInteractionDisabled("RepSlider*",true);
+			Prop_SetStaticPhysics("RepSlider*", true);
+			
+			Entity_SetActive("ElevatorDoor", false);
+			Entity_SetActive("RepElevatorDoor", true);
+			
+			//Sound_CreateAtEntity("ElevatorHatchOpen", "03_03_omicron_descent/SFX/elevator/hatch/open", "ElevatorHatch", 0.0f, false, 1.0f);
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			//////////////////
+			// Release seats
+			OpenRestraints();
+			PlayPlayerRestraintsOpening();
+			
+			/////////////////
+			// Reset puzzles
+			Entity_SetEffectsActive("ResetButton",true,true);	
+			Entity_SetActive("DeathArea",true);
+			
+			Prop_SetStaticPhysics("RepElevatorHatch",true);
+			
+			mbElevatorReady = false;
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			CameraAnimationNode_SetInteractiveMovement("DescentCameraAnim"+mlSeat+"_1", true);
+			CameraAnimationNode_SetInteractiveMovement("SeatCameraAnim*", true);
+			
+			Dialog_Begin("SimonChatInterrupted");
+				Dialog_AddBranchAndSubject("SimonChatInterrupted", "", "");
+			Dialog_End();
+		
+			Map_AddTimer("Creature1",5.0f,"TimerStartCreatures");
+			Map_AddTimer("Creature2",15.0f,"TimerStartCreatures");
+		}
+		else if (Sequence_DoStepAndPause())
+		{
+			////////////////
+			// End Black Out
+			cLux_AddDebugMessage("[Elevator] Lights come back on");
+			Sound_CreateAtEntity("LightsOn", "03_03_omicron_descent/SFX/elevator/lights_on_louder", "Player", 0.0f, false, 1.0f);
+			SequenceStates_Resume("SequenceCathConversation");
+			
+			SwitchElevatorLights(true,true);
+
+			Lamp_SetFlickerActive("ControlsLightGood", true);
+			
+			/////////////////
+			// Reset puzzles
+			Entity_SetEffectsActive("ResetButton",false,true);
+			Entity_SetInteractionDisabled("ResetButton",true);
+			Entity_SetEffectsActive("RepSlider*",true,true);
+			
+			Entity_SetEffectsActive("TerminalElevatorStart",true,false);
+			CathTool_SetScreen("CathTool",eCathToolScreen_Interact);
+			Lamp_SetLit("omnislot_deepdiving_left_light_1",true,false);
+			
+			if (!Voice_SceneInvolvingCharacterIsActive("Catherine"))
+				SequenceStates_Resume("SequenceCathConversation");
+			
+			mbElevatorReady = true;
+		}
+		else if (Sequence_DoStepAndWait(1.0f))
+		{
+			// Sat back down
+			Entity_SetActive("DeathArea",false);
+			
+			cLux_AddDebugMessage("[Elevator] Sat down");
+			CameraAnimation_End();
+			CameraAnimation_Begin("DescentCameraAnim"+mlSeat, "", true);
+			CameraAnimationNode_SetInteractiveMovement("DescentCameraAnim"+mlSeat+"_1", false);
+			CameraAnimationNode_SetInteractiveMovement("SeatCameraAnim*", false);
+			
+			Prop_SetStaticPhysics("RepSlider*", false);
+		}
+		if (Sequence_DoStepAndWait(5.0f))
+		{
+			Lamp_SetFlickerActive("ControlsLightGood", false);
+			CloseRestraints();
+			PlayPlayerRestraintsClosing();
+		}
+		if (Sequence_DoStepAndWait(3.0f))
+		{
+			Prop_SetStaticPhysics("RepElevatorHatch",false);
+			Slide_AutoMoveTo("RepElevatorHatch", 0.0f);
+			//Sound_CreateAtEntity("ElevatorHatchClose", "03_03_omicron_descent/SFX/elevator/hatch/close", "ElevatorHatch", 0.0f, false, 1.0f);
+		}		
+		if (Sequence_DoStepAndWait(0.4f))
+		{
+			ElevatorAudio_Start();
+		}
+		else if (Sequence_DoStepAndWait(0.0f))
+		{
+			cLux_AddDebugMessage("[Elevator] Resuming ride");
+			Effect_Rumble_Start(0.5f,0.5f);
+			Player_SetCameraUseSmoothing(false);
+			FadeElevatorSpeed(gfElevatorMaxSpeed, 1.0f);
+			Entity_AttachToEntity("player","Elevator","",false,false);
+			Prop_SetStaticPhysics("RepElevatorHatch", true);
+
+			cLux_AddTodoMessage("MARCUS: Add new particles here!");
+			ParticleSystem_CreateAtEntity("ElevatorStartPS","03_03_oneshot_waterbubbles_elevator_release.ps","Elevator",false);
+		}
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerStartCreatures(const tString& in asName)
+	{
+		StartCreatures(asName);
+	}
+	
+	//-------------------------------------------------------
+	
+	void CheckPointCallback(int alRecentDeaths, const tString&in asDeathSource)
+	{
+		cLux_AddDebugMessage("Checkpoint Callback");
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event E Creatures Appear
+	/////////////////////////////////////////
+	
+	bool mbCreaturesActive = false;
+	
+	//-------------------------------------------------------
+	
+	void SetupCreatures()
+	{
+		Entity_SetActive("Creature*",false);
+		mbCreaturesActive = false;
+		SetupCreatureSet("Creature1_*");
+		SetupCreatureSet("Creature2_*");
+	}
+	
+	//-------------------------------------------------------
+	
+	void UpdateCreatures(float afTimeStep)
+	{
+		if (mbCreaturesActive)
+		{
+			bool bSet1 = UpdateCreatureSet("Creature1_*", afTimeStep);
+			bool bSet2 = UpdateCreatureSet("Creature2_*", afTimeStep);
+			mbCreaturesActive = bSet1 || bSet2;
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void SetupCreatureSet(const tString& in asName)
+	{
+		array<iLuxEntity@> vEntities;
+		cLux_GetCurrentMap().GetEntityArray(asName, eLuxEntityType_Prop, "", vEntities);
+		cVector3f vPos;
+		cVector3f vVel;
+		cBoundingVolume@ vVol = Map_GetEntity("TriggerInElevator").GetMainBody().GetBoundingVolume();
+		for(uint i=0; i<vEntities.length(); ++i)
+		{
+			cLuxProp@ pProp = cLux_ToProp(vEntities[i]);
+			vPos = pProp.GetPosition();
+			vVel = cMath_RandRectVector3f(cVector3f(-0.2f,0.2f,-0.2f), cVector3f(0.2f,0.7f,0.2f));
+			
+			// Stop fish floating into the cage!
+			if (vPos.x<vVol.GetMin().x) vVel.x=cMath_Max(-0.1f,cMath_Min(0.0f,vVel.x));
+			if (vPos.x>vVol.GetMax().x) vVel.x=cMath_Min(0.1f,cMath_Max(0.0f,vVel.x));
+			if (vPos.z<vVol.GetMin().z) vVel.z=cMath_Max(-0.1f,cMath_Min(0.0f,vVel.z));
+			if (vPos.z>vVol.GetMax().z) vVel.z=cMath_Min(0.1f,cMath_Max(0.0f,vVel.z));
+			
+			pProp.SetVarVector3f("Vel",vVel);
+			pProp.SetVarFloat("IllumTime", 0.0f);
+			pProp.SetVarFloat("IllumRate", cMath_RandRectf(1.0f,5.0f));
+			pProp.RotateAtSpeed(10.0f, cMath_RandRectf(-1.0f,1.0f), cVector3f(0.0f,1.0f,0.0f),  
+				false, false, cVector3f_Zero, cVector3f_Zero);
+			pProp.SetVarColor("Color", cMath_RandRectColor(cColor(0,0,0), cColor_White));
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	bool UpdateCreatureSet(const tString& in asName, float afTimeStep)
+	{
+		array<iLuxEntity@> vEntities;
+		cLux_GetCurrentMap().GetEntityArray(asName, eLuxEntityType_Prop, "", vEntities);
+		cVector3f vPos;
+		cVector3f vVel;
+		float fIllumTime;
+		bool bActive = false;
+		float fRot;
+		cColor col;
+		cBoundingVolume@ pVol = Map_GetEntity("CreatureBounds").GetMainBody().GetBoundingVolume();
+		float yBoundsMax = pVol.GetMax().y;
+		float ySlow = pVol.GetMin().y+pVol.GetSize().y*0.4f;
+		float fOldY;
+		float fAlpha;
+		for(uint i=0; i<vEntities.length(); ++i)
+		{
+			cLuxProp@ pProp = cLux_ToProp(vEntities[i]);
+			if (!pProp.IsActive())
+				continue;
+				
+			bActive = true;
+
+			vPos = pProp.GetPosition();
+			vVel = pProp.GetVarVector3f("Vel");
+			fOldY = vPos.y;
+			vPos+=(vVel*afTimeStep);
+			vPos.y+=mfElevatorSpeed*afTimeStep;
+			pProp.SetPosition(vPos);
+			
+			fIllumTime = pProp.GetVarFloat("IllumTime");
+			fIllumTime += pProp.GetVarFloat("IllumRate")*afTimeStep;
+			pProp.SetVarFloat("IllumTime",fIllumTime);
+			fAlpha = cMath_Clamp(fIllumTime / 20.0f,0.0f,1.0f);
+			col = pProp.GetVarColor("Color");
+			pProp.SetEffectBaseColor(col*cColor(1.0f,1.0f,1.0f,(cMath_Sin(fIllumTime)+1.0f)*0.5f*fAlpha));
+
+			if ( (vPos.y>ySlow) && (fOldY<ySlow) )
+			{
+				vVel.y*=0.5f;
+				pProp.SetVarVector3f("Vel",vVel);
+			}
+			if (vPos.y>yBoundsMax)
+			{
+				cLux_AddDebugMessage("Deactivate:"+pProp.GetName());
+				pProp.SetActive(false);
+			}
+		}
+		return bActive;
+	}
+	
+	//-------------------------------------------------------
+	
+	void StartCreatures(const tString& in asName)
+	{
+		Entity_SetActive(asName+"_*",true);
+		mbCreaturesActive = true;
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event F Blackout Ends
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void SetupResetPuzzle()
+	{
+		Entity_SetEffectsActive("ResetButton",false,false);
+		Entity_SetActive("DeathArea",false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnResetButtonStateChange(const tString &in asEntity, int alState)
+	{
+		if (alState==1)
+		{
+			SequenceStates_Resume("SequenceBlackout");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	bool OnTriggerDeathArea(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		SequenceAbyssFall("");
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mAbyssFallSequence;
+	
+	void SequenceAbyssFall(const tString &in asTimer)
+	{
+		Sequence_Begin("SequenceAbyssFall", mAbyssFallSequence);
+	
+		// Silence everything except dark tone
+		if (Sequence_DoStepAndWait(3.5))
+		{
+			//Fade out level audio
+			Sound_FadeGlobalVolume(0.0f ,3.0f, eSoundEntryType_World);
+			Sound_FadeGlobalVolume(0.0f ,3.0f, eSoundEntryType_WorldClean);
+			
+			//Create Falling Sound
+			Sound_CreateAtEntity("AbyssFall", "Player/action/underwater/abyss_fall", "Player", 0.0f, false, 1.0f);
+		}
+		/////////////////////
+		// Start falling
+		if (Sequence_DoStepAndWait(2.f))
+		{						
+			Effect_Fade_Out(3.5f);
+			//Breathing
+			Sound_CreateAtEntity("HeavyBreathing", "Player/breaths/abyss/breathing", "Player", 0.0f, false, 1.0f);
+		}
+		else if (Sequence_DoStepAndWait(1.5f))
+		{
+			Player_SetMoveSpeedMul(0);
+		}
+		else if (Sequence_DoStepAndWait(4.75f))
+		{
+			//Trigger Suit Pressure Alarm
+			Sound_CreateAtEntity("PressureAlarmMediumSpeed", "Player/UI/Suit/pressure_alarm_medium", "Player", 0.0f, false, 1.0f);
+		}
+		
+		else if (Sequence_DoStepAndWait(1.f))
+		{
+			//Stop Medium Alarm and Trigger Fast Alarm
+			Sound_Stop("PressureAlarmMediumSpeed", 0.0f);
+			Sound_CreateAtEntity("PressureAlarmHighSpeed", "Player/UI/Suit/pressure_alarm_high", "Player", 0.0f, false, 1.0f);
+		}
+		
+		else if (Sequence_DoStepAndWait(2.5f))
+		{
+			//Trigger Suit Cracking Under Pressure
+			Sound_CreateAtEntity("SuitCracking", "Player/action/underwater/abyss_suit_crack", "player", 0.0f, false);
+		}
+				
+		else if (Sequence_DoStepAndWait(6.5f))
+		{
+			//Stop all sounds apart from the big finale, quick fade to black
+			Sound_Stop("AbyssFall", 0.0f);
+			Sound_Stop("PressureAlarmHighSpeed", 0.0f);
+			
+			//Suit Crack Open
+			Sound_CreateAtEntity("SuitCrackOpen", "Player/action/underwater/abyss_suit_end", "player", 0.0f, false);
+		}
+		
+		// Kill off player
+		else if (Sequence_DoStepAndWait(2.f))
+		{
+			if (cLux_GetExplorationModeActive() == false)
+			{
+				AttackMeter_AutoDamage(1.0f, 1.0f, true);
+			}
+			else
+			{
+				Sound_Fade("HeavyBreathing", 0.f, 0.2f);
+				Player_SetHealth(0.f);
+			}
+		}
+	
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event G Conversation Resumes
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event H Flesher Breaks In
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void SetupFlesher()
+	{
+		Light_SetVisible("FlesherSpot",false);
+		Entity_SetActive("Flesher", false);
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSequenceFlesherAttack;
+	void SequenceFlesherAttack(const tString& in asName="")
+	{
+		Sequence_Begin("SequenceFlesherAttack", mSequenceFlesherAttack);
+		
+		if (Sequence_DoStepAndWait(0.2f))
+		{
+			/////////////////
+			// Flesher Spawns
+			
+			cLux_AddDebugMessage("[Elevator] Flesher Attack");
+			Sound_CreateAtEntity("LightsGlitch", "03_03_omicron_descent/SFX/elevator/lights_glitch", "Player", 0.0f, false, 1.0f);
+			Entity_SetActive("Flesher", false);
+			Map_GetEntity("Flesher").SetPosition(Map_GetEntity("Elevator").GetPosition());
+			mbFlesherPulse = true;
+			
+			StartFlicker();
+		}
+		else if (Sequence_DoStepAndWait(0.8f))
+		{
+			Entity_SetActive("Flesher", true);
+			Entity_PlayAnimation("Flesher", "visit_elevator",0.0f,false);
+			Map_AddTimer("TimerFlesherDoorOpen", 7.4f, "TimerFlesherDoorOpen");
+			
+			Effect_Rumble_SetScreenShakeMul(1);
+						
+			///////////////////////////////
+			// Setpiece audio start
+			ElevatorAudio_RossAttackStage01();
+		}
+		else if (Sequence_DoStepAndWait(3.0f))
+		{
+			////////////////////////
+			// Flesher Lands On Roof
+			
+			Light_SetVisible("FlesherSpot",true);
+			
+			Effect_Shake_Start(0.1f, 2.5f, 0.0f, 0.5f, cVector3f(0.5,1,0.5));
+			Effect_Rumble_Start(0.7f,0.5f,0.1f,0.2f);
+			
+			mbFlesherAttacked = true;
+		}
+		else if (Sequence_DoStepAndWait(3.0f))
+		{
+			Effect_Shake_Start(0.05f, 2.0f, 0.0f, 1.0f, cVector3f(0.5,1,0.5));
+			
+			Effect_VideoDistortion_SetDirectAmount(1.0f);
+			
+			/*Dialog_Begin("CatherineFlesher");
+				Dialog_AddBranchAndSubject("CatherineFlesher", "", "");
+			Dialog_End();*/
+		}
+		else if (Sequence_DoStepAndWait(3.0f))
+		{
+			ElevatorAudio_RossAttackStage02();
+			Effect_Shake_Start(0.1f, 1.0f, 0.0f, 0.5f, cVector3f(0.5,1,0.5));
+			Effect_Rumble_Start(0.5f,0.5f);
+		}
+		else if (Sequence_DoStepAndWait(1.0f))
+		{
+
+		}
+		else if (Sequence_DoStepAndWait(1.5f))
+		{
+			Effect_Shake_Start(0.1f, 1.0f, 0.0f, 0.5f, cVector3f(0.5,1,0.5));
+		}
+		else if (Sequence_DoStepAndWait(4.0f))
+		{
+			Voice_Play("FlesherThreaten");
+		}
+		else if (Sequence_DoStepAndWait(2.0f))
+		{
+			Effect_TimeGlitch_Start(2, 0.0, 1.0f, true, 1.0f);
+			mfFlesherPulseLevel = 0.8f;
+			mfFlesherPulseVel = 1.0f;
+			mfFlesherPulseMul = 2.0f;
+			Entity_PlaceAtEntity("Flesher", "FlesherCloseUp");
+		}		
+		else if (Sequence_DoStepAndWait(0.0f))
+		{
+			SequenceStates_Resume("SequenceElevator");
+		}
+		
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	float mfFlesherPulseLevel = 0.0f;
+	float mfFlesherPulseVel = 1.0f;
+	float mfFlesherPulseMul = 1.0f;
+	
+	void UpdateFlesherPulse(float afTimeStep)
+	{
+		mfFlesherPulseLevel+=afTimeStep*mfFlesherPulseVel;
+	
+		mfFlesherPulseVel= cMath_Clamp(mfFlesherPulseVel*cMath_RandRectf(0.9f,1.1f),0.5,1.0f);
+		float fPulse = mfFlesherPulseLevel % 2.0f;
+		if (fPulse>1.0f)
+			fPulse=1.0f-(fPulse-1.0f);
+
+		Entity_SetEffectBaseColor("Flesher",cColor_White*fPulse*mfFlesherPulseMul);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerFlesherDoorOpen(const tString& in asTimer)
+	{
+		Prop_SetStaticPhysics("RepElevatorDoor",false);
+		SwingDoor_SetLocked("RepElevatorDoor",false,true);
+		SwingDoor_SetClosed("RepElevatorDoor",false, true);
+		SwingDoor_SetOpenAmount("RepElevatorDoor",0.1);
+		Entity_AddForce("RepElevatorDoor", cVector3f(0,0,300), true, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void SwitchElevatorLights(bool abOn, bool abEffects)
+	{
+		Lamp_SetLit("CageSpot*",abOn,abEffects);
+		
+		Light_SetVisible("Elevator_SpotLight_2",abOn);
+		
+		Terminal_SetGuiActive("TerminalElevatorStart",abOn);
+		Terminal_SetGuiActive("TerminalElevatorMain",abOn);
+		Terminal_SetGuiActive("TerminalElevatorDepth*",abOn);
+		Entity_SetEffectsActive("CathSocket", abOn, abEffects);
+		Entity_SetEffectsActive("CathTool", abOn, abEffects);
+		
+		Lamp_SetLit("ControlsLightGood", abOn, abEffects);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool mbFlickerState = false;
+	
+	//-------------------------------------------------------
+	
+	void StartFlicker()
+	{
+		mbFlickerState = true;
+		TimerFlicker("");
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerFlicker(const tString& in asTimer)
+	{
+		mbFlickerState = !mbFlickerState;
+		SwitchElevatorLights(mbFlickerState, false);
+		
+		float fTimer = (mbFlickerState) ? cMath_RandRectf(0.1f, 0.5f) : cMath_RandRectf(0.2f, 0.5f);
+		Map_AddTimer("TimerFlicker", fTimer, "TimerFlicker");
+	}
+	
+	//-------------------------------------------------------
+	
+	void StopFlicker()
+	{
+		Map_RemoveTimer("TimerFlicker");
+	}
+			
+	//-------------------------------------------------------
+ 
+    /////////////////////////////////////////
+    // ==============
+    // PRELOAD
+    // ==============
+    /////////////////////////////////////////
+ 
+    //-------------------------------------------------------
+	
+	bool PreloadDisabled(bool abCheckIfPreloading = true)
+	{
+		if(cLux_ScriptDebugOn())
+		{
+			cLux_AddDebugMessage("PRELOAD DISABLED!"); 
+			
+			return true;
+		}
+
+		if(abCheckIfPreloading == true && Map_IsPreloading() == false)
+			return true;
+			 
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Preload()
+	{
+		if(PreloadDisabled(false)) return;
+		
+		Map_Preload("04_01_tau_outside.hpm");
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadDeload()
+	{
+		if(PreloadDisabled()) return;
+		//Might use latr if adding a transfer area to make sure objects follow to next level.
+	//	Map_Deload("transfer3341"); 
+		//Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadFadeGlobal()
+	{
+		if(PreloadDisabled()) return;
+
+		Map_AddTimer("FadeGlobal", 10, "PreloadTimer");
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadChangeOfMap()
+	{
+		if(PreloadDisabled()) 
+		{
+			PreloadManualChangeMap();
+			return;
+		}
+		
+		Map_RemoveTimer("FadeGlobal");
+
+		Map_AddTimer("ChangeMap", 0, "PreloadTimer");
+	}
+	
+	//-------------------------------------------------------
+	bool mbGlobalCopyCompleted = false;
+	void PreloadTimer(const tString &in asTimer)
+	{
+		////////////////////////////
+		//Preload - Change map globals when possible.
+		if(asTimer == "FadeGlobal")
+		{
+			if(mbGlobalCopyCompleted)
+			{
+				Map_Preset_Fade("Preset4.1", 20); 
+				return;
+			}
+			
+			mbGlobalCopyCompleted = Map_CopyGlobalSettings(Map_GetPreloadMap(), 20);
+			
+			Map_AddTimer("FadeGlobal", 20.1, "PreloadTimer");
+		}
+
+		if(asTimer == "ChangeMap")
+		{
+			Effect_Rumble_SetScreenShakeMul(1);
+			if(Map_IsPreloadCompleted()) Map_ChangeMap("04_01_tau_outside.hpm", "PlayerStartArea_1", "", ""); //Map_ChangeMap("04_01_tau_outside.hpm", "", "transfer3341", "", "");
+			else Map_AddTimer("ChangeMap", 0.1f, "PreloadTimer");
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadManualChangeMap()
+	{
+		Effect_Rumble_SetScreenShakeMul(1);
+		Map_ChangeMap("04_01_tau_outside.hpm", "PlayerStartArea_1", "", "");
+	}
+
+	//-------------------------------------------------------
+	
+	////////////////////////////////////////
+	// Terminal *CathTool panel (temp)*   //
+	////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	void Panel_Airlock_CathTool_OnGui(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("");
+		ImGui_DoLabel("TODO: CathTool Panel",ImGui_NrmPosGroup(cVector3f(0.3,0.055,3)),ImGui_NrmSizeGroup(cVector2f_MinusOne),1.0f);
+	}
+	
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event I Pressure Intensifies
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ==============
+	// TERMINALS
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Elevator Terminal
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void OnGuiElevatorStart(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("03_03_omicron_descent");
+		
+		ImGui_GroupBegin(cVector3f_Zero, ImGui_GetSize());
+		
+		cImGuiLabelData label;
+		label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
+		label.mFont.mvSize = cVector2f(50, 50);
+		label.mFontAlign = eFontAlign_Center;
+
+		ImGui_SetModColorMul(gStationGuiColor_Highlight);
+		ImGui_DoLabelExt("GUIStartKnob1", label, 	ImGui_NrmPos( cVector3f(0.0f, 0.00f, 0)), 
+											ImGui_NrmSize( cVector2f(1.0f,0.2f) ),1.0f); 
+		ImGui_SetModColorMul(gStationGuiColor_Normal);
+		ImGui_DoLabelExt("GUIStartKnob1_"+mlKnob1State, label, 	ImGui_NrmPos( cVector3f(0.0f, 0.09f, 0)), 
+											ImGui_NrmSize( cVector2f(1.0f,0.2f) ),1.0f); 
+										
+		ImGui_SetModColorMul(gStationGuiColor_Highlight);
+		ImGui_DoLabelExt("GUIStartKnob2", label, 	ImGui_NrmPos( cVector3f(0.0f, 0.35f, 0)), 
+											ImGui_NrmSize( cVector2f(1.0f,0.2f) ),1.0f); 
+		ImGui_SetModColorMul(gStationGuiColor_Normal);
+		ImGui_DoLabelExt("GUIStartKnob2_"+mlKnob2State, label, 	ImGui_NrmPos( cVector3f(0.0f, 0.44f, 0)), 
+											ImGui_NrmSize( cVector2f(1.0f,0.2f) ),1.0f); 
+											
+		ImGui_ResetModifiers();
+		
+		ImGui_GroupEnd();
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Elevator Terminal
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	void OnGuiElevator(const tString&in asEntityName, float afTimeStep)
+	{
+		cImGuiLabelData label;
+		label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
+		label.mFont.mvSize = cVector2f(80, 80);
+		
+		ImGui_SetTransCategory("03_03_omicron_descent");
+		
+		StationGuiBG_Scanlines();
+		
+		ImGui_GroupBegin(cVector3f_Zero, ImGui_GetSize());
+		if (mlProbe!=0) // If a probe is in range...
+		{
+			iLuxEntity@ pProbe = Map_GetEntity("Probe"+mlProbe);
+			float fProbeDist = cMath_Abs(pProbe.GetVarFloat("ProbeDist")-gfProbeMaxRange);
+			
+			tString sDist = ""+fProbeDist;
+			int lDotPos = cString_GetLastCharPos(sDist, '.');
+			sDist = cString_Sub(sDist, 0, lDotPos+3);
+			
+			tWString sProbeDist = cResources_Translate("03_03_omicron_descent", "ElevGUI_ProbeDist");
+			sProbeDist = cString_ReplaceStringToW(sProbeDist, tWString("%f"), tWString(sDist));
+	
+			///////////////////
+			// Background
+			ImGui_DoImage(cImGuiGfx("03_03_zone"+mlOceanZone+".dds", eImGuiGfx_Texture), 
+				ImGui_NrmPosGroup(cVector3f_Zero), ImGui_NrmSizeGroup(cVector2f(1.0f,1.0f)) );
+					
+			if (fProbeDist<gfProbeDisplayRange|| (mfProbeImageTimer>0.0f && mfProbeImageTimer<=2.5f) )
+			{
+				mfProbeImageTimer+=afTimeStep;
+				float fX = 0.0f;
+				if ( (mfProbeImageTimer>2.5f) && (fProbeDist<gfProbeDisplayRange) )
+				{
+					mfProbeImageTimer = 0.0f;
+					mlProbeImage++;
+					if (mlProbeImage == 4)
+						mlProbeImage = 1;
+				}
+				
+				///////////////////
+				// Probe Image
+				ImGui_DoImage(cImGuiGfx("03_03_probe"+mlProbe+"_"+mlProbeImage+".dds", eImGuiGfx_Texture), 
+					ImGui_NrmPosGroup(cVector3f(fX,0.0f,0.1f)), ImGui_NrmSizeGroup(cVector2f_One));
+			}
+					
+			/////////////////////////
+			// Probe title
+			ImGui_DoLabelExt("ElevGUI_Probe", label, cVector3f(40.0f,120.0f,1.0f), cVector2f_MinusOne, 0.8f);
+			
+			/////////////////////////
+			// Probe distance
+			ImGui_SetTextOverride(sProbeDist);
+			ImGui_DoLabelExt("", label, cVector3f(40.0f,190.0f,1.0f), cVector2f_MinusOne, 0.8f);
+		}
+		else // Otherwise show the current zone
+		{
+			///////////////////
+			// Background
+			ImGui_DoImage(cImGuiGfx("03_03_zone"+mlOceanZone+".dds", eImGuiGfx_Texture), 
+				ImGui_NrmPosGroup(cVector3f_Zero), ImGui_NrmSizeGroup(cVector2f(1.0f,1.0f)) );
+				
+			///////////////////
+			// Info overlay
+			ImGui_DoImage(cImGuiGfx("03_03_zone"+mlOceanZone+"_info.dds", eImGuiGfx_Texture), 
+				ImGui_NrmPosGroup(cVector3f(0.02f,0.02f,1.0f)), ImGui_NrmSizeGroup(cVector2f(0.96f,0.96f) ) );
+			
+			for (int lZone=0;lZone<=4;lZone++)
+			{
+				float fScale = 0.8f;
+				if (lZone!=mlOceanZone)
+					fScale = 0.5f;
+					
+				cVector2f vPos;
+				if (mlOceanZone<lZone)
+					vPos = gvZoneGuiDataBottom[lZone];
+				else
+					vPos = gvZoneGuiDataTop[lZone];
+				
+				///////////////////
+				// Title
+				ImGui_DoLabelExt("ElevGUI_ZoneTitle"+lZone, label, cVector3f(vPos.x+10.0f,vPos.y,1.0f), cVector2f_MinusOne, fScale);
+				
+				///////////////////
+				// Subtitle
+				ImGui_DoLabelExt("ElevGUI_ZoneSubtitle"+lZone, label, cVector3f(vPos.x+10.0f,vPos.y+80.0f*fScale,1.0f), cVector2f_MinusOne, 0.7f*fScale);
+				
+				if (lZone==mlOceanZone)
+				{
+					///////////////////
+					// Body Text
+					cImGuiTextFrameData frame;
+					frame.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
+					frame.mFont.mvSize = cVector2f(80*fScale, 80*fScale);
+					frame.mbUseBackgroundGfx = false;
+					
+					ImGui_DoTextFrameExt("ElevGUI_ZoneInfo"+lZone, cVector2f(10.0f,10.0f), 5.0f, 0.0f,
+						frame, cVector3f(vPos.x,vPos.y+130.0f,1.0f), cVector2f(879.0f,900.0f));
+				}
+			}
+		}
+
+		
+		ImGui_GroupEnd();
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Depth Display Terminal
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	void OnGuiDepth(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("03_03_omicron_descent");
+		
+		cImGuiLabelData label;
+		label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
+		label.mFont.mvSize = cVector2f(32, 32);
+		
+		StationGuiBG_Scanlines();
+		
+		ImGui_GroupBegin(cVector3f_Zero, ImGui_GetSize());
+		
+		///////////////////
+		// Background
+		ImGui_DoImage(cImGuiGfx("03_03_depth.dds", eImGuiGfx_Texture), 
+			ImGui_NrmPosGroup(cVector3f_Zero), ImGui_NrmSizeGroupKeepRatio(cVector2f_One));
+		
+		///////////////////
+		// Lift Wire
+		cColor cableColor = cColor(0.5f,0.5f,0.5f, 0.5f);
+		ImGui_DrawLine(ImGui_NrmSizeGroup(cVector2f(0.5f,0.0f)), ImGui_NrmSizeGroup(cVector2f(0.5f,1.0f)), 0.5f, 1.0f, cableColor);
+		
+		///////////////////
+		// Lift
+		float fProgress = (mfElevatorDepth+gfDepthDisplayStart)/gfDepthDisplayHeight; 
+		
+		cImGuiGfx imLift("03_03_elevator.dds", eImGuiGfx_Texture);
+		ImGui_DoImage(imLift, ImGui_NrmPosGroup(cVector3f(0.5f,fProgress+0.025f,1.0f)) - cVector3f(8.0f,16.0f,0.0f), cVector2f(16.0f,32.0f));
+			
+		/////////////////
+		// Probes
+		float fProbe1 = (gfProbe1Depth+gfDepthDisplayStart)/gfDepthDisplayHeight; 
+		float fProbe2 = (gfProbe2Depth+gfDepthDisplayStart)/gfDepthDisplayHeight; 
+		float fProbe3 = (gfProbe3Depth+gfDepthDisplayStart)/gfDepthDisplayHeight; 
+		
+		cColor probeLineColor = cColor(0.5f,0.0f,0.0f);
+		ImGui_DrawLine(ImGui_NrmSizeGroup(cVector2f(0.0f,fProbe1)), ImGui_NrmSizeGroup(cVector2f(1.0f,fProbe1)), 0.5f, 1.0f, probeLineColor);
+		ImGui_DrawLine(ImGui_NrmSizeGroup(cVector2f(0.0f,fProbe2)), ImGui_NrmSizeGroup(cVector2f(1.0f,fProbe2)), 0.5f, 1.0f, probeLineColor);
+		ImGui_DrawLine(ImGui_NrmSizeGroup(cVector2f(0.0f,fProbe3)), ImGui_NrmSizeGroup(cVector2f(1.0f,fProbe3)), 0.5f, 1.0f, probeLineColor);
+		
+		cImGuiGfx imProbe("03_03_probe.dds", eImGuiGfx_Texture);
+		ImGui_SetModColorMul(cColor(1.0f,0.25f,0.25f));
+		ImGui_DoImage(imProbe, ImGui_NrmPosGroup(cVector3f(0.25f,fProbe1,1.0f)) - cVector3f(16.0f,16.0f,0.0f), cVector2f(32.0f,32.0f));
+		ImGui_DoImage(imProbe, ImGui_NrmPosGroup(cVector3f(0.25f,fProbe2,1.0f)) - cVector3f(16.0f,16.0f,0.0f), cVector2f(32.0f,32.0f));
+		ImGui_DoImage(imProbe, ImGui_NrmPosGroup(cVector3f(0.25f,fProbe3,1.0f)) - cVector3f(16.0f,16.0f,0.0f), cVector2f(32.0f,32.0f));
+		ImGui_ResetModifiers();
+		
+		/////////////////
+		// Zones
+		float fZone1 = (gfZone1+gfDepthDisplayStart)/gfDepthDisplayHeight; 
+		float fZone2 = (gfZone2+gfDepthDisplayStart)/gfDepthDisplayHeight; 
+		float fZone3 = (gfZone3+gfDepthDisplayStart)/gfDepthDisplayHeight; 
+		
+		cColor zoneLineColor = cColor(0.25f,0.25f,1.0f);
+		ImGui_DrawLine(ImGui_NrmSizeGroup(cVector2f(0.0f,fZone1)), ImGui_NrmSizeGroup(cVector2f(1.0f,fZone1)), 0.5f, 1.0f, zoneLineColor);
+		ImGui_DrawLine(ImGui_NrmSizeGroup(cVector2f(0.0f,fZone2)), ImGui_NrmSizeGroup(cVector2f(1.0f,fZone2)), 0.5f, 1.0f, zoneLineColor);
+		ImGui_DrawLine(ImGui_NrmSizeGroup(cVector2f(0.0f,fZone3)), ImGui_NrmSizeGroup(cVector2f(1.0f,fZone3)), 0.5f, 1.0f, zoneLineColor);
+		
+		/////////////////
+		// Ground
+		cColor groundLineColor = cColor(0.5f,1.0f,0.0f);
+		float fGroundLine = (gfStationDepth+gfDepthDisplayStart)/gfDepthDisplayHeight+0.025f;
+		ImGui_DrawLine(ImGui_NrmSizeGroup(cVector2f(0.0f,fGroundLine)), ImGui_NrmSizeGroup(cVector2f(1.0f,fGroundLine)), 0.5f, 1.0f, groundLineColor);
+		
+		///////////////////
+		// Display
+		float fDepth = mfElevatorDepth+gfDepthDisplayStart;
+		
+		tString sDepth = ""+fDepth;
+		int lDotPos = cString_GetLastCharPos(sDepth, '.');
+		sDepth = cString_Sub(sDepth, 0, lDotPos+3);
+		
+		float fPressure = ((1000.0f*9.81f*fDepth)/101300.0f)+1.0f;	// Atmospheres
+		tString sPressure = ""+fPressure;
+		lDotPos = cString_GetLastCharPos(sPressure, '.');
+		sPressure = cString_Sub(sPressure, 0, lDotPos+3);
+		
+		tString sSpeed = ""+mfElevatorSpeed;
+		lDotPos = cString_GetLastCharPos(sSpeed, '.');
+		sSpeed = cString_Sub(sSpeed, 0, lDotPos+3);
+				
+		tWString sDepthLabel = ImGui_Translate("DepthGUI_Depth");
+		ImGui_ResizeFontToFit(sDepthLabel, label.mFont, ImGui_GetCurrentGroupSize().x-100);
+		sDepthLabel = cString_ReplaceStringToW(sDepthLabel, tWString("%f"), tWString(sDepth));
+				
+		tWString sPressureLabel = ImGui_Translate("DepthGUI_Pressure");
+		ImGui_ResizeFontToFit(sPressureLabel, label.mFont, ImGui_GetCurrentGroupSize().x-100);
+		sPressureLabel = cString_ReplaceStringToW(sPressureLabel, tWString("%f"), tWString(sPressure));
+		
+		tWString sSpeedLabel = ImGui_Translate("DepthGUI_Speed");
+		ImGui_ResizeFontToFit(sSpeedLabel, label.mFont, ImGui_GetCurrentGroupSize().x-100);
+		sSpeedLabel = cString_ReplaceStringToW(sSpeedLabel, tWString("%f"), tWString(sSpeed));
+		
+		ImGui_SetTransCategory("");
+		
+		ImGui_SetTextOverride(sDepthLabel);
+		ImGui_DoLabelExt("", label, ImGui_NrmPosGroup(cVector3f(0.1f,0.82f,0.0f)), 
+			cVector2f_MinusOne, 1);
+		ImGui_SetTextOverride(sPressureLabel);
+		ImGui_DoLabelExt("", label, ImGui_NrmPosGroup(cVector3f(0.1f,0.87f,0.0f)), 
+			cVector2f_MinusOne, 1);
+		ImGui_SetTextOverride(sSpeedLabel);
+		ImGui_DoLabelExt("", label, ImGui_NrmPosGroup(cVector3f(0.1f,0.92f,0.0f)), 
+			cVector2f_MinusOne, 1);
+		ImGui_ClearTextOverride();
+		
+		ImGui_GroupEnd();
+	}
+
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ==============
+	// AUDIO
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	//Elevator Audio
+	//-------------------------------------------------------
+	bool mbElevatorMusicConversation = false;
+	void ElevatorAudio_Start()
+	{
+		mbIsElevatorAudioRunning = true;
+
+		if(mbElevatorMusicConversation==false)
+		{
+			Map_AddTimer("ConversationMusic", 1.0f, "ConversationMusic");
+			mbElevatorMusicConversation = true;
+		}
+		
+		Sound_CreateAtEntity("ElevatorAudio_Startup", "03_03_omicron_descent/SFX/elevator/motor_start", "Player", 0.0f, false, 1.0f);
+		Sound_CreateAtEntity("ElevatorAudio_MotorLoop", "03_03_omicron_descent/SFX/elevator/motor_loop", "Player", 3.5f, true, 1.0f);
+				
+		Sound_Stop("ElevatorAudioStop_BackgroundAmbience", 5.0f);		
+		Sound_CreateAtEntity("ElevatorAudio_BackgroundAmbience", "level_amb_shared_underwater/amb/background/industrial_plain", "Player", 3.0f, false, 0.75f);
+		
+		Sound_Stop("ElevatorAudioStop_BackgroundAmbience", 3.0f);
+		
+		Entity_SetActive("AMB_OnElevator", false);
+		Entity_SetActive("AMB_InElevator", false);
+		Entity_SetActive("Trigger_CableSwingSound", false);
+		
+		Map_AddTimer("ElevatorAudioDescentBeep", 5.0f, "ElevatorAudio");
+		Map_AddTimer("ElevatorAudioDescentCreaks_Stage1", 10.0f, "ElevatorAudio");
+	}
+	
+	void ConversationMusic(const tString &in asTimer)
+	{
+		Music_Play("03_03_conversation", 0.85f, false, eMusicPrio_SceneAmb);
+	}
+
+	//-------------------------------------------------------
+	
+	void ElevatorAudio_Stop(float afFadeTime=0.25f, bool abHaltSound = false)
+	{
+		mbIsElevatorAudioRunning = false;
+		Sound_Stop("ElevatorAudio_MotorLoop", afFadeTime);
+		Sound_Stop("ElevatorAudio_BackgroundAmbience", afFadeTime);
+		Sound_Stop("DescentBeep", 0.0f);
+		Sound_Stop("ElevatorAudio_Creak", afFadeTime);
+		
+		if(abHaltSound == true)
+		{
+			Sound_CreateAtEntity("ElevatorAudioStop_BackgroundAmbience", "level_amb_shared_underwater/amb/background/interior_abandoned_medium", "Player", 3.0f, false, 0.75f);
+			Sound_PlayGui("03_03_omicron_descent/SFX/elevator/motor_halt_stop", 1.0f);
+			Entity_SetActive("AMB_OnElevator", true);
+			Entity_SetActive("AMB_InElevator", true);
+			Entity_SetActive("Trigger_CableSwingSound", true);
+			Music_Stop(0.25f, eMusicPrio_SceneAmb);
+			Music_Stop(0.5f, eMusicPrio_BgAmb);
+		}
+	}
+
+	//-------------------------------------------------------
+		
+	void ElevatorAudio_RossAttackStage01()
+	{
+		cLux_AddDebugMessage("Audio - Ross Attack Stage 01");
+		Sound_PlayGui("03_03_omicron_descent/SFX/ross_attack/ross_attack_stage_01", 1.0f);
+		Sound_FadeGlobalVolume(0.25f, 0.65f);
+		//Sound_FadeGlobalVolume(0.45f, 0.65f, eSoundEntryType_GuiWorld);
+	}
+	
+	//-------------------------------------------------------
+	
+	void ElevatorAudio_RossAttackStage02()
+	{
+		cLux_AddDebugMessage("Audio - Ross Attack Stage 02");
+		Sound_PlayGui("03_03_omicron_descent/SFX/ross_attack/ross_attack_stage_02", 1.0f);
+	}
+	
+	//-------------------------------------------------------
+	
+	void ElevatorAudio_LevelEnd()
+	{
+		cLux_AddDebugMessage("Audio - LevelEnd");
+		Sound_SetGlobalVolume(0.0f);
+		//Sound_SetGlobalVolume(0.0f, eSoundEntryType_GuiWorld);
+		ElevatorAudio_Stop(0.0f, false);
+	}
+		
+	//-------------------------------------------------------
+	void ElevatorAudio(const tString &in asTimer)
+	{
+		if(asTimer == "ElevatorAudioDescentBeep")
+		{	
+			Sound_CreateAtEntity("DescentBeep", "Entities_OceanBottom/tech/terminal/buttons/descent", "ControlsLightGood", 0.0f, false, 1.0f);
+		}
+		if (asTimer == "ElevatorAudioDescentCreaks_Stage1")
+		{
+			Sound_CreateAtEntity("ElevatorAudio_Creak", "03_03_omicron_descent/SFX/elevator/creak", "Player", 0.0f, false, 1.0f);
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void ElevatorAudio_LightsOnMusic()
+	{
+		Music_Play("03_03_lightson", 0.55f, false, eMusicPrio_BigEvent);
+		cLux_AddDebugMessage("Lights On Music");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool ElevatorSightedMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Music_Play("03_03_elevatorsight", 0.75f, false, eMusicPrio_BigEvent);
+		//Map_AddTimer("FadeAudioDown", 1.0f, "FadeAudio");
+		//Map_AddTimer("FadeAudioUp", 10.0f, "FadeAudio");
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	void ShoulderRestraintAudio(const tString &in asTimer)
+	{
+		if(asTimer == "Lower" && mbPlayerSeated==true)
+		{	
+			//Hand anim now
+			//Sound_PlayGui("03_03_omicron_descent/SFX/elevator/shoulder_restraint/lower", 1.0f);
+		}
+		
+		if(asTimer == "Raise" && mbPlayerSeated==true)
+		{	
+			//Sound_PlayGui("03_03_omicron_descent/SFX/elevator/shoulder_restraint/raise", 1.0f);
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	bool ElevatorAudio_CreakSwingSoundTrigger(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState==1)
+		{
+			Sound_CreateAtEntity("CableSwing", "03_03_omicron_descent/SFX/elevator/cable_swing", "CableSwingSoundSource", 0.0f, false, 1.0f);
+			cLux_AddDebugMessage("Trigger Cable Swing on Elevator sounds");
+			return true;
+		}
+		
+		else
+		{
+			Sound_Stop("CableSwing", 1.5f);
+			cLux_AddDebugMessage("Stop Elevator Cable Swinging Sounds");
+			return true;
+		}
+	}
+
+	//-------------------------------------------------------
+	//Audio fades
+	//-------------------------------------------------------
+	
+	void FadeAudio(const tString &in asTimer)
+	{
+		if(asTimer == "FadeAudioUpLevelStart")
+		{	
+			cLux_AddDebugMessage("Audio fading to 1.0f");
+			Sound_FadeGlobalVolume(1.0f, 4.5f);
+		}
+		
+		if(asTimer == "FadeAudioUp")
+		{	
+			cLux_AddDebugMessage("Audio fading to 1.0f");
+			Sound_FadeGlobalVolume(1.0f, 10.0f);
+		}
+
+		if(asTimer == "FadeAudioDown")
+		{	
+			cLux_AddDebugMessage("Audio fading to 0.75f");
+			Sound_FadeGlobalVolume(0.75f, 6.0f);
+		}
+	}
+}

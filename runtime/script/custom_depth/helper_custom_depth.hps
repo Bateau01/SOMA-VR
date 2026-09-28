@@ -1,0 +1,1248 @@
+#include "helper_effects.hps"
+#include "helper_props.hps"
+#include "helper_imgui.hps"
+#include "helper_imgui_station.hps"
+#include "helper_imgui_station_apps_common.hps"
+#include "helper_custom_depth_audio.hps"
+#include "helper_font.hps"
+
+#include "prop_catherine_tool.hps"
+
+
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// WAU INFECTION
+/////////////////////////////////////////
+
+//-------------------------------------------------------
+
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+bool _HPL3VR_RuntimeActive_CustomDepth()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+/**
+ * Disable the growth for these entities
+ * This is because most infection is being removed from the game,
+ * but we still want to preserve the tentacles in-level.
+ * @param asEntityName, name of the entity, wildcards supported.
+ */
+ 
+void Infection_Disable(const tString &in asEntityName)
+{
+	array<iLuxEntity@> vEntities;
+	cLux_GetCurrentMap().GetEntityArray(asEntityName, eLuxEntityType_Prop, "", vEntities);
+	if(vEntities.length() == 0)
+	{
+		Error("Could not find any entities with name '"+asEntityName+"' for Infection_Disable");
+		return;
+	}
+		
+	/////////////////////////////
+	// Iterate Props
+	for(uint i=0; i<vEntities.length(); ++i)
+	{
+		cLuxProp@ pProp = cLux_ToProp(vEntities[i]);
+		cScript_RunGlobalFunc(pProp.GetName(), "cScrPropInfection", "_Global_DisableInfection");
+	}
+}
+
+//-------------------------------------------------------
+
+/**
+ * Setups an infection path. This is called automatically by both Infection_Begin and Infection_ConnectPaths and is only needed if you for example want a 
+ * path that can start on any node.
+ * 
+ * @param asInfectionPathName, name of the path to set up. The names of the entities need to be PathName_X where X is the order in which the entities are activated.
+ **/
+void Infection_Setup(const tString &in asInfectionPathName)
+{
+	for(int i = 2; Entity_Exists(asInfectionPathName + "_" + i); i++)
+	{
+		Infection_ConnectNodes(asInfectionPathName + "_" + (i-1), asInfectionPathName + "_" + i);
+	}
+}
+
+//-------------------------------------------------------
+
+/**
+ * Starts an infection path by setting up the connnections between entities and activating the first one.
+ * 
+ * @param asInfectionPathName, name of the path to start. The names of the entities need to be PathName_X where X is the order in which the entities are activated.
+ **/
+void Infection_Begin(const tString &in asInfectionPathName)
+{
+	Infection_Setup(asInfectionPathName);
+	Infection_GrowNode(asInfectionPathName + "_1");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Grows a specific infection node. If it is a part of a path, its children will start growing afterwards. Used automatically by Infection_Begin().
+ * 
+ * @param asNode, name of the node to grow.
+ **/
+void Infection_GrowNode(const tString &in asNode)
+{
+	cScript_RunGlobalFunc(asNode, "cScrPropInfection", "_Global_StartGrowth");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Connects two nodes together. This is handled automatically for nodes in a path, but is good to have for short branches to a path.
+ * 
+ * @param asParent, name of parent node, can use wildcards (*).
+ * @param asChild, name of child node.
+ **/
+void Infection_ConnectNodes(const tString &in asParent, const tString &in asChild)
+{	
+	cScript_SetGlobalArgString(0, asChild);
+	cScript_RunGlobalFunc(asParent, "cScrPropInfection", "_Global_AddChild");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Connects an entire path to an infection entity. Use this to branch a path.
+ * 
+ * @param asParent, name of parent node.
+ * @param asChildPath, name of child path.
+ **/
+void Infection_ConnectPaths(const tString &in asParent, const tString &in asChildPath)
+{
+	Infection_Setup(asChildPath);
+	cScript_SetGlobalArgString(0, asChildPath + "_1");
+	cScript_RunGlobalFunc(asParent, "cScrPropInfection", "_Global_AddChild");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Sets the time it takes for an infection entity to grow to its full size.
+ * 
+ * @param asNode, name of entity.
+ * @param afTime, time to grow.
+ **/
+void Infection_SetNodeGrowthTime(const tString &in asEntity, float afTime)
+{
+	cScript_SetGlobalArgFloat(0, afTime);
+	cScript_RunGlobalFunc(asEntity, "cScrPropInfection", "_Global_SetGrowthTime");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Sets the time to wait between the parent's and the specified node's start time.
+ * 
+ * @param asNode, name of entity.
+ * @param afDelay, delay in seconds.
+ **/
+void Infection_SetNodeGrowthDelay(const tString &in asNode, float afDelay)
+{
+	cScript_SetGlobalArgFloat(0, afDelay);
+	cScript_RunGlobalFunc(asNode, "cScrPropInfection", "_Global_SetDelay");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Sets a callback for the specified infection entity. Called both when it starts and stops growing
+ * 
+ * @param asNode, name of entity.
+ * @param asCallback, callback function.
+ * 
+ * @syntax void FuncName(const tString &in asEntity, bool abStartOfGrowth)
+ **/
+void Infection_SetNodeCallback(const tString &in asNode, const tString &in asCallback)
+{
+	cScript_SetGlobalArgString(0, asCallback);
+	cScript_RunGlobalFunc(asNode, "cScrPropInfection", "_Global_SetCallback");
+}
+
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// CONSTRUCT LURE
+/////////////////////////////////////////
+
+//-------------------------------------------------------
+
+void ConstructLure_SetEnabled(const tString &in asEntityName,bool abEnabled, bool abUseEffects)
+{
+	cScript_SetGlobalArgBool(0, abEnabled);	
+	cScript_SetGlobalArgBool(1, abUseEffects);
+	cScript_RunGlobalFunc(asEntityName, "cScrPropConstructLure", "_Global_SetEnabled");
+}
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// DATAMINE
+/////////////////////////////////////////
+
+//-------------------------------------------------------
+
+/**
+ *  Sets the glow to active or inactive on a datamine entity.
+ *
+ * @param asEntityName, entity to set the glow active on.
+ * @param abX, if the glow should be active.
+ **/
+void Datamine_SetGlowActive(const tString &in asEntityName, bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc(asEntityName, "cScrPropDatamine", "_Global_SetGlowActive");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Returns true if the player has mined the datamine
+ *
+ * @param asEntityName, name of datamine.
+ * @return if the datamine is mined.
+ **/
+bool Datamine_HasBeenMined(const tString &in asEntityName)
+{
+	cScript_RunGlobalFunc(asEntityName, "cScrPropDatamine", "_Global_HasBeenMined");
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------------
+
+/**
+ * Returns true if the player has mined the datamine
+ *
+ * @param asEntityName, name of datamine.
+ * @return if the datamine is mined.
+ **/
+void Datamine_SetFinalSubjectCallback(const tString &in asEntityName, const tString &in asCallback)
+{
+	cScript_SetGlobalArgString(0, asCallback);
+	cScript_RunGlobalFunc(asEntityName, "cScrPropDatamine", "_Global_SetFinalSubjectCallback");
+}
+
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// DATAMINE AREAS
+/////////////////////////////////////////
+
+//-------------------------------------------------------
+
+/**
+ *  Sets the glow to active or inactive on a datamine entity.
+ *
+ * @param asEntityName, entity to set the glow active on.
+ * @param abX, if the glow should be active.
+ **/
+void DatamineArea_SetGlowActive(const tString &in asEntityName, bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc(asEntityName, "cScrAreaDatamine", "_Global_SetGlowActive");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Returns true if the player has mined the datamine
+ *
+ * @param asEntityName, name of datamine.
+ * @return if the datamine is mined.
+ **/
+bool DatamineArea_HasBeenMined(const tString &in asEntityName)
+{
+	cScript_RunGlobalFunc(asEntityName, "cScrAreaDatamine", "_Global_HasBeenMined");
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------------
+
+/**
+ * Returns true if the player has mined the datamine
+ *
+ * @param asEntityName, name of datamine.
+ * @return if the datamine is mined.
+ **/
+void DatamineArea_SetFinalSubjectCallback(const tString &in asEntityName, const tString &in asCallback)
+{
+	cScript_SetGlobalArgString(0, asCallback);
+	cScript_RunGlobalFunc(asEntityName, "cScrAreaDatamine", "_Global_SetFinalSubjectCallback");
+}
+
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// CONSTRUCT LURE
+//{///////////////////////////////////////
+
+//-------------------------------------------------------
+
+/**
+ * Flash the panel as if it's powered off.
+ *
+ * @param asEntityName, name of panel
+ **/
+void StationPanel_FlashPoweredOff(const tString &in asEntityName)
+{
+	cScript_RunGlobalFunc(asEntityName, "cScrPropButton_Panel", "_Global_FlashPoweredOff");
+}
+
+//} END CONSTRUCT LURE
+
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// CATHERINE TOOL
+//{///////////////////////////////////////
+
+//-------------------------------------------------------
+
+/**
+ * Default CanUse callback for the OmniTool.
+ *
+ * @param asTool, the cath tool entity.
+ * @param asEntity, the entity the player is aiming at.
+ **/
+bool CathTool_CanUse(const tString &in asTool, const tString &in asEntity)
+{
+	return (Entity_GetVarBool(asEntity, "IsOmniSlot") && 
+		   OmniSlot_GetAttachAllowed(asEntity)) ||
+		   (Entity_GetVarBool(asEntity, "IsOmniPanel") &&
+		   Button_IsDisabled(asEntity)==false && 
+		   Button_IsSwitchedOn(asEntity)==false &&
+		   Entity_GetVarBool(asEntity, "InUse")==false);
+}
+
+//-------------------------------------------------------
+
+/**
+ * Insert CathTool in a Cath panel
+ *
+ * @param asCathTool, the cath tool entity to place at the target position.
+ * @param asTargetSlot, the OmniSlot to plug the tool into.
+ * @param abEffects, if false, insert will happen instantly without any effects.
+ **/
+void CathTool_Insert(const tString &in asCathTool, const tString &in asTargetSlot, bool abEffects=true)
+{
+	cScript_SetGlobalArgString(0, asCathTool);
+	cScript_SetGlobalArgBool(1, abEffects);
+	cScript_RunGlobalFunc(asTargetSlot, "cScrPropOmniSlot", "_Global_Insert");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Allow picking up CathTool
+ *
+ * @param asCathTool, the CathTool entity.
+ * @param abEffects, if effects and fading should be done or if it should happen immediately.
+ **/
+void CathTool_AllowDetach(const tString &in asCathTool, bool abEffects = true)
+{	
+	tString sSlot = CathTool_GetOmniSlot(asCathTool);
+	if (sSlot == "") return;
+	
+	cScript_SetGlobalArgString(0, asCathTool);
+	cScript_SetGlobalArgBool(1, abEffects);
+	cScript_RunGlobalFunc(sSlot, "cScrPropOmniSlot", "_Global_AllowDetach");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Allow picking up CathTool
+ *
+ * @param asCathTool, the CathTool entity.
+ * 
+ * @return bool, if the tool is currently inserted
+ **/
+bool CathTool_IsInserted(const tString &in asCathTool)
+{	
+	cScript_RunGlobalFunc(asCathTool, "cScrPropCatherineTool", "_Global_IsInserted");
+	
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------------
+
+/**
+ * Returns the name of the OmniSlot that the tool is attached to. 
+ *
+ * @param asCathTool, the CathTool entity.
+ * 
+ * @return tString, the name of the OmniSlot. An empty string if not inserted.
+ **/
+tString CathTool_GetOmniSlot(const tString &in asCathTool)
+{
+	cScript_RunGlobalFunc(asCathTool, "cScrPropCatherineTool", "_Global_GetSlot");
+	
+	return cScript_GetGlobalReturnString();
+}
+
+//-------------------------------------------------------
+
+/**
+ * Handles using the tool on an OmniPanel. 
+ *
+ * @param asCathTool, the CathTool entity.
+ * @param asOmniPanel, the OmniPanel entity.
+ * 
+ **/
+void CathTool_UseOnPanel(const tString &in asCathTool, const tString &in asOmniPanel)
+{
+	if (!_HPL3VR_RuntimeActive_CustomDepth())
+	{
+		if (Entity_GetVarBool(asOmniPanel, "InUse"))
+			return;
+			
+		tString sHandAnimationSuffix = Tool_GetHandAnimationSuffix(asCathTool);
+		cLux_AddDebugMessage("Playing anim: tool_"+sHandAnimationSuffix+"_use_panel");
+			
+		Entity_SetVarBool(asOmniPanel, "InUse", true);
+		Player_PlayCustomToolAnimation("tool_"+sHandAnimationSuffix+"_use_panel", false, "");
+		Player_FadeMoveSpeedMulTo(0.3, 0.5);
+		Player_FadeLookSpeedMulTo(0.3, 0.5);
+		Player_SetRunSpeedMul(0);
+		Player_StartLookAt(asOmniPanel, 5, 2, 3);
+		
+		Map_AddTimer(asOmniPanel+","+asCathTool, 2, "$_CathTool_UseOnPanel_Timer");
+		
+		Map_AddTimer(asCathTool, 0.5f, "$_CathTool_SetInteractScreen_Timer");
+		return;
+	}
+	if (Entity_GetVarBool(asOmniPanel, "InUse"))
+		return;
+
+	// H5756A_VR_OMNITOOL_PANEL_SEMANTIC_SHELL
+	// VR owns head/look/locomotion and physical hand presentation. Keep SOMA's
+	// authored panel busy flag, 2-second transaction timing, Omni-Tool screen
+	// timing and final panel interaction callback, but do not slow/steer Simon or
+	// play the flatscreen first-person hand animation.
+	cScript_RunGlobalFunc("VROMNI", "", "U");
+	Entity_SetVarBool(asOmniPanel, "InUse", true);
+	Map_AddTimer(asOmniPanel+","+asCathTool, 2, "$_CathTool_UseOnPanel_Timer");
+	Map_AddTimer(asCathTool, 0.5f, "$_CathTool_SetInteractScreen_Timer");
+}
+
+void _CathTool_SetInteractScreen_Timer(const tString &in asTimer)
+{
+	CathTool_SetScreen(asTimer, eCathToolScreen_Interact);
+}
+
+void _CathTool_UseOnPanel_Timer(const tString &in asTimer)
+{
+	if (!_HPL3VR_RuntimeActive_CustomDepth())
+	{
+		array<tString> vEntityNames;
+		cString_GetStringVec(asTimer, vEntityNames, ",");
+		tString sOmniPanel = vEntityNames[0];
+		tString sCathTool = vEntityNames[1];
+		
+		Player_FadeMoveSpeedMulTo(1, 1);
+		Player_FadeLookSpeedMulTo(1, 1);
+		Player_SetRunSpeedMul(1);
+		Player_StopLookAt(1);
+		Entity_CallEntityInteract(sOmniPanel);
+		
+		Entity_SetVarBool(sOmniPanel, "InUse", false);
+		
+		Map_AddTimer(sCathTool, 0.1f, "$_CathTool_SetDisconnectedScreen_Timer");
+		return;
+	}
+	array<tString> vEntityNames;
+	cString_GetStringVec(asTimer, vEntityNames, ",");
+	tString sOmniPanel = vEntityNames[0];
+	tString sCathTool = vEntityNames[1];
+	
+	// H57.56A: no restoration writes are necessary because this VR shell never
+	// changed movement/look/run state. Avoid clobbering any unrelated live modifier.
+	cScript_RunGlobalFunc("VROMNI", "", "C");
+	Entity_CallEntityInteract(sOmniPanel);
+	
+	Entity_SetVarBool(sOmniPanel, "InUse", false);
+	
+	Map_AddTimer(sCathTool, 0.1f, "$_CathTool_SetDisconnectedScreen_Timer");
+}
+
+void _CathTool_SetDisconnectedScreen_Timer(const tString &in asTimer)
+{
+	CathTool_SetScreen(asTimer, eCathToolScreen_Disconnected);
+	
+	// Slightly longer for the broken error message
+	float fDisplayTime = CathTool_GetChipBroken() ? 3.0f : 1.5f;
+	Map_AddTimer(asTimer, fDisplayTime, "$_CathTool_ResetScreen_Timer");
+}
+
+
+void _CathTool_ResetScreen_Timer(const tString &in asTimer)
+{
+	if(CathTool_GetScreen(asTimer)==eCathToolScreen_Disconnected)
+		CathTool_SetScreen(asTimer, eCathToolScreen_PreInteract);
+}
+
+//-------------------------------------------------------
+
+/**
+ * Set hint callback for this map - will be called to see
+ * if Cath wants to give a hint when she's not doing anything else and when CathTool_SetHintsActive(true)
+ * was called.
+ *
+ * @param asCathTool, the CathTool entity.
+ * @param asHintsCallback, a callback which will be called to work out which line to respond with. 
+ * Return the name of a line _without_ numeric extension i.e. if your line variants are SomeHint_1, SomeHint_2, reply with SomeHint
+ * If the line has already played, it'll play the next variant, until it runs out.
+ *  Syntax: tString Func(const tString& in asEntityName)
+ **/
+void CathTool_SetHintsCallback(const tString &in asCathTool, const tString &in asHintsCallback)
+{	
+	cScript_SetGlobalArgString(0,asHintsCallback);
+	cScript_RunGlobalFunc(asCathTool, "cScrPropCatherineTool", "_Global_SetHintsCallback");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Enable/disable Cath hints.
+ *
+ * @param asCathTool, the CathTool entity.
+ * @param abEnable
+ **/
+void CathTool_SetHintsEnabled(const tString &in asCathTool, bool abEnable)
+{	
+	cScript_SetGlobalArgBool(0,abEnable);
+	cScript_RunGlobalFunc(asCathTool, "cScrPropCatherineTool", "_Global_SetHintsEnabled");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Set the voice character used for the tool
+ *
+ * @param asCathTool, the CathTool entity.
+ * @param asCharacter
+ **/
+void CathTool_SetVoiceCharacter(const tString &in asCathTool, const tString &in asCharacter)
+{	
+	cScript_SetGlobalArgString(0,asCharacter);
+	cScript_RunGlobalFunc(asCathTool, "cScrPropCatherineTool", "_Global_SetVoiceCharacter");
+}
+
+//-------------------------------------------------------
+
+void CathTool_SetChipBroken(bool abX)
+{
+	cScript_SetGlobalVarBool("CathToolChipBroken", abX);
+}
+
+bool CathTool_GetChipBroken()
+{
+	return cScript_GetGlobalVarBool("CathToolChipBroken");
+}
+
+void CathTool_SetVariant(eCathToolVariant aVariant)
+{
+	cScript_SetGlobalVarInt("CathToolVariant", int(aVariant));
+}
+
+eCathToolVariant CathTool_GetVariant()
+{
+	return eCathToolVariant(cScript_GetGlobalVarInt("CathToolVariant"));
+}
+
+void CathTool_SetDisabled(const tString &in asCathTool, bool abX, bool abFade=true)
+{
+	if(asCathTool!="")
+		Entity_SetEffectsActive(asCathTool, !abX, abFade);
+	cScript_SetGlobalVarBool("CathToolDisabled", abX);
+}
+
+bool CathTool_GetDisabled()
+{
+	return cScript_GetGlobalVarBool("CathToolDisabled");
+}
+
+void CathTool_SetScreen(const tString &in asCathTool, eCathToolScreen aState)
+{
+	cScript_SetGlobalVarInt("CathToolScreen", int(aState));
+	
+	//cScript_SetGlobalArgInt(0, int(aState));
+	//cScript_RunGlobalFunc(asCathTool, "cScrPropCatherineTool", "_Global_SetScreen");
+}
+ 
+eCathToolScreen CathTool_GetScreen(const tString &in asCathTool)
+{
+	return eCathToolScreen(cScript_GetGlobalVarInt("CathToolScreen"));
+	
+	//cScript_RunGlobalFunc(asCathTool, "cScrPropCatherineTool", "_Global_GetScreen");
+
+	//return eCathToolScreen(cScript_GetGlobalReturnInt());
+}
+
+eCathToolTarget CathTool_GetTarget(const tString &in asCathTool)
+{
+	return eCathToolTarget(Entity_GetVarInt(asCathTool, "Target"));
+}
+
+void CathTool_ResetScreen(eCathToolVariant aVariant=eCathToolVariant_LastEnum)
+{
+	CathTool_SetDisabled("", false);
+	CathTool_SetScreen("", eCathToolScreen_PreInteract);
+	CathTool_SetChipBroken(false);
+	
+	if(aVariant!=eCathToolVariant_LastEnum)
+		CathTool_SetVariant(aVariant);
+}
+
+//------------------------------------------------------------
+
+
+
+/**
+ * Draws the omnitool screen
+ *
+ * 
+ *
+ **/
+
+void _CathTool_OnGui(const tString&in asEntityName, float afTimeStep)
+{
+	if(CathTool_GetDisabled())
+		return;
+		
+	tString sToolName = asEntityName;
+	int lNameLength = cString_GetLastStringPos(sToolName, "_HudObject");
+	if(lNameLength>0) sToolName = cString_Sub(sToolName, 0, lNameLength);
+	
+	eCathToolVariant currentVariant = CathTool_GetVariant();
+	
+	/*if(CathTool_GetChipBroken())
+		CathTool_OnGui_NoChip(afTimeStep, currentVariant);
+	else
+	{*/
+		eCathToolScreen screen = CathTool_GetScreen(sToolName);
+		switch(screen)
+		{
+			case eCathToolScreen_PreInteract:
+			{
+				eCathToolTarget target = CathTool_GetTarget(sToolName);
+				CathTool_OnGui_PreInteract(afTimeStep, currentVariant, target);
+				
+				break;
+			}
+			case eCathToolScreen_Interact:		CathTool_OnGui_Interact(afTimeStep, currentVariant);			break;
+			case eCathToolScreen_Disconnected:	CathTool_OnGui_Disconnected(afTimeStep, currentVariant);		break;
+		}
+	//}
+}
+
+//------------------------------------------------------------
+
+void CathTool_OnGui_NoChip(float afTimeStep, eCathToolVariant aVariant)
+{
+	if(aVariant>eCathToolVariant_Cath)
+		aVariant = eCathToolVariant_Cath;
+		
+	tString sBGSuffix = CathTool_GetBGVariantSuffix(aVariant);
+	tString sChipSuffix = CathTool_GetChipVariantSuffix(aVariant);
+	
+	cImGuiGfx bg("omnitool_background_nochip" + sBGSuffix + ".dds", eImGuiGfx_Texture);
+	cImGuiGfx error("omnitool_chip_error" + sChipSuffix + ".dds", eImGuiGfx_Texture);
+	
+	float fTitleSize = 45.0f;
+	float fInfoSize = 35.0f;
+	
+	float fBlinkTime = 1.0f/1.5f;
+	
+	cColor colError(1.0f, 180.0f/255.0f, 0.0f, 1.0f);
+	
+	cImGuiLabelData label;
+	label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large));
+	label.mFont.mvSize = cVector2f(fTitleSize);
+	label.mColorBase = colError;
+			
+	ImGui_DrawGfx(cImGuiGfx(), cVector3f_Zero, ImGui_NrmSize(1.0f, 1.0f), cColor(1,0,0,1));
+	ImGui_DrawGfx(bg, cVector3f(0,0,0.5f));
+	
+	ImGui_SetTransCategory("");
+	CathTool_DrawTitle(label);
+	
+	label.mFontAlign = eFontAlign_Left;
+	label.mFont.mvSize = cVector2f(fInfoSize);
+	
+	if(aVariant==eCathToolVariant_HelperJane)
+	{
+		ImGui_LayoutBegin(eImGuiLayout_X, ImGui_NrmPos(0.5f, 0.85f,1.0f), ImGui_NrmSize(0.3f, 0.1f));
+		{
+			ImGui_DoLabelExt("A.I.: ", label, cVector3f_Zero);
+			ImGui_DoLabelExt("Helper Jane", label, cVector3f_Zero);
+			label.mFont.mvSize = cVector2f(fInfoSize)*0.6f;
+			ImGui_DoLabelExt("tm", label, cVector3f(0,-2.5f,0));
+		}
+		ImGui_LayoutEnd();
+	}
+	else
+	{
+		ImGui_LayoutBegin(eImGuiLayout_X, ImGui_NrmPos(0.40f, 0.85f,1.0f), ImGui_NrmSize(0.3f, 0.1f));
+		{
+			ImGui_DoLabelExt("A.I.: ", label, cVector3f_Zero);
+			ImGui_SetAlignment(eImGuiAlign_CenterLeft);
+			ImGui_DoImage(cImGuiGfx("omnitool_ai_chun_nochip.dds", eImGuiGfx_Texture), cVector3f(-15,15,0));
+			ImGui_SetAlignment(eImGuiAlign_TopLeft);
+		}
+		ImGui_LayoutEnd();
+	}
+	
+	//////////////////////////////////////////////
+	// Blinking chip	
+	if(ImGui_TimerExists("ErrorBlinkOn")==false && ImGui_TimerExists("ErrorBlinkOff")==false || ImGui_TimerOver("ErrorBlinkOff"))
+	{
+		ImGui_AddTimer("ErrorBlinkOn", fBlinkTime);
+	}
+	if(ImGui_TimerOver("ErrorBlinkOn"))
+	{
+		ImGui_AddTimer("ErrorBlinkOff", fBlinkTime);
+	}
+	
+	if(ImGui_TimerExists("ErrorBlinkOn"))
+	{
+		ImGui_SetAlignment(eImGuiAlign_CenterCenter);
+		ImGui_DoImage(error, ImGui_NrmPos(0.5f, 0.5f, 1.0f), GetUsedGfxSize(error, cVector2f_MinusOne)*0.7f);
+	}
+}
+
+//------------------------------------------------------------
+
+void CathTool_OnGui_PreInteract(float afTimeStep, eCathToolVariant aVariant, eCathToolTarget aTarget)
+{
+	tString sBGSuffix = CathTool_GetBGVariantSuffix(aVariant);
+	
+	cImGuiGfx bg("omnitool_background" + sBGSuffix + ".dds", eImGuiGfx_Texture);
+		
+	float fTitleSize = 45.0f;
+	float fInfoSize = 35.0f;
+	
+	float fBlinkTime = 1.0f/1.5f;
+	
+	cImGuiLabelData label;
+	label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large));
+	label.mFont.mvSize = cVector2f(fTitleSize);
+	
+	if(aTarget!=eCathToolTarget_None)
+	{
+		tString sAnim = "omnitool_";
+		switch(aTarget)
+		{
+			case eCathToolTarget_Panel:		sAnim += "panel"; break;
+			case eCathToolTarget_Slot:		sAnim += "slot"; break;
+		}
+		
+		cImGuiGfx anim(sAnim + CathTool_GetAnimVariantSuffix(aVariant) + "_01.dds", eImGuiGfx_TextureAnimated);
+		anim.mfAnimationTime = 1.0f / 14.0f;
+		anim.mbCrossfadeAnimation = true;
+		
+		ImGui_SetAlignment(eImGuiAlign_CenterCenter);
+		ImGui_DoImage(anim, ImGui_NrmPos(0.5f, 0.5f, 1.0), GetUsedGfxSize(anim, -1)*0.9f);
+		ImGui_SetAlignment(eImGuiAlign_TopLeft);
+	}
+	
+	ImGui_DrawGfx(bg, cVector3f(0,0,0));
+	
+	ImGui_SetTransCategory("");
+	CathTool_DrawTitle(label);
+	
+	label.mFontAlign = eFontAlign_Left;
+	label.mFont.mvSize = cVector2f(fInfoSize);
+	
+	if(aVariant==eCathToolVariant_HelperJane)
+	{
+		ImGui_LayoutBegin(eImGuiLayout_X, ImGui_NrmPos(0.5f, 0.85f,1.0f), ImGui_NrmSize(0.3f, 0.1f));
+		{
+			ImGui_DoLabelExt("A.I.: ", label, cVector3f_Zero);
+			ImGui_DoLabelExt("Helper Jane", label, cVector3f_Zero);
+			label.mFont.mvSize = cVector2f(fInfoSize)*0.6f;
+			ImGui_DoLabelExt("tm", label, cVector3f(0,-2.5f,0));
+		}
+		ImGui_LayoutEnd();
+	}
+	else
+	{
+		ImGui_LayoutBegin(eImGuiLayout_X, ImGui_NrmPos(0.40f, 0.85f,1.0f), ImGui_NrmSize(0.3f, 0.1f));
+		{
+			ImGui_DoLabelExt("A.I.: ", label, cVector3f_Zero);
+			ImGui_SetAlignment(eImGuiAlign_CenterLeft);
+			ImGui_DoImage(cImGuiGfx("omnitool_ai_small" + sBGSuffix + ".dds", eImGuiGfx_Texture), cVector3f(-15,15,0));
+			ImGui_SetAlignment(eImGuiAlign_TopLeft);
+		}
+		ImGui_LayoutEnd();
+	}
+	
+	if(CathTool_GetChipBroken() == false)
+	{
+		cImGuiGfx chip("omnitool_chip" + CathTool_GetChipVariantSuffix(aVariant) + ".dds", eImGuiGfx_Texture);
+		
+		ImGui_SetAlignment(eImGuiAlign_TopRight);
+		ImGui_DoImage(chip, ImGui_NrmPos(1.0f, 0.0f, 1.0f)+cVector3f(-15.0f, 20.0f, 0));
+	}
+}
+
+//------------------------------------------------------------
+
+void CathTool_OnGui_Interact(float afTimeStep, eCathToolVariant aVariant)
+{
+	tString sBGSuffix = CathTool_GetBGVariantSuffix(aVariant);
+	tString sChipSuffix = CathTool_GetChipVariantSuffix(aVariant);
+	
+	cImGuiGfx bg("omnitool_background" + sBGSuffix + ".dds", eImGuiGfx_Texture);
+	cImGuiGfx buffer("omnitool_buffer" + sChipSuffix +  ".dds", eImGuiGfx_Texture);
+	
+	float fTitleSize = 45.0f;
+	float fInfoSize = 50.0f;
+	
+	float fBlinkTime = 1.0f/1.5f;
+	
+	cImGuiLabelData label;
+	label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large));
+	label.mFont.mvSize = cVector2f(fTitleSize);
+				
+	ImGui_DrawGfx(bg, cVector3f(0,0,0));
+
+	ImGui_SetTransCategory("");
+	CathTool_DrawTitle(label);
+	
+	label.mFontAlign = eFontAlign_Left;
+	label.mFont.mvSize = cVector2f(fInfoSize);
+	label.mFontAlign = eFontAlign_Center;
+	
+	if(aVariant==eCathToolVariant_HelperJane)
+	{
+		ImGui_LayoutBegin(eImGuiLayout_X, ImGui_NrmPos(0.2f, 0.40f,1.0f), ImGui_NrmSize(0.5f, 0.1f));
+		{
+			ImGui_DoLabelExt("A.I.: ", label, cVector3f_Zero);
+			ImGui_DoLabelExt("Helper Jane", label, cVector3f_Zero);
+			label.mFont.mvSize = cVector2f(fInfoSize)*0.6f;
+			ImGui_DoLabelExt("tm", label, cVector3f(0,-2.5f,0));
+		}
+		ImGui_LayoutEnd();
+	}
+	else
+	{
+		ImGui_LayoutBegin(eImGuiLayout_X, ImGui_NrmPos(0.08f, 0.40f,1.0f), ImGui_NrmSize(0.5f, 0.1f));
+		{
+			ImGui_DoLabelExt("A.I.: ", label, cVector3f_Zero);
+			ImGui_SetAlignment(eImGuiAlign_CenterLeft);
+			ImGui_DoImage(cImGuiGfx("omnitool_ai" + sBGSuffix + ".dds", eImGuiGfx_Texture), cVector3f(-15,20,0));
+			ImGui_SetAlignment(eImGuiAlign_TopLeft);
+		}
+		ImGui_LayoutEnd();
+	}
+	
+	if(CathTool_GetChipBroken() == false)
+	{
+		cImGuiGfx chip("omnitool_chip_small" + sChipSuffix + ".dds", eImGuiGfx_Texture);
+		
+		ImGui_SetAlignment(eImGuiAlign_TopRight);
+		ImGui_DoImage(chip, ImGui_NrmPos(1.0f, 0.0f, 1.0f)+cVector3f(-30.0f, 20.0f, 0));
+	}
+	
+	ImGui_FadeStateColor("BufferAlpha", cColor(1,1.0f), 0.1f, eEasing_Linear, false);
+	
+	CathTool_DrawBuffer(buffer, afTimeStep, true);
+}
+
+//------------------------------------------------------------
+
+void CathTool_OnGui_Disconnected(float afTimeStep, eCathToolVariant aVariant)
+{
+	if (CathTool_GetChipBroken())
+	{
+		CathTool_OnGui_NoChip(afTimeStep, aVariant);
+		return;
+	}
+	
+	tString sBGSuffix = CathTool_GetBGVariantSuffix(aVariant);
+	tString sChipSuffix = CathTool_GetChipVariantSuffix(aVariant);
+	
+	cImGuiGfx bg("omnitool_background" + sBGSuffix + ".dds", eImGuiGfx_Texture);
+	cImGuiGfx chip("omnitool_chip_small" + sChipSuffix + ".dds", eImGuiGfx_Texture);
+	cImGuiGfx buffer("omnitool_buffer" + sChipSuffix +  ".dds", eImGuiGfx_Texture);
+	cImGuiGfx disconnected("omnitool_disconnected" + sBGSuffix + ".dds", eImGuiGfx_Texture);
+	
+	float fTitleSize = 45.0f;
+	float fInfoSize = 50.0f;
+	
+	float fBlinkTime = 1.0f/1.5f;
+	
+	cImGuiLabelData label;
+	label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large));
+	label.mFont.mvSize = cVector2f(fTitleSize);
+				
+	ImGui_DrawGfx(bg, cVector3f(0,0,0));
+
+	ImGui_SetTransCategory("");
+	CathTool_DrawTitle(label);
+	
+	label.mFontAlign = eFontAlign_Left;
+	label.mFont.mvSize = cVector2f(fInfoSize);
+	label.mFontAlign = eFontAlign_Center;
+	
+	ImGui_SetAlignment(eImGuiAlign_CenterCenter);
+	ImGui_DoImage(disconnected, ImGui_NrmPos(0.5f, 0.55f, 1.0f));
+	
+	ImGui_SetAlignment(eImGuiAlign_TopRight);
+	ImGui_DoImage(chip, ImGui_NrmPos(1.0f, 0.0f, 1.0f)+cVector3f(-30.0f, 20.0f, 0));
+	
+	ImGui_FadeStateColor("BufferAlpha", cColor(1,0.0f), 1.0f, eEasing_Linear, false);
+	
+	CathTool_DrawBuffer(buffer, afTimeStep, false);
+}
+
+//------------------------------------------------------------
+
+tString CathTool_GetBGVariantSuffix(eCathToolVariant aVariant)
+{
+	tString sSuffix;
+	switch(aVariant)
+	{
+		case eCathToolVariant_Cath:
+		case eCathToolVariant_CathDelta:	sSuffix = "_chun";			break;
+		
+		case eCathToolVariant_CathAbyss:	sSuffix = "_chun_abyss";	break;
+	}
+	
+	return sSuffix;
+}
+
+tString CathTool_GetAnimVariantSuffix(eCathToolVariant aVariant)
+{
+	tString sSuffix;
+	switch(aVariant)
+	{
+		case eCathToolVariant_Cath:			sSuffix = "_chun";					break;
+		
+		case eCathToolVariant_CathDelta:	
+		case eCathToolVariant_CathAbyss:	sSuffix = "_chun_delta";			break;
+	}
+	
+	return sSuffix;
+}
+
+tString CathTool_GetChipVariantSuffix(eCathToolVariant aVariant)
+{
+	tString sSuffix;
+	switch(aVariant)
+	{
+		case eCathToolVariant_Cath:			
+		case eCathToolVariant_CathDelta:	
+		case eCathToolVariant_CathAbyss:	sSuffix = "_chun";					break;
+	}
+	
+	return sSuffix;
+}
+
+void CathTool_DrawTitle(const cImGuiLabelData &in aLabel)
+{
+	ImGui_DoLabelExt("OMNITOOL v2.5", aLabel, cVector3f(20, 20, 1.0f));
+}
+
+void CathTool_DrawBuffer(const cImGuiGfx &in aGfx, float afTimeStep, bool abRotate)
+{
+	ImGui_SetAlignment(eImGuiAlign_CenterCenter);
+	ImGui_SetModRotateAngle(ImGui_GetStateFloat("BufferAngle", 0.0f));
+	ImGui_SetModColorMul(ImGui_GetStateColor("BufferAlpha", cColor_White));
+	ImGui_DoImage(aGfx, ImGui_NrmPos(0.8625f, 0.78f, 1.0f), GetUsedGfxSize(aGfx, -1)*0.8f);
+	
+	if(abRotate)
+		ImGui_IncStateFloat("BufferAngle", 360.0f*afTimeStep);
+}
+
+//------------------------------------------------------------
+
+//} END CATHERINE TOOL
+
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// OMNISLOT
+//{///////////////////////////////////////
+
+//-------------------------------------------------------
+
+/**
+ * Sets if the OmniSlot allows insertion of the OmniTool or not.
+ *
+ * @param asOmniSlot, the slot.
+ * @param abAllowed, state to set.
+ * @param abEffects, if lights should fade on/off or switch instantly.
+ **/
+void OmniSlot_SetAttachAllowed(const tString &in asOmniSlot, bool abAllowed, bool abEffects=true)
+{
+	cScript_SetGlobalArgBool(0, abAllowed);
+	cScript_SetGlobalArgBool(1, abEffects);
+	cScript_RunGlobalFunc(asOmniSlot, "cScrPropOmniSlot", "_Global_SetAttachAllowed");
+}
+
+//-------------------------------------------------------
+
+/**
+ * Checks if the OmniSlot allows insertion of the OmniTool or not.
+ *
+ * @param asOmniSlot, the slot.
+ * 
+ * @return bool, true if attach is allowed.
+ **/
+bool OmniSlot_GetAttachAllowed(const tString &in asOmniSlot)
+{
+	cScript_RunGlobalFunc(asOmniSlot, "cScrPropOmniSlot", "_Global_GetAttachAllowed");
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------------
+
+//} OMNISLOT
+
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// OMNIPANEL
+//{///////////////////////////////////////
+
+//-------------------------------------------------------
+
+void _OmniPanel_OnGui(const tString&in asEntityName, float afTimeStep)
+{
+	StationGuiBG_Scanlines();
+	if (Button_IsDisabled(asEntityName))
+		return;
+	
+	tString sLangCat = "StationGUI";
+	tString sLangEntry = "";
+	cColor col = cColor_White;
+	float fSizeMul = 1;
+	
+	cStationGui_BigStatusMessageSettings settings;
+	settings.mvEdgeSpacing = ImGui_NrmSize(0.05, 0);
+	
+	if (Entity_GetVarBool(asEntityName, "DisplayAccessDeniedText"))
+	{
+		tString sCustomLangCat = Entity_GetVarString(asEntityName, "CustomLangCategory");
+		tString sCustomLangEntry = Entity_GetVarString(asEntityName, "CustomLangEntry");
+		
+		if (sCustomLangCat != "")
+			sLangCat = sCustomLangCat;
+		
+		sLangEntry = sCustomLangEntry != "" ? sCustomLangEntry : "Panel_AccessDenied";
+		
+		col = gStationGuiColor_Warning;
+		fSizeMul = 2;
+	}
+	else if (Button_IsLocked(asEntityName))
+	{
+		col = gStationGuiColor_Warning;
+		sLangEntry = "Panel_Locked";
+		fSizeMul = 2;
+	}
+	else if (Button_IsSwitchedOn(asEntityName))
+	{
+		col = gStationGuiColor_Highlight;
+		sLangEntry = "Panel_On";
+		fSizeMul = 2;
+	}
+	else
+	{
+		col = gStationGuiColor_Highlight2;
+		sLangEntry = "Panel_Off";
+		fSizeMul = 1.75;
+	}
+	
+	ImGui_SetTransCategory(sLangCat);
+	StationGui_BigStatusMessage_Old(sLangEntry, col, fSizeMul, false, 0.5, eEasing_Linear, settings);
+}
+
+//-------------------------------------------------------
+
+/**
+ * Call this before calling CathTool_UseOnPanel to disable access to the panel. 
+ * This state is reset automatically and has to be called every time the panel is used.
+ *
+ * @param asEntityName, name of the panel.
+ * @param asLangCat, lang category for the error message. If left empty, a default category will be used.
+ * @param asLangEntry, lang entry for the error message. If left empty, a default entry will be used.
+ * 
+ **/
+void OmniPanel_AccessDenied(const tString&in asEntityName, const tString&in asLangCat="", const tString&in asLangEntry="")
+{	
+	cScript_SetGlobalArgString(0, asLangCat);
+	cScript_SetGlobalArgString(1, asLangEntry);
+	cScript_RunGlobalFunc(asEntityName, "cScrPropOmniPanel", "_Global_SetAccessDenied");
+}
+
+//-------------------------------------------------------
+
+//} OMNIPANEL
+
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// ANIMATION DOOR
+//{///////////////////////////////////////
+
+//-------------------------------------------------------
+
+void AnimationDoor_SetOpen(const tString &in asClosedDoor, const tString &in asOpenDoor, bool abOpen, bool abPlayAnim=true,
+						   const tString &in asCloseAnim="door_closing", const tString &in asOpenAnim="door_open")
+{
+	if (abOpen)
+	{
+		Entity_SetVarString(asClosedDoor, "AnimationDoor_SetOpen_OpenDoor", asOpenDoor);
+		
+		if(abPlayAnim)
+			Entity_PlayAnimation(asClosedDoor, asOpenAnim, 0, false, true, "$AnimationDoor_SetOpen_AnimCallback");
+		else
+			AnimationDoor_SetOpen_AnimCallback(asClosedDoor, "");				
+	}
+	else
+	{
+		Entity_SetActive(asOpenDoor, false);
+		Entity_SetActive(asClosedDoor, true);
+		
+		if(abPlayAnim)
+			Entity_PlayAnimation(asClosedDoor, asCloseAnim, 0, false, true);
+	}
+}
+
+//-------------------------------------------------------
+
+void AnimationDoor_SetOpen_AnimCallback(const tString &in asEntity, const tString &in asAnimName)
+{
+	Entity_SetActive(asEntity, false);
+	Entity_SetActive(Entity_GetVarString(asEntity, "AnimationDoor_SetOpen_OpenDoor"), true);
+}
+
+//------------------------------------------------------------
+
+/////////////////////////////////////////
+// CRAZY DEATH EFFECT
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+array<float> _DeathFX_ImagesExtraTime = {0,0,0,0,0,0,0,0,0,0,0,0.25,0,0,0.25,0.25,0.25,0,0,0,0,0,0,0,0};
+array<bool> _DeathFX_AltImages = {false, false, false, false, true, false, true, false, false, true, 
+										true, true, true, true, true, true, true, false, true, false,
+										false, false, false, false, false};
+	
+void _DeathFX_OnGui(const tString&in asName, float afTimeStep)
+{	
+	bool bSafe = false;
+	
+	float fDeathNextImageTime=ImGui_GetStateFloat("NextImageTime")-afTimeStep;
+	int lDeathImage = ImGui_GetStateInt("Image",1);
+	cVector3f vSmoothStart = ImGui_GetStateVector3f("SmoothStart", cVector3f_Zero);
+	cVector3f vSmoothEnd = ImGui_GetStateVector3f("SmoothStart", cVector3f_Zero);
+	float fSmoothTime = ImGui_GetStateFloat("SmoothTime",0.0f);
+	float fSmoothScaleStart = ImGui_GetStateFloat("SmoothScaleStart",1.0f);
+	float fSmoothScaleEnd = ImGui_GetStateFloat("SmoothScaleEnd",1.0f);
+	
+	if (fDeathNextImageTime<=0.0f)
+	{
+		lDeathImage = cMath_RandRectl(-10,25);
+		fSmoothTime = cMath_RandRectf(0.015f,0.125f)*((bSafe)?50.0f:1.0f);
+		if (lDeathImage>0)
+			fSmoothTime+=_DeathFX_ImagesExtraTime[lDeathImage-1];
+		fDeathNextImageTime+=fSmoothTime;
+		
+		vSmoothStart = cMath_RandRectVector3f(cVector3f(-1.0f,-1.0f,0.0f), cVector3f(1.0f,1.0f,0.0f));
+		vSmoothEnd = cMath_RandRectVector3f(cVector3f(-1.0f,-1.0f,0.0f), cVector3f(1.0f,1.0f,0.0f));
+		
+		fSmoothScaleStart = cMath_RandRectf(1.0f,1.2f);
+		fSmoothScaleEnd = cMath_RandRectf(1.0f,1.2f);
+		
+		ImGui_SetStateInt("Image",lDeathImage);
+		ImGui_SetStateVector3f("SmoothStart",vSmoothStart);
+		ImGui_SetStateVector3f("SmoothEnd",vSmoothEnd);
+		ImGui_SetStateFloat("SmoothTime",fSmoothTime);
+		ImGui_SetStateFloat("SmoothScaleStart",fSmoothScaleStart);
+		ImGui_SetStateFloat("SmoothScaleEnd",fSmoothScaleEnd);
+	}
+	ImGui_SetStateFloat("NextImageTime",fDeathNextImageTime);
+	
+	cVector3f vSmoothOffset = ImGui_FadeOscillateVector3f("SmoothOffset",vSmoothStart,vSmoothEnd, fSmoothTime, eEasing_Linear);
+	float fSmoothScale = ImGui_FadeOscillateFloat("SmoothScale", fSmoothScaleStart, fSmoothScaleEnd, fSmoothTime, eEasing_Linear);
+	
+	cVector3f vPos = vSmoothOffset;
+	vPos*=0.025f;
+	vPos.z=0.0f;
+	
+	vPos.x+=(1.0f-fSmoothScale)*0.5f;
+	vPos.y+=(1.0f-fSmoothScale)*0.5f;
+	
+	cVector3f vJitter = cMath_RandRectVector3f(cVector3f(-1.0f,-1.0f,0.0f), cVector3f(1.0f,1.0f,0.0f));
+	vPos+=vJitter*0.06f*((bSafe)?0.0f:1.0f);
+	
+	tString sImage = "advanced_black";
+	if (lDeathImage>0)
+	{
+		sImage = "death_image_"+lDeathImage;
+		if (cScript_GetGlobalVarBool("InDeepSeaSuit"))
+		{
+			// Use alt image
+			if (_DeathFX_AltImages[lDeathImage-1])
+				sImage = "death_image_alt_"+lDeathImage;
+		}
+	}
+	cImGuiGfx death(sImage, eImGuiGfx_Texture);
+	ImGui_DoImage(death, ImGui_NrmPos(vPos), ImGui_NrmSize(fSmoothScale,fSmoothScale));
+	
+	int lNoiseImage = cMath_RandRectl(-10,4);
+	if (lNoiseImage>0)
+	{
+		tString sNoiseImage = "death_static_"+lNoiseImage;
+		
+		cImGuiGfx noise(sNoiseImage, eImGuiGfx_Texture);
+		ImGui_DoImage(noise, ImGui_NrmPos(0,0,5.0f), ImGui_NrmSize(1.0f,1.0f));
+	}
+	
+	cImGuiGfx vignette("vignette_alpha", eImGuiGfx_Texture);
+	ImGui_DoImage(vignette, ImGui_NrmPos(0,0,10.0f), ImGui_NrmSize(1.0f,1.0f));
+}	
+	
+//-------------------------------------------------------
+
+/////////////////////////////////////////
+// EXPLORATION MODE AGENT KNOCK AWAY
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+void Player_KnockAway(cVector3f &in avDir, float afDamage, float afForceMul)
+{
+	Effect_Shake_Start(.2f, .4f, .1f, .3f, cVector3f(1.f, .8f, 0));
+	Effect_Rumble_Start(.2f, .4f);				
+	Effect_VideoDistortion_Start(.6f, 2.f, 0.1, 3.0f);
+	Effect_Screen_Start("damage_steam_screen.mat", cVector2f(0.5, 0.5), cVector2f(1.8, 1.8), 1, 0, 5.f, 2.f);
+				
+	Sound_PlayGui("Player/reaction/damage", 1.f);
+				
+	Player_GiveDamage(afDamage, 0.8f, eDamageType_Hit, "");
+				
+	Player_SetMoveSpeedMul(0.f);
+	Player_FadeMoveSpeedMulTo(1.f, 1.f);			
+	
+	avDir.Normalize();
+	if(cLux_GetPlayer().GetCharacterBody().IsOnGround())
+	{
+		Player_AddContinuosBodyForce(avDir * (1700 * afForceMul), 0.25f);
+	}					
+	else
+	{
+		Player_AddContinuosBodyForce(avDir * (525 * afForceMul), 0.25f);
+	}
+}
+
+//------------------------------------------------------------

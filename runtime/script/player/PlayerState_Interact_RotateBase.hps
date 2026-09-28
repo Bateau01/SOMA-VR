@@ -1,0 +1,544 @@
+// H5756BR_VR_WHEEL_DIRECT_TAG
+// H5756AZ_VR_WHEEL_ANALOG_TAG
+// H5756BD_VR_LEVER_SIGNED_TAG
+#include "player/PlayerState_Interact.hps" 
+#include "helpers/helper_player.hps" 
+ 
+//------------------------------------------------------------ 
+ 
+// H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
+bool _HPL3VR_RuntimeActive_RotateBase()
+{
+	cScript_SetGlobalReturnBool(false);
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	return cScript_GetGlobalReturnBool();
+}
+
+class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact 
+{ 
+ 
+ ///////////////////////////////////////// 
+ // INIT 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ void Init() 
+ {
+  // Shared initialization also resets the VR-only transient input fields.
+
+  mRotatePid.SetErrorNum(10); 
+  mRotatePid.p = 10.0f; 
+  mRotatePid.i = 0.0f; 
+  mRotatePid.d = 1.0f; 
+   
+  mfMoveToMouseAddFactor = 1; 
+  mfMaxAngularImpulse = 1000; 
+  mbResetSpeedWhenNoMouseMovement = true; 
+  mbHPL3VRSwingInputThisStep = false;
+  mbHPL3VRWheelDirect = false;
+  mfHPL3VRWheelOmega = 0;
+  mbHPL3VRLeverInputThisStep = false;
+  mfHPL3VRLeverSpeedAdd = 0;
+  mfMovementToMoveAddFactor = 0; 
+   
+  InitRotateBase(); 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // TO BE IMPLEMENTED 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ void InitRotateBase(){} 
+  
+ void EnterRotateBase(int alPrevStateId){} 
+ void LeaveRotateBase(int alNextStateId){} 
+  
+ float GetSpeedAdd(cCamera @apCam){ return 0;} 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // GENERAL 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ void OnEnterState(int alPrevStateId) 
+ { 
+ 	if (!_HPL3VR_RuntimeActive_RotateBase())
+ 	{
+ 			EnterInteractState(alPrevStateId);
+ 		
+ 			////////////////////////////////
+ 			// Player setup
+ 			cScript_SetGlobalVarBool("Climb_Allowed", false);
+ 		
+ 			/////////////////////////////////
+ 			//Get the joint to use
+ 			iPhysicsBody@ pBody = cLux_ID_Body(mBodyID);
+ 			iPhysicsJoint@ pJoint = pBody.GetJoint(0);
+ 			mJointID = pJoint.GetID();
+ 			
+ 			/////////////////////////////////
+ 			//Reset data
+ 			mRotatePid.Reset();
+ 			mfRotSpeed =0;
+ 			mvMoveAdd = cVector2f(0);
+ 		
+ 			/////////////////////////////////
+ 			//Setup body
+ 			mbHasGravity = pBody.GetGravity();
+ 			pBody.SetGravity(false);
+ 			
+ 			/////////////////////////////////
+ 			//Get Max distance
+ 			iCharacterBody @pCharBody = cLux_GetPlayer().GetCharacterBody();
+ 			mfMaxDistance = cMath_Vector3Dist(pCharBody.GetFeetPosition(), pJoint.GetPivotPoint());
+ 			mfMaxDistance = mfMaxDistance * 1.2f + 0.5f;
+ 			
+ 			
+ 			/////////////////////////////////
+ 			//Callback
+ 			EnterRotateBase(alPrevStateId);
+ 		return;
+ 	}
+  EnterInteractState(alPrevStateId); 
+  
+  //////////////////////////////// 
+  // Player setup 
+  cScript_SetGlobalVarBool("Climb_Allowed", false); 
+  
+  ///////////////////////////////// 
+  //Get the joint to use 
+  iPhysicsBody@ pBody = cLux_ID_Body(mBodyID); 
+  iPhysicsJoint@ pJoint = pBody.GetJoint(0); 
+  mJointID = pJoint.GetID(); 
+   
+  ///////////////////////////////// 
+  //Reset data 
+  mRotatePid.Reset(); 
+  mfRotSpeed =0; 
+  mvMoveAdd = cVector2f(0);
+  mbHPL3VRSwingInputThisStep = false;
+  mbHPL3VRWheelDirect = false;
+  mfHPL3VRWheelOmega = 0;
+  mbHPL3VRLeverInputThisStep = false;
+  mfHPL3VRLeverSpeedAdd = 0; 
+ 
+  ///////////////////////////////// 
+  //Setup body 
+  mbHasGravity = pBody.GetGravity(); 
+  pBody.SetGravity(false); 
+   
+  ///////////////////////////////// 
+  //Get Max distance 
+  iCharacterBody @pCharBody = cLux_GetPlayer().GetCharacterBody(); 
+  mfMaxDistance = cMath_Vector3Dist(pCharBody.GetFeetPosition(), pJoint.GetPivotPoint()); 
+  mfMaxDistance = mfMaxDistance * 1.2f + 0.5f; 
+   
+   
+  ///////////////////////////////// 
+  //Callback 
+  EnterRotateBase(alPrevStateId); 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ void OnLeaveState(int alNextStateId) 
+ { 
+  LeaveRotateBase(alNextStateId); 
+      
+  if(cLux_ID_Prop(mPropID) is null) return; 
+  
+  cLux_ID_Body(mBodyID).SetGravity(mbHasGravity); 
+ 
+  ///////////////////////////// 
+  //Resets some general stuff 
+  ResetPropInteractVars(); 
+   
+  //////////////////////////////// 
+  // Player set back to normal 
+  cScript_SetGlobalVarBool("Climb_Allowed", true); 
+ } 
+  
+ //------------------------------------------------------------ 
+   
+ void Update(float afTimeStep) 
+ { 
+ 	if (!_HPL3VR_RuntimeActive_RotateBase())
+ 	{
+ 			if(CheckShouldUpdate()==false) return;
+ 		
+ 			////////////////////////////
+ 			// Check so interact is still pressed.
+ 			if(cInput_IsTriggered(eAction_Interact)==false)
+ 			{
+ 				//////////////////////
+ 				//Change state
+ 				cLux_GetPlayer().ChangeState(mlPreviousState);
+ 				
+ 				return;
+ 			}
+ 			
+ 			/////////////////////////////
+ 			//Show no crosshair!
+ 			Player_SetCrossHairState(eCrossHairState_None);
+ 		
+ 			//////////////////////////////
+ 			//Set up variables
+ 			iCharacterBody @pCharBody = cLux_GetPlayer().GetCharacterBody();
+ 			cCamera @pCam = cLux_GetPlayer().GetCamera();
+ 			iPhysicsJoint @pJoint = cLux_ID_Joint(mJointID);
+ 			iPhysicsBody@ pBody = cLux_ID_Body(mBodyID);
+ 		
+ 			//////////////////////////////
+ 			//Check if out of range
+ 			float fDistance = cMath_Vector3Dist(pCharBody.GetFeetPosition(), pJoint.GetPivotPoint());
+ 			if(fDistance > mfMaxDistance)
+ 			{
+ 				cLux_GetPlayer().ChangeState(mlPreviousState);
+ 				return;
+ 			}
+ 			
+ 			///////////////////////////////////
+ 			//Slow down the speed based on the current speed
+ 			float fSlowDownSpeed = cMath_Abs(mfRotSpeed) * mfMoveSlowDownFactor;
+ 			if(mfRotSpeed > 0) 
+ 			{
+ 				mfRotSpeed -= afTimeStep * fSlowDownSpeed;
+ 				if(mfRotSpeed < 0) mfRotSpeed = 0;
+ 			}
+ 			if(mfRotSpeed < 0) 
+ 			{
+ 				mfRotSpeed += afTimeStep * fSlowDownSpeed;
+ 				if(mfRotSpeed > 0) mfRotSpeed = 0;
+ 			}
+ 			
+ 			////////////////////////////////////
+ 			// IF no mouse movement, reset the speed (if var is set)
+ 			if(mbResetSpeedWhenNoMouseMovement && mvMoveAdd == cVector2f(0))
+ 			{
+ 				mfRotSpeed = 0;
+ 			}
+ 			
+ 			///////////////////////////////////
+ 			//Get vectors and get move speed
+ 			float fSpeedAdd = GetSpeedAdd(pCam);
+ 		
+ 			///////////////////////////////////
+ 			//Change the speed and cap it o max if needed
+ 			mfRotSpeed +=  fSpeedAdd * 3000.0f * mfMoveSpeedFactor * afTimeStep;	
+ 			if(mfRotSpeed > mfMoveMaxSpeed)	mfRotSpeed = mfMoveMaxSpeed;
+ 			if(mfRotSpeed < -mfMoveMaxSpeed)	mfRotSpeed = -mfMoveMaxSpeed;
+ 		
+ 			///////////////////////////////////
+ 			//Calculate torque
+ 			cVector3f vRotateDir = pJoint.GetPinDir();
+ 			cVector3f vBodyVel = pBody.GetAngularVelocity();
+ 			cVector3f vHingeVel = vRotateDir * cMath_Vector3Dot(vRotateDir, vBodyVel);
+ 			cVector3f vWantedVel = vRotateDir * mfRotSpeed;
+ 			
+ 			//cLux_AddDebugMessage("Wanted: "+vWantedVel+ " Hinge: "+vHingeVel, true);
+ 			
+ 			cVector3f vTorque = mRotatePid.Output(vWantedVel - vHingeVel, afTimeStep);
+ 			vTorque = cMath_MatrixMul(pBody.GetInertiaMatrix(), vTorque);
+ 			
+ 			vTorque = cMath_Vector3MaxLength(vTorque, mfMaxAngularImpulse*pBody.GetMass());
+ 		
+ 			pBody.AddTorque(vTorque);
+ 		
+ 			mvLastMouseAdd = mvMoveAdd;
+ 			mvMoveAdd = cVector2f(0);
+ 			
+ 			/////////////////////////////
+ 			//Check if focus position is outside of screen.
+ 			CheckOutsideAtScreenEdgeAndMove(afTimeStep);
+ 		return;
+ 	}
+  if(CheckShouldUpdate()==false) return; 
+  
+  //////////////////////////// 
+  // Check so interact is still pressed. 
+  if(cInput_IsTriggered(eAction_Interact)==false) 
+  { 
+   ////////////////////// 
+   //Change state 
+   cLux_GetPlayer().ChangeState(mlPreviousState); 
+    
+   return; 
+  } 
+   
+  ///////////////////////////// 
+  //Show no crosshair! 
+  Player_SetCrossHairState(eCrossHairState_None); 
+  
+  ////////////////////////////// 
+  //Set up variables 
+  iCharacterBody @pCharBody = cLux_GetPlayer().GetCharacterBody(); 
+  cCamera @pCam = cLux_GetPlayer().GetCamera(); 
+  iPhysicsJoint @pJoint = cLux_ID_Joint(mJointID); 
+  iPhysicsBody@ pBody = cLux_ID_Body(mBodyID); 
+ 
+  ////////////////////////////// 
+  //Check if out of range 
+  float fDistance = cMath_Vector3Dist(pCharBody.GetFeetPosition(), pJoint.GetPivotPoint()); 
+  if(fDistance > mfMaxDistance) 
+  { 
+   cLux_GetPlayer().ChangeState(mlPreviousState); 
+   return; 
+  } 
+   
+  ///////////////////////////////////
+  // H57.55EO: native authored RotateBase recurrence remains the sole VR/desktop motor.
+  // The DLL's CE-style adapter emits ordinary Look input; SOMA owns mfRotSpeed.
+  float fSlowDownSpeed = cMath_Abs(mfRotSpeed) * mfMoveSlowDownFactor; 
+  if(mfRotSpeed > 0)  
+  { 
+   mfRotSpeed -= afTimeStep * fSlowDownSpeed; 
+   if(mfRotSpeed < 0) mfRotSpeed = 0; 
+  } 
+  if(mfRotSpeed < 0)  
+  { 
+   mfRotSpeed += afTimeStep * fSlowDownSpeed; 
+   if(mfRotSpeed > 0) mfRotSpeed = 0; 
+  } 
+  if(mbResetSpeedWhenNoMouseMovement && mvMoveAdd == cVector2f(0) && mbHPL3VRLeverInputThisStep==false) 
+  { 
+   mfRotSpeed = 0; 
+  } 
+  // H57.56BD: exact Lever packets already carry the signed physical hinge-angle
+  // scalar. Skip the camera-space Lever::GetSpeedAdd reconstruction for that
+  // packet only; desktop, Wheel and SwingDoor behavior stays on the stock path.
+  float fSpeedAdd = mbHPL3VRLeverInputThisStep ? mfHPL3VRLeverSpeedAdd : GetSpeedAdd(pCam); 
+  mfRotSpeed +=  fSpeedAdd * 3000.0f * mfMoveSpeedFactor * afTimeStep;  
+  // H57.55EO: physical SwingDoor input still uses the shipped RotateBase
+  // recurrence/PID/inertia/torque cap below.  Only its speed ceiling is widened
+  // for the DLL-marked VR packet so the native target can keep up with a real
+  // hand instead of saturating at a desktop mouse-oriented mfMoveMaxSpeed.
+  float fMoveMax = mfMoveMaxSpeed;
+  if(mbHPL3VRSwingInputThisStep && fMoveMax < 12.0f) fMoveMax = 12.0f;
+  if(mfRotSpeed > fMoveMax) mfRotSpeed = fMoveMax; 
+  if(mfRotSpeed < -fMoveMax) mfRotSpeed = -fMoveMax;
+  if(mbHPL3VRWheelDirect) mfRotSpeed=mfHPL3VRWheelOmega;
+  /////////////////////////////////// 
+  //Calculate torque -- exact authored PID/inertia/cap/AddTorque path.
+  cVector3f vRotateDir = pJoint.GetPinDir(); 
+  cVector3f vBodyVel = pBody.GetAngularVelocity(); 
+  cVector3f vHingeVel = vRotateDir * cMath_Vector3Dot(vRotateDir, vBodyVel); 
+  cVector3f vWantedVel = vRotateDir * mfRotSpeed; 
+  // H57.55GA: hardware on the ~3 kg cabinet leaf still showed large native
+  // overshoot even after FN (target ~0.1-0.6 rad/s while hinge remained ~1.3-2.1).
+  // Keep SOMA's authored PID/inertia/AddTorque motor, but stop boosting light
+  // leaves at all. <=4 kg uses the authored P and authored torque cap; 4-8 kg
+  // interpolates smoothly; >=8 kg retains the FM/FN heavy-door P=20 / 3x budget.
+  // Desktop/authored behavior is restored immediately after this one VR packet.
+  float fAuthoredPidP = mRotatePid.p;
+  float fVRMass = pBody.GetMass();
+  if(mbHPL3VRWheelDirect) mRotatePid.p=15.0f;
+  if(mbHPL3VRSwingInputThisStep)
+  {
+   if(fVRMass >= 8.0f) mRotatePid.p = 20.0f;
+   else if(fVRMass > 4.0f) mRotatePid.p = fAuthoredPidP + ((fVRMass - 4.0f) / 4.0f) * (20.0f - fAuthoredPidP);
+  }
+  cVector3f vTorque = mRotatePid.Output(vWantedVel - vHingeVel, afTimeStep); 
+  mRotatePid.p = fAuthoredPidP;
+  vTorque = cMath_MatrixMul(pBody.GetInertiaMatrix(), vTorque); 
+  float fTorqueCap = mfMaxAngularImpulse*pBody.GetMass();
+  if(mbHPL3VRSwingInputThisStep)
+  {
+   float fVRCapMul = 1.0f;
+   if(fVRMass >= 8.0f) fVRCapMul = 3.0f;
+   else if(fVRMass > 4.0f) fVRCapMul = 1.0f + ((fVRMass - 4.0f) / 4.0f) * 2.0f;
+   fTorqueCap *= fVRCapMul;
+  }
+  vTorque = cMath_Vector3MaxLength(vTorque, fTorqueCap); 
+  pBody.AddTorque(vTorque);
+  mvLastMouseAdd = mvMoveAdd; 
+  mvMoveAdd = cVector2f(0);
+  mbHPL3VRSwingInputThisStep = false;
+  mbHPL3VRWheelDirect = false;
+  mfHPL3VRWheelOmega = 0;
+  mbHPL3VRLeverInputThisStep = false;
+  mfHPL3VRLeverSpeedAdd = 0; 
+   
+  ///////////////////////////// 
+  //Check if focus position is outside of screen. 
+  CheckOutsideAtScreenEdgeAndMove(afTimeStep); 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ void Reset() 
+ { 
+  
+ } 
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // ACTIONS 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount) 
+ { 
+ 	if (!_HPL3VR_RuntimeActive_RotateBase())
+ 	{
+ 			///////////////////////////////////
+ 			// Looking
+ 			if(alAnalogId == eAnalogType_Look)
+ 			{
+ 				cVector2f vAmount(avAmount.x, avAmount.y);
+ 				if(cLux_GetInputHandler().IsYAxisInverted()) vAmount.y = -vAmount.y;
+ 				mvMoveAdd += vAmount * mfMoveToMouseAddFactor;
+ 				
+ 				return false;
+ 			}
+ 			///////////////////////////////////
+ 			// Moving
+ 			else if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove)
+ 			{
+ 				if (avAmount.SqrLength() < 0.01) return true;
+ 				
+ 				cVector2f vAmount(avAmount.x, -avAmount.y);
+ 				mvMoveAdd += vAmount * mfMovementToMoveAddFactor;
+ 				
+ 				return true;
+ 			}
+ 			
+ 			return true;
+ 	}
+  /////////////////////////////////// 
+  // Looking 
+  if(alAnalogId == eAnalogType_Look) 
+  { 
+   // H57.56BD: z>=2.5 is an exact Lever packet. avAmount.x is already the
+   // signed physical angular step around the authored Hinge pin after DLL-side
+   // normalization/gain. Preserve that sign directly instead of projecting the
+   // motion through camera-facing mouse geometry, which could make some levers
+   // effectively one-way. It is still consumed by this stock RotateBase state.
+   if(avAmount.z==4.0f)
+   {
+    if(cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Wheel)
+    {
+     mfHPL3VRWheelOmega=cMath_Clamp(avAmount.x,-4.0f,4.0f);
+     mbHPL3VRWheelDirect=true;
+    }
+    return false;
+   }
+   bool bHPL3VRLeverPacket = avAmount.z > 2.5f;
+   if(bHPL3VRLeverPacket)
+   {
+    mfHPL3VRLeverSpeedAdd = cMath_Clamp(mfHPL3VRLeverSpeedAdd + avAmount.x, -0.20f, 0.20f);
+    mbHPL3VRLeverInputThisStep = true;
+    return false;
+   }
+   // H57.56AZ: z>=1.5 is a DLL-authored Wheel circular-gesture packet. It is
+   // already expressed in interaction-space and must not inherit the user's
+   // camera Y-invert preference or SwingDoor-only speed/torque widening.
+   bool bHPL3VRWheelPacket = avAmount.z > 1.5f;
+   cVector2f vAmount(avAmount.x, avAmount.y); 
+   if(bHPL3VRWheelPacket==false && cLux_GetInputHandler().IsYAxisInverted()) vAmount.y = -vAmount.y; 
+   if(avAmount.z > 0.5f && bHPL3VRWheelPacket==false) mbHPL3VRSwingInputThisStep = true;
+   mvMoveAdd += vAmount * mfMoveToMouseAddFactor; 
+    
+   return false; 
+  } 
+  /////////////////////////////////// 
+  // Moving 
+  else if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove) 
+  { 
+   // H57.55GE: the DLL tags VR locomotion in avAmount.z. Player.hps still uses
+   // avAmount.x/y to move Simon, but physical SwingDoor/Lever interaction must
+   // not reuse that same stick vector as RotateBase mechanism input. The shipped
+   // SwingDoor subclass sets mfMovementToMoveAddFactor=1, which otherwise gives
+   // the door a second motion owner while the tracked hand also moves with Simon.
+   if(avAmount.z > 0.5f) return true;
+   if (avAmount.SqrLength() < 0.01) return true; 
+    
+   cVector2f vAmount(avAmount.x, -avAmount.y); 
+   mvMoveAdd += vAmount * mfMovementToMoveAddFactor; 
+    
+   return true; 
+  } 
+   
+  return true; 
+ } 
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // BODY CALLBACKS 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ bool AllowBuoyancy(iPhysicsBody @apBody) 
+ { 
+  if(apBody is cLux_ID_Body(mBodyID)) return false; 
+   
+  return true; 
+ } 
+ 
+ //------------------------------------------------------------ 
+  
+  
+ ///////////////////////////////////////// 
+ // HELPERS 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+  
+ //------------------------------------------------------------ 
+  
+ ///////////////////////////////////////// 
+ // PROPERTIES 
+ ///////////////////////////////////////// 
+  
+ //------------------------------------------------------------ 
+  
+ //The follow are set at Class Init! 
+  
+ float mfMoveToMouseAddFactor; 
+ float mfMaxAngularImpulse; 
+ bool mbResetSpeedWhenNoMouseMovement; 
+ bool mbHPL3VRSwingInputThisStep;
+ [nosave] bool mbHPL3VRWheelDirect;
+ [nosave] float mfHPL3VRWheelOmega;
+ bool mbHPL3VRLeverInputThisStep;
+ float mfHPL3VRLeverSpeedAdd;
+ float mfMovementToMoveAddFactor; 
+   
+ //------------------------------------------------------------ 
+  
+ float mfMoveSpeedFactor; 
+ float mfMoveMaxSpeed; 
+ float mfMoveSlowDownFactor; 
+   
+ //------------------------------------------------------------ 
+  
+ tID mJointID; 
+ 
+ bool mbHasGravity; 
+ 
+ float mfMaxDistance; 
+ 
+ cVector3f mvJointRight; 
+ cVector3f mvJointForward; 
+  
+ cVector2f mvMoveAdd; 
+ cVector2f mvLastMouseAdd; 
+  
+ float mfRotSpeed; 
+  
+ cPidControllerVec3 mRotatePid; 
+ 
+    
+ //------------------------------------------------------------ 
+}
