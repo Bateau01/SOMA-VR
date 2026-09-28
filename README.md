@@ -96,3 +96,8 @@ Describe the issue, map, object, steps to reproduce, headset/controllers, OpenXR
 SOMA and its original scripts and assets are by Frictional Games. This is an unofficial mod. Steam Audio is by Valve; OpenXR is a Khronos standard, with the OpenXR loader included here. MinHook notices are included.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). GPL3.0 Licensed.
+
+## AI Disclaimer
+
+This project was created with AI assistance. Despite that, I've already poured over 250 hours on this project. HPL3 is not an easy engine to work with, and this mod took a lot of iterating, testing, decompilation, fixing, and testing again. 
+
