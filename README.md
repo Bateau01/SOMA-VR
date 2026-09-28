@@ -4,6 +4,9 @@ A native VR mod for SOMA, created using its existing HPL3 engine. Includes 6DOF 
 
 <img width="1734" height="907" alt="exec-6791d6ff-6d40-43cb-bac3-711e245ed17b" src="https://github.com/user-attachments/assets/57e607ae-82e5-47cb-811f-e36af853c133" />
 
+<img width="1024" height="1536" alt="exec-0732d610-9d19-434a-824e-22f9dee6b318" src="https://github.com/user-attachments/assets/da439dec-0070-4f9e-bf7b-02b16d6f9941" />
+
+
 # Features and validation status
 
 This inventory describes included implementation, not a claim that every interaction or hardware combination has passed physical testing.
