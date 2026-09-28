@@ -2,8 +2,6 @@
 
 A native VR mod for SOMA, created using its existing HPL3 engine. Includes 6DOF Motion controls, manual/physical interactions, native VR settings, and stereoscopic rendering.
 
-**Current package: S26BY, 27 September 2026.** This is a cumulative mod package, not just the latest update. A separately purchased, compatible copy of SOMA is required. The game executable and the full game are not included.
-
 # Features and validation status
 
 This inventory describes included implementation, not a claim that every interaction or hardware combination has passed physical testing.
