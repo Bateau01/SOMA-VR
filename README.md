@@ -2,6 +2,8 @@
 
 A native VR mod for SOMA, created using its existing HPL3 engine. Includes 6DOF Motion controls, manual/physical interactions, native VR settings, and stereoscopic rendering.
 
+<img width="1734" height="907" alt="exec-6791d6ff-6d40-43cb-bac3-711e245ed17b" src="https://github.com/user-attachments/assets/57e607ae-82e5-47cb-811f-e36af853c133" />
+
 # Features and validation status
 
 This inventory describes included implementation, not a claim that every interaction or hardware combination has passed physical testing.
