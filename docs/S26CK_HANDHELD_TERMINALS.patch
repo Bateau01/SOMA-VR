@@ -1,0 +1,1217 @@
+--- S26CJ/runtime/maps/chapter04/04_02_tau_inside/04_02_tau_inside.hps
++++ S26CK/runtime/maps/chapter04/04_02_tau_inside/04_02_tau_inside.hps
+@@ -3457,7 +3457,11 @@
+ 		void OnLeaveToBeFlesher(const tString&in asEntityName)
+ 		{
+ 			OnLeave_HandheldTerminal("");
+-			Depth_ImGui_StopAudioFilePlayback(asEntityName+"_open", true);
++			// S26CK: the VR handheld GUI lives on the physical source.
++            cScript_SetGlobalReturnBool(false);
++            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
++            if(cScript_GetGlobalReturnBool())Depth_ImGui_StopAudioFilePlayback(asEntityName,true);
++            else Depth_ImGui_StopAudioFilePlayback(asEntityName+"_open",true);
+ 		}
+ 
+ 		//-------------------------------------------------------
+@@ -7747,3 +7751,5 @@
+ 	//-------------------------------------------------------
+ 
+ }
++
++
+--- S26CJ/runtime/script/player/PlayerState_Interact_HandheldTerminal.hps
++++ S26CK/runtime/script/player/PlayerState_Interact_HandheldTerminal.hps
+@@ -0,0 +1,657 @@
++#include "player/PlayerState_Interact.hps"
++#include "helpers/helper_player.hps"
++#include "helpers/helper_effects.hps"
++#include "helpers/helper_audio.hps"
++#include "helpers/helper_modules.hps"
++#include "player_types.hps"
++
++//------------------------------------------------------------
++	
++/////////////////////////////////////////
++// SETTINGS
++/////////////////////////////////////////
++
++//------------------------------------------------------------
++
++const float gfHandheldTerminalMoveAcc = 2;
++const float gfHandheldTerminalMoveSpeed = 2;
++const float gfHandheldTerminalHideTime= 0.35f;
++const float gfHandheldTerminalSlowDownDist = 0.4;
++const float gfHandheldTerminalTargetRotation = 1.5;
++const float gfMoveFractionToStartRotation = 0;
++const float gfMoveFractionToStopRotation = 1;
++
++const float gfReadableDissolveTime = 0.2f;
++
++//------------------------------------------------------------
++
++class cScrPlayerState_Interact_HandheldTerminal : iScrPlayerState_Interact, iScrPlayerState_Interface
++{
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// INIT
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++    bool mbVRPhysicalTablet=false; // Saved marker: reload exits the VR state without a restored tracked grip.
++    [nosave] float mfVRTabletLatchGrace=0;
++    void _Global_VRSetupTablet(){
++        SetupInteractVars();mbVRPhysicalTablet=true;mfVRTabletLatchGrace=0.15f;
++        mbEnteringState=false;mbLeavingState=false;
++    }
++    bool VR_PhysicalTablet(){return mbVRPhysicalTablet;}
++
++	void Init()
++	{
++		mlDepthOfFieldID = -1;
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// USER SETTINGS
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void LoadUserConfig()
++	{
++	
++	}
++	void SaveUserConfig()
++	{
++	
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// ENTER MAP
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void OnMapEnter(cLuxMap @apMap)
++	{
++	
++	}
++	void OnMapLeave(cLuxMap @apMap)
++	{
++	
++	}
++	
++	//------------------------------------------------------------
++	
++	void CreateWorldEntities(cLuxMap @apMap)
++	{
++	
++	}
++	void DestroyWorldEntities(cLuxMap @apMap)
++	{
++	
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// GLOBAL FUNCTIONS
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void SetupTerminal()
++	{
++        mbVRPhysicalTablet=false;
++		////////////////////////////////
++		// Reset variables
++		mbLeavingState = false;
++		mbEnteringState = true;
++		mfPrevDist = 1000;
++		
++		////////////////////////////////
++		// Get basic params
++		mPropID = cScript_GetGlobalArgID(0);
++		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
++		pProp.SetIsInteractedWith(true);
++		
++		////////////////////////////////
++		// Get specific params
++		mOpenPropID = cScript_GetGlobalArgID(3);
++		mfDistanceFromCamera = cScript_GetGlobalArgFloat(4);
++		mfYStartOffset = cScript_GetGlobalArgFloat(5);
++		tString sOpenSound = cScript_GetGlobalArgString(6);
++		msCloseSound = cScript_GetGlobalArgString(7);
++		msCloseCallback = cScript_GetGlobalArgString(8);
++		mbAllowCancel = cScript_GetGlobalArgBool(9);
++		msHandAnimationSuffix = cScript_GetGlobalArgString(10);
++		mbGUIActiveOnTransitions = cScript_GetGlobalArgBool(11);
++		mbShowMouse = cScript_GetGlobalArgBool(12);
++		mbLockCamera = cScript_GetGlobalArgBool(13);
++		
++		////////////////////////////////
++		// Start DOF effect and get current camera rotation
++		Effect_DoF_FadeOut(mlDepthOfFieldID, 1);
++		mlDepthOfFieldID = Effect_DoF_Start(0, mfDistanceFromCamera+0.25, 1, 1);
++		
++		////////////////////////////////
++		// Fade out mesh
++		pProp.GetMeshEntity().SetVisible(false);
++		cLux_GetCurrentMap().AddDissolveEntity(pProp.GetMeshEntity(), gfReadableDissolveTime);
++		
++		////////////////////////////////
++		// Get open version of prop and set its initial orientation
++		cLuxProp @pOpenProp = cLux_ID_Prop(mOpenPropID);
++		pOpenProp.SetActive(true);
++		pOpenProp.WakeUp();
++		pOpenProp.SetGuiUpdateWhenOutOfView(true);
++		
++		if (mbGUIActiveOnTransitions)
++		{
++			pOpenProp.SetGuiActive(true);
++			pOpenProp.SetEffectsActive(true,true);
++		}
++		
++		if (msHandAnimationSuffix!="")
++		{
++			PlayerHands_SetUseCustomPosition(false);
++			PlayerHands_SetUseCustomRotation(false);
++			PlayerHands_PlayAnimation("tool_"+msHandAnimationSuffix+"_draw", false,false,0,pOpenProp.GetName(), false);
++		}
++		else
++		{
++			if (mbLockCamera) pOpenProp.SetGuiIsFocused(true, mbShowMouse);
++			m_mtxOriginOrientation = GetInitialMatrix();
++			pOpenProp.SetMatrix(m_mtxOriginOrientation);
++			mvCamRelativeStart = pOpenProp.GetPosition() - cLux_GetPlayer().GetCamera().GetPosition();
++		}
++		
++	
++		////////////////////////////////
++		// Play sound
++		if (sOpenSound != "")
++			Sound_PlayGui(sOpenSound, 1.0f);
++				
++		////////////////////////////////
++		//Stop character body
++		cLux_GetPlayer().GetCharacterBody().StopMovement();
++	}
++	
++	//------------------------------------------------------------
++	
++	cMatrixf GetInitialMatrix()
++	{
++		cCamera@ pCamera = cLux_GetPlayer().GetCamera();
++		
++		cMatrixf mtxCameraCenteredRotation = pCamera.GetViewMatrix().GetRotation();
++		mtxCameraCenteredRotation.SetForward(pCamera.GetForward());
++									
++		cVector3f vFwd = mtxCameraCenteredRotation.GetUp();
++		cVector3f vUp = mtxCameraCenteredRotation.GetForward();
++		cVector3f vRight = cMath_Vector3Cross(vFwd, vUp);
++		cVector3f vPos = pCamera.GetPosition() + 
++						 mtxCameraCenteredRotation.GetForward() * mfDistanceFromCamera + 
++						 mtxCameraCenteredRotation.GetUp() * mfYStartOffset;
++		
++		return cMath_MatrixUnitVectors(vRight, vFwd, vUp, vPos);
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// GENERAL
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void OnEnterState(int alPrevStateId)
++	{
++		EnterInteractState(alPrevStateId);
++        if(VR_PhysicalTablet())return;
++		
++		// Disable screen shakes etc.
++		Effect_Shake_EnableAll(false);
++		
++		mfMoveSpeedMul = Player_GetMoveSpeedMul();
++		Player_SetMoveSpeedMul(0.0f);
++	}
++	
++	//------------------------------------------------------------
++	
++	void OnLeaveState(int alNextStateId)
++	{
++        if(VR_PhysicalTablet()){
++            mbVRPhysicalTablet=false;
++            cLuxProp@ p=cLux_ID_Prop(mPropID);
++            if(p !is null){ResetPropInteractVars();cScript_RunGlobalFunc(p.GetName(),"","_Global_VRCloseTablet");}
++            return;
++        }
++
++		// Enable screen shakes etc.
++		Effect_Shake_EnableAll(true);
++		
++		//////////////////////////////
++		// Fade out DOF effect
++		Effect_DoF_FadeOut(mlDepthOfFieldID, 1.0f);
++		
++		//////////////
++		// Restore fov
++		Player_FadeFOVToDefault(1.0f);
++
++		////////////////////////////////
++		// Fade in mesh
++		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
++		pProp.GetMeshEntity().SetVisible(true);
++		pProp.FadeInMeshEntity(gfReadableDissolveTime);
++		
++		cLuxProp@ pOpenProp = cLux_ID_Prop(mOpenPropID);
++		
++		if (pOpenProp !is null)
++		{
++			pOpenProp.SetActive(false);
++			pProp.SetGuiUpdateWhenOutOfView(false);
++			pOpenProp.SetGuiIsFocused(false);
++		}
++		
++		////////////////////////////////
++		// Reset general stuff
++		if (pProp !is null)
++		{
++			ResetPropInteractVars();
++		}
++		
++		////////////////////////////////
++		// Runs close callback if it exists.
++		cLuxMap@ pMap = cLux_GetCurrentMap();
++		if(pProp !is null && msCloseCallback != "" && pMap.ScriptPrepare("void " + msCloseCallback + "(const tString &in asEntity)"))
++		{
++			tString entityName = pProp.GetName();
++			pMap.SetArgString(0, entityName);
++			pMap.ScriptExecute();
++		}
++	}
++		
++	//------------------------------------------------------------
++	
++	void Reset()
++	{
++	}
++	
++	//------------------------------------------------------------
++	
++	void Update(float afTimeStep)
++	{
++        if(VR_PhysicalTablet()){
++            if(!_HPL3VR_RuntimeActive_Interact()){Exit();return;}
++            cLuxProp@ p=cLux_ID_Prop(mPropID);
++            if(p is null){Exit();return;}
++            mfVRTabletLatchGrace-=afTimeStep;
++            if(mfVRTabletLatchGrace<=0 && !cScript_RunGlobalFunc("VRPAD",p.GetName(),"Q")){Exit();return;}
++            cScript_RunGlobalFunc(p.GetName(),"","_Global_VRUpdateTablet");
++            return;
++        }
++
++		if(CheckShouldUpdate()==false) return;
++		
++		if (mbEnteringState)
++			UpdateEnterState(afTimeStep);
++		else if (mbLeavingState)
++			UpdateLeaveState(afTimeStep);
++
++		//Show no crosshair!
++		Player_SetCrossHairState(eCrossHairState_None);
++	}
++	
++	//------------------------------------------------------------
++
++	void UpdateEnterState(float afTimeStep)
++	{
++		cCamera@ pCamera = cLux_GetPlayer().GetCamera();
++		cLuxProp@ pOpenProp = cLux_ID_Prop(mOpenPropID);
++		
++		if (msHandAnimationSuffix=="")
++		{
++			////////////////////////////////////////////////
++			// Calculate vector to target position
++			cVector3f vCurrPos = pOpenProp.GetPosition();
++			cVector3f vTargetPos = pCamera.GetPosition() + pCamera.GetForward() * mfDistanceFromCamera;
++			cVector3f vToTarget = vTargetPos - vCurrPos;
++			
++			float fDist = vToTarget.Length();
++			
++			////////////////////////////////////////////////
++			// Calculate speed to move prop with
++			float fSpeedMultiplier = cMath_Min(1.0f, (fDist/gfHandheldTerminalSlowDownDist));
++			float fMoveSpeed = gfHandheldTerminalMoveSpeed * fSpeedMultiplier;
++			
++			////////////////////////////////////////////////
++			// Calculate speed to move prop at
++			cVector3f vDeltaMovement = vToTarget;
++			vDeltaMovement.Normalize();
++			vDeltaMovement = vDeltaMovement * fMoveSpeed * afTimeStep;
++		
++			pOpenProp.SetPosition(vCurrPos + vDeltaMovement);
++		
++			////////////////////////////////////////////////
++			// Rotate prop according to how far it has moved
++			SetRotationForMoveFraction(1.0f-(fDist/cMath_Abs(mfYStartOffset)));
++		
++			if (fDist < 0.1f && mfPrevDist > 0.1f && mbGUIActiveOnTransitions==false)
++			{
++				pOpenProp.SetGuiActive(true, 0.75f);
++				pOpenProp.SetEffectsActive(true,true);
++			}
++		
++			////////////////////////////////////////////////
++			// If close enough, movement is done
++			if (fDist < 0.001f)
++			{
++				mbEnteringState = false;
++			}
++			
++			mfPrevDist = fDist;
++		}
++		else if(PlayerHands_GetAnimationPlaying()==false)
++		{
++			PlayerHands_PlayAnimation("tool_"+msHandAnimationSuffix+"_idle", true,false,0.2f,pOpenProp.GetName(), false);
++			mbEnteringState = false;
++			
++			if (mbLockCamera) pOpenProp.SetGuiIsFocused(true,mbShowMouse);
++			if (mbGUIActiveOnTransitions==false)
++			{
++				pOpenProp.SetGuiActive(true, 0.75f);
++				pOpenProp.SetEffectsActive(true,true);
++			}
++		}
++	}
++	
++	//------------------------------------------------------------
++	
++	void UpdateLeaveState(float afTimeStep)
++	{
++		cLuxProp@ pOpenProp = cLux_ID_Prop(mOpenPropID);
++		
++		if (msHandAnimationSuffix=="")
++		{
++			mfStateTimer+=afTimeStep;
++			float fStateProgress = mfStateTimer/gfHandheldTerminalHideTime;
++			
++			////////////////////////////////////////////////
++			// Check if state is finished
++			if (fStateProgress >= 1.0f)
++			{
++				mBaseObj.mpPlayer.ChangeState(mlPreviousState);
++				return;
++			}
++
++			////////////////////////////////////////////////
++			// Move prop away
++			cCamera@ pCamera = cLux_GetPlayer().GetCamera();
++			cVector3f vEndPosition = pCamera.GetPosition()+mvCamRelativeStart;
++			cVector3f vMove =(vEndPosition-mvStartMovePos);
++			cVector3f vPos=mvStartMovePos+vMove*fStateProgress;
++			
++			pOpenProp.SetPosition(vPos);
++			
++			////////////////////////////////////////////////
++			// Rotate prop according to how far it has moved
++			SetRotationForMoveFraction(1.0f-fStateProgress);
++		}
++		else if(PlayerHands_GetAnimationPlaying()==false)
++		{
++			mBaseObj.mpPlayer.ChangeState(mlPreviousState);
++			PlayerHands_SetActive(false);
++		}
++	}
++	
++	//------------------------------------------------------------
++	
++	void SetRotationForMoveFraction(float afMoveFraction)
++	{
++		////////////////////////////////////////////////
++		// Calculate rotation fraction from move fraction and clamp between 0 and 1
++		float fRotFraction = (afMoveFraction - gfMoveFractionToStartRotation) / 
++						   (gfMoveFractionToStopRotation - gfMoveFractionToStartRotation);
++		fRotFraction = cMath_Clamp(fRotFraction, 0.0f, 1.0f);
++		
++		////////////////////////////////////////////////
++		// Create rotation matrix based on rotation fraction
++		cMatrixf mtxRotate = cMath_MatrixRotateX(-(fRotFraction * gfHandheldTerminalTargetRotation));
++		
++		//////////////////
++		// Set rotation
++		cLuxProp@ pOpenProp = cLux_ID_Prop(mOpenPropID);
++		cMatrixf mtxToSet = pOpenProp.GetMatrix();
++		mtxToSet.SetRotation(cMath_MatrixMul(m_mtxOriginOrientation, mtxRotate));
++		pOpenProp.SetMatrix(mtxToSet);
++	}
++	
++	//------------------------------------------------------------
++	
++	void PostUpdate(float afTimeStep)
++	{
++	}
++	
++	
++	//------------------------------------------------------------
++		
++	/////////////////////////////////////////
++	// ACTIONS
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	bool OnAction(int alAction, bool abPressed)
++	{
++        if(VR_PhysicalTablet()){if(alAction==eAction_InteractCancel && abPressed)Exit();return true;}
++		///////////////////////////////
++		// Disable jump and crouch
++		if (alAction == eAction_Crouch || alAction == eAction_Jump)
++			return false;
++		
++		///////////////////////////////
++		// Right click
++		if(mbAllowCancel && alAction== eAction_InteractCancel && abPressed && !mbLeavingState)
++		{
++			LeaveState();
++			return true;
++		}
++		
++		return true;
++	}
++	
++	//------------------------------------------------------------
++	
++	void Exit()
++	{
++        if(VR_PhysicalTablet()){cLux_GetPlayer().ChangeState(mlPreviousState);return;}
++		if ((!mbEnteringState)&&(!mbLeavingState))
++		{
++			LeaveState();
++		}
++	}	
++	
++	//------------------------------------------------------------
++	
++	void LeaveState()
++	{			
++		///////////////////////////////
++		// Play sound
++		if (msCloseSound.length() > 0)
++			Sound_PlayGui(msCloseSound, 1.0f);
++				
++		//////////////////////////////
++		// Start leaving state and cancel entering state
++		mbEnteringState = false;
++		mbLeavingState = true;
++		
++		mfStateTimer = 0.0f;
++		
++		cLuxProp @pOpenProp = cLux_ID_Prop(mOpenPropID);
++		mvStartMovePos = pOpenProp.GetPosition();
++		
++		pOpenProp.SetGuiIsFocused(false);
++		
++		if (mbGUIActiveOnTransitions==false)
++		{
++			pOpenProp.SetGuiActive(false, 0.5f);
++			pOpenProp.SetEffectsActive(false,true);
++		}
++	
++		//////////////////////////////
++		// Let the player move
++		Player_FadeMoveSpeedMulTo(mfMoveSpeedMul,0.5f);	
++	
++		if (msHandAnimationSuffix!="")
++			PlayerHands_PlayAnimation("tool_"+msHandAnimationSuffix+"_holster", false,false,0,pOpenProp.GetName(), false);		
++	}
++	
++	//------------------------------------------------------------
++
++	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
++	{
++        if(VR_PhysicalTablet())return true;
++		// Allow movement when the datapad is being put away
++		if (mbLeavingState)
++			return true;
++			
++		///////////////////////////////////
++		// Disable move
++		if(alAnalogId == eAnalogType_GamepadMove || alAnalogId == eAnalogType_Move)
++		{			
++			return false;
++		}
++		
++		///////////////////////////////////
++		// Override look
++		if(alAnalogId == eAnalogType_Look)
++		{			
++			return !mbLockCamera;
++		}
++		
++		return true;
++	}
++	
++	//------------------------------------------------------------
++	
++	bool OnExitPressed()
++	{
++        if(VR_PhysicalTablet())Exit();
++		return true;
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// BODY CALLBACKS
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	bool AllowBuoyancy(iPhysicsBody @apBody)
++	{
++		return false;
++	}
++
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// CHARACTER CALLBACK
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
++	{
++		
++	}
++	
++	//------------------------------------------------------------
++	
++	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
++	{
++		
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// HELPER METHODS
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++		
++	void SaveBodyProperties(iPhysicsBody @apBody)
++	{
++		
++	}
++
++	//-----------------------------------------------------------------------
++
++
++	bool BodyIsAdded(iPhysicsBody @apBody)
++	{
++		return true;
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// DEBUG
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++		
++	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
++	{
++		return afStartY;
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// MEMBER VARIABLES
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	tID mOpenPropID;
++	
++	float mfPrevDist = 1000;
++	bool mbEnteringState;
++	bool mbLeavingState;
++	bool mbShowMouse = true;
++	bool mbLockCamera = true;
++
++	int mlDepthOfFieldID;
++	
++	float mfMoveSpeedMul;
++	
++	bool mbAllowCancel = true;
++	bool mbGUIActiveOnTransitions = false;
++	
++	tString msHandAnimationSuffix;
++	
++	//////////////////////////////////////
++	// Prop movement
++	cMatrixf m_mtxOriginOrientation;
++	float mfDistanceFromCamera;
++	float mfYStartOffset;
++	float mfStateTimer;
++	cVector3f mvStartMovePos;
++	cVector3f mvCamRelativeStart;
++	
++	//////////////////////////////////////
++	// Sounds
++	tString msCloseSound;
++	
++	//////////////////////////////////////
++	// Callbacks
++	tString msCloseCallback;
++	
++	//------------------------------------------------------------
++		
++}
++
+--- S26CJ/runtime/script/props/Prop_HandheldTerminal.hps
++++ S26CK/runtime/script/props/Prop_HandheldTerminal.hps
+@@ -0,0 +1,399 @@
++#include "helpers/helper_audio.hps"
++#include "interfaces/Prop_Interface.hps"
++#include "base/Player_Types.hps"
++//#include "helpers/helper_player.hps"
++
++	
++bool _HPL3VR_HandheldActive(){cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");return cScript_GetGlobalReturnBool();}
++
++class cScrPropHandheldTerminal : iScrProp, iScrProp_Interface
++{
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// INIT
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++    // S26CK: the physical source owns the display. Stock HUD copies and phones
++    // retain their authored path. No camera-centred duplicate or hand animation.
++    [nosave] bool mbVRTabletOpen=false;
++    [nosave] bool mbVRTabletSurface=false;
++    [nosave] bool mbVRTabletCursorRegistered=false;
++    bool VR_IsTablet(){
++        tString f=cString_GetFileName(mBaseObj.GetFileName());
++        return f=="datapad.ent" || f=="camera_portable.ent";
++    }
++    bool VR_BeginTablet(iPhysicsBody@ body,const cVector3f &in focus){
++        if(body is null || mbVRTabletOpen || msOnGuiFunction=="")return false;
++        if(!cScript_RunGlobalFunc("VRPAD",mBaseObj.GetName(),"B"))return false;
++        if(mBaseObj.GetGuiSet() is null){
++            mBaseObj.CreateAndSetupGui(msConnectedSubmesh,mColorMul,mClearColor,mOfflineClearColor,mvScreenSize);
++        }
++        if(mBaseObj.GetGuiSet() is null){cScript_RunGlobalFunc("VRPAD",mBaseObj.GetName(),"L");return false;}
++        mBaseObj.SetOnGuiFunction(msOnGuiFunction);
++        mBaseObj.SetGuiActive(true);mBaseObj.SetEffectsActive(true,false);
++        mBaseObj.SetGuiUpdateWhenOutOfView(true);
++        if(!mBaseObj.SetGuiIsFocused(true,true)){
++            mBaseObj.SetGuiActive(false);mBaseObj.SetEffectsActive(false,false);
++            cScript_RunGlobalFunc("VRPAD",mBaseObj.GetName(),"L");return false;
++        }
++        cLuxProp@ parent=mBaseObj.GetAttachmentParent();
++        if(parent !is null){parent.RemoveAttachedProp(mBaseObj);parent.SetSaveDataIsUpdated(true);}
++        mBaseObj.RemoveEntityAttachment();mBaseObj.SetStaticPhysics(false);
++        if(body.GetMass()<0.05f)body.SetMass(0.35f);
++        body.SetGravity(true);body.SetCollideCharacter(false);
++        mBaseObj.SetSaveDataIsUpdated(true);
++        mbVRTabletOpen=true;mbVRTabletSurface=false;mbIsRead=true;
++        cScript_SetGlobalArgID(0,mBaseObj.GetID());
++        cScript_SetGlobalArgInt(1,body.GetUniqueID());cScript_SetGlobalArgVector3f(2,focus);
++        cScript_RunGlobalFunc("State_Interact_HandheldTerminal","","_Global_VRSetupTablet");
++        cLux_GetPlayer().ChangeState(ePlayerState_HandheldTerminal);
++        if(msPickupSound!="")Sound_PlayGui(msPickupSound,1.0f);
++        return true;
++    }
++    void _Global_VRUpdateTablet(){
++        if(!mbVRTabletOpen || mBaseObj.GetGuiSet() is null)return;
++        cGuiSet@ set=mBaseObj.GetGuiSet().GetSet();
++        cImGui@ gui=mBaseObj.GetGuiSet().GetImGui();
++        if(set is null || gui is null)return;
++        set.SetDrawMouse(false);gui.SetShowMouseAutomatically(false);
++        cSubMeshEntity@ sub=mBaseObj.GetMeshEntity().GetSubMeshEntityName(msConnectedSubmesh);
++        int index=mBaseObj.GetMeshEntity().GetMesh().GetSubMeshIndex(msConnectedSubmesh);
++        if(sub is null || index<0)return;
++        iVertexBuffer@ vb=mBaseObj.GetMeshEntity().GetMesh().GetSubMesh(index).GetVertexBuffer();
++        if(vb is null)return;
++        // Both shipped tablet families have planar local-Z screens. Their UV0
++        // maps X left-to-right and Y bottom-to-top; live submesh transform owns
++        // all entity/body rotations and scaling, even while held sideways.
++        cVector3f lo=vb.GetAABBMin(),hi=vb.GetAABBMax();
++        cMatrixf world=sub.GetWorldMatrix();
++        cVector3f p=cMath_MatrixMul(world,cVector3f(lo.x,hi.y,lo.z));
++        cVector3f u=cMath_MatrixMul(world,cVector3f(hi.x,hi.y,lo.z))-p;
++        cVector3f v=cMath_MatrixMul(world,cVector3f(lo.x,lo.y,lo.z))-p;
++        cVector3f n=cMath_Vector3Normalize(cMath_Vector3Cross(u,v));
++        cVector2f size=set.GetVirtualSize(),offset=set.GetVirtualSizeOffset();
++        tString csv=""+p.x+","+p.y+","+p.z+","+u.x+","+u.y+","+u.z+","+v.x+","+v.y+","+v.z+","+n.x+","+n.y+","+n.z+","+size.x+","+size.y+","+offset.x+","+offset.y;
++        // Datapad has a small authored UV inset; retain it exactly.
++        if(msConnectedSubmesh=="medium_screen")csv+=",0.000260279,0.000055,0.999721721,0,0,0.999952331";
++        cScript_RunGlobalFunc("VRTERM",csv,mbVRTabletSurface ? "U" : "B");mbVRTabletSurface=true;
++        if(!mbVRTabletCursorRegistered && cScript_RunGlobalFunc("VRGUI","","R")){gui.SendMouseVirtualPosition(cVector2f(0),cVector2f(0));cScript_RunGlobalFunc("VRGUI","","E");mbVRTabletCursorRegistered=true;}
++        if(cScript_RunGlobalFunc("VRGUI","","C")){gui.SendMouseVirtualPosition(cVector2f(0),cVector2f(0));cScript_RunGlobalFunc("VRGUI","","E");}
++    }
++    void _Global_VRCloseTablet(){
++        if(!mbVRTabletOpen)return;
++        mbVRTabletOpen=false;mbVRTabletSurface=false;
++        cScript_RunGlobalFunc("VRTERM","","L");
++        mBaseObj.SetGuiIsFocused(false);mBaseObj.SetGuiActive(false);
++        mBaseObj.SetGuiUpdateWhenOutOfView(false);mBaseObj.SetEffectsActive(false,false);
++        cScript_RunGlobalFunc("VRPAD",mBaseObj.GetName(),"L");
++        if(msDropSound!="")Sound_PlayGui(msDropSound,1.0f);
++        cLuxMap@ map=cLux_GetCurrentMap();
++        if(msLeaveCallback!="" && map !is null && map.ScriptPrepare("void "+msLeaveCallback+"(const tString &in asEntity)")){
++            tString name=mBaseObj.GetName();map.SetArgString(0,name);map.ScriptExecute();
++        }
++    }
++
++	void Init()
++	{
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// LOADING
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
++	{
++		///////////////////////////////////
++		// Type vars
++		mfDistanceFromCamera = apVars.GetVarFloat("DistanceFromCamera", 0.3f);
++		mColorMul = apInstanceVars.GetVarColor("TerminalColorMul", cColor(1,1)) * cColor(apInstanceVars.GetVarFloat("TerminalBrightness", 1.0f),1.0);
++		mClearColor = apVars.GetVarColor("ClearColor", cColor(0,1));
++		mOfflineClearColor = apVars.GetVarColor("OfflineClearColor", cColor(0,1));
++		mvScreenSize = apVars.GetVarVector2f("ScreenSize", cVector2f(512.0f));
++		mfYStartOffset = apVars.GetVarFloat("YStartOffset", -0.5f);
++		msPickupSound = apVars.GetVarString("PickupSound", "");
++		msDropSound = apVars.GetVarString("DropSound", "");
++		msConnectedSubmesh = apVars.GetVarString("ConnectedSubmesh", "");
++		msHandAnimationSuffix = apVars.GetVarString("HandAnimationSuffix", "");
++		msHudEntFile = apVars.GetVarString("HudEntFile", "");
++			
++		mfFOV = cMath_ToRad(apInstanceVars.GetVarFloat("VerticalFOV", 70));
++		msLeaveCallback = apInstanceVars.GetVarString("LeaveCallback", "");
++		msOnGuiFunction = apInstanceVars.GetVarString("OnGuiFunction", "");
++		mbAllowCancel = apInstanceVars.GetVarBool("AllowCancel",true);
++		mbShowMouse = apInstanceVars.GetVarBool("ShowMouse", true);
++		mbLockCamera = apInstanceVars.GetVarBool("LockCamera", true);
++		mbGUIActiveOnTransition = apInstanceVars.GetVarBool("GUIActiveOnTransition", false);
++		
++		float fFPSWhenIdle = apInstanceVars.GetVarFloat("FPSWhenIdle", 30);
++		mBaseObj.SetGuiVariableFPS(fFPSWhenIdle);
++		
++		mBaseObj.DisableSubMeshMerge(msConnectedSubmesh);
++		
++		/////////////
++		// Preload open file
++		cLux_PreloadEntity(msHudEntFile);
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// GENERAL
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void OnUpdate(float afTimeStep)
++	{
++	}
++	
++	//------------------------------------------------------------
++	
++	void OnPostUpdate(float afTimeStep)
++	{
++	}
++	
++	//------------------------------------------------------------
++	
++	void ResetProperties()
++	{
++	}
++	
++	//------------------------------------------------------------
++	
++	void BeforeEntityDestruction()
++	{
++	}
++		
++	//------------------------------------------------------------
++	
++	void OnStartMove()
++	{
++	}
++	
++	//------------------------------------------------------------
++	
++	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
++	{
++	}
++	
++	//------------------------------------------------------------
++	
++	/*bool OnUpdateAutoSleep()
++	{
++		return true;
++	}*/
++		
++	//------------------------------------------------------------
++	
++	
++	/////////////////////////////////////////
++	// ACTIONS
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void OnSetActive(bool abX)
++	{
++	
++	}
++	
++	//------------------------------------------------------------
++	
++	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
++	{
++		
++	}
++	
++	//------------------------------------------------------------
++	
++	void OnHealthChange()
++	{
++	}
++	//------------------------------------------------------------
++	
++	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
++	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
++	{
++	
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// GENERAL
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++		
++	bool CanInteract(int alType, iPhysicsBody@ apBody)
++	{
++		return true;
++	}
++	
++	//------------------------------------------------------------
++		
++	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
++	{					
++        if(_HPL3VR_HandheldActive() && VR_IsTablet()) return VR_BeginTablet(apBody,avFocusPos);
++		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
++		if(pCharBody.IsOnGround() == false) return false;
++	
++		cLuxProp@ pOpenProp = cLux_ID_Prop(m_idOpenProp);
++
++		if (pOpenProp is null)
++		{
++			cLux_GetCurrentMap().CreateEntity(mBaseObj.GetName() + "_open", msHudEntFile == "" ? mBaseObj.GetFileName() : msHudEntFile, cMatrixf_Identity, cVector3f(1));
++			@pOpenProp = cLux_ToProp(cLux_GetCurrentMap().GetLatestEntity());
++			pOpenProp.CreateAndSetupGui(msConnectedSubmesh, mColorMul, mClearColor, mOfflineClearColor, mvScreenSize);
++			pOpenProp.SetOnGuiFunction(msOnGuiFunction);
++			
++			for (int i = 0; i < pOpenProp.GetBodyNum(); i++)
++			{
++				iPhysicsBody@ pBody = pOpenProp.GetBody(i);
++				pBody.SetCollideCharacter(false);
++				pBody.SetCollide(false);
++				pBody.SetCollideRagDoll(false);
++				pBody.SetMass(0);
++			}
++			pOpenProp.SetActive(false);
++			pOpenProp.SetGuiActive(false);
++			pOpenProp.SetEffectsActive(false,false);
++			pOpenProp.SetAllowMapTransfer(false);
++		
++			//////////////////////////////
++			// Set up render flags
++			for(int i=0; i<pOpenProp.GetMeshEntity().GetSubMeshEntityNum(); ++i)
++			{
++				cSubMeshEntity @pEnt = pOpenProp.GetMeshEntity().GetSubMeshEntity(i);
++				pEnt.SetRenderFlagBit(eRenderableFlag_VisibleInReflection, false);
++				pEnt.SetRenderFlagBit(eRenderableFlag_ShadowCaster, false);
++			}
++
++			m_idOpenProp = pOpenProp.GetID();
++		}
++		
++		/////////////////////
++		// Fade fov		
++		cLux_GetPlayer().FadeCameraFOVTo(mfFOV, 1.0f);
++
++		//////////////////////////////////
++		// Set up the created entity
++		cScript_RunGlobalFunc(pOpenProp.GetName(), "", "_Global_SetIsHudVersion");
++		
++		cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
++		cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
++		cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
++		cScript_SetGlobalArgID(3, pOpenProp.GetID()); //Open entity object ID
++		cScript_SetGlobalArgFloat(4, mfDistanceFromCamera); //Target prop distance from camera
++		cScript_SetGlobalArgFloat(5, mfYStartOffset); //Start offset along the camera's Y axis.
++		cScript_SetGlobalArgString(6, msPickupSound); //Sound played when interaction starts
++		cScript_SetGlobalArgString(7, msDropSound); //Sound played when interaction ends
++		cScript_SetGlobalArgString(8, msLeaveCallback); //Callback called when interaction ends.
++		cScript_SetGlobalArgBool(9, mbAllowCancel);// Allow use of right-button to cancel?
++		cScript_SetGlobalArgString(10, msHandAnimationSuffix); //Hand animation used, if any
++		cScript_SetGlobalArgBool(11, mbGUIActiveOnTransition);// Display GUI during transition in and out of state?
++		cScript_SetGlobalArgBool(12, mbShowMouse);// Display mouse
++		cScript_SetGlobalArgBool(13, mbLockCamera);// Should the player be allowed to look around
++		
++		cScript_RunGlobalFunc("State_Interact_HandheldTerminal", "", "SetupTerminal");
++	
++		cLux_GetPlayer().ChangeState(ePlayerState_HandheldTerminal);	
++		
++		mbIsRead = true;
++		
++		return false;
++	}
++	
++	//------------------------------------------------------------
++	
++	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
++	{
++		return eCrossHairState_Terminal;
++	}
++		
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// GLOBAL
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++	
++	void _Global_SetLeaveCallback()
++	{
++		msLeaveCallback = cScript_GetGlobalArgString(0);
++	}
++	
++	//------------------------------------------------------------
++	
++	void _Global_CanBeHighlighted()
++	{
++		cScript_SetGlobalReturnBool(mbIsRead ==false && mBaseObj.IsInteractedWith()==false && mbIsHudVersion==false);
++		cScript_SetGlobalArgID(0,mBaseObj.GetID());
++	}
++	
++	//------------------------------------------------------------
++	
++	void _Global_SetIsHudVersion()
++	{
++		mbIsHudVersion = true;
++	}
++		
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// DEBUG
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++		
++	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
++	{
++		return afStartY;
++	}
++	
++	//------------------------------------------------------------
++	
++	/////////////////////////////////////////
++	// PROPERTIES
++	/////////////////////////////////////////
++	
++	//------------------------------------------------------------
++		
++	[nosave] tString msConnectedSubmesh;
++	[nosave] cColor mClearColor;
++	[nosave] cColor mColorMul;
++	[nosave] cColor mOfflineClearColor;
++	[nosave] cVector2f mvScreenSize;
++	[nosave] tString msHandAnimationSuffix;
++	[nosave] float mfDistanceFromCamera;
++	[nosave] float mfYStartOffset;
++	[nosave] tString msPickupSound;
++	[nosave] tString msDropSound;
++	[nosave] tString msOnGuiFunction;
++	[nosave] tString msHudEntFile;
++	[nosave] float mfFOV;
++		
++	tID m_idOpenProp;
++	
++	bool mbIsRead=false;
++	bool mbIsHudVersion=false;
++	bool mbGUIActiveOnTransition=false;
++	
++	tString msLeaveCallback;
++	bool mbShowMouse;
++	bool mbLockCamera = true;
++	bool mbAllowCancel=true;
++	
++	//------------------------------------------------------------
++	
++		
++}	
++
+--- S26CJ/scripts/apply_payload.py
++++ S26CK/scripts/apply_payload.py
+@@ -85,7 +85,7 @@
+ SUBMIT_EYE_CALL_RVAS=(0xD315,0xD338,0xF6FC,0xF721)
+ SUBMIT_EYE_OLD_RVA=0x139F0
+ BANNER_OLD=b'hpl3vr S5-P2 %s %s  \x00'
+-BANNER_NEW=b'hpl3vr S26CI_ %s %s \x00'
++BANNER_NEW=b'hpl3vr S26CK_ %s %s \x00'
+ KEYHELP_REPLACEMENTS=(
+  (b'Keys:  F2  = engine hook (enable this first)', b'Keys:  legacy keyboard debug lockout active'),
+  (b'       F10 = native stereo, side by side     F11 = swap halves', b'       Gameplay VR controls are OpenXR-controller native.'),
+--- S26CJ/source/s26n.c
++++ S26CK/source/s26n.c
+@@ -590,6 +590,8 @@
+ typedef struct { float p0[3],uSpan[3],vSpan[3],normal[3],virtualSize[2],virtualOffset[2],uvOrigin[2],uvU[2],uvV[2]; } H576BOTerminalSurface;
+ static H576BOTerminalSurface g_h576boTerminalSurface;
+ static volatile u8 g_h576boTerminalSurfaceValid;
++static const void* g_s26ckPadBody;
++static char g_s26ckPadName[192];
+ static i32 g_h576boPointerHand=-1,g_h576boEntryHand=-1;
+ static u8 g_h576boPointerDown,g_h576boHaveLast;
+ static float g_h576boPointerSide=1.0f,g_h576boLastU,g_h576boLastV;
+@@ -12350,6 +12352,20 @@
+         return 0;
+     }
+ 
++    if(h5748t_sso_eq(objectName,"VRPAD",5u)){
++        char name[192];name[0]=0;
++        if(!h5748n_copy_tstring((void*)className,name,sizeof(name)))return 0u;
++        if(h5748t_sso_eq(functionName,"B",1u)){
++            if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||g_h576bfMapTransitionActive||
++               g_h576avActiveInteractHand<0||g_h576avActiveInteractHand>1||!g_h576avActiveInteractBody)return 0u;
++            if(g_s26ckPadBody&&g_s26ckPadBody!=g_h576avActiveInteractBody)return 0u;
++            g_s26ckPadBody=g_h576avActiveInteractBody;h5748n_copyz(g_s26ckPadName,sizeof(g_s26ckPadName),name);return 1u;
++        }
++        if(!h5720_streq(name,g_s26ckPadName))return 0u;
++        if(h5748t_sso_eq(functionName,"L",1u)){g_s26ckPadBody=0;g_s26ckPadName[0]=0;return 1u;}
++        if(h5748t_sso_eq(functionName,"Q",1u))return g_s26ckPadBody&&(g_h14GripBody[0]==g_s26ckPadBody||g_h14GripBody[1]==g_s26ckPadBody);
++        return 0u;
++    }
+     if(h5748t_sso_eq(objectName,"VRREAD",6u)){
+         if(g_h576avActiveInteractHand<0||!g_h576avActiveInteractBody)return 0u;
+         void* wrapper=0;
+@@ -12712,7 +12728,8 @@
+     char mp[160],cn[160];mp[0]=cn[0]=0;void* st=h5720_player_state(mp,sizeof(mp),cn,sizeof(cn));
+     if(outModule&&moduleCap)h5720_strcpy(outModule,moduleCap,mp);if(outClass&&classCap)h5720_strcpy(outClass,classCap,cn);
+     if(!st)return 0;
+-    return h5720_streq(mp,"player/PlayerState_Interact_Terminal.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Terminal");
++    return (h5720_streq(mp,"player/PlayerState_Interact_Terminal.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Terminal")) ||
++        (g_s26ckPadBody&&h5720_streq(mp,"player/PlayerState_Interact_HandheldTerminal.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_HandheldTerminal"));
+ }
+ static i32 h5730_exit_authored_terminal(void){
+     char mp[160],cn[160];if(!h5730_exact_terminal_state(mp,sizeof(mp),cn,sizeof(cn)))return 0;
+@@ -12721,7 +12738,7 @@
+     if(!g_h5730RunGlobalHookReady||!o_h5730RunGlobal||!h20_mem_executable((void*)o_h5730RunGlobal)||!handler||!h20_mem_readable(handler,0xb0u)){
+         g_h5730TerminalExitRejects++;ext_Log(">>> S6-HANDS5730 TERMINAL BACK REJECT: exact Terminal state is live (%s / %s), but the proven Soma.exe+0x2A2670 script dispatcher/handler is unavailable; no guessed ChangeState, desktop key, mouse Back, or touch fallback emitted",mp,cn);return 1;
+     }
+-    H5730TString obj,cls,fn;h5730_literal_string(&obj,"State_Interact_Terminal");h5730_literal_string(&cls,"cScrPlayerState_Interact_Terminal");h5730_literal_string(&fn,"Exit");
++    H5730TString obj,cls,fn;i32 pad=h5720_streq(cn,"cScrPlayerState_Interact_HandheldTerminal");h5730_literal_string(&obj,pad?"State_Interact_HandheldTerminal":"State_Interact_Terminal");h5730_literal_string(&cls,cn);h5730_literal_string(&fn,"Exit");
+     ext_Log(">>> S6-HANDS5730 TERMINAL BACK DISPATCH BEGIN: exact Terminal gate passed; invoking authored State_Interact_Terminal / cScrPlayerState_Interact_Terminal / Exit() through SOMA's recovered generic AngelScript dispatcher; no direct ChangeState is used");
+     u64 rv=o_h5730RunGlobal(handler,&obj,&cls,&fn);
+     if(!(rv&0xffu)){g_h5730TerminalExitRejects++;ext_Log(">>> S6-HANDS5730 TERMINAL BACK DISPATCH REJECTED: SOMA's script dispatcher returned 0; Terminal state left authoritative and untouched");return 1;}
+@@ -12918,6 +12935,23 @@
+     ext_Log(">>> S26CE READABLE: exact accepted pickup contact latched in the same transaction");
+     return 1;
+ }
++static i32 s26ck_latch_tablet(i32 hand,const H25PendingInteract* p,void* owner,void* wrapper){
++    if(hand<0||hand>1||!p||p->jointed||g_h14GripBody[hand]||
++       p->newtonBody!=g_s26ckPadBody||
++       p->physicsStep!=g_h5755haGripEdgeStep[hand]||!g_lastSqueezeActive[hand]||g_lastSqueeze[hand]<=0.55f)return 0;
++    if(h482_body_owner(p->newtonBody,0)!=owner||h568_first_external_joint(p->newtonBody))return 0;
++    if(g_h30NativeMouseDown&&(g_h30NativeUseHand!=hand||g_h39NativeUseProp[hand]!=owner))return 0;
++    float mass=0,ix=0,iy=0,iz=0;if(!p_h14GetMass)return 0;
++    p_h14GetMass(p->newtonBody,&mass,&ix,&iy,&iz);if(!(mass>0.001f))return 0;
++    float hp[3],hm[16],gc[3];if(!h14_hand_pose(hand,hp,hm)||!h15_grip_center_world(hand,hm,gc))return 0;
++    g_h5755gwPreserveExistingGrabUse[hand]=1;g_h552ContactLatchBypass[hand]=1;
++    h14_latch(hand,p->newtonBody,0.0f,mass,hm,gc,0.035f,p->contact,0,0,0);
++    g_h552ContactLatchBypass[hand]=0;g_h5755gwPreserveExistingGrabUse[hand]=0;
++    if(g_h14GripBody[hand]!=p->newtonBody)return 0;
++    g_h5755chGrabPending[hand].valid=0;
++    ext_Log(">>> S26CK TABLET: exact pickup contact latched; handheld GUI retains native input state");
++    return 1;
++}
+ static H25PendingInteract g_h25Pending[2];
+ static u8 g_h25PendingValid[2];
+ static const void* g_h25AttemptBody[2];
+@@ -13452,6 +13486,7 @@
+    Revalidate at dispatch and again after OnInteract, before forcing Grab. */
+ static i32 s26_physical_only_body(const void* body){
+     if(!body)return 0;
++    if(body==g_s26ckPadBody)return 1;
+     if(g_s26xPhoneActive&&body==g_s26xPhoneRaw)return 1;
+     H576AAInvItem* inv=h576aa_inv_find_body(body);
+     if(inv&&!inv->stowed)return 1;
+@@ -13521,7 +13556,7 @@
+         if(!(cr&0xffu)){g_h5755chGrabFallback[hand]++;ext_Log(">>> S6-HANDS5755CJ NATIVE GRAB CanInteract FALSE %s: owner %p body %p | VR physical hold retained",hand==0?"L":"R",entity,p.body);continue;}
+         h5724_capture_pre_interact_state(hand);h5724_commit_pre_interact_state(hand);
+         g_h5755chGrabExpected=1;g_h5755chGrabStateBody=p.body;g_h5755chGrabStateWrapper=wrapper;g_h5755chGrabStateOwner=entity;g_h5755chGrabPrimaryHand=hand;g_h5755cjGrabExpectedStep=g_h14PhysicsSteps;g_s26ceDirectGrabDispatch=1;h30_native_use_begin(hand,wrapper,0,entity);g_s26ceDirectGrabDispatch=0;
+-        H25TString empty;zero_bytes(&empty,sizeof(empty));empty.capacity=15u;u64 orv=fOn(entity,0,wrapper,p.contact,&empty);
++        H25TString empty;zero_bytes(&empty,sizeof(empty));empty.capacity=15u;g_h576avActiveInteractHand=hand;g_h576avActiveInteractBody=p.body;u64 orv=fOn(entity,0,wrapper,p.contact,&empty);g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;
+         if(!(orv&0xffu)){g_h5755chGrabFallback[hand]++;h5755cj_abort_grab_expectation("cLuxProp::OnInteract returned FALSE after pre-armed native Interact");continue;}
+         if(s26_physical_only_body(p.body)||g_h576avThetaPendingHand==hand){
+             // Our pre-armed button belongs to this transaction; end it without
+@@ -13747,6 +13782,7 @@
+                 // Do not arm a competing native mouse/Grab lifetime on the slot.
+                 g_h25LastDispatchBody=p.newtonBody;g_h25LastDispatchStep=g_h14PhysicsSteps;continue;
+             }
++            if(s26ck_latch_tablet(hand,&p,entity,wrapper)){g_h25LastDispatchBody=p.newtonBody;g_h25LastDispatchStep=g_h14PhysicsSteps;continue;}
+             if(s26ce_latch_readable(hand,&p,entity,wrapper)){g_h25LastDispatchBody=p.newtonBody;g_h25LastDispatchStep=g_h14PhysicsSteps;continue;}
+             h30_native_use_begin(hand,wrapper,p.jointed,entity);
+             i32 h5755haEdgeLoose=h5755ha_arm_edge_native_after_true(hand,&p,entity,wrapper,h5755haPreMass,h5755haPostMass);
+@@ -14969,7 +15005,7 @@
+     }
+ }
+ 
+-static void h5755bi_detach_vr_world_refs(const char* why){g_s26bvGuiCount=0;g_s26bvReadableWrapper=0;s26ay_aux_clear();s26y_reset();__atomic_store_n(&g_s26nBindCommand,-1,__ATOMIC_RELEASE);s26n_mechanism_clear();s26_clear_heal_contact();g_h5755gjControlNearBody[0]=g_h5755gjControlNearBody[1]=0;g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;g_h576avThetaPendingHand=-1;g_h576avThetaPendingLogical[0]=0;g_h576avThetaPendingStartStep=g_h576avThetaPendingLastStep=0;h576ah_reset_subtitle_world_refs(why);h576b_forget_body("VR world detach");g_h576bHolsterLocalBasis[0]=1;g_h576bHolsterLocalBasis[1]=0;g_h576bHolsterLocalBasis[2]=0;g_h576bHolsterLocalBasis[3]=0;g_h576bHolsterLocalBasis[4]=0;g_h576bHolsterLocalBasis[5]=1;g_h576bHolsterLocalBasis[6]=0;g_h576bHolsterLocalBasis[7]=-1;g_h576bHolsterLocalBasis[8]=0;g_h576bHolsterBasisValid=1;g_h576bHolsterBasisYaw=0;g_h576bOmniState=H576B_OMNI_UNKNOWN;g_h576eBindPending=0;g_h576eBindNotBeforeStep=0;g_h576eBindWantedName[0]=0;g_h576fCaptureScope=0;g_h576fCaptureScopeName[0]=0;g_h576fCapturedWrapper=0;g_h576fCapturedRaw=0;g_h576fCapturedOwner=0;g_h576fCapturedName[0]=0;g_h576dPlayerBodyPosValid=0;g_h576dPlayerBodyPosLastStep=0;g_h576anBodySlotFreshnessFallbackLogged=0;g_h576anOmniShoulderInside[0]=g_h576anOmniShoulderInside[1]=0;g_h576anOmniShoulderRetrieveArmed[0]=g_h576anOmniShoulderRetrieveArmed[1]=0;g_h576aoOmniStowArmedBody[0]=g_h576aoOmniStowArmedBody[1]=0;g_h576aoOmniStowLastInsideStep[0]=g_h576aoOmniStowLastInsideStep[1]=0;g_h576aoOmniHidePending=0;g_h576iBodyToCameraYValid=0;g_h576iBodyToCameraY=0;g_h576kChipCaptureScope=0;g_h576kChipCaptureScopeName[0]=0;g_h576kChipCapturedName[0]=0;g_h576kChipCapturedWrapper=0;g_h576kChipCapturedRaw=0;g_h576kChipCapturedOwner=0;g_h576kChipPickupPending=0;g_h576kChipPickupRaw=0;g_h576kChipPickupOwner=0;g_h576kChipPickupName[0]=0;g_h576kChipCooldownUntilStep=0;g_h576oPhysicalChipRaw=0;g_h576oPhysicalChipOwner=0;g_h576oPhysicalChipName[0]=0;h576aa_inv_reset();g_h576qUpgradeOmniCaptureScope=0;g_h576qUpgradeOmniCaptureScopeName[0]=0;g_h576qUpgradeOmniCapturedName[0]=0;g_h576qUpgradeOmniCapturedWrapper=0;g_h576qUpgradeOmniCapturedRaw=0;g_h576qUpgradeOmniCapturedOwner=0;g_h576sInsertedBodyCaptures=0;g_h576sUpgradeContactMissDiag=0;g_h576jPanelCaptureScope=0;g_h576jPanelCaptureScopeName[0]=0;g_h576jPanelCapturedName[0]=0;g_h576jPanelCapturedWrapper=0;g_h576jPanelCapturedRaw=0;g_h576jPanelCapturedOwner=0;g_h576jPanelCooldownUntilStep=0;g_h576dDockReleasePending=0;g_h576dDockReleaseActive=0;g_h576dDockReleaseBody=0;h576c_reset_created_catherine_candidates(why);
++static void h5755bi_detach_vr_world_refs(const char* why){g_s26ckPadBody=0;g_s26ckPadName[0]=0;g_s26bvGuiCount=0;g_s26bvReadableWrapper=0;s26ay_aux_clear();s26y_reset();__atomic_store_n(&g_s26nBindCommand,-1,__ATOMIC_RELEASE);s26n_mechanism_clear();s26_clear_heal_contact();g_h5755gjControlNearBody[0]=g_h5755gjControlNearBody[1]=0;g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;g_h576avThetaPendingHand=-1;g_h576avThetaPendingLogical[0]=0;g_h576avThetaPendingStartStep=g_h576avThetaPendingLastStep=0;h576ah_reset_subtitle_world_refs(why);h576b_forget_body("VR world detach");g_h576bHolsterLocalBasis[0]=1;g_h576bHolsterLocalBasis[1]=0;g_h576bHolsterLocalBasis[2]=0;g_h576bHolsterLocalBasis[3]=0;g_h576bHolsterLocalBasis[4]=0;g_h576bHolsterLocalBasis[5]=1;g_h576bHolsterLocalBasis[6]=0;g_h576bHolsterLocalBasis[7]=-1;g_h576bHolsterLocalBasis[8]=0;g_h576bHolsterBasisValid=1;g_h576bHolsterBasisYaw=0;g_h576bOmniState=H576B_OMNI_UNKNOWN;g_h576eBindPending=0;g_h576eBindNotBeforeStep=0;g_h576eBindWantedName[0]=0;g_h576fCaptureScope=0;g_h576fCaptureScopeName[0]=0;g_h576fCapturedWrapper=0;g_h576fCapturedRaw=0;g_h576fCapturedOwner=0;g_h576fCapturedName[0]=0;g_h576dPlayerBodyPosValid=0;g_h576dPlayerBodyPosLastStep=0;g_h576anBodySlotFreshnessFallbackLogged=0;g_h576anOmniShoulderInside[0]=g_h576anOmniShoulderInside[1]=0;g_h576anOmniShoulderRetrieveArmed[0]=g_h576anOmniShoulderRetrieveArmed[1]=0;g_h576aoOmniStowArmedBody[0]=g_h576aoOmniStowArmedBody[1]=0;g_h576aoOmniStowLastInsideStep[0]=g_h576aoOmniStowLastInsideStep[1]=0;g_h576aoOmniHidePending=0;g_h576iBodyToCameraYValid=0;g_h576iBodyToCameraY=0;g_h576kChipCaptureScope=0;g_h576kChipCaptureScopeName[0]=0;g_h576kChipCapturedName[0]=0;g_h576kChipCapturedWrapper=0;g_h576kChipCapturedRaw=0;g_h576kChipCapturedOwner=0;g_h576kChipPickupPending=0;g_h576kChipPickupRaw=0;g_h576kChipPickupOwner=0;g_h576kChipPickupName[0]=0;g_h576kChipCooldownUntilStep=0;g_h576oPhysicalChipRaw=0;g_h576oPhysicalChipOwner=0;g_h576oPhysicalChipName[0]=0;h576aa_inv_reset();g_h576qUpgradeOmniCaptureScope=0;g_h576qUpgradeOmniCaptureScopeName[0]=0;g_h576qUpgradeOmniCapturedName[0]=0;g_h576qUpgradeOmniCapturedWrapper=0;g_h576qUpgradeOmniCapturedRaw=0;g_h576qUpgradeOmniCapturedOwner=0;g_h576sInsertedBodyCaptures=0;g_h576sUpgradeContactMissDiag=0;g_h576jPanelCaptureScope=0;g_h576jPanelCaptureScopeName[0]=0;g_h576jPanelCapturedName[0]=0;g_h576jPanelCapturedWrapper=0;g_h576jPanelCapturedRaw=0;g_h576jPanelCapturedOwner=0;g_h576jPanelCooldownUntilStep=0;g_h576dDockReleasePending=0;g_h576dDockReleaseActive=0;g_h576dDockReleaseBody=0;h576c_reset_created_catherine_candidates(why);
+     /* Local invalidation ONLY.  Native HPL/Newton world teardown owns every body,
+        joint, collision and shape.  No Newton setter/query/DestroyBody is legal
+        from this semantic teardown boundary. */
+@@ -19399,6 +19435,7 @@
+ static u32 g_s26TerminalTipLogs[2],g_s26TerminalTipSamples[2],g_s26TerminalCurlLogs[2];
+ static i32 h576bo_terminal_tip(i32 hand,float* outU,float* outV,float* outPlane,float* outRadius){
+     if(hand<0||hand>1||!outU||!outV||!outPlane||!outRadius||!__atomic_load_n(&g_h576boTerminalSurfaceValid,__ATOMIC_ACQUIRE))return 0;
++    if(g_s26ckPadBody&&g_h14GripBody[hand]==g_s26ckPadBody)return 0; // Holding hand is not a touchscreen pointer.
+     float visible[16];if(!h5755cu_render_hand_model(hand,visible))return 0;
+     float curl=h10_raw_finger_input(hand,1);
+     if(curl>H48_POKE_INDEX_CURL_MAX){
+@@ -20722,3 +20759,5 @@
+ 
+ 
+ 
++
++

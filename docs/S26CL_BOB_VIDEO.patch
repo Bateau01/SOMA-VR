@@ -1,0 +1,45 @@
+--- S26CK/runtime/script/modules/MenuHandler.hps
++++ S26CL/runtime/script/modules/MenuHandler.hps
+@@ -1224,12 +1224,11 @@
+             OptionMenu_UpdateExtraButtonWidth_MultiSelection(crouch,""); ImGui_SetTransCategory("");
+             OptionMenu_UpdateExtraWidth("CALIBRATE STANDING HEIGHT",true);
+             OptionMenu_UpdateExtraWidth("CENTER CAMERA",true);
+-            OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true);
+         }
+-        if(mlVRComfortCategory==2) OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true);
++        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); size.y=430; }
+         if(mlVRComfortCategory==3) { size.y=430;for(int i=0;i<6;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
+         if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=360;
+-        if(mlVRComfortCategory==0) size.y=480;
++        if(mlVRComfortCategory==0) size.y=430;
+         if(mlVRComfortCategory==4) OptionMenu_UpdateExtraWidth("GAZE-DIRECTED FLASHLIGHT",true);
+         if(mlVRComfortCategory==5) { array<tString> audio={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};OptionMenu_UpdateExtraButtonWidth_MultiSelection(audio,"");ImGui_SetTransCategory(""); }
+         size.x+=OptionMenu_GetExtraWidth();
+@@ -1271,8 +1270,7 @@
+             int subtitle=HPL3VR_Slider("SUBTITLE DISTANCE",6,mlVRSubtitleDistance,65,cString_ToString(0.75f+0.05f*mlVRSubtitleDistance,2)+" m");
+             changed=changed || scale!=mlVRWorldScale || panel!=mlVRPanelDistance || subtitle!=mlVRSubtitleDistance;
+             mlVRWorldScale=scale;mlVRPanelDistance=panel;mlVRSubtitleDistance=subtitle;
+-            bool bob=HPL3VR_Toggle("HIDE HEAD AND HAND BOBBING",7,mbVRHideMovementBob);
+-            changed=changed || bob!=mbVRHideMovementBob;mbVRHideMovementBob=bob;
++
+ 
+ 
+         }
+@@ -1329,6 +1327,8 @@
+             msVRSettingsSelected=OptionMenu_UpdateFocus("VIGNETTE",msVRSettingsSelected);
+             bool shake=HPL3VR_Toggle("HIDE SCREEN SHAKE",5,mbVRHideShake);
+             changed=distortion!=mbVRHideDistortion || chromatic!=mbVRHideChromatic || trails!=mbVRHideTrails || blur!=mbVRHideBlur || vignette!=mlVRVignette || shake!=mbVRHideShake;
++            bool bob=HPL3VR_Toggle("HIDE HEAD AND HAND BOBBING",6,mbVRHideMovementBob);
++            changed=changed || bob!=mbVRHideMovementBob;mbVRHideMovementBob=bob;
+             mbVRHideShake=shake;
+             mbVRHideDistortion=distortion; mbVRHideChromatic=chromatic; mbVRHideTrails=trails;mbVRHideBlur=blur;mlVRVignette=vignette;
+         }
+@@ -1353,7 +1353,7 @@
+             changed=mode!=mlVRAudioMode;mlVRAudioMode=mode;
+         }
+         if(changed) HPL3VR_SaveComfort();
+-        if(HPL3VR_Option("BACK",mlVRComfortCategory==0 ? 8 : (mlVRComfortCategory==3 ? 9 : ((mlVRComfortCategory==2 || mlVRComfortCategory==1) ? 6 : 5))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
++        if(HPL3VR_Option("BACK",(mlVRComfortCategory==0 || mlVRComfortCategory==2) ? 7 : (mlVRComfortCategory==3 ? 9 : (mlVRComfortCategory==1 ? 6 : 5))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
+         {
+             if(mlVRComfortCategory==3)
+             {

@@ -1,0 +1,399 @@
+#include "helpers/helper_audio.hps"
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+//#include "helpers/helper_player.hps"
+
+	
+bool _HPL3VR_HandheldActive(){cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");return cScript_GetGlobalReturnBool();}
+
+class cScrPropHandheldTerminal : iScrProp, iScrProp_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+    // S26CK: the physical source owns the display. Stock HUD copies and phones
+    // retain their authored path. No camera-centred duplicate or hand animation.
+    [nosave] bool mbVRTabletOpen=false;
+    [nosave] bool mbVRTabletSurface=false;
+    [nosave] bool mbVRTabletCursorRegistered=false;
+    bool VR_IsTablet(){
+        tString f=cString_GetFileName(mBaseObj.GetFileName());
+        return f=="datapad.ent" || f=="camera_portable.ent";
+    }
+    bool VR_BeginTablet(iPhysicsBody@ body,const cVector3f &in focus){
+        if(body is null || mbVRTabletOpen || msOnGuiFunction=="")return false;
+        if(!cScript_RunGlobalFunc("VRPAD",mBaseObj.GetName(),"B"))return false;
+        if(mBaseObj.GetGuiSet() is null){
+            mBaseObj.CreateAndSetupGui(msConnectedSubmesh,mColorMul,mClearColor,mOfflineClearColor,mvScreenSize);
+        }
+        if(mBaseObj.GetGuiSet() is null){cScript_RunGlobalFunc("VRPAD",mBaseObj.GetName(),"L");return false;}
+        mBaseObj.SetOnGuiFunction(msOnGuiFunction);
+        mBaseObj.SetGuiActive(true);mBaseObj.SetEffectsActive(true,false);
+        mBaseObj.SetGuiUpdateWhenOutOfView(true);
+        if(!mBaseObj.SetGuiIsFocused(true,true)){
+            mBaseObj.SetGuiActive(false);mBaseObj.SetEffectsActive(false,false);
+            cScript_RunGlobalFunc("VRPAD",mBaseObj.GetName(),"L");return false;
+        }
+        cLuxProp@ parent=mBaseObj.GetAttachmentParent();
+        if(parent !is null){parent.RemoveAttachedProp(mBaseObj);parent.SetSaveDataIsUpdated(true);}
+        mBaseObj.RemoveEntityAttachment();mBaseObj.SetStaticPhysics(false);
+        if(body.GetMass()<0.05f)body.SetMass(0.35f);
+        body.SetGravity(true);body.SetCollideCharacter(false);
+        mBaseObj.SetSaveDataIsUpdated(true);
+        mbVRTabletOpen=true;mbVRTabletSurface=false;mbIsRead=true;
+        cScript_SetGlobalArgID(0,mBaseObj.GetID());
+        cScript_SetGlobalArgInt(1,body.GetUniqueID());cScript_SetGlobalArgVector3f(2,focus);
+        cScript_RunGlobalFunc("State_Interact_HandheldTerminal","","_Global_VRSetupTablet");
+        cLux_GetPlayer().ChangeState(ePlayerState_HandheldTerminal);
+        if(msPickupSound!="")Sound_PlayGui(msPickupSound,1.0f);
+        return true;
+    }
+    void _Global_VRUpdateTablet(){
+        if(!mbVRTabletOpen || mBaseObj.GetGuiSet() is null)return;
+        cGuiSet@ set=mBaseObj.GetGuiSet().GetSet();
+        cImGui@ gui=mBaseObj.GetGuiSet().GetImGui();
+        if(set is null || gui is null)return;
+        set.SetDrawMouse(false);gui.SetShowMouseAutomatically(false);
+        cSubMeshEntity@ sub=mBaseObj.GetMeshEntity().GetSubMeshEntityName(msConnectedSubmesh);
+        int index=mBaseObj.GetMeshEntity().GetMesh().GetSubMeshIndex(msConnectedSubmesh);
+        if(sub is null || index<0)return;
+        iVertexBuffer@ vb=mBaseObj.GetMeshEntity().GetMesh().GetSubMesh(index).GetVertexBuffer();
+        if(vb is null)return;
+        // Both shipped tablet families have planar local-Z screens. Their UV0
+        // maps X left-to-right and Y bottom-to-top; live submesh transform owns
+        // all entity/body rotations and scaling, even while held sideways.
+        cVector3f lo=vb.GetAABBMin(),hi=vb.GetAABBMax();
+        cMatrixf world=sub.GetWorldMatrix();
+        cVector3f p=cMath_MatrixMul(world,cVector3f(lo.x,hi.y,lo.z));
+        cVector3f u=cMath_MatrixMul(world,cVector3f(hi.x,hi.y,lo.z))-p;
+        cVector3f v=cMath_MatrixMul(world,cVector3f(lo.x,lo.y,lo.z))-p;
+        cVector3f n=cMath_Vector3Normalize(cMath_Vector3Cross(u,v));
+        cVector2f size=set.GetVirtualSize(),offset=set.GetVirtualSizeOffset();
+        tString csv=""+p.x+","+p.y+","+p.z+","+u.x+","+u.y+","+u.z+","+v.x+","+v.y+","+v.z+","+n.x+","+n.y+","+n.z+","+size.x+","+size.y+","+offset.x+","+offset.y;
+        // Datapad has a small authored UV inset; retain it exactly.
+        if(msConnectedSubmesh=="medium_screen")csv+=",0.000260279,0.000055,0.999721721,0,0,0.999952331";
+        cScript_RunGlobalFunc("VRTERM",csv,mbVRTabletSurface ? "U" : "B");mbVRTabletSurface=true;
+        if(!mbVRTabletCursorRegistered && cScript_RunGlobalFunc("VRGUI","","R")){gui.SendMouseVirtualPosition(cVector2f(0),cVector2f(0));cScript_RunGlobalFunc("VRGUI","","E");mbVRTabletCursorRegistered=true;}
+        if(cScript_RunGlobalFunc("VRGUI","","C")){gui.SendMouseVirtualPosition(cVector2f(0),cVector2f(0));cScript_RunGlobalFunc("VRGUI","","E");}
+    }
+    void _Global_VRCloseTablet(){
+        if(!mbVRTabletOpen)return;
+        mbVRTabletOpen=false;mbVRTabletSurface=false;
+        cScript_RunGlobalFunc("VRTERM","","L");
+        mBaseObj.SetGuiIsFocused(false);mBaseObj.SetGuiActive(false);
+        mBaseObj.SetGuiUpdateWhenOutOfView(false);mBaseObj.SetEffectsActive(false,false);
+        cScript_RunGlobalFunc("VRPAD",mBaseObj.GetName(),"L");
+        if(msDropSound!="")Sound_PlayGui(msDropSound,1.0f);
+        cLuxMap@ map=cLux_GetCurrentMap();
+        if(msLeaveCallback!="" && map !is null && map.ScriptPrepare("void "+msLeaveCallback+"(const tString &in asEntity)")){
+            tString name=mBaseObj.GetName();map.SetArgString(0,name);map.ScriptExecute();
+        }
+    }
+
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		///////////////////////////////////
+		// Type vars
+		mfDistanceFromCamera = apVars.GetVarFloat("DistanceFromCamera", 0.3f);
+		mColorMul = apInstanceVars.GetVarColor("TerminalColorMul", cColor(1,1)) * cColor(apInstanceVars.GetVarFloat("TerminalBrightness", 1.0f),1.0);
+		mClearColor = apVars.GetVarColor("ClearColor", cColor(0,1));
+		mOfflineClearColor = apVars.GetVarColor("OfflineClearColor", cColor(0,1));
+		mvScreenSize = apVars.GetVarVector2f("ScreenSize", cVector2f(512.0f));
+		mfYStartOffset = apVars.GetVarFloat("YStartOffset", -0.5f);
+		msPickupSound = apVars.GetVarString("PickupSound", "");
+		msDropSound = apVars.GetVarString("DropSound", "");
+		msConnectedSubmesh = apVars.GetVarString("ConnectedSubmesh", "");
+		msHandAnimationSuffix = apVars.GetVarString("HandAnimationSuffix", "");
+		msHudEntFile = apVars.GetVarString("HudEntFile", "");
+			
+		mfFOV = cMath_ToRad(apInstanceVars.GetVarFloat("VerticalFOV", 70));
+		msLeaveCallback = apInstanceVars.GetVarString("LeaveCallback", "");
+		msOnGuiFunction = apInstanceVars.GetVarString("OnGuiFunction", "");
+		mbAllowCancel = apInstanceVars.GetVarBool("AllowCancel",true);
+		mbShowMouse = apInstanceVars.GetVarBool("ShowMouse", true);
+		mbLockCamera = apInstanceVars.GetVarBool("LockCamera", true);
+		mbGUIActiveOnTransition = apInstanceVars.GetVarBool("GUIActiveOnTransition", false);
+		
+		float fFPSWhenIdle = apInstanceVars.GetVarFloat("FPSWhenIdle", 30);
+		mBaseObj.SetGuiVariableFPS(fFPSWhenIdle);
+		
+		mBaseObj.DisableSubMeshMerge(msConnectedSubmesh);
+		
+		/////////////
+		// Preload open file
+		cLux_PreloadEntity(msHudEntFile);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnPostUpdate(float afTimeStep)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+		
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{					
+        if(_HPL3VR_HandheldActive() && VR_IsTablet()) return VR_BeginTablet(apBody,avFocusPos);
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		if(pCharBody.IsOnGround() == false) return false;
+	
+		cLuxProp@ pOpenProp = cLux_ID_Prop(m_idOpenProp);
+
+		if (pOpenProp is null)
+		{
+			cLux_GetCurrentMap().CreateEntity(mBaseObj.GetName() + "_open", msHudEntFile == "" ? mBaseObj.GetFileName() : msHudEntFile, cMatrixf_Identity, cVector3f(1));
+			@pOpenProp = cLux_ToProp(cLux_GetCurrentMap().GetLatestEntity());
+			pOpenProp.CreateAndSetupGui(msConnectedSubmesh, mColorMul, mClearColor, mOfflineClearColor, mvScreenSize);
+			pOpenProp.SetOnGuiFunction(msOnGuiFunction);
+			
+			for (int i = 0; i < pOpenProp.GetBodyNum(); i++)
+			{
+				iPhysicsBody@ pBody = pOpenProp.GetBody(i);
+				pBody.SetCollideCharacter(false);
+				pBody.SetCollide(false);
+				pBody.SetCollideRagDoll(false);
+				pBody.SetMass(0);
+			}
+			pOpenProp.SetActive(false);
+			pOpenProp.SetGuiActive(false);
+			pOpenProp.SetEffectsActive(false,false);
+			pOpenProp.SetAllowMapTransfer(false);
+		
+			//////////////////////////////
+			// Set up render flags
+			for(int i=0; i<pOpenProp.GetMeshEntity().GetSubMeshEntityNum(); ++i)
+			{
+				cSubMeshEntity @pEnt = pOpenProp.GetMeshEntity().GetSubMeshEntity(i);
+				pEnt.SetRenderFlagBit(eRenderableFlag_VisibleInReflection, false);
+				pEnt.SetRenderFlagBit(eRenderableFlag_ShadowCaster, false);
+			}
+
+			m_idOpenProp = pOpenProp.GetID();
+		}
+		
+		/////////////////////
+		// Fade fov		
+		cLux_GetPlayer().FadeCameraFOVTo(mfFOV, 1.0f);
+
+		//////////////////////////////////
+		// Set up the created entity
+		cScript_RunGlobalFunc(pOpenProp.GetName(), "", "_Global_SetIsHudVersion");
+		
+		cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+		cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+		cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
+		cScript_SetGlobalArgID(3, pOpenProp.GetID()); //Open entity object ID
+		cScript_SetGlobalArgFloat(4, mfDistanceFromCamera); //Target prop distance from camera
+		cScript_SetGlobalArgFloat(5, mfYStartOffset); //Start offset along the camera's Y axis.
+		cScript_SetGlobalArgString(6, msPickupSound); //Sound played when interaction starts
+		cScript_SetGlobalArgString(7, msDropSound); //Sound played when interaction ends
+		cScript_SetGlobalArgString(8, msLeaveCallback); //Callback called when interaction ends.
+		cScript_SetGlobalArgBool(9, mbAllowCancel);// Allow use of right-button to cancel?
+		cScript_SetGlobalArgString(10, msHandAnimationSuffix); //Hand animation used, if any
+		cScript_SetGlobalArgBool(11, mbGUIActiveOnTransition);// Display GUI during transition in and out of state?
+		cScript_SetGlobalArgBool(12, mbShowMouse);// Display mouse
+		cScript_SetGlobalArgBool(13, mbLockCamera);// Should the player be allowed to look around
+		
+		cScript_RunGlobalFunc("State_Interact_HandheldTerminal", "", "SetupTerminal");
+	
+		cLux_GetPlayer().ChangeState(ePlayerState_HandheldTerminal);	
+		
+		mbIsRead = true;
+		
+		return false;
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_Terminal;
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetLeaveCallback()
+	{
+		msLeaveCallback = cScript_GetGlobalArgString(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_CanBeHighlighted()
+	{
+		cScript_SetGlobalReturnBool(mbIsRead ==false && mBaseObj.IsInteractedWith()==false && mbIsHudVersion==false);
+		cScript_SetGlobalArgID(0,mBaseObj.GetID());
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetIsHudVersion()
+	{
+		mbIsHudVersion = true;
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	[nosave] tString msConnectedSubmesh;
+	[nosave] cColor mClearColor;
+	[nosave] cColor mColorMul;
+	[nosave] cColor mOfflineClearColor;
+	[nosave] cVector2f mvScreenSize;
+	[nosave] tString msHandAnimationSuffix;
+	[nosave] float mfDistanceFromCamera;
+	[nosave] float mfYStartOffset;
+	[nosave] tString msPickupSound;
+	[nosave] tString msDropSound;
+	[nosave] tString msOnGuiFunction;
+	[nosave] tString msHudEntFile;
+	[nosave] float mfFOV;
+		
+	tID m_idOpenProp;
+	
+	bool mbIsRead=false;
+	bool mbIsHudVersion=false;
+	bool mbGUIActiveOnTransition=false;
+	
+	tString msLeaveCallback;
+	bool mbShowMouse;
+	bool mbLockCamera = true;
+	bool mbAllowCancel=true;
+	
+	//------------------------------------------------------------
+	
+		
+}	
+

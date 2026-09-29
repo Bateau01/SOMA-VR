@@ -1,0 +1,33 @@
+{
+  "version": "S26CL",
+  "dll_sha256": "0f48045c9b6ecb1dae38043cbc911b9a6091e5474b8db1829231d838f4b715c9",
+  "production_changes": [
+    "runtime/script/modules/MenuHandler.hps"
+  ],
+  "native_dll": "Byte-identical to S26CK",
+  "native_script_regression": {
+    "exit": 0,
+    "complete": true,
+    "script_errors": [],
+    "events": [
+      "CE_TERMINAL_STATE|8",
+      "CE_READABLE_STATE|1",
+      "CE_AFTER_READ_RELEASE|0",
+      "CE_SLIDE_MOVE_ISOLATED|true",
+      "CG_DRAWER_RETURN|0",
+      "CE_SLIDE_RELEASE_SPEED|1.500000",
+      "CE_SLIDE_SETTLED_SPEED|0.000000",
+      "CE_TOOL_PICKUP_CONTEXT|0",
+      "CE_TRACER_REGISTERED|CanUseTracerFluid|Use_TracerFluid",
+      "CI_TRACER_DWELL|0.250000",
+      "CE_TRACER_AFTER_USE|active=false",
+      "CG_RETURN_TESTS|checks=330|failures=0",
+      "CJ_BOB_TEST|checks=16|failures=0",
+      "CE_NATIVE_DONE"
+    ],
+    "render_events": []
+  },
+  "inherited_handheld_evidence": "S26CK tests retained in docs/S26CK_PACKAGE_VERIFICATION.json; not rerun for this menu-only change.",
+  "installed_game_modified": false,
+  "hardware_status": "Menu visual placement and controller navigation have not been checked in a headset."
+}

@@ -1,0 +1,240 @@
+--- S26CL/runtime/Launch-SOMA-VR.ps1
++++ S26CM/runtime/Launch-SOMA-VR.ps1
+@@ -1,4 +1,4 @@
+-param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly)
++param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly, [string]$Executable = '', [switch]$Experimental)
+ $ErrorActionPreference = 'Stop'
+ # Use the Windows PowerShell modules even when a parent shell supplied a PowerShell 7 module path.
+ Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility')
+@@ -29,15 +29,31 @@
+ if ($CheckOnly -and $StopOnly) { throw 'Choose either -CheckOnly or -StopOnly.' }
+ if ($StopOnly) { Stop-SomaInstances; Write-Output 'SOMA process cleanup completed.'; exit 0 }
+ $gameDir = $PSScriptRoot
+-$exe = Join-Path $gameDir 'Soma.exe'
++if (!$Executable) {
++    if (Test-Path -LiteralPath (Join-Path $gameDir 'Soma.exe')) { $Executable = 'Soma.exe' }
++    elseif (Test-Path -LiteralPath (Join-Path $gameDir 'Soma_NoSteam.exe')) { $Executable = 'Soma_NoSteam.exe' }
++    else { throw 'No Soma.exe or Soma_NoSteam.exe found beside this launcher.' }
++}
++if ($Executable -notin @('Soma.exe','Soma_NoSteam.exe')) { throw 'Choose Soma.exe or Soma_NoSteam.exe in this game folder; do not rename another program.' }
++$exe = Join-Path $gameDir $Executable
+ $dll = Join-Path $gameDir 'hpl3vr.dll'
+ $injector = Join-Path $gameDir 'hpl3vr_inject.exe'
+ foreach ($p in @($exe,$dll,$injector,(Join-Path $gameDir 'openxr_loader.dll'))) {
+     if (!(Test-Path -LiteralPath $p -PathType Leaf)) { throw "Missing $p. Extract the full mod into the folder containing Soma.exe." }
+ }
+-$expectedExe = '7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113'
+-if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedExe) {
+-    throw 'This Soma.exe does not match the executable validated for S26CC. See SOMA_VR_INSTALLATION.md; other executable builds need compatibility testing.'
++. (Join-Path $gameDir 'SOMA-VR-Compatibility.ps1')
++$report = Get-SomaExecutableReport $exe (Join-Path $gameDir 'SOMA-VR-Executable.json')
++$reportPath = Join-Path $gameDir 'SOMA-VR-compatibility-report.json'
++$report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
++Write-Output ('Executable status: ' + $report.status)
++Write-Output ('Compatibility report: ' + $reportPath)
++if ($report.status -eq 'Incompatible') {
++    throw ('This executable needs a native VR port; its engine layout differs from the tested build. No injection attempted. Send SOMA-VR-compatibility-report.json with the storefront/version. Differences: ' + ($report.differences -join '; '))
++}
++if ($CheckOnly) { Write-Output 'Executable checks completed. No game was started; no settings were changed.'; exit 0 }
++if ($report.status -ne 'VerifiedExecutable') {
++    if (!$Experimental) { throw 'Engine bytes/layout match, but this executable is untested. Use Launch-SOMA-VR.cmd -Experimental to opt into this limited compatibility test.' }
++    Write-Warning 'Experimental executable: engine bytes/layout match, but storefront dependencies, scripts and gameplay are untested.'
+ }
+ Add-Type -TypeDefinition @'
+ using System;
+@@ -56,9 +72,12 @@
+  [DllImport("kernel32.dll")] public static extern bool TerminateProcess(IntPtr process,uint code);
+ }
+ '@
+-if ($CheckOnly) { Write-Output 'Executable and launcher checks passed. No game was started.'; exit 0 }
+ Stop-SomaInstances
+-$calibration = Join-Path $gameDir 'hpl3vr_hand_calibration.ini'
++$settings = Join-Path $gameDir 'hpl3vr_vr_settings.ini'
++if (!(Test-Path -LiteralPath $settings)) {
++    Copy-Item -LiteralPath (Join-Path $gameDir 'defaults\hpl3vr_vr_settings.ini') -Destination $settings
++}
++$calibration = Join-Path $gameDir 'hpl3vr_hand_calibration.ini' 
+ if (!(Test-Path -LiteralPath $calibration)) {
+     Copy-Item -LiteralPath (Join-Path $gameDir 'defaults\hpl3vr_hand_calibration.ini') -Destination $calibration
+ }
+@@ -75,7 +94,7 @@
+ try {
+     $info = New-Object Diagnostics.ProcessStartInfo
+     $info.FileName = $injector
+-    $info.Arguments = 'Soma.exe hpl3vr.dll'
++    $info.Arguments = $Executable + ' hpl3vr.dll'
+     $info.WorkingDirectory = $gameDir
+     $info.UseShellExecute = $false
+     $info.CreateNoWindow = $true
+--- S26CL/runtime/Launch-SOMA-VR.cmd
++++ S26CM/runtime/Launch-SOMA-VR.cmd
+@@ -1,3 +1,3 @@
+ @echo off
+-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Launch-SOMA-VR.ps1"
++powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Launch-SOMA-VR.ps1" %*
+ if errorlevel 1 pause
+--- S26CL/runtime/SOMA-VR-Compatibility.ps1
++++ S26CM/runtime/SOMA-VR-Compatibility.ps1
+@@ -0,0 +1,68 @@
++# Read-only PE comparison. No signature scanning, address guessing, or game mutation.
++function Get-SomaSha256([byte[]]$Bytes) {
++    $sha = [Security.Cryptography.SHA256]::Create()
++    try { return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','').ToLowerInvariant() }
++    finally { $sha.Dispose() }
++}
++function Get-SomaExecutableReport([string]$Path, [string]$ReferencePath) {
++    $reference = Get-Content -LiteralPath $ReferencePath -Raw | ConvertFrom-Json
++    if ($reference.schema -ne 1) { throw 'Unsupported SOMA executable reference schema.' }
++    $file = Get-Item -LiteralPath $Path
++    if ($file.Length -lt 256 -or $file.Length -gt 536870912) { throw 'Invalid SOMA executable size.' }
++    [byte[]]$bytes = [IO.File]::ReadAllBytes($file.FullName)
++    $whole = Get-SomaSha256 $bytes
++    if ($bytes[0] -ne 77 -or $bytes[1] -ne 90) { throw 'Not a Windows executable (missing MZ header).' }
++    [long]$pe = [BitConverter]::ToUInt32($bytes,60)
++    if ($pe -gt $bytes.Length-24 -or [BitConverter]::ToUInt32($bytes,[int]$pe) -ne 17744) { throw 'Invalid PE header.' }
++    $machine = [BitConverter]::ToUInt16($bytes,[int]$pe+4)
++    $count = [BitConverter]::ToUInt16($bytes,[int]$pe+6)
++    $characteristics = [BitConverter]::ToUInt16($bytes,[int]$pe+22)
++    $optionalSize = [BitConverter]::ToUInt16($bytes,[int]$pe+20)
++    [long]$optional = $pe+24
++    [long]$table = $optional+$optionalSize
++    if ($count -lt 1 -or $count -gt 96 -or $optionalSize -lt 240 -or $table+40*$count -gt $bytes.Length) { throw 'Invalid PE section layout.' }
++    if ($machine -ne 34404 -or [BitConverter]::ToUInt16($bytes,[int]$optional) -ne 523) { throw 'This VR DLL requires a 64-bit x86 SOMA executable.' }
++    [byte[]]$header = New-Object byte[] $optionalSize
++    [Array]::Copy($bytes,$optional,$header,0,$optionalSize)
++    # Checksum and certificate-table location do not change mapped engine addresses.
++    [Array]::Clear($header,64,4); [Array]::Clear($header,144,8)
++    $optionalHash = Get-SomaSha256 $header
++    $differences = New-Object 'Collections.Generic.List[string]'
++    if ($machine -ne $reference.machine) { $differences.Add('Machine architecture') }
++    if ($characteristics -ne $reference.characteristics) { $differences.Add('PE characteristics') }
++    if ($optionalHash -ne $reference.optional_header_sha256) { $differences.Add('Mapped image/entry point/import/relocation directory layout') }
++    if ($count -ne $reference.sections.Count) { $differences.Add('Section count') }
++    $sections = @()
++    for ($i=0; $i -lt $count; $i++) {
++        [int]$at = $table+40*$i
++        $name = [Text.Encoding]::ASCII.GetString($bytes,$at,8).TrimEnd([char]0)
++        $rva = [BitConverter]::ToUInt32($bytes,$at+12)
++        $virtualSize = [BitConverter]::ToUInt32($bytes,$at+8)
++        [long]$rawSize = [BitConverter]::ToUInt32($bytes,$at+16)
++        [long]$rawOffset = [BitConverter]::ToUInt32($bytes,$at+20)
++        if ($rawOffset+$rawSize -gt $bytes.Length) { throw "Truncated PE section: $name" }
++        [byte[]]$sectionHeader = New-Object byte[] 40
++        [Array]::Copy($bytes,$at,$sectionHeader,0,40)
++        $headerHash = Get-SomaSha256 $sectionHeader
++        $contentHash = $null
++        if ($name -ne '.rsrc') {
++            [byte[]]$content = New-Object byte[] ([int]$rawSize)
++            [Array]::Copy($bytes,$rawOffset,$content,0,$rawSize)
++            $contentHash = Get-SomaSha256 $content
++        }
++        $sections += [ordered]@{ name=$name; rva=$rva; virtual_size=$virtualSize; raw_size=$rawSize; raw_offset=$rawOffset; header_sha256=$headerHash; sha256=$contentHash }
++        if ($i -lt $reference.sections.Count) {
++            $expected = $reference.sections[$i]
++            if ($name -ne $expected.name -or $headerHash -ne $expected.header_sha256) { $differences.Add("Section $i layout ($name)") }
++            if ($contentHash -ne $expected.sha256) { $differences.Add("Section $i engine bytes ($name)") }
++        }
++    }
++    $status = 'Incompatible'
++    if ($whole -eq $reference.sha256) { $status = 'VerifiedExecutable' }
++    elseif ($differences.Count -eq 0) { $status = 'EquivalentEngineUnverified' }
++    return [pscustomobject][ordered]@{
++        schema=1; executable=$file.Name; sha256=$whole; bytes=$bytes.Length; machine=$machine
++        status=$status; differences=@($differences.ToArray()); optional_header_sha256=$optionalHash; sections=$sections
++        scope='Executable comparison only. GOG/Epic gameplay, dependencies and script versions are not validated.'
++    }
++}
+--- S26CL/runtime/SOMA-VR-Executable.json
++++ S26CM/runtime/SOMA-VR-Executable.json
+@@ -0,0 +1,73 @@
++{
++  "schema": 1,
++  "description": "S26CM reference: tested Steam executable. Engine-layout equivalence is not storefront gameplay validation.",
++  "sha256": "7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113",
++  "machine": 34404,
++  "characteristics": 34,
++  "optional_header_sha256": "d67b86ac8be01b602e3e52aee15187aa31255cb8423aaab5b35850f602cef766",
++  "sections": [
++    {
++      "name": ".text",
++      "header_sha256": "b721500d750dbfed6792b988932da893393ea8474362a668b77ac0f0437043c5",
++      "rva": 4096,
++      "virtual_size": 6830256,
++      "raw_size": 6830592,
++      "raw_offset": 1024,
++      "sha256": "3e8f945afea8d04f80a368d825862f09a481eea565940ee69f3ddbeeffd20a4a"
++    },
++    {
++      "name": ".rdata",
++      "header_sha256": "124456eff863b7b2d62f4a47797fef5f66a0050666d9823e378efffb1e16c227",
++      "rva": 6836224,
++      "virtual_size": 1579400,
++      "raw_size": 1579520,
++      "raw_offset": 6831616,
++      "sha256": "e647a1748532578815e6ba8b240b4dc1908608a1d01f2657675dc0d0e0efdc58"
++    },
++    {
++      "name": ".data",
++      "header_sha256": "f1623199a611428dc498b9bd70d9bdcd8929bff86bfcabdabc3595422d81a742",
++      "rva": 8417280,
++      "virtual_size": 213784,
++      "raw_size": 55296,
++      "raw_offset": 8411136,
++      "sha256": "bf7666ff377f5b2400f9bb94b2ee8fffa2a5a48d65ba554c25a296022d59fe12"
++    },
++    {
++      "name": ".pdata",
++      "header_sha256": "3c79861fa00664c8bffaa37e09c527edfb858cc078d39e0e7665a14714066948",
++      "rva": 8634368,
++      "virtual_size": 248928,
++      "raw_size": 249344,
++      "raw_offset": 8466432,
++      "sha256": "24a9849f4b71899fc26130b5b4987881330732bfe4db1caf81c622bd68bcf1ff"
++    },
++    {
++      "name": ".tls",
++      "header_sha256": "41ca40c618430dcb035825b703879edce1e5704479b15e32fe881ef0a4919cb3",
++      "rva": 8884224,
++      "virtual_size": 121,
++      "raw_size": 512,
++      "raw_offset": 8715776,
++      "sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
++    },
++    {
++      "name": ".rsrc",
++      "header_sha256": "ce7e1eb7699f101eb9be656e626011947b5f31309654c4762d04945946ee164c",
++      "rva": 8888320,
++      "virtual_size": 470912,
++      "raw_size": 471040,
++      "raw_offset": 8716288,
++      "sha256": null
++    },
++    {
++      "name": ".reloc",
++      "header_sha256": "a37cd171b91b5e61d8f474ddb627b1bab3dccefa0b0ffb12d854109dd9301da9",
++      "rva": 9359360,
++      "virtual_size": 53366,
++      "raw_size": 53760,
++      "raw_offset": 9187328,
++      "sha256": "7ec108f904a844c57cbe6a94446516d01fa09c5122969ead63049ca9b5a6b293"
++    }
++  ]
++}
+--- S26CL/runtime/Check-SOMA-VR-Compatibility.cmd
++++ S26CM/runtime/Check-SOMA-VR-Compatibility.cmd
+@@ -0,0 +1,3 @@
++@echo off
++powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Launch-SOMA-VR.ps1" -CheckOnly %*
++pause
+--- S26CL/runtime/hpl3vr_vr_settings.ini
++++ S26CM/runtime/hpl3vr_vr_settings.ini
+@@ -0,0 +1,3 @@
++; SOMA VR defaults. Back up your existing file before replacing it.
++; Unlisted settings use the mod defaults. In-game menu preferences remain in your user profile.
++body_slot_debug_visual=0
+--- S26CL/runtime/defaults/hpl3vr_vr_settings.ini
++++ S26CM/runtime/defaults/hpl3vr_vr_settings.ini
+@@ -0,0 +1,3 @@
++; SOMA VR defaults. Back up your existing file before replacing it.
++; Unlisted settings use the mod defaults. In-game menu preferences remain in your user profile.
++body_slot_debug_visual=0

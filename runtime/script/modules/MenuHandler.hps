@@ -343,6 +343,7 @@ class cLastOnSomaScreen
 	
 	void LoadingStarted()
 	{
+		mbHPL3VRAutoLoadPending = false;
 		mbHPL3VRLoadingSession = _HPL3VR_RuntimeActive_Menu();
 		mbLoading_Started = true;
 	}
@@ -381,12 +382,16 @@ class cLastOnSomaScreen
 		
 		if(IsActive()==false)
 		{
-			cLux_GetSaveHandler().ContinueLoading(true);
+			// S26CD: no recap UI still needs the native post-load wait in VR.
+			// ContinueLoading(true) skips StartLoadedGame and its VR handoff.
+			bool bVRLoad = _HPL3VR_RuntimeActive_Menu() || mbHPL3VRLoadingSession;
+			cLux_GetSaveHandler().ContinueLoading(!bVRLoad);
 					
 			LoadScreen_SetForceBackground(false);
 			LoadScreen_SetUseSmallIcon(false);
 			
 			CleanUp();
+			mbHPL3VRAutoLoadPending = bVRLoad;
 		}
 	}
 	
@@ -401,6 +406,7 @@ class cLastOnSomaScreen
 		mbLoading_LoadScreenHidden = false;
 		mbDismiss = false;
 		mbHPL3VRLoadingSession = false;
+		mbHPL3VRAutoLoadPending = false;
 	}
 	
 	bool IsActive()
@@ -408,8 +414,22 @@ class cLastOnSomaScreen
 		return mpScriptImGui !is null;
 	}
 	
+	// Runs even without a recap GUI. The native wait stays armed until this
+	// exact completion, so IsDoneLoadingSavedGame cannot be missed.
+	void HPL3VR_FinishAutoLoad()
+	{
+		if (!mbHPL3VRAutoLoadPending) return;
+		if (!cLux_GetSaveHandler().IsDoneLoadingSavedGame() ||
+			!cLux_MapIsLoaded() || cLux_IsChangingMap() || LoadScreen_IsVisible()) return;
+		mbHPL3VRAutoLoadPending = false;
+		cScript_RunGlobalFunc("VRLIFE", "", "G");
+		cLux_GetSaveHandler().StartLoadedGame();
+		LogNewLine("S26CD AUTO LOAD HANDOFF: native saved-game completion without recap UI");
+	}
+
 	void Update(float afTimeStep)
 	{
+		HPL3VR_FinishAutoLoad();
 		if (!(_HPL3VR_RuntimeActive_Menu() || mbHPL3VRLoadingSession))
 		{
 				if(mbLoading_Started==false)
@@ -919,6 +939,7 @@ class cLastOnSomaScreen
 	bool mbLoading_LoadScreenHidden;
 	bool mbDismiss;
 	bool mbHPL3VRLoadingSession;
+	bool mbHPL3VRAutoLoadPending;
 };
 
 cLastOnSomaScreen gLastOnSomaScreen;
@@ -954,6 +975,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] bool mbVRHideTrails=false;
     [nosave] bool mbVRHideBlur=false;
     [nosave] bool mbVRHideShake=false;
+    [nosave] bool mbVRHideMovementBob=false;
     [nosave] int mlVRVignette=0;
     [nosave] array<int> mvVRButtonMap={0,1,2,3,4,5};
     [nosave] int mlVRBindAction=-1;
@@ -1025,6 +1047,9 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             mbVRHideTrails=p.GetBool("SOMA_VR_Comfort","HideTrails",false);
             mbVRHideBlur=p.GetBool("SOMA_VR_Comfort","HideBlur",false);
             mbVRHideShake=p.GetBool("SOMA_VR_Comfort","HideShake",false);
+            // S26CJ: migrate either previous comfort toggle to the combined option.
+            mbVRHideMovementBob=p.GetBool("SOMA_VR_Comfort","HideMovementBob",
+                p.GetBool("SOMA_VR_Comfort","HideHeadBob",false) || p.GetBool("SOMA_VR_Comfort","HideHandBob",false));
             mlVRVignette=p.GetInt("SOMA_VR_Comfort","Vignette",0);
             if(mlVRVignette<0 || mlVRVignette>3) mlVRVignette=0;
             array<bool> seen={false,false,false,false,false,false};bool valid=true;
@@ -1078,6 +1103,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         p.SetBool("SOMA_VR_Comfort","HideTrails",mbVRHideTrails);
         p.SetBool("SOMA_VR_Comfort","HideBlur",mbVRHideBlur);
         p.SetBool("SOMA_VR_Comfort","HideShake",mbVRHideShake);
+        p.SetBool("SOMA_VR_Comfort","HideMovementBob",mbVRHideMovementBob);
+        // Keep legacy settings coherent if an older build is restored.
+        p.SetBool("SOMA_VR_Comfort","HideHeadBob",mbVRHideMovementBob);
+        p.SetBool("SOMA_VR_Comfort","HideHandBob",mbVRHideMovementBob);
         p.SetInt("SOMA_VR_Comfort","Vignette",mlVRVignette);
         p.SetBool("SOMA_VR_Eyes","Environment",mbVREyeEnvironment);p.SetBool("SOMA_VR_Eyes","AI",mbVREyeAI);
         p.SetBool("SOMA_VR_Eyes","Flashlight",mbVREyeFlashlight);p.SetBool("SOMA_VR_Eyes","ExtraDistortion",mbVREyeDistortion);
@@ -1196,7 +1225,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             OptionMenu_UpdateExtraWidth("CALIBRATE STANDING HEIGHT",true);
             OptionMenu_UpdateExtraWidth("CENTER CAMERA",true);
         }
-        if(mlVRComfortCategory==2) OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true);
+        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); size.y=430; }
         if(mlVRComfortCategory==3) { size.y=430;for(int i=0;i<6;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
         if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=360;
         if(mlVRComfortCategory==0) size.y=430;
@@ -1241,6 +1270,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             int subtitle=HPL3VR_Slider("SUBTITLE DISTANCE",6,mlVRSubtitleDistance,65,cString_ToString(0.75f+0.05f*mlVRSubtitleDistance,2)+" m");
             changed=changed || scale!=mlVRWorldScale || panel!=mlVRPanelDistance || subtitle!=mlVRSubtitleDistance;
             mlVRWorldScale=scale;mlVRPanelDistance=panel;mlVRSubtitleDistance=subtitle;
+
 
 
         }
@@ -1297,6 +1327,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             msVRSettingsSelected=OptionMenu_UpdateFocus("VIGNETTE",msVRSettingsSelected);
             bool shake=HPL3VR_Toggle("HIDE SCREEN SHAKE",5,mbVRHideShake);
             changed=distortion!=mbVRHideDistortion || chromatic!=mbVRHideChromatic || trails!=mbVRHideTrails || blur!=mbVRHideBlur || vignette!=mlVRVignette || shake!=mbVRHideShake;
+            bool bob=HPL3VR_Toggle("HIDE HEAD AND HAND BOBBING",6,mbVRHideMovementBob);
+            changed=changed || bob!=mbVRHideMovementBob;mbVRHideMovementBob=bob;
             mbVRHideShake=shake;
             mbVRHideDistortion=distortion; mbVRHideChromatic=chromatic; mbVRHideTrails=trails;mbVRHideBlur=blur;mlVRVignette=vignette;
         }
@@ -1321,7 +1353,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             changed=mode!=mlVRAudioMode;mlVRAudioMode=mode;
         }
         if(changed) HPL3VR_SaveComfort();
-        if(HPL3VR_Option("BACK",mlVRComfortCategory==0 ? 7 : (mlVRComfortCategory==3 ? 9 : ((mlVRComfortCategory==2 || mlVRComfortCategory==1 || mlVRComfortCategory<0) ? 6 : 5))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
+        if(HPL3VR_Option("BACK",(mlVRComfortCategory==0 || mlVRComfortCategory==2) ? 7 : (mlVRComfortCategory==3 ? 9 : (mlVRComfortCategory==1 ? 6 : 5))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
         {
             if(mlVRComfortCategory==3)
             {
@@ -1344,6 +1376,11 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     }
 
 	void HPL3VR_GetRuntimeActive() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive); }
+
+    void HPL3VR_GetBobMask()
+    {
+        cScript_SetGlobalReturnInt(gbHPL3VRRuntimeActive ? (mbVRHideMovementBob ? 3 : 0) : 0);
+    }
 
     void HPL3VR_GetHideShake()
     {

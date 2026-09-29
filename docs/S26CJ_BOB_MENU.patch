@@ -1,0 +1,114 @@
+--- S26CI/runtime/script/modules/MenuHandler.hps
++++ S26CJ/runtime/script/modules/MenuHandler.hps
+@@ -975,8 +975,7 @@
+     [nosave] bool mbVRHideTrails=false;
+     [nosave] bool mbVRHideBlur=false;
+     [nosave] bool mbVRHideShake=false;
+-    [nosave] bool mbVRHideHeadBob=false;
+-    [nosave] bool mbVRHideHandBob=false;
++    [nosave] bool mbVRHideMovementBob=false;
+     [nosave] int mlVRVignette=0;
+     [nosave] array<int> mvVRButtonMap={0,1,2,3,4,5};
+     [nosave] int mlVRBindAction=-1;
+@@ -1048,8 +1047,9 @@
+             mbVRHideTrails=p.GetBool("SOMA_VR_Comfort","HideTrails",false);
+             mbVRHideBlur=p.GetBool("SOMA_VR_Comfort","HideBlur",false);
+             mbVRHideShake=p.GetBool("SOMA_VR_Comfort","HideShake",false);
+-            mbVRHideHeadBob=p.GetBool("SOMA_VR_Comfort","HideHeadBob",false);
+-            mbVRHideHandBob=p.GetBool("SOMA_VR_Comfort","HideHandBob",false);
++            // S26CJ: migrate either previous comfort toggle to the combined option.
++            mbVRHideMovementBob=p.GetBool("SOMA_VR_Comfort","HideMovementBob",
++                p.GetBool("SOMA_VR_Comfort","HideHeadBob",false) || p.GetBool("SOMA_VR_Comfort","HideHandBob",false));
+             mlVRVignette=p.GetInt("SOMA_VR_Comfort","Vignette",0);
+             if(mlVRVignette<0 || mlVRVignette>3) mlVRVignette=0;
+             array<bool> seen={false,false,false,false,false,false};bool valid=true;
+@@ -1103,8 +1103,10 @@
+         p.SetBool("SOMA_VR_Comfort","HideTrails",mbVRHideTrails);
+         p.SetBool("SOMA_VR_Comfort","HideBlur",mbVRHideBlur);
+         p.SetBool("SOMA_VR_Comfort","HideShake",mbVRHideShake);
+-        p.SetBool("SOMA_VR_Comfort","HideHeadBob",mbVRHideHeadBob);
+-        p.SetBool("SOMA_VR_Comfort","HideHandBob",mbVRHideHandBob);
++        p.SetBool("SOMA_VR_Comfort","HideMovementBob",mbVRHideMovementBob);
++        // Keep legacy settings coherent if an older build is restored.
++        p.SetBool("SOMA_VR_Comfort","HideHeadBob",mbVRHideMovementBob);
++        p.SetBool("SOMA_VR_Comfort","HideHandBob",mbVRHideMovementBob);
+         p.SetInt("SOMA_VR_Comfort","Vignette",mlVRVignette);
+         p.SetBool("SOMA_VR_Eyes","Environment",mbVREyeEnvironment);p.SetBool("SOMA_VR_Eyes","AI",mbVREyeAI);
+         p.SetBool("SOMA_VR_Eyes","Flashlight",mbVREyeFlashlight);p.SetBool("SOMA_VR_Eyes","ExtraDistortion",mbVREyeDistortion);
+@@ -1222,11 +1224,12 @@
+             OptionMenu_UpdateExtraButtonWidth_MultiSelection(crouch,""); ImGui_SetTransCategory("");
+             OptionMenu_UpdateExtraWidth("CALIBRATE STANDING HEIGHT",true);
+             OptionMenu_UpdateExtraWidth("CENTER CAMERA",true);
++            OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true);
+         }
+         if(mlVRComfortCategory==2) OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true);
+         if(mlVRComfortCategory==3) { size.y=430;for(int i=0;i<6;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
+         if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=360;
+-        if(mlVRComfortCategory==0) size.y=430;
++        if(mlVRComfortCategory==0) size.y=480;
+         if(mlVRComfortCategory==4) OptionMenu_UpdateExtraWidth("GAZE-DIRECTED FLASHLIGHT",true);
+         if(mlVRComfortCategory==5) { array<tString> audio={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};OptionMenu_UpdateExtraButtonWidth_MultiSelection(audio,"");ImGui_SetTransCategory(""); }
+         size.x+=OptionMenu_GetExtraWidth();
+@@ -1241,11 +1244,10 @@
+             if(HPL3VR_Option("VIDEO",2)) next=2;
+             if(HPL3VR_Option("EYE TRACKING",3)) next=4;
+             if(HPL3VR_Option("AUDIO",4)) next=5;
+-            if(HPL3VR_Option("MOVEMENT BOBBING",5)) next=6;
+             if(next>=0)
+             {
+                 mlVRComfortCategory=next;
+-                msVRSettingsSelected=next==6 ? "HIDE HEAD BOBBING" : next==0 ? "MOVEMENT DIRECTION" : (next==1 ? "TURNING" : (next==4 ? "REACTIVE ENVIRONMENT" : (next==5 ? "SPATIAL AUDIO" : "HIDE DISTORTION")));
++                msVRSettingsSelected=next==0 ? "MOVEMENT DIRECTION" : (next==1 ? "TURNING" : (next==4 ? "REACTIVE ENVIRONMENT" : (next==5 ? "SPATIAL AUDIO" : "HIDE DISTORTION")));
+                 msFocusNextFrame=msVRSettingsSelected;
+                 ImGui_SetTransCategory(cat); return true;
+             }
+@@ -1269,6 +1271,8 @@
+             int subtitle=HPL3VR_Slider("SUBTITLE DISTANCE",6,mlVRSubtitleDistance,65,cString_ToString(0.75f+0.05f*mlVRSubtitleDistance,2)+" m");
+             changed=changed || scale!=mlVRWorldScale || panel!=mlVRPanelDistance || subtitle!=mlVRSubtitleDistance;
+             mlVRWorldScale=scale;mlVRPanelDistance=panel;mlVRSubtitleDistance=subtitle;
++            bool bob=HPL3VR_Toggle("HIDE HEAD AND HAND BOBBING",7,mbVRHideMovementBob);
++            changed=changed || bob!=mbVRHideMovementBob;mbVRHideMovementBob=bob;
+ 
+ 
+         }
+@@ -1341,13 +1345,6 @@
+             changed=env!=mbVREyeEnvironment || ai!=mbVREyeAI || flash!=mbVREyeFlashlight || distortion!=mbVREyeDistortion;
+             mbVREyeEnvironment=env;mbVREyeAI=ai;mbVREyeFlashlight=flash;mbVREyeDistortion=distortion;
+         }
+-        else if(mlVRComfortCategory==6)
+-        {
+-            bool head=HPL3VR_Toggle("HIDE HEAD BOBBING",0,mbVRHideHeadBob);
+-            bool hands=HPL3VR_Toggle("HIDE HAND BOBBING",1,mbVRHideHandBob);
+-            changed=head!=mbVRHideHeadBob || hands!=mbVRHideHandBob;
+-            mbVRHideHeadBob=head;mbVRHideHandBob=hands;
+-        }
+         else if(mlVRComfortCategory==5)
+         {
+             array<tString> modes={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};
+@@ -1356,7 +1353,7 @@
+             changed=mode!=mlVRAudioMode;mlVRAudioMode=mode;
+         }
+         if(changed) HPL3VR_SaveComfort();
+-        if(HPL3VR_Option("BACK",mlVRComfortCategory==0 ? 7 : (mlVRComfortCategory==3 ? 9 : ((mlVRComfortCategory==2 || mlVRComfortCategory==1 || mlVRComfortCategory<0) ? 6 : 5))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
++        if(HPL3VR_Option("BACK",mlVRComfortCategory==0 ? 8 : (mlVRComfortCategory==3 ? 9 : ((mlVRComfortCategory==2 || mlVRComfortCategory==1) ? 6 : 5))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
+         {
+             if(mlVRComfortCategory==3)
+             {
+@@ -1364,7 +1361,7 @@
+             }
+             else if(mlVRComfortCategory>=0)
+             {
+-                msVRSettingsSelected=mlVRComfortCategory==6 ? "MOVEMENT BOBBING" : mlVRComfortCategory==0 ? "GAMEPLAY" : (mlVRComfortCategory==1 ? "CONTROLS" : (mlVRComfortCategory==4 ? "EYE TRACKING" : (mlVRComfortCategory==5 ? "AUDIO" : "VIDEO")));
++                msVRSettingsSelected=mlVRComfortCategory==0 ? "GAMEPLAY" : (mlVRComfortCategory==1 ? "CONTROLS" : (mlVRComfortCategory==4 ? "EYE TRACKING" : (mlVRComfortCategory==5 ? "AUDIO" : "VIDEO")));
+                 mlVRComfortCategory=-1; msFocusNextFrame=msVRSettingsSelected;
+             }
+             else
+@@ -1382,7 +1379,7 @@
+ 
+     void HPL3VR_GetBobMask()
+     {
+-        cScript_SetGlobalReturnInt(gbHPL3VRRuntimeActive ? ((mbVRHideHeadBob ? 1 : 0)+(mbVRHideHandBob ? 2 : 0)) : 0);
++        cScript_SetGlobalReturnInt(gbHPL3VRRuntimeActive ? (mbVRHideMovementBob ? 3 : 0) : 0);
+     }
+ 
+     void HPL3VR_GetHideShake()

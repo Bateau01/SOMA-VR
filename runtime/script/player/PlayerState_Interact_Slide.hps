@@ -195,6 +195,7 @@ class cScrPlayerState_Interact_Slide : iScrPlayerState_Interact, iScrPlayerState
   mvLastMouseAdd =cVector2f(0); 
  
   mfSlideSpeed =0; 
+  mbHPL3VRTrackedSlide = false;
   mbHPL3VRDirectSpeed = false;
   mfHPL3VRDirectSpeed = 0.0f;
    
@@ -237,7 +238,18 @@ class cScrPlayerState_Interact_Slide : iScrPlayerState_Interact, iScrPlayerState
   if (msGrabEndSound!="") 
    cLux_ID_Prop(mPropID).PlaySound("GrabEnd",msGrabEndSound,true, true); 
     
-  cLux_ID_Body(mBodyID).SetGravity(mbHasGravity); 
+  iPhysicsBody@ releasedBody=cLux_ID_Body(mBodyID);
+  if(releasedBody !is null)
+  {
+   if(_HPL3VR_RuntimeActive_Slide() && mbHPL3VRTrackedSlide)
+   {
+    // Preserve release momentum; only retire the VR input command.
+    mfSlideSpeed=0; mfHPL3VRDirectSpeed=0;
+    mbHPL3VRDirectSpeed=false; mbHPL3VRTrackedSlide=false;
+    mvMoveAdd=cVector2f(0); mvLastMouseAdd=cVector2f(0);
+   }
+   releasedBody.SetGravity(mbHasGravity);
+  } 
   
   ///////////////////////////// 
   //Resets some general stuff 
@@ -423,9 +435,9 @@ class cScrPlayerState_Interact_Slide : iScrPlayerState_Interact, iScrPlayerState
   //Update speed. H57.55EA's VR-only sentinel supplies physical rail speed
   //directly. Desktop/mouse/gamepad keeps the exact authored recurrence.
   float fPrevSlideSpeed = mfSlideSpeed;
-  if(mbHPL3VRDirectSpeed)
+  if(mbHPL3VRTrackedSlide)
   {
-   mfSlideSpeed = mfHPL3VRDirectSpeed;
+   mfSlideSpeed = mbHPL3VRDirectSpeed ? mfHPL3VRDirectSpeed : 0.0f;
   }
   else
   {
@@ -533,6 +545,7 @@ class cScrPlayerState_Interact_Slide : iScrPlayerState_Interact, iScrPlayerState
    {
     mfHPL3VRDirectSpeed = avAmount.x;
     mbHPL3VRDirectSpeed = true;
+    mbHPL3VRTrackedSlide = true;
     return false;
    }
    cVector2f vAmount(avAmount.x, avAmount.y); 
@@ -547,11 +560,7 @@ class cScrPlayerState_Interact_Slide : iScrPlayerState_Interact, iScrPlayerState
   // Moving 
   else if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove) 
   { 
-   if (avAmount.SqrLength() < 0.01) return true; 
-    
-   cVector2f vAmount(avAmount.x, avAmount.y*-1); 
-   mvMoveAdd += vAmount * mfMoveToMouseAddFactor; 
-   return true; 
+   return true; // S26CE: locomotion is not drawer drag input. 
   } 
    
   return true; 
@@ -660,6 +669,7 @@ class cScrPlayerState_Interact_Slide : iScrPlayerState_Interact, iScrPlayerState
  
  float mfSlideSpeed; 
  bool mbHPL3VRDirectSpeed;
+ bool mbHPL3VRTrackedSlide=false;
  float mfHPL3VRDirectSpeed;
  
  float mfMoveToMouseAddFactor; 

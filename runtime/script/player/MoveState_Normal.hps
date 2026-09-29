@@ -170,6 +170,8 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 	
 	void OnLeaveState(int alNextStateId)
 	{
+        if(mbVRBobDeltaSent) cScript_RunGlobalFunc("VRBOB","","RESET");
+        mbVRBobDeltaSent=false;
 		if(mlRunBreathingID>=0)
 		{
 			Emotion_StopBackgroundBreath(mlRunBreathingID);
@@ -188,6 +190,8 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 	//------------------------------------------------------------
 	void Reset()
 	{
+        if(mbVRBobDeltaSent) cScript_RunGlobalFunc("VRBOB","","RESET");
+        mbVRBobDeltaSent=false;
 		/*mfJumpCount = 0;
 		mlExtraJumpCount =0;
 		mbJumping = false;
@@ -740,12 +744,34 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 		
 		////////////////////////
 		//Set The Camera Add Position
-		mBaseObj.mpPlayer.SetCameraPosAdd(eCameraAddType_Bob, mvHeadBob * mfHeadBobMul * fToolHeadBobMul);
-		mBaseObj.mpPlayer.SetCameraRoll(ePlayerRoll_Move, cMath_ToRad(3*mvHeadBob.y * mfHeadBobMul + 15*mvHeadBob.y*fHealthMul * mfHeadBobMul));
+		ApplyVRMovementBob(mvHeadBob * mfHeadBobMul * fToolHeadBobMul,
+            cMath_ToRad(3*mvHeadBob.y * mfHeadBobMul + 15*mvHeadBob.y*fHealthMul * mfHeadBobMul));
 	}
 	
 	//------------------------------------------------------------
 	
+    // Keep the bob oscillator, footsteps and landing state alive. Only split
+    // its final presentation; crouch/lean/shake and physical XR motion are separate.
+    void ApplyVRMovementBob(const cVector3f &in bob,float roll)
+    {
+        cScript_SetGlobalReturnInt(0);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetBobMask");
+        int mask=cScript_GetGlobalReturnInt();
+        bool hideHead=(mask&1)!=0;
+        bool hideHands=(mask&2)!=0;
+        cVector3f handDelta=(hideHead==hideHands) ? cVector3f(0) : (hideHead ? bob : bob*-1.0f);
+        // Cache only the difference between desired hand bob and camera bob.
+        // Native code converts this using the exact character basis when the
+        // matching camera offset is applied, before either hand consumes it.
+        if(handDelta!=cVector3f(0))
+            cScript_RunGlobalFunc("VRBOB",""+handDelta.x+"|"+handDelta.y+"|"+handDelta.z,"SET");
+        else if(mbVRBobDeltaSent) cScript_RunGlobalFunc("VRBOB","","RESET");
+        mbVRBobDeltaSent=handDelta!=cVector3f(0);
+        mBaseObj.mpPlayer.SetCameraPosAdd(eCameraAddType_Bob,hideHead ? cVector3f(0) : bob);
+        mBaseObj.mpPlayer.SetCameraRoll(ePlayerRoll_Move,hideHead ? 0.0f : roll);
+    }
+    [nosave] bool mbVRBobDeltaSent=false;
+
 	bool mbCrawlingWasMoving=false;
 	int mlCrawlingMoveDir=0;
 	

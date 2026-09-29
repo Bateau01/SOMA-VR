@@ -53,3 +53,9 @@ These systems preserve authored story callbacks where implemented. Their presenc
 - The eye-gaze option was not tested with eye-tracking hardware by this user.
 - Automated callback/math tests and native save loads do not replace controller-driven playthroughs.
 - The public package omits private diagnostic logs, saves and the original game executable.
+
+## Recent additions
+
+S26CM adds an executable compatibility report and opt-in launch for engine-equivalent executables; it is not a verified GOG/Epic native port. See the compatibility guide. The root hpl3vr_vr_settings.ini is included with clean defaults.
+
+HIDE HEAD AND HAND BOBBING remains under VR SETTINGS > VIDEO, below HIDE SCREEN SHAKE. S26CK physical handheld datapads/camera and the earlier Tracer Fluid/independent-hand changes remain included.

@@ -1,4 +1,4 @@
-﻿#include "interfaces/Map_Interface.hps"
+#include "interfaces/Map_Interface.hps"
 #include "base/Inputhandler_Types.hps"
 #include "base/AchievementHandler_Types.hps"
 #include "base/RichPresenceHandler_Types.hps"
@@ -3457,7 +3457,11 @@ class cScrMap : iScrMap
 		void OnLeaveToBeFlesher(const tString&in asEntityName)
 		{
 			OnLeave_HandheldTerminal("");
-			Depth_ImGui_StopAudioFilePlayback(asEntityName+"_open", true);
+			// S26CK: the VR handheld GUI lives on the physical source.
+            cScript_SetGlobalReturnBool(false);
+            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+            if(cScript_GetGlobalReturnBool())Depth_ImGui_StopAudioFilePlayback(asEntityName,true);
+            else Depth_ImGui_StopAudioFilePlayback(asEntityName+"_open",true);
 		}
 
 		//-------------------------------------------------------
@@ -7747,3 +7751,5 @@ class cScrMap : iScrMap
 	//-------------------------------------------------------
 
 }
+
+

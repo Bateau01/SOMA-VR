@@ -1,0 +1,192 @@
+{
+  "version": "S26CK",
+  "dll_sha256": "0f48045c9b6ecb1dae38043cbc911b9a6091e5474b8db1829231d838f4b715c9",
+  "mapped_nonphone_handhelds": [
+    {
+      "map": "maps/chapter01/01_04_transport_station/01_04_transport_station.hpm_Entity",
+      "name": "AmyCargoPad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiAmyCargoPad",
+      "enter": null,
+      "leave": "LeaveAmyCargoPad"
+    },
+    {
+      "map": "maps/chapter02/02_03_delta/02_03_delta.hpm_Entity",
+      "name": "MaggieCamera",
+      "asset": "entities/station/terminals/camera_portable/camera_portable.ent",
+      "gui": "OnGuiMaggieCamera",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter02/02_05_theta_inside/02_05_theta_inside.hpm_Entity",
+      "name": "datapad_1",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiCathsDatapad",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter03/03_02_omicron_inside/03_02_omicron_inside.hpm_Entity",
+      "name": "DatapadBiolab",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "DatapadBiolab_OnGui",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter03/03_02_omicron_inside/03_02_omicron_inside.hpm_Entity",
+      "name": "ARKDatapad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "ARKDatapad_OnGui",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter04/04_02_tau_inside/04_02_tau_inside.hpm_Entity",
+      "name": "CathPad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiCatherinePad",
+      "enter": null,
+      "leave": "OnLeave_HandheldTerminal"
+    },
+    {
+      "map": "maps/chapter04/04_02_tau_inside/04_02_tau_inside.hpm_Entity",
+      "name": "ToBeFlesherPad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiToBeFlesher",
+      "enter": null,
+      "leave": "OnLeaveToBeFlesher"
+    },
+    {
+      "map": "maps/chapter04/04_02_tau_inside/04_02_tau_inside.hpm_Entity",
+      "name": "CrewPad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiCrewMember_1",
+      "enter": null,
+      "leave": "OnLeave_HandheldTerminal"
+    }
+  ],
+  "map_tests": {
+    "01_04_transport_station": {
+      "exit": 0,
+      "complete": true,
+      "script_errors": [],
+      "events": [
+        "CK_GUI|AmyCargoPad",
+        "CK_SCREEN|AmyCargoPad|dx=0.784844|dy=0.625234|dz=0.000000",
+        "CK_REPORT|AmyCargoPad|open=true|gui=true|focused=true|mass=0.350000|state=9",
+        "CK_REPORT|AmyCargoPad|open=false|gui=true|focused=false|mass=0.350000|state=0",
+        "CK_NATIVE_DONE"
+      ],
+      "render_events": []
+    },
+    "02_03_delta": {
+      "exit": 0,
+      "complete": true,
+      "script_errors": [],
+      "events": [
+        "CK_GUI|MaggieCamera",
+        "CK_SCREEN|MaggieCamera|dx=0.272339|dy=0.171194|dz=0.000000",
+        "CK_REPORT|MaggieCamera|open=true|gui=true|focused=true|mass=1.000000|state=9",
+        "CK_REPORT|MaggieCamera|open=false|gui=true|focused=false|mass=1.000000|state=0",
+        "CK_NATIVE_DONE"
+      ],
+      "render_events": []
+    },
+    "02_05_theta_inside": {
+      "exit": 0,
+      "complete": true,
+      "script_errors": [],
+      "events": [
+        "CK_GUI|datapad_1",
+        "CK_SCREEN|datapad_1|dx=0.784844|dy=0.625234|dz=0.000000",
+        "CK_REPORT|datapad_1|open=true|gui=true|focused=true|mass=0.350000|state=9",
+        "CK_REPORT|datapad_1|open=false|gui=true|focused=false|mass=0.350000|state=0",
+        "CK_NATIVE_DONE"
+      ],
+      "render_events": []
+    },
+    "03_02_omicron_inside": {
+      "exit": 0,
+      "complete": true,
+      "script_errors": [],
+      "events": [
+        "CK_GUI|DatapadBiolab",
+        "CK_SCREEN|DatapadBiolab|dx=0.784844|dy=0.625234|dz=0.000000",
+        "CK_REPORT|DatapadBiolab|open=true|gui=true|focused=true|mass=0.350000|state=9",
+        "CK_REPORT|DatapadBiolab|open=false|gui=true|focused=false|mass=0.350000|state=0",
+        "CK_GUI|ARKDatapad",
+        "CK_SCREEN|ARKDatapad|dx=0.784844|dy=0.625234|dz=0.000000",
+        "CK_REPORT|ARKDatapad|open=true|gui=true|focused=true|mass=0.350000|state=9",
+        "CK_REPORT|ARKDatapad|open=false|gui=true|focused=false|mass=0.350000|state=0",
+        "CK_NATIVE_DONE"
+      ],
+      "render_events": []
+    },
+    "04_02_tau_inside": {
+      "exit": 0,
+      "complete": true,
+      "script_errors": [],
+      "events": [
+        "CK_GUI|CathPad",
+        "CK_SCREEN|CathPad|dx=0.784844|dy=0.625234|dz=0.000000",
+        "CK_REPORT|CathPad|open=true|gui=true|focused=true|mass=0.350000|state=9",
+        "CK_REPORT|CathPad|open=false|gui=true|focused=false|mass=0.350000|state=0",
+        "CK_GUI|ToBeFlesherPad",
+        "CK_SCREEN|ToBeFlesherPad|dx=0.784844|dy=0.625234|dz=0.000000",
+        "CK_REPORT|ToBeFlesherPad|open=true|gui=true|focused=true|mass=0.350000|state=9",
+        "CK_REPORT|ToBeFlesherPad|open=false|gui=true|focused=false|mass=0.350000|state=0",
+        "CK_GUI|CrewPad",
+        "CK_SCREEN|CrewPad|dx=0.784844|dy=0.625234|dz=0.000000",
+        "CK_REPORT|CrewPad|open=true|gui=true|focused=true|mass=0.350000|state=9",
+        "CK_REPORT|CrewPad|open=false|gui=true|focused=false|mass=0.350000|state=0",
+        "CK_NATIVE_DONE"
+      ],
+      "render_events": []
+    }
+  },
+  "apartment_regression": {
+    "exit": 0,
+    "complete": true,
+    "script_errors": [],
+    "events": [
+      "CE_TERMINAL_STATE|8",
+      "CE_READABLE_STATE|1",
+      "CE_AFTER_READ_RELEASE|0",
+      "CE_SLIDE_MOVE_ISOLATED|true",
+      "CG_DRAWER_RETURN|0",
+      "CE_SLIDE_RELEASE_SPEED|1.500000",
+      "CE_SLIDE_SETTLED_SPEED|0.000000",
+      "CE_TOOL_PICKUP_CONTEXT|0",
+      "CE_TRACER_REGISTERED|CanUseTracerFluid|Use_TracerFluid",
+      "CI_TRACER_DWELL|0.250000",
+      "CE_TRACER_AFTER_USE|active=false",
+      "CG_RETURN_TESTS|checks=330|failures=0",
+      "CJ_BOB_TEST|checks=16|failures=0",
+      "CE_NATIVE_DONE"
+    ],
+    "render_events": []
+  },
+  "extracted_tests": {
+    "handheld_tests.json": {
+      "exit": 0,
+      "output": "PASS 43 handheld pickup and input-state gate checks\n",
+      "scope": "Production functions with engine mocks. Real GUI callbacks tested separately inside SOMA."
+    },
+    "tracer_two_hands_tests.json": {
+      "exit": 0,
+      "output": "PASS 323 tracer geometry and independent-hand transition checks\n",
+      "scope": "Production functions and actual Grab-exit block with engine mocks. No headset trajectory."
+    },
+    "apartment_tests.json": {
+      "exit": 0,
+      "output": "PASS 164 readable transaction and held-tool authorization checks\n",
+      "scope": "Production C functions with engine mocks; native script VM tested separately."
+    }
+  },
+  "hand_collision_changes": false,
+  "installed_game_modified": false,
+  "test_scope": "Actual SOMA GUI callbacks, screen geometry, two open/close cycles (explicit exit then simulated grip loss) per mapped handheld. Pickup authorization and held tracking simulated in test-only scripts. Delta tested with its arrival intro bypassed. No live headset or save/reload lifecycle test for handhelds.",
+  "hardware_status": "Physical pickup, free-hand taps/drag accuracy, and save/reload need headset confirmation."
+}

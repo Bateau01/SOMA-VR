@@ -1,0 +1,657 @@
+#include "player/PlayerState_Interact.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_modules.hps"
+#include "player_types.hps"
+
+//------------------------------------------------------------
+	
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+const float gfHandheldTerminalMoveAcc = 2;
+const float gfHandheldTerminalMoveSpeed = 2;
+const float gfHandheldTerminalHideTime= 0.35f;
+const float gfHandheldTerminalSlowDownDist = 0.4;
+const float gfHandheldTerminalTargetRotation = 1.5;
+const float gfMoveFractionToStartRotation = 0;
+const float gfMoveFractionToStopRotation = 1;
+
+const float gfReadableDissolveTime = 0.2f;
+
+//------------------------------------------------------------
+
+class cScrPlayerState_Interact_HandheldTerminal : iScrPlayerState_Interact, iScrPlayerState_Interface
+{
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+    bool mbVRPhysicalTablet=false; // Saved marker: reload exits the VR state without a restored tracked grip.
+    [nosave] float mfVRTabletLatchGrace=0;
+    void _Global_VRSetupTablet(){
+        SetupInteractVars();mbVRPhysicalTablet=true;mfVRTabletLatchGrace=0.15f;
+        mbEnteringState=false;mbLeavingState=false;
+    }
+    bool VR_PhysicalTablet(){return mbVRPhysicalTablet;}
+
+	void Init()
+	{
+		mlDepthOfFieldID = -1;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupTerminal()
+	{
+        mbVRPhysicalTablet=false;
+		////////////////////////////////
+		// Reset variables
+		mbLeavingState = false;
+		mbEnteringState = true;
+		mfPrevDist = 1000;
+		
+		////////////////////////////////
+		// Get basic params
+		mPropID = cScript_GetGlobalArgID(0);
+		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+		pProp.SetIsInteractedWith(true);
+		
+		////////////////////////////////
+		// Get specific params
+		mOpenPropID = cScript_GetGlobalArgID(3);
+		mfDistanceFromCamera = cScript_GetGlobalArgFloat(4);
+		mfYStartOffset = cScript_GetGlobalArgFloat(5);
+		tString sOpenSound = cScript_GetGlobalArgString(6);
+		msCloseSound = cScript_GetGlobalArgString(7);
+		msCloseCallback = cScript_GetGlobalArgString(8);
+		mbAllowCancel = cScript_GetGlobalArgBool(9);
+		msHandAnimationSuffix = cScript_GetGlobalArgString(10);
+		mbGUIActiveOnTransitions = cScript_GetGlobalArgBool(11);
+		mbShowMouse = cScript_GetGlobalArgBool(12);
+		mbLockCamera = cScript_GetGlobalArgBool(13);
+		
+		////////////////////////////////
+		// Start DOF effect and get current camera rotation
+		Effect_DoF_FadeOut(mlDepthOfFieldID, 1);
+		mlDepthOfFieldID = Effect_DoF_Start(0, mfDistanceFromCamera+0.25, 1, 1);
+		
+		////////////////////////////////
+		// Fade out mesh
+		pProp.GetMeshEntity().SetVisible(false);
+		cLux_GetCurrentMap().AddDissolveEntity(pProp.GetMeshEntity(), gfReadableDissolveTime);
+		
+		////////////////////////////////
+		// Get open version of prop and set its initial orientation
+		cLuxProp @pOpenProp = cLux_ID_Prop(mOpenPropID);
+		pOpenProp.SetActive(true);
+		pOpenProp.WakeUp();
+		pOpenProp.SetGuiUpdateWhenOutOfView(true);
+		
+		if (mbGUIActiveOnTransitions)
+		{
+			pOpenProp.SetGuiActive(true);
+			pOpenProp.SetEffectsActive(true,true);
+		}
+		
+		if (msHandAnimationSuffix!="")
+		{
+			PlayerHands_SetUseCustomPosition(false);
+			PlayerHands_SetUseCustomRotation(false);
+			PlayerHands_PlayAnimation("tool_"+msHandAnimationSuffix+"_draw", false,false,0,pOpenProp.GetName(), false);
+		}
+		else
+		{
+			if (mbLockCamera) pOpenProp.SetGuiIsFocused(true, mbShowMouse);
+			m_mtxOriginOrientation = GetInitialMatrix();
+			pOpenProp.SetMatrix(m_mtxOriginOrientation);
+			mvCamRelativeStart = pOpenProp.GetPosition() - cLux_GetPlayer().GetCamera().GetPosition();
+		}
+		
+	
+		////////////////////////////////
+		// Play sound
+		if (sOpenSound != "")
+			Sound_PlayGui(sOpenSound, 1.0f);
+				
+		////////////////////////////////
+		//Stop character body
+		cLux_GetPlayer().GetCharacterBody().StopMovement();
+	}
+	
+	//------------------------------------------------------------
+	
+	cMatrixf GetInitialMatrix()
+	{
+		cCamera@ pCamera = cLux_GetPlayer().GetCamera();
+		
+		cMatrixf mtxCameraCenteredRotation = pCamera.GetViewMatrix().GetRotation();
+		mtxCameraCenteredRotation.SetForward(pCamera.GetForward());
+									
+		cVector3f vFwd = mtxCameraCenteredRotation.GetUp();
+		cVector3f vUp = mtxCameraCenteredRotation.GetForward();
+		cVector3f vRight = cMath_Vector3Cross(vFwd, vUp);
+		cVector3f vPos = pCamera.GetPosition() + 
+						 mtxCameraCenteredRotation.GetForward() * mfDistanceFromCamera + 
+						 mtxCameraCenteredRotation.GetUp() * mfYStartOffset;
+		
+		return cMath_MatrixUnitVectors(vRight, vFwd, vUp, vPos);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnEnterState(int alPrevStateId)
+	{
+		EnterInteractState(alPrevStateId);
+        if(VR_PhysicalTablet())return;
+		
+		// Disable screen shakes etc.
+		Effect_Shake_EnableAll(false);
+		
+		mfMoveSpeedMul = Player_GetMoveSpeedMul();
+		Player_SetMoveSpeedMul(0.0f);
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnLeaveState(int alNextStateId)
+	{
+        if(VR_PhysicalTablet()){
+            mbVRPhysicalTablet=false;
+            cLuxProp@ p=cLux_ID_Prop(mPropID);
+            if(p !is null){ResetPropInteractVars();cScript_RunGlobalFunc(p.GetName(),"","_Global_VRCloseTablet");}
+            return;
+        }
+
+		// Enable screen shakes etc.
+		Effect_Shake_EnableAll(true);
+		
+		//////////////////////////////
+		// Fade out DOF effect
+		Effect_DoF_FadeOut(mlDepthOfFieldID, 1.0f);
+		
+		//////////////
+		// Restore fov
+		Player_FadeFOVToDefault(1.0f);
+
+		////////////////////////////////
+		// Fade in mesh
+		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+		pProp.GetMeshEntity().SetVisible(true);
+		pProp.FadeInMeshEntity(gfReadableDissolveTime);
+		
+		cLuxProp@ pOpenProp = cLux_ID_Prop(mOpenPropID);
+		
+		if (pOpenProp !is null)
+		{
+			pOpenProp.SetActive(false);
+			pProp.SetGuiUpdateWhenOutOfView(false);
+			pOpenProp.SetGuiIsFocused(false);
+		}
+		
+		////////////////////////////////
+		// Reset general stuff
+		if (pProp !is null)
+		{
+			ResetPropInteractVars();
+		}
+		
+		////////////////////////////////
+		// Runs close callback if it exists.
+		cLuxMap@ pMap = cLux_GetCurrentMap();
+		if(pProp !is null && msCloseCallback != "" && pMap.ScriptPrepare("void " + msCloseCallback + "(const tString &in asEntity)"))
+		{
+			tString entityName = pProp.GetName();
+			pMap.SetArgString(0, entityName);
+			pMap.ScriptExecute();
+		}
+	}
+		
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{
+        if(VR_PhysicalTablet()){
+            if(!_HPL3VR_RuntimeActive_Interact()){Exit();return;}
+            cLuxProp@ p=cLux_ID_Prop(mPropID);
+            if(p is null){Exit();return;}
+            mfVRTabletLatchGrace-=afTimeStep;
+            if(mfVRTabletLatchGrace<=0 && !cScript_RunGlobalFunc("VRPAD",p.GetName(),"Q")){Exit();return;}
+            cScript_RunGlobalFunc(p.GetName(),"","_Global_VRUpdateTablet");
+            return;
+        }
+
+		if(CheckShouldUpdate()==false) return;
+		
+		if (mbEnteringState)
+			UpdateEnterState(afTimeStep);
+		else if (mbLeavingState)
+			UpdateLeaveState(afTimeStep);
+
+		//Show no crosshair!
+		Player_SetCrossHairState(eCrossHairState_None);
+	}
+	
+	//------------------------------------------------------------
+
+	void UpdateEnterState(float afTimeStep)
+	{
+		cCamera@ pCamera = cLux_GetPlayer().GetCamera();
+		cLuxProp@ pOpenProp = cLux_ID_Prop(mOpenPropID);
+		
+		if (msHandAnimationSuffix=="")
+		{
+			////////////////////////////////////////////////
+			// Calculate vector to target position
+			cVector3f vCurrPos = pOpenProp.GetPosition();
+			cVector3f vTargetPos = pCamera.GetPosition() + pCamera.GetForward() * mfDistanceFromCamera;
+			cVector3f vToTarget = vTargetPos - vCurrPos;
+			
+			float fDist = vToTarget.Length();
+			
+			////////////////////////////////////////////////
+			// Calculate speed to move prop with
+			float fSpeedMultiplier = cMath_Min(1.0f, (fDist/gfHandheldTerminalSlowDownDist));
+			float fMoveSpeed = gfHandheldTerminalMoveSpeed * fSpeedMultiplier;
+			
+			////////////////////////////////////////////////
+			// Calculate speed to move prop at
+			cVector3f vDeltaMovement = vToTarget;
+			vDeltaMovement.Normalize();
+			vDeltaMovement = vDeltaMovement * fMoveSpeed * afTimeStep;
+		
+			pOpenProp.SetPosition(vCurrPos + vDeltaMovement);
+		
+			////////////////////////////////////////////////
+			// Rotate prop according to how far it has moved
+			SetRotationForMoveFraction(1.0f-(fDist/cMath_Abs(mfYStartOffset)));
+		
+			if (fDist < 0.1f && mfPrevDist > 0.1f && mbGUIActiveOnTransitions==false)
+			{
+				pOpenProp.SetGuiActive(true, 0.75f);
+				pOpenProp.SetEffectsActive(true,true);
+			}
+		
+			////////////////////////////////////////////////
+			// If close enough, movement is done
+			if (fDist < 0.001f)
+			{
+				mbEnteringState = false;
+			}
+			
+			mfPrevDist = fDist;
+		}
+		else if(PlayerHands_GetAnimationPlaying()==false)
+		{
+			PlayerHands_PlayAnimation("tool_"+msHandAnimationSuffix+"_idle", true,false,0.2f,pOpenProp.GetName(), false);
+			mbEnteringState = false;
+			
+			if (mbLockCamera) pOpenProp.SetGuiIsFocused(true,mbShowMouse);
+			if (mbGUIActiveOnTransitions==false)
+			{
+				pOpenProp.SetGuiActive(true, 0.75f);
+				pOpenProp.SetEffectsActive(true,true);
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateLeaveState(float afTimeStep)
+	{
+		cLuxProp@ pOpenProp = cLux_ID_Prop(mOpenPropID);
+		
+		if (msHandAnimationSuffix=="")
+		{
+			mfStateTimer+=afTimeStep;
+			float fStateProgress = mfStateTimer/gfHandheldTerminalHideTime;
+			
+			////////////////////////////////////////////////
+			// Check if state is finished
+			if (fStateProgress >= 1.0f)
+			{
+				mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+				return;
+			}
+
+			////////////////////////////////////////////////
+			// Move prop away
+			cCamera@ pCamera = cLux_GetPlayer().GetCamera();
+			cVector3f vEndPosition = pCamera.GetPosition()+mvCamRelativeStart;
+			cVector3f vMove =(vEndPosition-mvStartMovePos);
+			cVector3f vPos=mvStartMovePos+vMove*fStateProgress;
+			
+			pOpenProp.SetPosition(vPos);
+			
+			////////////////////////////////////////////////
+			// Rotate prop according to how far it has moved
+			SetRotationForMoveFraction(1.0f-fStateProgress);
+		}
+		else if(PlayerHands_GetAnimationPlaying()==false)
+		{
+			mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+			PlayerHands_SetActive(false);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetRotationForMoveFraction(float afMoveFraction)
+	{
+		////////////////////////////////////////////////
+		// Calculate rotation fraction from move fraction and clamp between 0 and 1
+		float fRotFraction = (afMoveFraction - gfMoveFractionToStartRotation) / 
+						   (gfMoveFractionToStopRotation - gfMoveFractionToStartRotation);
+		fRotFraction = cMath_Clamp(fRotFraction, 0.0f, 1.0f);
+		
+		////////////////////////////////////////////////
+		// Create rotation matrix based on rotation fraction
+		cMatrixf mtxRotate = cMath_MatrixRotateX(-(fRotFraction * gfHandheldTerminalTargetRotation));
+		
+		//////////////////
+		// Set rotation
+		cLuxProp@ pOpenProp = cLux_ID_Prop(mOpenPropID);
+		cMatrixf mtxToSet = pOpenProp.GetMatrix();
+		mtxToSet.SetRotation(cMath_MatrixMul(m_mtxOriginOrientation, mtxRotate));
+		pOpenProp.SetMatrix(mtxToSet);
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+	}
+	
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+        if(VR_PhysicalTablet()){if(alAction==eAction_InteractCancel && abPressed)Exit();return true;}
+		///////////////////////////////
+		// Disable jump and crouch
+		if (alAction == eAction_Crouch || alAction == eAction_Jump)
+			return false;
+		
+		///////////////////////////////
+		// Right click
+		if(mbAllowCancel && alAction== eAction_InteractCancel && abPressed && !mbLeavingState)
+		{
+			LeaveState();
+			return true;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	void Exit()
+	{
+        if(VR_PhysicalTablet()){cLux_GetPlayer().ChangeState(mlPreviousState);return;}
+		if ((!mbEnteringState)&&(!mbLeavingState))
+		{
+			LeaveState();
+		}
+	}	
+	
+	//------------------------------------------------------------
+	
+	void LeaveState()
+	{			
+		///////////////////////////////
+		// Play sound
+		if (msCloseSound.length() > 0)
+			Sound_PlayGui(msCloseSound, 1.0f);
+				
+		//////////////////////////////
+		// Start leaving state and cancel entering state
+		mbEnteringState = false;
+		mbLeavingState = true;
+		
+		mfStateTimer = 0.0f;
+		
+		cLuxProp @pOpenProp = cLux_ID_Prop(mOpenPropID);
+		mvStartMovePos = pOpenProp.GetPosition();
+		
+		pOpenProp.SetGuiIsFocused(false);
+		
+		if (mbGUIActiveOnTransitions==false)
+		{
+			pOpenProp.SetGuiActive(false, 0.5f);
+			pOpenProp.SetEffectsActive(false,true);
+		}
+	
+		//////////////////////////////
+		// Let the player move
+		Player_FadeMoveSpeedMulTo(mfMoveSpeedMul,0.5f);	
+	
+		if (msHandAnimationSuffix!="")
+			PlayerHands_PlayAnimation("tool_"+msHandAnimationSuffix+"_holster", false,false,0,pOpenProp.GetName(), false);		
+	}
+	
+	//------------------------------------------------------------
+
+	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+        if(VR_PhysicalTablet())return true;
+		// Allow movement when the datapad is being put away
+		if (mbLeavingState)
+			return true;
+			
+		///////////////////////////////////
+		// Disable move
+		if(alAnalogId == eAnalogType_GamepadMove || alAnalogId == eAnalogType_Move)
+		{			
+			return false;
+		}
+		
+		///////////////////////////////////
+		// Override look
+		if(alAnalogId == eAnalogType_Look)
+		{			
+			return !mbLockCamera;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+        if(VR_PhysicalTablet())Exit();
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// BODY CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool AllowBuoyancy(iPhysicsBody @apBody)
+	{
+		return false;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	void SaveBodyProperties(iPhysicsBody @apBody)
+	{
+		
+	}
+
+	//-----------------------------------------------------------------------
+
+
+	bool BodyIsAdded(iPhysicsBody @apBody)
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// MEMBER VARIABLES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	tID mOpenPropID;
+	
+	float mfPrevDist = 1000;
+	bool mbEnteringState;
+	bool mbLeavingState;
+	bool mbShowMouse = true;
+	bool mbLockCamera = true;
+
+	int mlDepthOfFieldID;
+	
+	float mfMoveSpeedMul;
+	
+	bool mbAllowCancel = true;
+	bool mbGUIActiveOnTransitions = false;
+	
+	tString msHandAnimationSuffix;
+	
+	//////////////////////////////////////
+	// Prop movement
+	cMatrixf m_mtxOriginOrientation;
+	float mfDistanceFromCamera;
+	float mfYStartOffset;
+	float mfStateTimer;
+	cVector3f mvStartMovePos;
+	cVector3f mvCamRelativeStart;
+	
+	//////////////////////////////////////
+	// Sounds
+	tString msCloseSound;
+	
+	//////////////////////////////////////
+	// Callbacks
+	tString msCloseCallback;
+	
+	//------------------------------------------------------------
+		
+}
+

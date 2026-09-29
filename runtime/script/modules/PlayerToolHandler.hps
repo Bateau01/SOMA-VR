@@ -1158,7 +1158,8 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		cScript_RunGlobalFunc("VROMNIINV","Tracer_Fluid","D");
 		if (!mbVRTracerNearFace) { mfVRTracerDwell=0; return; }
 		mfVRTracerDwell+=0.05f;
-		if (mfVRTracerDwell<0.6f) return;
+		// S26CI: five stable proximity samples (about a quarter second).
+		if (mfVRTracerDwell<0.24f) return;
 		mfVRTracerDwell=0;
 		if (pTool.msCanBeUsedCallback=="" || pTool.msUseCallback=="") return;
 		if (!pMap.ScriptPrepare("bool "+pTool.msCanBeUsedCallback+"(const tString &in asTool, const tString &in asEntity)")) return;

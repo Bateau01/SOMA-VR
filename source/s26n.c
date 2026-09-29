@@ -590,6 +590,8 @@ typedef union { u32 type; H5754DKeyboardEvent key; H5755ANMouseMotionEvent motio
 typedef struct { float p0[3],uSpan[3],vSpan[3],normal[3],virtualSize[2],virtualOffset[2],uvOrigin[2],uvU[2],uvV[2]; } H576BOTerminalSurface;
 static H576BOTerminalSurface g_h576boTerminalSurface;
 static volatile u8 g_h576boTerminalSurfaceValid;
+static const void* g_s26ckPadBody;
+static char g_s26ckPadName[192];
 static i32 g_h576boPointerHand=-1,g_h576boEntryHand=-1;
 static u8 g_h576boPointerDown,g_h576boHaveLast;
 static float g_h576boPointerSide=1.0f,g_h576boLastU,g_h576boLastV;
@@ -5277,10 +5279,41 @@ static i32 h576ba_hand_matches_active_wheel(i32 hand);
 
 static const void* g_s26bvReadableWrapper;
 static u32 g_s26bvReadableStep;
+static i32 g_s26ceDirectGrabDispatch;
+/* S26CI: SOMA has one authored interaction state, but VR has two physical
+   holds. Yield only the old detached Grab input shell to the other hand;
+   its Newton anchor, mass guard and release velocity remain untouched. */
+static i32 s26ci_yield_grab_use(i32 hand,void* owner){
+    i32 old=g_h30NativeUseHand;
+    if(hand<0||hand>1||old<0||old>1||hand==old||!owner||
+       !g_h5755chGrabStateActive||!g_h5755chGrabButtonDetached||
+       owner==g_h5755chGrabStateOwner||!h5755cj_hand_matches_grab_owner(old)||
+       g_h15GripJointed[old]||!g_lastSqueezeActive[old]||g_lastSqueeze[old]<0.28f)return 0;
+    g_h30NativeMouseDown=0;g_h30NativeUseHand=-1;g_h31NativeUseBody=0;
+    g_h31NativeUseJointed=0;g_h31NativePrevPosValid=0;
+    g_h38ThisUseConsumed[old]=0;g_h39NativeUseProp[old]=0;
+    ext_Log(">>> S26CI INDEPENDENT HANDS: detached Grab input yielded from %d to %d; physical prop retained",old,hand);
+    return 1;
+}
+static i32 s26ci_keep_independent_grip(i32 hand,const char* mp,const char* cn){
+    if(hand<0||hand>1||!g_h30NativeMouseDown||g_h30NativeUseHand!=1-hand||
+       !g_h39NativeUseProp[1-hand]||g_h39NativeUseProp[1-hand]==g_h5755chGrabStateOwner||
+       !h5755cj_hand_matches_grab_owner(hand)||g_h15GripJointed[hand]||
+       !g_lastSqueezeActive[hand]||g_lastSqueeze[hand]<0.28f)return 0;
+    return (h5720_streq(mp,"player/PlayerState_Interact_Slide.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Slide"))||
+           (h5720_streq(mp,"player/PlayerState_Interact_SwingDoor.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_SwingDoor"))||
+           (h5720_streq(mp,"player/PlayerState_Interact_Lever.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Lever"))||
+           (h5720_streq(mp,"player/PlayerState_Interact_Wheel.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Wheel"))||
+           (h5720_streq(mp,"player/PlayerState_Interact_Push.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Push"))||
+           (h5720_streq(mp,"player/PlayerState_Interact_Tear.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Tear"));
+}
+
 static void h30_native_use_begin(i32 hand,const void* body,i32 jointed,void* owner){
     if(hand<0||hand>1||!p_h16MouseEvent)return;
-    if(g_h30NativeMouseDown)return;
-    i32 readable=body==g_s26bvReadableWrapper&&g_s26bvReadableStep==g_h14PhysicsSteps;
+    if(g_h30NativeMouseDown && (g_s26ceDirectGrabDispatch ||
+       (body==g_s26bvReadableWrapper&&g_s26bvReadableStep==g_h14PhysicsSteps) ||
+       !s26ci_yield_grab_use(hand,owner)))return;
+    i32 readable=g_s26ceDirectGrabDispatch||(body==g_s26bvReadableWrapper&&g_s26bvReadableStep==g_h14PhysicsSteps);
     g_s26bvReadableWrapper=0;
     if(!readable)p_h16MouseEvent(0x0002u,0,0,0,0);
     h39_reset_use(hand);g_h39NativeUseProp[hand]=owner;g_h42UseStartYaw[hand]=p2_player_yaw();g_h42UseStartLookFrames[hand]=g_h16LookFrames;g_h42LookTailFrames=0;
@@ -10525,7 +10558,7 @@ static void h5729_state_boundary_observe(const char* phase){
     }
     if(oldKind==7&&newKind!=7){
         i32 gripLive=((h5755cj_hand_matches_grab_owner(0)&&g_lastSqueezeActive[0]&&g_lastSqueeze[0]>=0.28f)||(h5755cj_hand_matches_grab_owner(1)&&g_lastSqueezeActive[1]&&g_lastSqueeze[1]>=0.28f))?1:0;g_h5755chGrabStateExits++;
-        if(gripLive&&g_h5755chGrabStateActive){g_h5755chGrabEarlyExits++;ext_Log(">>> S6-HANDS5755CJ NATIVE GRAB EARLY EXIT: authored Grab left while physical Grip still owns cLuxProp %p; releasing all same-owner VR anchors to honor native state semantics",g_h5755chGrabStateOwner);for(i32 h=0;h<2;++h)if(h5755cj_hand_matches_grab_owner(h))h14_release(h,"authored Grab state exit");}
+        if(gripLive&&g_h5755chGrabStateActive){g_h5755chGrabEarlyExits++;ext_Log(">>> S6-HANDS5755CJ NATIVE GRAB EARLY EXIT: authored Grab left while physical Grip still owns cLuxProp %p; checking same-owner anchors against independent opposite-hand mechanism ownership",g_h5755chGrabStateOwner);for(i32 h=0;h<2;++h)if(h5755cj_hand_matches_grab_owner(h)){if(s26ci_keep_independent_grip(h,newMp,newCn))ext_Log(">>> S26CI INDEPENDENT HANDS: retained %d physical prop across %s",h,newCn);else h14_release(h,"authored Grab state exit");}}
         
         g_h5755chGrabStateActive=0;g_h5755chGrabExpected=0;g_h5755chGrabStateBody=0;g_h5755chGrabStateWrapper=0;g_h5755chGrabStateOwner=0;g_h5755chGrabPrimaryHand=-1;g_h5755chGrabButtonDetached=0;g_h5755cjGrabExpectedStep=0;
     }
@@ -11580,6 +11613,19 @@ static i32 h576aa_decode_delta_token(const H5730TString* objectName,const H5730T
 
 static i32 h576aa_run_global(const char* obj,const char* cls,const char* fn);
 
+/* Head-space drinking admission, in physical metres at every world scale.
+   Accept either the neck or bottle body: no cap or tilt puzzle. Wider exit
+   bounds prevent normal controller tremor from restarting the dwell. */
+static i32 s26ci_tracer_near(const float* bm,const float* head,float metric,i32 ready){
+    if(!(metric>0.001f&&metric<100.0f))return 0;
+    float x=bm[12]-head[0],y=bm[13]-head[1],z=bm[14]-head[2];
+    float body2=x*x+y*y+z*z;
+    x+=bm[4]*0.123452800f;y+=bm[5]*0.123452800f;z+=bm[6]*0.123452800f;
+    float neck2=x*x+y*y+z*z;
+    float nr=(ready?0.34f:0.28f)*metric,br=(ready?0.28f:0.22f)*metric;
+    return (neck2>=0.0f&&neck2<=nr*nr)||(body2>=0.0f&&body2<=br*br);
+}
+
 static i32 s26_tool_hand_authorized(const H576AAInvItem* it){
     if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||h5754h_pause_active()||
        g_h576bfMapTransitionActive||g_s26ManualHeal||g_s26CutsceneHandsHidden)return 0;
@@ -11635,19 +11681,17 @@ static i32 h576aa_decode_inventory_token(const H5730TString* objectName,const H5
     if(op=='K'||op=='D'){
         static i32 tracerReady;static u32 tracerRejectLogs;
         if(!h576c_ci_streq(logical,"Tracer_Fluid")||g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||
-           !p2_xr_origin_set()||h5754h_pause_active()||g_h576bfMapTransitionActive||g_s26ManualHeal||g_s26CutsceneHandsHidden)return 1;
+           !p2_xr_origin_set()||h5754h_pause_active()||g_h576bfMapTransitionActive||g_s26ManualHeal||g_s26CutsceneHandsHidden){tracerReady=0;return 1;}
         H576AAInvItem* it=h576aa_inv_find_logical(logical);
         if(!s26_tool_hand_authorized(it)){tracerReady=0;if(tracerRejectLogs++<8u)ext_Log(">>> S26Z TRACER: no authorized live held inventory carrier; state %s",g_h5729LastClassName);return 1;}
         if(op=='K'){h576aa_run_global("PlayerToolHandler","cScrPlayerToolHandler","_Global_VRTracerCapAuthorize");return 1;}
-        if(!p_h14GetMatrix||!p2_camera_obj())return 1;
+        if(!p_h14GetMatrix||!p2_camera_obj()){tracerReady=0;return 1;}
         float bm[16];p_h14GetMatrix(it->raw,bm);
         volatile float* mid=p2_eye_mid();volatile float* origin=p2_xr_origin();
         float wx,wy,wz;tracking_delta_to_game(mid[0]-origin[0],mid[1]-origin[1],mid[2]-origin[2],&wx,&wy,&wz);
         float* base=(float*)((u8*)p2_camera_obj()+0x10);
-        float neck=0.123452800f;
-        float x=bm[12]+bm[4]*neck-base[0]-wx,y=bm[13]+bm[5]*neck-base[1]-wy,z=bm[14]+bm[6]*neck-base[2]-wz;
-        float d2=x*x+y*y+z*z,r=0.18f*h5755ea_world_units_per_meter();
-        if(d2>=0.0f&&d2<=r*r){
+        float head[3]={base[0]+wx,base[1]+wy,base[2]+wz};
+        if(s26ci_tracer_near(bm,head,h5755ea_world_units_per_meter(),tracerReady)){
             if(!tracerReady){for(i32 h=0;h<2;++h)if(g_h14GripBody[h]==it->raw)h576ac_queue_haptic(h,H576AC_HAPTIC_READY);ext_Log(">>> S26Z TRACER: held bottle entered use radius; starting authored-use dwell");}
             tracerReady=1;h576aa_run_global("PlayerToolHandler","cScrPlayerToolHandler","_Global_VRTracerNearFace");
         }else tracerReady=0;
@@ -12175,6 +12219,60 @@ static void __attribute__((ms_abi)) s26_mesh_coverage_detour(void* mesh,float co
     p_s26MeshMatrix(mesh,hm);p_s26MeshReset(mesh);
     g_s26MeshSuccess=1;g_s26NativeHandVisible[h]=1;
 }
+/* S26CH: split authored movement bob from tracked hand targets. Character
+   camera offset application: Soma.exe+241500 -> +240910. Local X/Z use the
+   character right/forward basis at +18c/+180; local Y stays world vertical.
+   The cache is bound to the publishing character and its actual camera. */
+static float g_s26chBobLocal[3],g_s26chBobWorld[3];
+static void *g_s26chBobCharacter,*g_s26chBobCamera;
+static u8 g_s26chBobReady;
+typedef void (__attribute__((ms_abi)) *PFN_S26CH_CameraOffset)(void*,const float*);
+static PFN_S26CH_CameraOffset o_s26chCameraOffset;
+static void s26ch_bob_reset(void){
+    g_s26chBobCharacter=0;g_s26chBobCamera=0;
+    for(i32 i=0;i<3;++i)g_s26chBobLocal[i]=g_s26chBobWorld[i]=0;
+}
+static i32 s26ch_bob_packet(const void* data){
+    char buf[128];if(!h5748n_copy_tstring((void*)data,buf,sizeof(buf)))return 0;
+    char* fields[3]={buf,0,0};u32 n=1;
+    for(u32 i=0;buf[i];++i)if(buf[i]=='|'){if(n==3)return 0;buf[i]=0;fields[n++]=buf+i+1;}
+    float v[3];if(n!=3)return 0;
+    for(i32 i=0;i<3;++i)if(!h11_parse_float(fields[i],v+i)||!h9_good(v[i],1.0f))return 0;
+    void* player=h5755ax_current_player();
+    if(!player||!h20_mem_readable((u8*)player+0x170,8))return 0;
+    void* character=*(void**)((u8*)player+0x170);if(!character)return 0;
+    for(i32 i=0;i<3;++i)g_s26chBobLocal[i]=v[i];
+    g_s26chBobCharacter=character;return 1;
+}
+static void s26ch_bob_to_world(const float* v,const float* right,const float* forward,float* out){
+    out[0]=v[0]*right[0]+v[2]*forward[0];
+    out[1]=v[1]+v[0]*right[1]+v[2]*forward[1];
+    out[2]=v[0]*right[2]+v[2]*forward[2];
+}
+static void __attribute__((ms_abi)) s26ch_camera_offset(void* character,const float* offset){
+    g_s26chBobCamera=0;
+    if(character==g_s26chBobCharacter&&g_h576mScriptRuntimePublished==1&&p2_xr_on()){
+        u8* c=(u8*)character;
+        if(h20_mem_readable(c+0x180,0x70)&&c[0x1e8]){
+            s26ch_bob_to_world(g_s26chBobLocal,(float*)(c+0x18c),(float*)(c+0x180),g_s26chBobWorld);
+            g_s26chBobCamera=*(void**)(c+0x1b0);
+        }
+    }
+    if(o_s26chCameraOffset)o_s26chCameraOffset(character,offset);
+}
+static void s26ch_bob_apply(void* camera,float* pos){
+    if(!camera||camera!=g_s26chBobCamera||g_h576mScriptRuntimePublished!=1||!p2_xr_on())return;
+    for(i32 i=0;i<3;++i)pos[i]+=g_s26chBobWorld[i];
+}
+static void s26ch_bob_install(u8* soma){
+    if(g_s26chBobReady||!soma)return;
+    const u8 sig[16]={0x8b,0x02,0x0f,0x57,0xc9,0x89,0x81,0xbc,0x01,0x00,0x00,0x8b,0x42,0x04,0x89,0x81};
+    u8* t=soma+0x241500;if(!h20_mem_readable(t,16))return;
+    for(i32 i=0;i<16;++i)if(t[i]!=sig[i])return;
+    if(ext_MH_CreateHook(t,(void*)s26ch_camera_offset,(void**)&o_s26chCameraOffset)||ext_MH_EnableHook(t))return;
+    g_s26chBobReady=1;ext_Log(">>> S26CH MOVEMENT BOB SPLIT READY: native character camera-offset boundary; shared physical/render hand target; default unchanged");
+}
+
 static i32 s26_install_native_hands(void){
     if(g_s26MeshTried)return g_s26MeshReady;g_s26MeshTried=1;
     u8* base=(u8*)ext_GetModuleHandleA(0);if(!base)return 0;
@@ -12254,6 +12352,20 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
         return 0;
     }
 
+    if(h5748t_sso_eq(objectName,"VRPAD",5u)){
+        char name[192];name[0]=0;
+        if(!h5748n_copy_tstring((void*)className,name,sizeof(name)))return 0u;
+        if(h5748t_sso_eq(functionName,"B",1u)){
+            if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||g_h576bfMapTransitionActive||
+               g_h576avActiveInteractHand<0||g_h576avActiveInteractHand>1||!g_h576avActiveInteractBody)return 0u;
+            if(g_s26ckPadBody&&g_s26ckPadBody!=g_h576avActiveInteractBody)return 0u;
+            g_s26ckPadBody=g_h576avActiveInteractBody;h5748n_copyz(g_s26ckPadName,sizeof(g_s26ckPadName),name);return 1u;
+        }
+        if(!h5720_streq(name,g_s26ckPadName))return 0u;
+        if(h5748t_sso_eq(functionName,"L",1u)){g_s26ckPadBody=0;g_s26ckPadName[0]=0;return 1u;}
+        if(h5748t_sso_eq(functionName,"Q",1u))return g_s26ckPadBody&&(g_h14GripBody[0]==g_s26ckPadBody||g_h14GripBody[1]==g_s26ckPadBody);
+        return 0u;
+    }
     if(h5748t_sso_eq(objectName,"VRREAD",6u)){
         if(g_h576avActiveInteractHand<0||!g_h576avActiveInteractBody)return 0u;
         void* wrapper=0;
@@ -12309,6 +12421,11 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
     if(h5748t_sso_eq(objectName,"VRPHONEQ",8u))return h5748t_sso_eq(functionName,"N",1u)?(u64)s26q_phone_near(className,1):(h5748t_sso_eq(functionName,"H",1u)?(u64)s26q_phone_near(className,0):0u);
     if(h5748t_sso_eq(objectName,"VRSOCKETHELD",12u))return h5748t_sso_eq(functionName,"Q",1u)?(u64)s26o_socket_held(className,0):(h5748t_sso_eq(functionName,"R",1u)?(u64)s26o_socket_held(className,1):0u);
     if(h5748t_sso_eq(objectName,"VRMECH",6u)){s26n_mechanism_token(className,functionName);return 1u;}
+    if(h5748t_sso_eq(objectName,"VRBOB",5u)){
+        if(h5748t_sso_eq(functionName,"RESET",5u)){s26ch_bob_reset();return 1u;}
+        if(h5748t_sso_eq(functionName,"SET",3u)&&g_s26chBobReady&&g_h576mScriptRuntimePublished==1&&p2_xr_on()&&s26ch_bob_packet(className))return 1u;
+        s26ch_bob_reset();return 0u;
+    }
     if(h5748t_sso_eq(objectName,"VRCOMFORT",9u)){
         if(h5748t_sso_eq(className,"R",1u)&&h5748t_sso_eq(functionName,"C",1u)){
             if(g_h576mScriptRuntimePublished==1&&p2_xr_on())h5735_request_recenter("VR-settings-center");return 1u;
@@ -12611,7 +12728,8 @@ static i32 h5730_exact_terminal_state(char* outModule,u32 moduleCap,char* outCla
     char mp[160],cn[160];mp[0]=cn[0]=0;void* st=h5720_player_state(mp,sizeof(mp),cn,sizeof(cn));
     if(outModule&&moduleCap)h5720_strcpy(outModule,moduleCap,mp);if(outClass&&classCap)h5720_strcpy(outClass,classCap,cn);
     if(!st)return 0;
-    return h5720_streq(mp,"player/PlayerState_Interact_Terminal.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Terminal");
+    return (h5720_streq(mp,"player/PlayerState_Interact_Terminal.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Terminal")) ||
+        (g_s26ckPadBody&&h5720_streq(mp,"player/PlayerState_Interact_HandheldTerminal.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_HandheldTerminal"));
 }
 static i32 h5730_exit_authored_terminal(void){
     char mp[160],cn[160];if(!h5730_exact_terminal_state(mp,sizeof(mp),cn,sizeof(cn)))return 0;
@@ -12620,7 +12738,7 @@ static i32 h5730_exit_authored_terminal(void){
     if(!g_h5730RunGlobalHookReady||!o_h5730RunGlobal||!h20_mem_executable((void*)o_h5730RunGlobal)||!handler||!h20_mem_readable(handler,0xb0u)){
         g_h5730TerminalExitRejects++;ext_Log(">>> S6-HANDS5730 TERMINAL BACK REJECT: exact Terminal state is live (%s / %s), but the proven Soma.exe+0x2A2670 script dispatcher/handler is unavailable; no guessed ChangeState, desktop key, mouse Back, or touch fallback emitted",mp,cn);return 1;
     }
-    H5730TString obj,cls,fn;h5730_literal_string(&obj,"State_Interact_Terminal");h5730_literal_string(&cls,"cScrPlayerState_Interact_Terminal");h5730_literal_string(&fn,"Exit");
+    H5730TString obj,cls,fn;i32 pad=h5720_streq(cn,"cScrPlayerState_Interact_HandheldTerminal");h5730_literal_string(&obj,pad?"State_Interact_HandheldTerminal":"State_Interact_Terminal");h5730_literal_string(&cls,cn);h5730_literal_string(&fn,"Exit");
     ext_Log(">>> S6-HANDS5730 TERMINAL BACK DISPATCH BEGIN: exact Terminal gate passed; invoking authored State_Interact_Terminal / cScrPlayerState_Interact_Terminal / Exit() through SOMA's recovered generic AngelScript dispatcher; no direct ChangeState is used");
     u64 rv=o_h5730RunGlobal(handler,&obj,&cls,&fn);
     if(!(rv&0xffu)){g_h5730TerminalExitRejects++;ext_Log(">>> S6-HANDS5730 TERMINAL BACK DISPATCH REJECTED: SOMA's script dispatcher returned 0; Terminal state left authoritative and untouched");return 1;}
@@ -12784,6 +12902,55 @@ static i32 h576k_try_latch_upgrade_chip_after_interact(i32 hand,const H25Pending
     g_h576kChipPickupPending=0;g_h576kChipPickupRaw=0;g_h576kChipPickupOwner=0;g_h576kChipPickupName[0]=0;g_h576kChipPickupLatches++;g_h576oChipContactSeatWins++;
     ext_Log(">>> S6-HANDS5756T OMNITOOL UPGRADE-CHIP CONTACT-SEAT %s #%u: stock Prop_Tool pickup accepted, exact SAME fresh-contact body %p seated from the already-authorized H25 contact at (%+.3f %+.3f %+.3f) | mass %.3f kg | no post-pickup BV/proximity query",hand==0?"L":"R",g_h576oChipContactSeatWins,body,(double)p->contact[0],(double)p->contact[1],(double)p->contact[2],(double)mass);
     ext_Log(">>> S6-HANDS5756T OMNITOOL UPGRADE-CHIP PHYSICAL ACQUIRE %s #%u: authored Prop_Tool pickup + inventory registration succeeded; exact world chip is now HQ-held and persistent physical regrabs bypass PlayerState_Interact_Grab",hand==0?"L":"R",g_h576kChipPickupLatches);return 1;
+}
+static const void* h568_first_external_joint(const void* body);
+static i32 h5755cj_reassert_native_grab_state(i32 hand);
+static i32 h5755gw_adopt_existing_same_owner_grab(i32 hand,void* owner);
+static i32 s26ce_latch_readable(i32 hand,const H25PendingInteract* p,void* owner,void* wrapper){
+    if(hand<0||hand>1||!p||p->jointed||g_h14GripBody[hand]||
+       wrapper!=g_s26bvReadableWrapper||g_s26bvReadableStep!=g_h14PhysicsSteps||
+       p->physicsStep!=g_h5755haGripEdgeStep[hand]||!g_lastSqueezeActive[hand]||g_lastSqueeze[hand]<=0.55f)return 0;
+    if(h482_body_owner(p->newtonBody,0)!=owner||h568_first_external_joint(p->newtonBody))return 0;
+    if(g_h30NativeMouseDown&&(g_h30NativeUseHand!=hand||g_h39NativeUseProp[hand]!=owner))return 0;
+    float mass=0,ix=0,iy=0,iz=0;if(!p_h14GetMass)return 0;
+    p_h14GetMass(p->newtonBody,&mass,&ix,&iy,&iz);if(!(mass>0.001f))return 0;
+    float hp[3],hm[16],gc[3];if(!h14_hand_pose(hand,hp,hm)||!h15_grip_center_world(hand,hm,gc))return 0;
+    h30_native_use_begin(hand,wrapper,0,owner);
+    g_h5755gwPreserveExistingGrabUse[hand]=1;g_h552ContactLatchBypass[hand]=1;
+    h14_latch(hand,p->newtonBody,0.0f,mass,hm,gc,0.035f,p->contact,0,0,0);
+    g_h552ContactLatchBypass[hand]=0;g_h5755gwPreserveExistingGrabUse[hand]=0;
+    if(g_h14GripBody[hand]!=p->newtonBody)return 0;
+    // Adopt the native readable state once; never replay its open callback.
+    g_h5755chGrabPending[hand].valid=0;
+    g_h5755chGrabExpected=1;g_h5755chGrabStateActive=0;
+    g_h5755chGrabStateBody=p->newtonBody;g_h5755chGrabStateWrapper=wrapper;
+    g_h5755chGrabStateOwner=owner;g_h5755chGrabPrimaryHand=hand;
+    // Do not infer the completed player state from a successful callback.
+    // Commit through the established loose-grab route and observe the result.
+    g_h5755cjGrabExpectedStep=g_h14PhysicsSteps;
+    h5755cj_reassert_native_grab_state(hand);
+    h5729_state_boundary_observe("readable-grab-commit");
+    if(!g_h5755chGrabStateActive)h5755gw_adopt_existing_same_owner_grab(hand,owner);
+    h5755ch_verify_grab_script();
+    ext_Log(">>> S26CE READABLE: exact accepted pickup contact latched in the same transaction");
+    return 1;
+}
+static i32 s26ck_latch_tablet(i32 hand,const H25PendingInteract* p,void* owner,void* wrapper){
+    if(hand<0||hand>1||!p||p->jointed||g_h14GripBody[hand]||
+       p->newtonBody!=g_s26ckPadBody||
+       p->physicsStep!=g_h5755haGripEdgeStep[hand]||!g_lastSqueezeActive[hand]||g_lastSqueeze[hand]<=0.55f)return 0;
+    if(h482_body_owner(p->newtonBody,0)!=owner||h568_first_external_joint(p->newtonBody))return 0;
+    if(g_h30NativeMouseDown&&(g_h30NativeUseHand!=hand||g_h39NativeUseProp[hand]!=owner))return 0;
+    float mass=0,ix=0,iy=0,iz=0;if(!p_h14GetMass)return 0;
+    p_h14GetMass(p->newtonBody,&mass,&ix,&iy,&iz);if(!(mass>0.001f))return 0;
+    float hp[3],hm[16],gc[3];if(!h14_hand_pose(hand,hp,hm)||!h15_grip_center_world(hand,hm,gc))return 0;
+    g_h5755gwPreserveExistingGrabUse[hand]=1;g_h552ContactLatchBypass[hand]=1;
+    h14_latch(hand,p->newtonBody,0.0f,mass,hm,gc,0.035f,p->contact,0,0,0);
+    g_h552ContactLatchBypass[hand]=0;g_h5755gwPreserveExistingGrabUse[hand]=0;
+    if(g_h14GripBody[hand]!=p->newtonBody)return 0;
+    g_h5755chGrabPending[hand].valid=0;
+    ext_Log(">>> S26CK TABLET: exact pickup contact latched; handheld GUI retains native input state");
+    return 1;
 }
 static H25PendingInteract g_h25Pending[2];
 static u8 g_h25PendingValid[2];
@@ -13319,6 +13486,7 @@ static void h5755cj_abort_grab_expectation(const char* why){
    Revalidate at dispatch and again after OnInteract, before forcing Grab. */
 static i32 s26_physical_only_body(const void* body){
     if(!body)return 0;
+    if(body==g_s26ckPadBody)return 1;
     if(g_s26xPhoneActive&&body==g_s26xPhoneRaw)return 1;
     H576AAInvItem* inv=h576aa_inv_find_body(body);
     if(inv&&!inv->stowed)return 1;
@@ -13372,6 +13540,10 @@ static void h5755ch_dispatch_native_grab_semantics(void){
     for(i32 hand=0;hand<2;++hand){
         H5755CHGrabPending p=g_h5755chGrabPending[hand];if(!p.valid)continue;g_h5755chGrabPending[hand].valid=0;
         if(!p.body||g_h14GripBody[hand]!=p.body||(g_h15GripJointed[hand]&&!g_h484ClusterGrip[hand])){g_h5755chGrabFallback[hand]++;continue;}
+        if(!s26_physical_only_body(p.body)&&h5720_streq(g_h5729LastClassName,"cScrPlayerState_Interact_Terminal")){
+            h576aa_run_global("State_Interact_Terminal","cScrPlayerState_Interact_Terminal","_Global_VRLeaveForPhysicalPickup");
+            h5729_state_boundary_observe("physical-pickup-terminal-exit");
+        }
         if(s26_physical_only_body(p.body)||!h5720_streq(g_h5729LastClassName,"cScrPlayerState_Normal")){
             if(g_s26GrabCommitSkips++<24u)ext_Log(">>> S26K GRAB COMMIT SKIPPED: hand %d physical inventory or non-Normal state %s; tracked hold retained",hand,g_h5729LastClassName);
             continue;
@@ -13383,8 +13555,8 @@ static void h5755ch_dispatch_native_grab_semantics(void){
         PFN_H25_CanInteract fCan=(PFN_H25_CanInteract)can;PFN_H25_OnInteract fOn=(PFN_H25_OnInteract)on;u64 cr=fCan(entity,0,wrapper);
         if(!(cr&0xffu)){g_h5755chGrabFallback[hand]++;ext_Log(">>> S6-HANDS5755CJ NATIVE GRAB CanInteract FALSE %s: owner %p body %p | VR physical hold retained",hand==0?"L":"R",entity,p.body);continue;}
         h5724_capture_pre_interact_state(hand);h5724_commit_pre_interact_state(hand);
-        g_h5755chGrabExpected=1;g_h5755chGrabStateBody=p.body;g_h5755chGrabStateWrapper=wrapper;g_h5755chGrabStateOwner=entity;g_h5755chGrabPrimaryHand=hand;g_h5755cjGrabExpectedStep=g_h14PhysicsSteps;h30_native_use_begin(hand,wrapper,0,entity);
-        H25TString empty;zero_bytes(&empty,sizeof(empty));empty.capacity=15u;u64 orv=fOn(entity,0,wrapper,p.contact,&empty);
+        g_h5755chGrabExpected=1;g_h5755chGrabStateBody=p.body;g_h5755chGrabStateWrapper=wrapper;g_h5755chGrabStateOwner=entity;g_h5755chGrabPrimaryHand=hand;g_h5755cjGrabExpectedStep=g_h14PhysicsSteps;g_s26ceDirectGrabDispatch=1;h30_native_use_begin(hand,wrapper,0,entity);g_s26ceDirectGrabDispatch=0;
+        H25TString empty;zero_bytes(&empty,sizeof(empty));empty.capacity=15u;g_h576avActiveInteractHand=hand;g_h576avActiveInteractBody=p.body;u64 orv=fOn(entity,0,wrapper,p.contact,&empty);g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;
         if(!(orv&0xffu)){g_h5755chGrabFallback[hand]++;h5755cj_abort_grab_expectation("cLuxProp::OnInteract returned FALSE after pre-armed native Interact");continue;}
         if(s26_physical_only_body(p.body)||g_h576avThetaPendingHand==hand){
             // Our pre-armed button belongs to this transaction; end it without
@@ -13610,6 +13782,8 @@ static void h25_dispatch_pending(void){
                 // Do not arm a competing native mouse/Grab lifetime on the slot.
                 g_h25LastDispatchBody=p.newtonBody;g_h25LastDispatchStep=g_h14PhysicsSteps;continue;
             }
+            if(s26ck_latch_tablet(hand,&p,entity,wrapper)){g_h25LastDispatchBody=p.newtonBody;g_h25LastDispatchStep=g_h14PhysicsSteps;continue;}
+            if(s26ce_latch_readable(hand,&p,entity,wrapper)){g_h25LastDispatchBody=p.newtonBody;g_h25LastDispatchStep=g_h14PhysicsSteps;continue;}
             h30_native_use_begin(hand,wrapper,p.jointed,entity);
             i32 h5755haEdgeLoose=h5755ha_arm_edge_native_after_true(hand,&p,entity,wrapper,h5755haPreMass,h5755haPostMass);
             if(!h5755haEdgeLoose&&!p.jointed)h481_bind_nearby_mechanism(hand,p.physicsStep,p.contact,entity,wrapper);
@@ -13699,6 +13873,7 @@ static i32 h14_hand_pose_raw(i32 hand,float* pos,float* M){
     if(!visual_pose_valid(hand)||!p2_xr_origin_set()||!p2_camera_obj())return 0;
     volatile float* origin=p2_xr_origin();float dx=g_lastPose[hand].position.x-origin[0],dy=g_lastPose[hand].position.y-origin[1],dz=g_lastPose[hand].position.z-origin[2],wx,wy,wz;tracking_delta_to_game(dx,dy,dz,&wx,&wy,&wz);
     float* body=(float*)((u8*)p2_camera_obj()+0x10);pos[0]=body[0]+wx;pos[1]=body[1]+wy;pos[2]=body[2]+wz;
+    s26ch_bob_apply(p2_camera_obj(),pos);
     float spread=*p2_hand_spread()-0.18f,reach=*p2_hand_reach()-0.40f,height=*p2_hand_drop()+0.18f,side=(hand==0)?-spread:spread,offx=0.0f,offz=0.0f;
     h5748o_tracking_horizontal_to_game(side,reach,&offx,&offz);if(h5748o_yaw_zero_active())g_h5748oFrameSyncOffsetCalls++;
     pos[0]+=offx;pos[1]+=height;pos[2]+=offz;h10_make_model(hand,pos,1.0f,M);
@@ -14830,7 +15005,7 @@ static void h576bh_forget_destroyed_hand_wrappers(void){
     }
 }
 
-static void h5755bi_detach_vr_world_refs(const char* why){g_s26bvGuiCount=0;g_s26bvReadableWrapper=0;s26ay_aux_clear();s26y_reset();__atomic_store_n(&g_s26nBindCommand,-1,__ATOMIC_RELEASE);s26n_mechanism_clear();s26_clear_heal_contact();g_h5755gjControlNearBody[0]=g_h5755gjControlNearBody[1]=0;g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;g_h576avThetaPendingHand=-1;g_h576avThetaPendingLogical[0]=0;g_h576avThetaPendingStartStep=g_h576avThetaPendingLastStep=0;h576ah_reset_subtitle_world_refs(why);h576b_forget_body("VR world detach");g_h576bHolsterLocalBasis[0]=1;g_h576bHolsterLocalBasis[1]=0;g_h576bHolsterLocalBasis[2]=0;g_h576bHolsterLocalBasis[3]=0;g_h576bHolsterLocalBasis[4]=0;g_h576bHolsterLocalBasis[5]=1;g_h576bHolsterLocalBasis[6]=0;g_h576bHolsterLocalBasis[7]=-1;g_h576bHolsterLocalBasis[8]=0;g_h576bHolsterBasisValid=1;g_h576bHolsterBasisYaw=0;g_h576bOmniState=H576B_OMNI_UNKNOWN;g_h576eBindPending=0;g_h576eBindNotBeforeStep=0;g_h576eBindWantedName[0]=0;g_h576fCaptureScope=0;g_h576fCaptureScopeName[0]=0;g_h576fCapturedWrapper=0;g_h576fCapturedRaw=0;g_h576fCapturedOwner=0;g_h576fCapturedName[0]=0;g_h576dPlayerBodyPosValid=0;g_h576dPlayerBodyPosLastStep=0;g_h576anBodySlotFreshnessFallbackLogged=0;g_h576anOmniShoulderInside[0]=g_h576anOmniShoulderInside[1]=0;g_h576anOmniShoulderRetrieveArmed[0]=g_h576anOmniShoulderRetrieveArmed[1]=0;g_h576aoOmniStowArmedBody[0]=g_h576aoOmniStowArmedBody[1]=0;g_h576aoOmniStowLastInsideStep[0]=g_h576aoOmniStowLastInsideStep[1]=0;g_h576aoOmniHidePending=0;g_h576iBodyToCameraYValid=0;g_h576iBodyToCameraY=0;g_h576kChipCaptureScope=0;g_h576kChipCaptureScopeName[0]=0;g_h576kChipCapturedName[0]=0;g_h576kChipCapturedWrapper=0;g_h576kChipCapturedRaw=0;g_h576kChipCapturedOwner=0;g_h576kChipPickupPending=0;g_h576kChipPickupRaw=0;g_h576kChipPickupOwner=0;g_h576kChipPickupName[0]=0;g_h576kChipCooldownUntilStep=0;g_h576oPhysicalChipRaw=0;g_h576oPhysicalChipOwner=0;g_h576oPhysicalChipName[0]=0;h576aa_inv_reset();g_h576qUpgradeOmniCaptureScope=0;g_h576qUpgradeOmniCaptureScopeName[0]=0;g_h576qUpgradeOmniCapturedName[0]=0;g_h576qUpgradeOmniCapturedWrapper=0;g_h576qUpgradeOmniCapturedRaw=0;g_h576qUpgradeOmniCapturedOwner=0;g_h576sInsertedBodyCaptures=0;g_h576sUpgradeContactMissDiag=0;g_h576jPanelCaptureScope=0;g_h576jPanelCaptureScopeName[0]=0;g_h576jPanelCapturedName[0]=0;g_h576jPanelCapturedWrapper=0;g_h576jPanelCapturedRaw=0;g_h576jPanelCapturedOwner=0;g_h576jPanelCooldownUntilStep=0;g_h576dDockReleasePending=0;g_h576dDockReleaseActive=0;g_h576dDockReleaseBody=0;h576c_reset_created_catherine_candidates(why);
+static void h5755bi_detach_vr_world_refs(const char* why){g_s26ckPadBody=0;g_s26ckPadName[0]=0;g_s26bvGuiCount=0;g_s26bvReadableWrapper=0;s26ay_aux_clear();s26y_reset();__atomic_store_n(&g_s26nBindCommand,-1,__ATOMIC_RELEASE);s26n_mechanism_clear();s26_clear_heal_contact();g_h5755gjControlNearBody[0]=g_h5755gjControlNearBody[1]=0;g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;g_h576avThetaPendingHand=-1;g_h576avThetaPendingLogical[0]=0;g_h576avThetaPendingStartStep=g_h576avThetaPendingLastStep=0;h576ah_reset_subtitle_world_refs(why);h576b_forget_body("VR world detach");g_h576bHolsterLocalBasis[0]=1;g_h576bHolsterLocalBasis[1]=0;g_h576bHolsterLocalBasis[2]=0;g_h576bHolsterLocalBasis[3]=0;g_h576bHolsterLocalBasis[4]=0;g_h576bHolsterLocalBasis[5]=1;g_h576bHolsterLocalBasis[6]=0;g_h576bHolsterLocalBasis[7]=-1;g_h576bHolsterLocalBasis[8]=0;g_h576bHolsterBasisValid=1;g_h576bHolsterBasisYaw=0;g_h576bOmniState=H576B_OMNI_UNKNOWN;g_h576eBindPending=0;g_h576eBindNotBeforeStep=0;g_h576eBindWantedName[0]=0;g_h576fCaptureScope=0;g_h576fCaptureScopeName[0]=0;g_h576fCapturedWrapper=0;g_h576fCapturedRaw=0;g_h576fCapturedOwner=0;g_h576fCapturedName[0]=0;g_h576dPlayerBodyPosValid=0;g_h576dPlayerBodyPosLastStep=0;g_h576anBodySlotFreshnessFallbackLogged=0;g_h576anOmniShoulderInside[0]=g_h576anOmniShoulderInside[1]=0;g_h576anOmniShoulderRetrieveArmed[0]=g_h576anOmniShoulderRetrieveArmed[1]=0;g_h576aoOmniStowArmedBody[0]=g_h576aoOmniStowArmedBody[1]=0;g_h576aoOmniStowLastInsideStep[0]=g_h576aoOmniStowLastInsideStep[1]=0;g_h576aoOmniHidePending=0;g_h576iBodyToCameraYValid=0;g_h576iBodyToCameraY=0;g_h576kChipCaptureScope=0;g_h576kChipCaptureScopeName[0]=0;g_h576kChipCapturedName[0]=0;g_h576kChipCapturedWrapper=0;g_h576kChipCapturedRaw=0;g_h576kChipCapturedOwner=0;g_h576kChipPickupPending=0;g_h576kChipPickupRaw=0;g_h576kChipPickupOwner=0;g_h576kChipPickupName[0]=0;g_h576kChipCooldownUntilStep=0;g_h576oPhysicalChipRaw=0;g_h576oPhysicalChipOwner=0;g_h576oPhysicalChipName[0]=0;h576aa_inv_reset();g_h576qUpgradeOmniCaptureScope=0;g_h576qUpgradeOmniCaptureScopeName[0]=0;g_h576qUpgradeOmniCapturedName[0]=0;g_h576qUpgradeOmniCapturedWrapper=0;g_h576qUpgradeOmniCapturedRaw=0;g_h576qUpgradeOmniCapturedOwner=0;g_h576sInsertedBodyCaptures=0;g_h576sUpgradeContactMissDiag=0;g_h576jPanelCaptureScope=0;g_h576jPanelCaptureScopeName[0]=0;g_h576jPanelCapturedName[0]=0;g_h576jPanelCapturedWrapper=0;g_h576jPanelCapturedRaw=0;g_h576jPanelCapturedOwner=0;g_h576jPanelCooldownUntilStep=0;g_h576dDockReleasePending=0;g_h576dDockReleaseActive=0;g_h576dDockReleaseBody=0;h576c_reset_created_catherine_candidates(why);
     /* Local invalidation ONLY.  Native HPL/Newton world teardown owns every body,
        joint, collision and shape.  No Newton setter/query/DestroyBody is legal
        from this semantic teardown boundary. */
@@ -14868,14 +15043,14 @@ static void h5755bi_resume_post_endframe(void){
     h5754at_exit_startup_eye_route();__atomic_store_n(&g_h5755anHaveLast,0u,__ATOMIC_RELEASE);
     g_h5754hPauseActive=0;g_h5754hPauseRequested=0;g_h5754hPauseImageReady=0;g_h5754tLastTargetEnd=0xffffffffu;g_h5754hPauseResumes++;
     __atomic_store_n(&g_h5755asResumeClassifyActive,0u,__ATOMIC_RELEASE);g_h5755asResumeStableCount=0;
-    if(g_s26wIntroActive||g_s26cbIntroHandoffPending){
+    if(g_s26wIntroActive||g_s26cbIntroHandoffPending||__atomic_load_n(&g_h5755bbTitlePresentationLatch,__ATOMIC_ACQUIRE)){
         /* Pause is an overlay. Only the authored VRINTRO E event may end the
-           opening slideshow's flat presentation, never the Resume button. */
+           opening slideshow or a pending save load, never the Resume button. */
         g_h5755adRefreshArmed=0;
         __atomic_store_n(&g_h5755atExactGameplayOwnerRefresh,0u,__ATOMIC_RELEASE);
-        h5755bh_set_presentation(H5755BH_TITLE_FLAT,"Pause closed over authored flat intro");
-        h5753c_gate_menu_camera("flat intro resumed",0);
-        ext_Log(">>> S26CA INTRO RESUME: retained flat presentation; awaiting authored intro end");
+        h5755bh_set_presentation(H5755BH_TITLE_FLAT,"Pause closed before authored gameplay handoff");
+        h5753c_gate_menu_camera("authored gameplay handoff still pending",0);
+        ext_Log(">>> S26CD RESUME WAIT: retained flat presentation; awaiting authored intro/save-load gameplay handoff");
         return;
     }
     if(!h5755as_commit_gameplay_resume()){
@@ -19260,6 +19435,7 @@ static i32 h549_try_cached_rocker(i32 hand,const float* tip,const float* tipDelt
 static u32 g_s26TerminalTipLogs[2],g_s26TerminalTipSamples[2],g_s26TerminalCurlLogs[2];
 static i32 h576bo_terminal_tip(i32 hand,float* outU,float* outV,float* outPlane,float* outRadius){
     if(hand<0||hand>1||!outU||!outV||!outPlane||!outRadius||!__atomic_load_n(&g_h576boTerminalSurfaceValid,__ATOMIC_ACQUIRE))return 0;
+    if(g_s26ckPadBody&&g_h14GripBody[hand]==g_s26ckPadBody)return 0; // Holding hand is not a touchscreen pointer.
     float visible[16];if(!h5755cu_render_hand_model(hand,visible))return 0;
     float curl=h10_raw_finger_input(hand,1);
     if(curl>H48_POKE_INDEX_CURL_MAX){
@@ -20218,6 +20394,7 @@ static u64 __attribute__((ms_abi)) s26_overlap_detour(const void* material,const
 }
 static void s26_install_held_filter(u8* soma){
     s26bt_install_buoyancy_filter(soma);
+    s26ch_bob_install(soma);
     if(g_s26OverlapReady||!soma)return;
     const u8 sig[15]={0x48,0x89,0x5c,0x24,8,0x57,0x48,0x83,0xec,0x20,0x48,0x8b,0xca,0x49,0x8b};
     const u8 getSig[8]={0x48,0x8b,0x81,0x70,1,0,0,0xc3};
@@ -20578,6 +20755,8 @@ u8 __attribute__((ms_abi)) s6_h11_begin_wrapper(void* self) {
     }
     return ret;
 }
+
+
 
 
 

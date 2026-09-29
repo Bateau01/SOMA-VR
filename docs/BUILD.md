@@ -66,3 +66,5 @@ Menu-state regression checks (mocked engine state):
 ```powershell
 python -X utf8 tests/test_menu_recovery.py "C:\Tools\zig\zig.exe"
 ```
+
+S26CM changes launcher/preflight scripts and packaging only. The native DLL and injector are byte-identical to S26CL. Run `python tests/test_launcher_compatibility.py --game-exe PATH/TO/Soma.exe` on Windows for read-only fixture tests. No mutated fixture is executed.

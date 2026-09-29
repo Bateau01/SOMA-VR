@@ -1,10 +1,18 @@
 {
-  "version": "S26CC",
+  "version": "S26CM",
   "game_exe_sha256": "7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113",
   "files": {
+    "Check-SOMA-VR-Compatibility.cmd": {
+      "bytes": 115,
+      "sha256": "1c9186797da4dd711fd91b1f487fb2647ddbf05f172a284b727be2d13983833b"
+    },
     "defaults/hpl3vr_hand_calibration.ini": {
       "bytes": 5424,
       "sha256": "fa607bb7a1c3925b7a6c222ac7d66605bf5aebc50d4fc1c0459d5d0280f48a6b"
+    },
+    "defaults/hpl3vr_vr_settings.ini": {
+      "bytes": 192,
+      "sha256": "dbbab4dd40d76286f6ff18bf132dd3cfa00f987f16212124b1aea93038abb3fd"
     },
     "entities/oceanbottom/tech/02_04_computer_relaystation/02_04_computer_relaystation_screen.ent": {
       "bytes": 5366,
@@ -339,20 +347,24 @@
       "sha256": "3ab3c6a5e78c518a8c751cf037a9ce47d11a02361e727fea0912ed393d351fb0"
     },
     "hpl3vr.dll": {
-      "bytes": 1671168,
-      "sha256": "dde3b2839a3953f3a713ed86a617b5f5d425710d5e9dc7c17db0f0f3a10a6415"
+      "bytes": 1677312,
+      "sha256": "0f48045c9b6ecb1dae38043cbc911b9a6091e5474b8db1829231d838f4b715c9"
     },
     "hpl3vr_inject.exe": {
       "bytes": 267851,
       "sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f"
     },
+    "hpl3vr_vr_settings.ini": {
+      "bytes": 192,
+      "sha256": "dbbab4dd40d76286f6ff18bf132dd3cfa00f987f16212124b1aea93038abb3fd"
+    },
     "Launch-SOMA-VR.cmd": {
-      "bytes": 114,
-      "sha256": "59e04dc83aa98cb1f4fa7c27e8c7b1c7065bb13b5ae770e565d6bb04067d59c5"
+      "bytes": 120,
+      "sha256": "69f48d88aaceb26122cffd4a1ee20f5a771c1602e498e8d1feb233e4c563a47e"
     },
     "Launch-SOMA-VR.ps1": {
-      "bytes": 5766,
-      "sha256": "b8c37c26558ab39e7dc8de1fd6f68b2d4728da9dea0dffc97fe4bc00e5daec03"
+      "bytes": 7242,
+      "sha256": "179911e24744fe4ee26e4cff61f0d09813d7b7693fbb96682ab68400fe2670ab"
     },
     "licenses/MinHook-LICENSE.txt": {
       "bytes": 4365,
@@ -367,8 +379,8 @@
       "sha256": "5a1dd1570fe7e62c1d0afd04f1e7524ca19f0566ce067fcc41039af9e30d2399"
     },
     "maps/chapter00/00_01_apartment/00_01_apartment.hps": {
-      "bytes": 56443,
-      "sha256": "0113ec3b898f7022af66f9f6b14777e391102bebfd77760ec11f1cb7cfe8e9f2"
+      "bytes": 56665,
+      "sha256": "6161e7029f26a41b165619a6f1f3f8861d5668d67d61038da72f16541eb9b745"
     },
     "maps/chapter00/00_02_subway/00_02_subway.hps": {
       "bytes": 42629,
@@ -435,8 +447,8 @@
       "sha256": "941d27506be17a417f8936afed10616484a6fd78c340e2d0a86a4524cbc3d520"
     },
     "maps/chapter04/04_02_tau_inside/04_02_tau_inside.hps": {
-      "bytes": 263973,
-      "sha256": "f294af6e930e7c4e9228d78f1632de8fc156ea73646cbdb5ba5dcf333fede8fc"
+      "bytes": 264295,
+      "sha256": "08ad099676b2990cca08bb8ee361b08dd3d12c8b94e6faa5c81235f051988f38"
     },
     "maps/chapter04/04_03_tau_escape/04_03_tau_escape.hpm_Entity": {
       "bytes": 4543002,
@@ -455,8 +467,8 @@
       "sha256": "9248b6ddd93ddd1c722313d8a24a4c2e9dd996f9dfa8087118037e5ac42c255e"
     },
     "PACKAGE_VERIFICATION.json": {
-      "bytes": 619,
-      "sha256": "b5ff106dd26a3a779e789d45c920d70b362813edd827c98ab65dc05b032609b4"
+      "bytes": 2065,
+      "sha256": "3244ad396934547a37c49f5b1b7f01f59cbd4a33419bfed7da53a2974bbd0d3a"
     },
     "script/areas/Area_InteractAux.hps": {
       "bytes": 6754,
@@ -551,8 +563,8 @@
       "sha256": "a3cc5952e176d7f31d37cdb1de405356df52bda7208d50dfcd10ca36a8009072"
     },
     "script/modules/MenuHandler.hps": {
-      "bytes": 283533,
-      "sha256": "aec5ff8f474e8aa3be813182d9895aa18917e7adb43d4a4e3c3518e43f03e7db"
+      "bytes": 285502,
+      "sha256": "cd7fc7877a2befbde172f57f19f51a70620c75b4395dbe1d437d3e5f15f70ae4"
     },
     "script/modules/PlayerEnergyHandler.hps": {
       "bytes": 22577,
@@ -563,12 +575,12 @@
       "sha256": "f54c93da3fef2df6c6b9642a002cfe84e8923ce5ba13240c120d4f170e13e522"
     },
     "script/modules/PlayerToolHandler.hps": {
-      "bytes": 126656,
-      "sha256": "ca8d4119f87a01e3e4263d20a51b956044b838f6847d5a810b45e529183afc9b"
+      "bytes": 126867,
+      "sha256": "53a42e8534494e778b1d3555b0ee4d8f7b04db91af1aa46bd0f4fa51f792d644"
     },
     "script/player/MoveState_Normal.hps": {
-      "bytes": 44613,
-      "sha256": "f275c8a40c222856c80c0a33520efa54c8e5315d08c9b693a353b3ccada04a36"
+      "bytes": 46067,
+      "sha256": "a4946542a0d3ca880f5466b24358fc7f25b5958b75cc0d5e22b19d376c51638f"
     },
     "script/player/Player.hps": {
       "bytes": 67405,
@@ -579,12 +591,16 @@
       "sha256": "b2615d5213a8bd4d43f2c4a5025ae0456d721764eedd5a63c83796faf921968a"
     },
     "script/player/PlayerState_Interact.hps": {
-      "bytes": 4952,
-      "sha256": "44719506c98426fa3d228e9b7e74ed2327d09e0646630feecd81eb07fe297ab4"
+      "bytes": 7125,
+      "sha256": "86fde5e1c61fd9fabaab4aa8663c2f8f8f3ff74a4fa07e3e5e6804efe93bf352"
     },
     "script/player/PlayerState_Interact_Grab.hps": {
       "bytes": 42871,
       "sha256": "329ecf4f6e387ba0c462a160f975c61992fa6e557453a828ddd049260cd48fcc"
+    },
+    "script/player/PlayerState_Interact_HandheldTerminal.hps": {
+      "bytes": 18860,
+      "sha256": "9f6832bec771111fdc1219057032d1495aaa337acd2dd2ef0d2bc5742e29b309"
     },
     "script/player/PlayerState_Interact_Push.hps": {
       "bytes": 17631,
@@ -595,16 +611,16 @@
       "sha256": "448c4ef4017f8bea71914a25d0bd789d840b4973dfe160477807ac512c5725c8"
     },
     "script/player/PlayerState_Interact_Slide.hps": {
-      "bytes": 19125,
-      "sha256": "f7efe8cc7fe7f997d59e63fdddc0c2787aee21a1fd422480a884361823d309c8"
+      "bytes": 20206,
+      "sha256": "4216d7e907584dbde760228fce89635afc3650f3000ba529c43adc230e28089e"
     },
     "script/player/PlayerState_Interact_Tear.hps": {
       "bytes": 14293,
       "sha256": "28744e33dbbab67903f51e98a25ea74750d354aabee990118c2b1297e3d7293d"
     },
     "script/player/PlayerState_Interact_Terminal.hps": {
-      "bytes": 16921,
-      "sha256": "61a7078b003f5cdbe8a623a53e65638af059ca3cea0038fb76a5877374096381"
+      "bytes": 18248,
+      "sha256": "ae164464ce148d6436862d4c5de9fe513f1c34431f9c27f3ec704b986f5c086f"
     },
     "script/player/PlayerState_InteractiveCameraAnimation.hps": {
       "bytes": 30326,
@@ -625,6 +641,10 @@
     "script/props/Prop_Grab.hps": {
       "bytes": 11733,
       "sha256": "3777be04752d88a68413b2c75f13ee1d62dcc0b8d1fafab783721e108e6f9b5e"
+    },
+    "script/props/Prop_HandheldTerminal.hps": {
+      "bytes": 15565,
+      "sha256": "e5b56c0ddc4a69f36d8efef10d4db3f605894ed612b3232482c30d87d652604a"
     },
     "script/props/Prop_LevelDoor.hps": {
       "bytes": 6995,
@@ -658,21 +678,33 @@
       "bytes": 22598,
       "sha256": "d84eab74f7b65870d7d35b3b07a73058a32d9a4c49937d7e2b4decc4396a1332"
     },
+    "SOMA-VR-Compatibility.ps1": {
+      "bytes": 4497,
+      "sha256": "2678f071723511afb1c538469d3240bbe0587fc9fdcdb9a4cab5599a91c533c8"
+    },
+    "SOMA-VR-Executable.json": {
+      "bytes": 2607,
+      "sha256": "537229cf3db85e65512afacfe2c05e2515a4aa14abb51c9cd11b97f38c395b2e"
+    },
+    "SOMA_VR_COMPATIBILITY.md": {
+      "bytes": 2761,
+      "sha256": "3bda567183a25b7b8eb79c3376a283195502b8c51f9e1ed82127b07f3ed9dfff"
+    },
     "SOMA_VR_FEATURES.md": {
-      "bytes": 4267,
-      "sha256": "eace69a3ddaf9d3541864692f6715c294aac26bcfe33ab38ef011aab3fc4ff85"
+      "bytes": 4730,
+      "sha256": "07569d46051bcfae788d22cc914da860d7c04c5235d75ebdecb32940d15ac926"
     },
     "SOMA_VR_INSTALLATION.md": {
-      "bytes": 4780,
-      "sha256": "55709d89edbf3fb31984d7640f22a2f9dc32ef8fcb4f546d7ce644d777de88e6"
+      "bytes": 5303,
+      "sha256": "a57a4b2684fa25b224f165df850a53266468716f4d0d371435a2403ccc689d00"
     },
     "SOMA_VR_LICENSE.txt": {
       "bytes": 35823,
       "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
     },
     "SOMA_VR_RELEASE_NOTES.md": {
-      "bytes": 1770,
-      "sha256": "7cc242b61066dc16eccf84452e725c893593d3b32486e5d07bd11539a7d4803d"
+      "bytes": 2306,
+      "sha256": "4558a42dbed2eaa573840a3b898041297a76a3bf9dfd2097a4f0513983292339"
     },
     "SOMA_VR_THIRD_PARTY_NOTICES.md": {
       "bytes": 1353,

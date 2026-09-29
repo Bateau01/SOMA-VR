@@ -21,7 +21,7 @@ typedef struct{XrQuaternionf orientation;XrVector3f position;}XrPosef;
 #define ext_Sqrtf sqrtf
 #define H5755BH_TITLE_FLAT 0
 #define H5755BH_GAMEPLAY_VR 1
-static u32 checks,commits,gates,presentation;
+static u32 checks,commits,gates,presentation,g_h5755bbTitlePresentationLatch;
 #define CHECK(x) do{checks++;if(!(x)){printf("FAIL %d\n",__LINE__);exit(1);}}while(0)
 static u32 g_h5755asNativeUiScope,g_s26caMenuApplyDepth,g_s26caMenuSavedScope,g_s26caMenuApplyLogs;
 static i32 nw,nh,g_s26caMenuSavedW,g_s26caMenuSavedH;
@@ -96,6 +96,9 @@ int main(void){
   CHECK(s26cb_intro_destination_ready()==(enter&&ready&&step>=3));
  }
  g_s26cbIntroHandoffPending=0;CHECK(s26cb_intro_destination_ready());
+ g_h5755bbTitlePresentationLatch=1;g_h5755biResumePending=1;
+ h5755bi_resume_post_endframe();CHECK(presentation==0&&commits==0);
+ g_h5755bbTitlePresentationLatch=0;
  dc=(void*)2;window=(void*)3;g_h5755akWindow=0;CHECK(s26cb_menu_render_window()==window);
  g_h5755akWindow=(void*)4;CHECK(s26cb_menu_render_window()==window);
  dc=0;CHECK(s26cb_menu_render_window()==g_h5755akWindow);

@@ -1,0 +1,110 @@
+--- S26CC/source/s26n.c
++++ S26CD/source/s26n.c
+@@ -14868,14 +14868,14 @@
+     h5754at_exit_startup_eye_route();__atomic_store_n(&g_h5755anHaveLast,0u,__ATOMIC_RELEASE);
+     g_h5754hPauseActive=0;g_h5754hPauseRequested=0;g_h5754hPauseImageReady=0;g_h5754tLastTargetEnd=0xffffffffu;g_h5754hPauseResumes++;
+     __atomic_store_n(&g_h5755asResumeClassifyActive,0u,__ATOMIC_RELEASE);g_h5755asResumeStableCount=0;
+-    if(g_s26wIntroActive||g_s26cbIntroHandoffPending){
++    if(g_s26wIntroActive||g_s26cbIntroHandoffPending||__atomic_load_n(&g_h5755bbTitlePresentationLatch,__ATOMIC_ACQUIRE)){
+         /* Pause is an overlay. Only the authored VRINTRO E event may end the
+-           opening slideshow's flat presentation, never the Resume button. */
++           opening slideshow or a pending save load, never the Resume button. */
+         g_h5755adRefreshArmed=0;
+         __atomic_store_n(&g_h5755atExactGameplayOwnerRefresh,0u,__ATOMIC_RELEASE);
+-        h5755bh_set_presentation(H5755BH_TITLE_FLAT,"Pause closed over authored flat intro");
+-        h5753c_gate_menu_camera("flat intro resumed",0);
+-        ext_Log(">>> S26CA INTRO RESUME: retained flat presentation; awaiting authored intro end");
++        h5755bh_set_presentation(H5755BH_TITLE_FLAT,"Pause closed before authored gameplay handoff");
++        h5753c_gate_menu_camera("authored gameplay handoff still pending",0);
++        ext_Log(">>> S26CD RESUME WAIT: retained flat presentation; awaiting authored intro/save-load gameplay handoff");
+         return;
+     }
+     if(!h5755as_commit_gameplay_resume()){
+--- S26CC/runtime/script/modules/MenuHandler.hps
++++ S26CD/runtime/script/modules/MenuHandler.hps
+@@ -343,6 +343,7 @@
+ 	
+ 	void LoadingStarted()
+ 	{
++		mbHPL3VRAutoLoadPending = false;
+ 		mbHPL3VRLoadingSession = _HPL3VR_RuntimeActive_Menu();
+ 		mbLoading_Started = true;
+ 	}
+@@ -381,12 +382,16 @@
+ 		
+ 		if(IsActive()==false)
+ 		{
+-			cLux_GetSaveHandler().ContinueLoading(true);
++			// S26CD: no recap UI still needs the native post-load wait in VR.
++			// ContinueLoading(true) skips StartLoadedGame and its VR handoff.
++			bool bVRLoad = _HPL3VR_RuntimeActive_Menu() || mbHPL3VRLoadingSession;
++			cLux_GetSaveHandler().ContinueLoading(!bVRLoad);
+ 					
+ 			LoadScreen_SetForceBackground(false);
+ 			LoadScreen_SetUseSmallIcon(false);
+ 			
+ 			CleanUp();
++			mbHPL3VRAutoLoadPending = bVRLoad;
+ 		}
+ 	}
+ 	
+@@ -401,6 +406,7 @@
+ 		mbLoading_LoadScreenHidden = false;
+ 		mbDismiss = false;
+ 		mbHPL3VRLoadingSession = false;
++		mbHPL3VRAutoLoadPending = false;
+ 	}
+ 	
+ 	bool IsActive()
+@@ -408,8 +414,22 @@
+ 		return mpScriptImGui !is null;
+ 	}
+ 	
++	// Runs even without a recap GUI. The native wait stays armed until this
++	// exact completion, so IsDoneLoadingSavedGame cannot be missed.
++	void HPL3VR_FinishAutoLoad()
++	{
++		if (!mbHPL3VRAutoLoadPending) return;
++		if (!cLux_GetSaveHandler().IsDoneLoadingSavedGame() ||
++			!cLux_MapIsLoaded() || cLux_IsChangingMap() || LoadScreen_IsVisible()) return;
++		mbHPL3VRAutoLoadPending = false;
++		cScript_RunGlobalFunc("VRLIFE", "", "G");
++		cLux_GetSaveHandler().StartLoadedGame();
++		LogNewLine("S26CD AUTO LOAD HANDOFF: native saved-game completion without recap UI");
++	}
++
+ 	void Update(float afTimeStep)
+ 	{
++		HPL3VR_FinishAutoLoad();
+ 		if (!(_HPL3VR_RuntimeActive_Menu() || mbHPL3VRLoadingSession))
+ 		{
+ 				if(mbLoading_Started==false)
+@@ -919,6 +939,7 @@
+ 	bool mbLoading_LoadScreenHidden;
+ 	bool mbDismiss;
+ 	bool mbHPL3VRLoadingSession;
++	bool mbHPL3VRAutoLoadPending;
+ };
+ 
+ cLastOnSomaScreen gLastOnSomaScreen;
+--- S26CC/tests/test_menu_recovery.py
++++ S26CD/tests/test_menu_recovery.py
+@@ -21,7 +21,7 @@
+ #define ext_Sqrtf sqrtf
+ #define H5755BH_TITLE_FLAT 0
+ #define H5755BH_GAMEPLAY_VR 1
+-static u32 checks,commits,gates,presentation;
++static u32 checks,commits,gates,presentation,g_h5755bbTitlePresentationLatch;
+ #define CHECK(x) do{checks++;if(!(x)){printf("FAIL %d\n",__LINE__);exit(1);}}while(0)
+ static u32 g_h5755asNativeUiScope,g_s26caMenuApplyDepth,g_s26caMenuSavedScope,g_s26caMenuApplyLogs;
+ static i32 nw,nh,g_s26caMenuSavedW,g_s26caMenuSavedH;
+@@ -96,6 +96,9 @@
+   CHECK(s26cb_intro_destination_ready()==(enter&&ready&&step>=3));
+  }
+  g_s26cbIntroHandoffPending=0;CHECK(s26cb_intro_destination_ready());
++ g_h5755bbTitlePresentationLatch=1;g_h5755biResumePending=1;
++ h5755bi_resume_post_endframe();CHECK(presentation==0&&commits==0);
++ g_h5755bbTitlePresentationLatch=0;
+  dc=(void*)2;window=(void*)3;g_h5755akWindow=0;CHECK(s26cb_menu_render_window()==window);
+  g_h5755akWindow=(void*)4;CHECK(s26cb_menu_render_window()==window);
+  dc=0;CHECK(s26cb_menu_render_window()==g_h5755akWindow);

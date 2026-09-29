@@ -1,12 +1,70 @@
 {
-  "version": "S26CC",
-  "dll_sha256": "dde3b2839a3953f3a713ed86a617b5f5d425710d5e9dc7c17db0f0f3a10a6415",
-  "strict_build": "passed",
-  "hand_size_checks": 49106,
-  "menu_window_checks": 2208,
-  "pause_lifecycle_checks": 701,
-  "height_offset_wiring": "removed from camera, hands, holsters and head-touch flashlight; stance publisher removed",
-  "headset_verification": "not performed for this revert",
-  "prior_limits": "S26CB intro/multi-monitor/orange-strip visual confirmation pending; shutdown heap error reproduced with both S26CA and S26CB remains unresolved",
-  "installed_game_modified": false
+  "version": "S26CM",
+  "dll_sha256": "0f48045c9b6ecb1dae38043cbc911b9a6091e5474b8db1829231d838f4b715c9",
+  "native_dll": "Byte-identical to S26CL",
+  "injector_sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
+  "compatibility_tests": {
+    "checks": 13,
+    "passed": true,
+    "cases": [
+      {
+        "name": "verified",
+        "status": "VerifiedExecutable"
+      },
+      {
+        "name": "overlay",
+        "status": "EquivalentEngineUnverified"
+      },
+      {
+        "name": "checksum",
+        "status": "EquivalentEngineUnverified"
+      },
+      {
+        "name": "resource",
+        "status": "EquivalentEngineUnverified"
+      },
+      {
+        "name": "code",
+        "status": "Incompatible"
+      },
+      {
+        "name": "data",
+        "status": "Incompatible"
+      },
+      {
+        "name": "truncated",
+        "status": "ERROR"
+      },
+      {
+        "name": "x86",
+        "status": "ERROR"
+      },
+      {
+        "name": "alternate",
+        "status": "Incompatible"
+      },
+      {
+        "name": "launcher_verified_",
+        "passed": true
+      },
+      {
+        "name": "launcher_resource_",
+        "passed": true
+      },
+      {
+        "name": "launcher_code_-Experimental",
+        "passed": true
+      },
+      {
+        "name": "launcher_verified_-Executable_not-soma.exe",
+        "passed": true
+      }
+    ],
+    "scope": "PE comparison and actual launcher CheckOnly. No mutated fixture, alternate storefront executable, injector or game was launched."
+  },
+  "gog_epic_tested": false,
+  "scope": "Launch preflight and packaging only. The changed launcher was tested in CheckOnly mode, not through a new full game launch. No alternate storefront executable was available. No new engine offsets or runtime signatures added.",
+  "installed_game_modified": false,
+  "root_ini_included": true,
+  "updating_custom_ini": "Keep/back up the existing root INI rather than overwrite custom values during extraction."
 }

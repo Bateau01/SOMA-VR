@@ -1,0 +1,78 @@
+--- S26CF/runtime/script/player/PlayerState_Interact.hps
++++ S26CG/runtime/script/player/PlayerState_Interact.hps
+@@ -65,15 +65,52 @@
+ 
+ 	void EnterInteractState(int alPrevStateId)
+ 	{
+-		if(alPrevStateId<0) mlPreviousState = ePlayerState_Normal;
+-		else                mlPreviousState = alPrevStateId;
+-        if(alPrevStateId==ePlayerState_Terminal && _HPL3VR_RuntimeActive_Interact())
++        int destination=alPrevStateId<0 ? ePlayerState_Normal : alPrevStateId;
++        if(_HPL3VR_RuntimeActive_Interact())
+         {
+-            cScript_SetGlobalReturnInt(ePlayerState_Normal);
+-            cScript_RunGlobalFunc("State_Interact_Terminal","","_Global_VRGetPhysicalReturnState");
+-            mlPreviousState=cScript_GetGlobalReturnInt();
++            // Switching hands can enter a new interaction before releasing the
++            // old one. Its OnLeaveState has already retired the old prop, so
++            // return to that interaction's underlying destination, not its shell.
++            int visited=0;
++            for(int i=0;i<12;++i)
++            {
++                tString object=VR_InteractionStateObject(destination);
++                if(object=="") break; // Preserve Sit, story states and Normal.
++                int bit=1<<destination;
++                if((visited & bit)!=0) { destination=ePlayerState_Normal; break; }
++                visited|=bit;
++                cScript_SetGlobalReturnInt(ePlayerState_Normal);
++                cScript_RunGlobalFunc(object,"","_Global_VRGetInteractionReturnState");
++                destination=cScript_GetGlobalReturnInt();
++                if(destination<0) destination=ePlayerState_Normal;
++            }
+         }
+-	}
++        mlPreviousState=destination;
++	}
++
++    tString VR_InteractionStateObject(int state)
++    {
++        switch(state)
++        {
++            case ePlayerState_Grab: return "State_Interact_Grab";
++            case ePlayerState_Push: return "State_Interact_Push";
++            case ePlayerState_Wheel: return "State_Interact_Wheel";
++            case ePlayerState_Slide: return "State_Interact_Slide";
++            case ePlayerState_SwingDoor: return "State_Interact_SwingDoor";
++            case ePlayerState_Lever: return "State_Interact_Lever";
++            case ePlayerState_Tear: return "State_Interact_Tear";
++            case ePlayerState_Terminal: return "State_Interact_Terminal";
++            case ePlayerState_HandheldTerminal: return "State_Interact_HandheldTerminal";
++            case ePlayerState_Read: return "State_Interact_Read";
++            case ePlayerState_MovingButton: return "State_Interact_MovingButton";
++        }
++        return "";
++    }
++
++    void _Global_VRGetInteractionReturnState()
++    {
++        cScript_SetGlobalReturnInt(mlPreviousState);
++    }
+ 
+ 	//-----------------------------------------------------------------------
+ 	
+@@ -166,4 +203,4 @@
+ 	int mlPreviousState;
+ 		
+ 	//------------------------------------------------------------
+-}+}
+--- S26CF/scripts/apply_payload.py
++++ S26CG/scripts/apply_payload.py
+@@ -85,7 +85,7 @@
+ SUBMIT_EYE_CALL_RVAS=(0xD315,0xD338,0xF6FC,0xF721)
+ SUBMIT_EYE_OLD_RVA=0x139F0
+ BANNER_OLD=b'hpl3vr S5-P2 %s %s  \x00'
+-BANNER_NEW=b'hpl3vr S26CF_ %s %s \x00'
++BANNER_NEW=b'hpl3vr S26CG_ %s %s \x00'
+ KEYHELP_REPLACEMENTS=(
+  (b'Keys:  F2  = engine hook (enable this first)', b'Keys:  legacy keyboard debug lockout active'),
+  (b'       F10 = native stereo, side by side     F11 = swap halves', b'       Gameplay VR controls are OpenXR-controller native.'),

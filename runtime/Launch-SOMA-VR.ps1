@@ -1,4 +1,4 @@
-param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly)
+param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly, [string]$Executable = '', [switch]$Experimental)
 $ErrorActionPreference = 'Stop'
 # Use the Windows PowerShell modules even when a parent shell supplied a PowerShell 7 module path.
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility')
@@ -29,15 +29,31 @@ function Stop-SomaInstances {
 if ($CheckOnly -and $StopOnly) { throw 'Choose either -CheckOnly or -StopOnly.' }
 if ($StopOnly) { Stop-SomaInstances; Write-Output 'SOMA process cleanup completed.'; exit 0 }
 $gameDir = $PSScriptRoot
-$exe = Join-Path $gameDir 'Soma.exe'
+if (!$Executable) {
+    if (Test-Path -LiteralPath (Join-Path $gameDir 'Soma.exe')) { $Executable = 'Soma.exe' }
+    elseif (Test-Path -LiteralPath (Join-Path $gameDir 'Soma_NoSteam.exe')) { $Executable = 'Soma_NoSteam.exe' }
+    else { throw 'No Soma.exe or Soma_NoSteam.exe found beside this launcher.' }
+}
+if ($Executable -notin @('Soma.exe','Soma_NoSteam.exe')) { throw 'Choose Soma.exe or Soma_NoSteam.exe in this game folder; do not rename another program.' }
+$exe = Join-Path $gameDir $Executable
 $dll = Join-Path $gameDir 'hpl3vr.dll'
 $injector = Join-Path $gameDir 'hpl3vr_inject.exe'
 foreach ($p in @($exe,$dll,$injector,(Join-Path $gameDir 'openxr_loader.dll'))) {
     if (!(Test-Path -LiteralPath $p -PathType Leaf)) { throw "Missing $p. Extract the full mod into the folder containing Soma.exe." }
 }
-$expectedExe = '7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113'
-if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedExe) {
-    throw 'This Soma.exe does not match the executable validated for S26CC. See SOMA_VR_INSTALLATION.md; other executable builds need compatibility testing.'
+. (Join-Path $gameDir 'SOMA-VR-Compatibility.ps1')
+$report = Get-SomaExecutableReport $exe (Join-Path $gameDir 'SOMA-VR-Executable.json')
+$reportPath = Join-Path $gameDir 'SOMA-VR-compatibility-report.json'
+$report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
+Write-Output ('Executable status: ' + $report.status)
+Write-Output ('Compatibility report: ' + $reportPath)
+if ($report.status -eq 'Incompatible') {
+    throw ('This executable needs a native VR port; its engine layout differs from the tested build. No injection attempted. Send SOMA-VR-compatibility-report.json with the storefront/version. Differences: ' + ($report.differences -join '; '))
+}
+if ($CheckOnly) { Write-Output 'Executable checks completed. No game was started; no settings were changed.'; exit 0 }
+if ($report.status -ne 'VerifiedExecutable') {
+    if (!$Experimental) { throw 'Engine bytes/layout match, but this executable is untested. Use Launch-SOMA-VR.cmd -Experimental to opt into this limited compatibility test.' }
+    Write-Warning 'Experimental executable: engine bytes/layout match, but storefront dependencies, scripts and gameplay are untested.'
 }
 Add-Type -TypeDefinition @'
 using System;
@@ -56,9 +72,12 @@ public static class SomaVrLaunch {
  [DllImport("kernel32.dll")] public static extern bool TerminateProcess(IntPtr process,uint code);
 }
 '@
-if ($CheckOnly) { Write-Output 'Executable and launcher checks passed. No game was started.'; exit 0 }
 Stop-SomaInstances
-$calibration = Join-Path $gameDir 'hpl3vr_hand_calibration.ini'
+$settings = Join-Path $gameDir 'hpl3vr_vr_settings.ini'
+if (!(Test-Path -LiteralPath $settings)) {
+    Copy-Item -LiteralPath (Join-Path $gameDir 'defaults\hpl3vr_vr_settings.ini') -Destination $settings
+}
+$calibration = Join-Path $gameDir 'hpl3vr_hand_calibration.ini' 
 if (!(Test-Path -LiteralPath $calibration)) {
     Copy-Item -LiteralPath (Join-Path $gameDir 'defaults\hpl3vr_hand_calibration.ini') -Destination $calibration
 }
@@ -75,7 +94,7 @@ $resumed = $false
 try {
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $injector
-    $info.Arguments = 'Soma.exe hpl3vr.dll'
+    $info.Arguments = $Executable + ' hpl3vr.dll'
     $info.WorkingDirectory = $gameDir
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true

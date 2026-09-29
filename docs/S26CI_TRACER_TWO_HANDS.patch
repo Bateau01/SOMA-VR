@@ -1,0 +1,119 @@
+--- S26CH/runtime/script/modules/PlayerToolHandler.hps
++++ S26CI/runtime/script/modules/PlayerToolHandler.hps
+@@ -1158,7 +1158,8 @@
+ 		cScript_RunGlobalFunc("VROMNIINV","Tracer_Fluid","D");
+ 		if (!mbVRTracerNearFace) { mfVRTracerDwell=0; return; }
+ 		mfVRTracerDwell+=0.05f;
+-		if (mfVRTracerDwell<0.6f) return;
++		// S26CI: five stable proximity samples (about a quarter second).
++		if (mfVRTracerDwell<0.24f) return;
+ 		mfVRTracerDwell=0;
+ 		if (pTool.msCanBeUsedCallback=="" || pTool.msUseCallback=="") return;
+ 		if (!pMap.ScriptPrepare("bool "+pTool.msCanBeUsedCallback+"(const tString &in asTool, const tString &in asEntity)")) return;
+--- S26CH/scripts/apply_payload.py
++++ S26CI/scripts/apply_payload.py
+@@ -85,7 +85,7 @@
+ SUBMIT_EYE_CALL_RVAS=(0xD315,0xD338,0xF6FC,0xF721)
+ SUBMIT_EYE_OLD_RVA=0x139F0
+ BANNER_OLD=b'hpl3vr S5-P2 %s %s  \x00'
+-BANNER_NEW=b'hpl3vr S26CH_ %s %s \x00'
++BANNER_NEW=b'hpl3vr S26CI_ %s %s \x00'
+ KEYHELP_REPLACEMENTS=(
+  (b'Keys:  F2  = engine hook (enable this first)', b'Keys:  legacy keyboard debug lockout active'),
+  (b'       F10 = native stereo, side by side     F11 = swap halves', b'       Gameplay VR controls are OpenXR-controller native.'),
+--- S26CH/source/s26n.c
++++ S26CI/source/s26n.c
+@@ -5278,9 +5278,39 @@
+ static const void* g_s26bvReadableWrapper;
+ static u32 g_s26bvReadableStep;
+ static i32 g_s26ceDirectGrabDispatch;
++/* S26CI: SOMA has one authored interaction state, but VR has two physical
++   holds. Yield only the old detached Grab input shell to the other hand;
++   its Newton anchor, mass guard and release velocity remain untouched. */
++static i32 s26ci_yield_grab_use(i32 hand,void* owner){
++    i32 old=g_h30NativeUseHand;
++    if(hand<0||hand>1||old<0||old>1||hand==old||!owner||
++       !g_h5755chGrabStateActive||!g_h5755chGrabButtonDetached||
++       owner==g_h5755chGrabStateOwner||!h5755cj_hand_matches_grab_owner(old)||
++       g_h15GripJointed[old]||!g_lastSqueezeActive[old]||g_lastSqueeze[old]<0.28f)return 0;
++    g_h30NativeMouseDown=0;g_h30NativeUseHand=-1;g_h31NativeUseBody=0;
++    g_h31NativeUseJointed=0;g_h31NativePrevPosValid=0;
++    g_h38ThisUseConsumed[old]=0;g_h39NativeUseProp[old]=0;
++    ext_Log(">>> S26CI INDEPENDENT HANDS: detached Grab input yielded from %d to %d; physical prop retained",old,hand);
++    return 1;
++}
++static i32 s26ci_keep_independent_grip(i32 hand,const char* mp,const char* cn){
++    if(hand<0||hand>1||!g_h30NativeMouseDown||g_h30NativeUseHand!=1-hand||
++       !g_h39NativeUseProp[1-hand]||g_h39NativeUseProp[1-hand]==g_h5755chGrabStateOwner||
++       !h5755cj_hand_matches_grab_owner(hand)||g_h15GripJointed[hand]||
++       !g_lastSqueezeActive[hand]||g_lastSqueeze[hand]<0.28f)return 0;
++    return (h5720_streq(mp,"player/PlayerState_Interact_Slide.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Slide"))||
++           (h5720_streq(mp,"player/PlayerState_Interact_SwingDoor.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_SwingDoor"))||
++           (h5720_streq(mp,"player/PlayerState_Interact_Lever.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Lever"))||
++           (h5720_streq(mp,"player/PlayerState_Interact_Wheel.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Wheel"))||
++           (h5720_streq(mp,"player/PlayerState_Interact_Push.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Push"))||
++           (h5720_streq(mp,"player/PlayerState_Interact_Tear.hps")&&h5720_streq(cn,"cScrPlayerState_Interact_Tear"));
++}
++
+ static void h30_native_use_begin(i32 hand,const void* body,i32 jointed,void* owner){
+     if(hand<0||hand>1||!p_h16MouseEvent)return;
+-    if(g_h30NativeMouseDown)return;
++    if(g_h30NativeMouseDown && (g_s26ceDirectGrabDispatch ||
++       (body==g_s26bvReadableWrapper&&g_s26bvReadableStep==g_h14PhysicsSteps) ||
++       !s26ci_yield_grab_use(hand,owner)))return;
+     i32 readable=g_s26ceDirectGrabDispatch||(body==g_s26bvReadableWrapper&&g_s26bvReadableStep==g_h14PhysicsSteps);
+     g_s26bvReadableWrapper=0;
+     if(!readable)p_h16MouseEvent(0x0002u,0,0,0,0);
+@@ -10526,7 +10556,7 @@
+     }
+     if(oldKind==7&&newKind!=7){
+         i32 gripLive=((h5755cj_hand_matches_grab_owner(0)&&g_lastSqueezeActive[0]&&g_lastSqueeze[0]>=0.28f)||(h5755cj_hand_matches_grab_owner(1)&&g_lastSqueezeActive[1]&&g_lastSqueeze[1]>=0.28f))?1:0;g_h5755chGrabStateExits++;
+-        if(gripLive&&g_h5755chGrabStateActive){g_h5755chGrabEarlyExits++;ext_Log(">>> S6-HANDS5755CJ NATIVE GRAB EARLY EXIT: authored Grab left while physical Grip still owns cLuxProp %p; releasing all same-owner VR anchors to honor native state semantics",g_h5755chGrabStateOwner);for(i32 h=0;h<2;++h)if(h5755cj_hand_matches_grab_owner(h))h14_release(h,"authored Grab state exit");}
++        if(gripLive&&g_h5755chGrabStateActive){g_h5755chGrabEarlyExits++;ext_Log(">>> S6-HANDS5755CJ NATIVE GRAB EARLY EXIT: authored Grab left while physical Grip still owns cLuxProp %p; checking same-owner anchors against independent opposite-hand mechanism ownership",g_h5755chGrabStateOwner);for(i32 h=0;h<2;++h)if(h5755cj_hand_matches_grab_owner(h)){if(s26ci_keep_independent_grip(h,newMp,newCn))ext_Log(">>> S26CI INDEPENDENT HANDS: retained %d physical prop across %s",h,newCn);else h14_release(h,"authored Grab state exit");}}
+         
+         g_h5755chGrabStateActive=0;g_h5755chGrabExpected=0;g_h5755chGrabStateBody=0;g_h5755chGrabStateWrapper=0;g_h5755chGrabStateOwner=0;g_h5755chGrabPrimaryHand=-1;g_h5755chGrabButtonDetached=0;g_h5755cjGrabExpectedStep=0;
+     }
+@@ -11581,6 +11611,19 @@
+ 
+ static i32 h576aa_run_global(const char* obj,const char* cls,const char* fn);
+ 
++/* Head-space drinking admission, in physical metres at every world scale.
++   Accept either the neck or bottle body: no cap or tilt puzzle. Wider exit
++   bounds prevent normal controller tremor from restarting the dwell. */
++static i32 s26ci_tracer_near(const float* bm,const float* head,float metric,i32 ready){
++    if(!(metric>0.001f&&metric<100.0f))return 0;
++    float x=bm[12]-head[0],y=bm[13]-head[1],z=bm[14]-head[2];
++    float body2=x*x+y*y+z*z;
++    x+=bm[4]*0.123452800f;y+=bm[5]*0.123452800f;z+=bm[6]*0.123452800f;
++    float neck2=x*x+y*y+z*z;
++    float nr=(ready?0.34f:0.28f)*metric,br=(ready?0.28f:0.22f)*metric;
++    return (neck2>=0.0f&&neck2<=nr*nr)||(body2>=0.0f&&body2<=br*br);
++}
++
+ static i32 s26_tool_hand_authorized(const H576AAInvItem* it){
+     if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||h5754h_pause_active()||
+        g_h576bfMapTransitionActive||g_s26ManualHeal||g_s26CutsceneHandsHidden)return 0;
+@@ -11636,19 +11679,17 @@
+     if(op=='K'||op=='D'){
+         static i32 tracerReady;static u32 tracerRejectLogs;
+         if(!h576c_ci_streq(logical,"Tracer_Fluid")||g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||
+-           !p2_xr_origin_set()||h5754h_pause_active()||g_h576bfMapTransitionActive||g_s26ManualHeal||g_s26CutsceneHandsHidden)return 1;
++           !p2_xr_origin_set()||h5754h_pause_active()||g_h576bfMapTransitionActive||g_s26ManualHeal||g_s26CutsceneHandsHidden){tracerReady=0;return 1;}
+         H576AAInvItem* it=h576aa_inv_find_logical(logical);
+         if(!s26_tool_hand_authorized(it)){tracerReady=0;if(tracerRejectLogs++<8u)ext_Log(">>> S26Z TRACER: no authorized live held inventory carrier; state %s",g_h5729LastClassName);return 1;}
+         if(op=='K'){h576aa_run_global("PlayerToolHandler","cScrPlayerToolHandler","_Global_VRTracerCapAuthorize");return 1;}
+-        if(!p_h14GetMatrix||!p2_camera_obj())return 1;
++        if(!p_h14GetMatrix||!p2_camera_obj()){tracerReady=0;return 1;}
+         float bm[16];p_h14GetMatrix(it->raw,bm);
+         volatile float* mid=p2_eye_mid();volatile float* origin=p2_xr_origin();
+         float wx,wy,wz;tracking_delta_to_game(mid[0]-origin[0],mid[1]-origin[1],mid[2]-origin[2],&wx,&wy,&wz);
+         float* base=(float*)((u8*)p2_camera_obj()+0x10);
+-        float neck=0.123452800f;
+-        float x=bm[12]+bm[4]*neck-base[0]-wx,y=bm[13]+bm[5]*neck-base[1]-wy,z=bm[14]+bm[6]*neck-base[2]-wz;
+-        float d2=x*x+y*y+z*z,r=0.18f*h5755ea_world_units_per_meter();
+-        if(d2>=0.0f&&d2<=r*r){
++        float head[3]={base[0]+wx,base[1]+wy,base[2]+wz};
++        if(s26ci_tracer_near(bm,head,h5755ea_world_units_per_meter(),tracerReady)){
+             if(!tracerReady){for(i32 h=0;h<2;++h)if(g_h14GripBody[h]==it->raw)h576ac_queue_haptic(h,H576AC_HAPTIC_READY);ext_Log(">>> S26Z TRACER: held bottle entered use radius; starting authored-use dwell");}
+             tracerReady=1;h576aa_run_global("PlayerToolHandler","cScrPlayerToolHandler","_Global_VRTracerNearFace");
+         }else tracerReady=0;

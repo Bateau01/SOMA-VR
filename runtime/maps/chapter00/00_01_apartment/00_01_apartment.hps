@@ -1670,6 +1670,12 @@ class cScrMap : iScrMap
 		mbUsingLaptop = false;
 	}
 
+    bool VR_CanLeaveTerminalForPhysicalPickup(const tString &in asEntityName)
+    {
+        // Laptop_OnExit only releases the mail UI; no chair or cutscene owns it.
+        return asEntityName=="laptop_touchscreen_1";
+    }
+
 	//-------------------------------------------------------
 
 	void Laptop_OnGui(const tString&in asEntityName, float afTimeStep) 

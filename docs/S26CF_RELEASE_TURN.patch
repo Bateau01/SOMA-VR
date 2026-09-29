@@ -1,0 +1,58 @@
+--- S26CE/source/s26n.c
++++ S26CF/source/s26n.c
+@@ -12787,6 +12787,8 @@
+     ext_Log(">>> S6-HANDS5756T OMNITOOL UPGRADE-CHIP PHYSICAL ACQUIRE %s #%u: authored Prop_Tool pickup + inventory registration succeeded; exact world chip is now HQ-held and persistent physical regrabs bypass PlayerState_Interact_Grab",hand==0?"L":"R",g_h576kChipPickupLatches);return 1;
+ }
+ static const void* h568_first_external_joint(const void* body);
++static i32 h5755cj_reassert_native_grab_state(i32 hand);
++static i32 h5755gw_adopt_existing_same_owner_grab(i32 hand,void* owner);
+ static i32 s26ce_latch_readable(i32 hand,const H25PendingInteract* p,void* owner,void* wrapper){
+     if(hand<0||hand>1||!p||p->jointed||g_h14GripBody[hand]||
+        wrapper!=g_s26bvReadableWrapper||g_s26bvReadableStep!=g_h14PhysicsSteps||
+@@ -12803,10 +12805,16 @@
+     if(g_h14GripBody[hand]!=p->newtonBody)return 0;
+     // Adopt the native readable state once; never replay its open callback.
+     g_h5755chGrabPending[hand].valid=0;
+-    g_h5755chGrabExpected=0;g_h5755chGrabStateActive=1;
++    g_h5755chGrabExpected=1;g_h5755chGrabStateActive=0;
+     g_h5755chGrabStateBody=p->newtonBody;g_h5755chGrabStateWrapper=wrapper;
+     g_h5755chGrabStateOwner=owner;g_h5755chGrabPrimaryHand=hand;
+-    g_h5755cjGrabExpectedStep=0;h5755ch_detach_native_grab_button(hand);h5755ch_verify_grab_script();
++    // Do not infer the completed player state from a successful callback.
++    // Commit through the established loose-grab route and observe the result.
++    g_h5755cjGrabExpectedStep=g_h14PhysicsSteps;
++    h5755cj_reassert_native_grab_state(hand);
++    h5729_state_boundary_observe("readable-grab-commit");
++    if(!g_h5755chGrabStateActive)h5755gw_adopt_existing_same_owner_grab(hand,owner);
++    h5755ch_verify_grab_script();
+     ext_Log(">>> S26CE READABLE: exact accepted pickup contact latched in the same transaction");
+     return 1;
+ }
+--- S26CE/runtime/script/player/PlayerState_Interact_Slide.hps
++++ S26CF/runtime/script/player/PlayerState_Interact_Slide.hps
+@@ -243,13 +243,7 @@
+   {
+    if(_HPL3VR_RuntimeActive_Slide() && mbHPL3VRTrackedSlide)
+    {
+-    iPhysicsJoint@ rail=cLux_ID_Joint(mCurrentJointID);
+-    if(rail !is null)
+-    {
+-     cVector3f pin=rail.GetPinDir();
+-     cVector3f velocity=releasedBody.GetLinearVelocity();
+-     releasedBody.SetLinearVelocity(velocity-pin*cMath_Vector3Dot(pin,velocity));
+-    }
++    // Preserve release momentum; only retire the VR input command.
+     mfSlideSpeed=0; mfHPL3VRDirectSpeed=0;
+     mbHPL3VRDirectSpeed=false; mbHPL3VRTrackedSlide=false;
+     mvMoveAdd=cVector2f(0); mvLastMouseAdd=cVector2f(0);
+--- S26CE/scripts/apply_payload.py
++++ S26CF/scripts/apply_payload.py
+@@ -85,7 +85,7 @@
+ SUBMIT_EYE_CALL_RVAS=(0xD315,0xD338,0xF6FC,0xF721)
+ SUBMIT_EYE_OLD_RVA=0x139F0
+ BANNER_OLD=b'hpl3vr S5-P2 %s %s  \x00'
+-BANNER_NEW=b'hpl3vr S26CE_ %s %s \x00'
++BANNER_NEW=b'hpl3vr S26CF_ %s %s \x00'
+ KEYHELP_REPLACEMENTS=(
+  (b'Keys:  F2  = engine hook (enable this first)', b'Keys:  legacy keyboard debug lockout active'),
+  (b'       F10 = native stereo, side by side     F11 = swap halves', b'       Gameplay VR controls are OpenXR-controller native.'),

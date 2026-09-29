@@ -193,6 +193,30 @@ class cScrPlayerState_Interact_Terminal : iScrPlayerState_Interact, iScrPlayerSt
 	
 	//------------------------------------------------------------
 	
+    void _Global_VRGetPhysicalReturnState()
+    {
+        // Preserve authored destinations such as Sit, without re-entering a
+        // terminal whose OnLeaveState already released its prop and GUI.
+        cScript_SetGlobalReturnInt(mlPreviousState==ePlayerState_Terminal ? ePlayerState_Normal : mlPreviousState);
+    }
+    void _Global_VRLeaveForPhysicalPickup()
+    {
+        if(!_HPL3VR_RuntimeActive_TerminalState()) return;
+        cLuxMap@ map=cLux_GetCurrentMap();
+        if(map is null) return;
+        if(msLeaveCallback!="" && map.ScriptMethodExists("void "+msLeaveCallback+"(const tString &in asEntityName)"))
+        {
+            // A map may explicitly permit pickups from a walk-up terminal.
+            // Other authored callbacks retain their chair/sequence ownership.
+            tString signature="bool VR_CanLeaveTerminalForPhysicalPickup(const tString &in asEntityName)";
+            cLuxProp@ terminal=cLux_ID_Prop(mPropID);
+            if(terminal is null || !map.ScriptMethodExists(signature) || !map.ScriptPrepare(signature)) return;
+            tString name=terminal.GetName();
+            map.SetArgString(0,name);
+            if(!map.ScriptExecute() || !map.GetReturnBool()) return;
+        }
+        mBaseObj.mpPlayer.ChangeState(mlPreviousState);
+    }
 	void Exit()
 	{
 		mbExit=true;

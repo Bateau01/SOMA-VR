@@ -1,0 +1,240 @@
+--- S26CG/source/s26n.c
++++ S26CH/source/s26n.c
+@@ -12176,6 +12176,60 @@
+     p_s26MeshMatrix(mesh,hm);p_s26MeshReset(mesh);
+     g_s26MeshSuccess=1;g_s26NativeHandVisible[h]=1;
+ }
++/* S26CH: split authored movement bob from tracked hand targets. Character
++   camera offset application: Soma.exe+241500 -> +240910. Local X/Z use the
++   character right/forward basis at +18c/+180; local Y stays world vertical.
++   The cache is bound to the publishing character and its actual camera. */
++static float g_s26chBobLocal[3],g_s26chBobWorld[3];
++static void *g_s26chBobCharacter,*g_s26chBobCamera;
++static u8 g_s26chBobReady;
++typedef void (__attribute__((ms_abi)) *PFN_S26CH_CameraOffset)(void*,const float*);
++static PFN_S26CH_CameraOffset o_s26chCameraOffset;
++static void s26ch_bob_reset(void){
++    g_s26chBobCharacter=0;g_s26chBobCamera=0;
++    for(i32 i=0;i<3;++i)g_s26chBobLocal[i]=g_s26chBobWorld[i]=0;
++}
++static i32 s26ch_bob_packet(const void* data){
++    char buf[128];if(!h5748n_copy_tstring((void*)data,buf,sizeof(buf)))return 0;
++    char* fields[3]={buf,0,0};u32 n=1;
++    for(u32 i=0;buf[i];++i)if(buf[i]=='|'){if(n==3)return 0;buf[i]=0;fields[n++]=buf+i+1;}
++    float v[3];if(n!=3)return 0;
++    for(i32 i=0;i<3;++i)if(!h11_parse_float(fields[i],v+i)||!h9_good(v[i],1.0f))return 0;
++    void* player=h5755ax_current_player();
++    if(!player||!h20_mem_readable((u8*)player+0x170,8))return 0;
++    void* character=*(void**)((u8*)player+0x170);if(!character)return 0;
++    for(i32 i=0;i<3;++i)g_s26chBobLocal[i]=v[i];
++    g_s26chBobCharacter=character;return 1;
++}
++static void s26ch_bob_to_world(const float* v,const float* right,const float* forward,float* out){
++    out[0]=v[0]*right[0]+v[2]*forward[0];
++    out[1]=v[1]+v[0]*right[1]+v[2]*forward[1];
++    out[2]=v[0]*right[2]+v[2]*forward[2];
++}
++static void __attribute__((ms_abi)) s26ch_camera_offset(void* character,const float* offset){
++    g_s26chBobCamera=0;
++    if(character==g_s26chBobCharacter&&g_h576mScriptRuntimePublished==1&&p2_xr_on()){
++        u8* c=(u8*)character;
++        if(h20_mem_readable(c+0x180,0x70)&&c[0x1e8]){
++            s26ch_bob_to_world(g_s26chBobLocal,(float*)(c+0x18c),(float*)(c+0x180),g_s26chBobWorld);
++            g_s26chBobCamera=*(void**)(c+0x1b0);
++        }
++    }
++    if(o_s26chCameraOffset)o_s26chCameraOffset(character,offset);
++}
++static void s26ch_bob_apply(void* camera,float* pos){
++    if(!camera||camera!=g_s26chBobCamera||g_h576mScriptRuntimePublished!=1||!p2_xr_on())return;
++    for(i32 i=0;i<3;++i)pos[i]+=g_s26chBobWorld[i];
++}
++static void s26ch_bob_install(u8* soma){
++    if(g_s26chBobReady||!soma)return;
++    const u8 sig[16]={0x8b,0x02,0x0f,0x57,0xc9,0x89,0x81,0xbc,0x01,0x00,0x00,0x8b,0x42,0x04,0x89,0x81};
++    u8* t=soma+0x241500;if(!h20_mem_readable(t,16))return;
++    for(i32 i=0;i<16;++i)if(t[i]!=sig[i])return;
++    if(ext_MH_CreateHook(t,(void*)s26ch_camera_offset,(void**)&o_s26chCameraOffset)||ext_MH_EnableHook(t))return;
++    g_s26chBobReady=1;ext_Log(">>> S26CH MOVEMENT BOB SPLIT READY: native character camera-offset boundary; shared physical/render hand target; default unchanged");
++}
++
+ static i32 s26_install_native_hands(void){
+     if(g_s26MeshTried)return g_s26MeshReady;g_s26MeshTried=1;
+     u8* base=(u8*)ext_GetModuleHandleA(0);if(!base)return 0;
+@@ -12310,6 +12364,11 @@
+     if(h5748t_sso_eq(objectName,"VRPHONEQ",8u))return h5748t_sso_eq(functionName,"N",1u)?(u64)s26q_phone_near(className,1):(h5748t_sso_eq(functionName,"H",1u)?(u64)s26q_phone_near(className,0):0u);
+     if(h5748t_sso_eq(objectName,"VRSOCKETHELD",12u))return h5748t_sso_eq(functionName,"Q",1u)?(u64)s26o_socket_held(className,0):(h5748t_sso_eq(functionName,"R",1u)?(u64)s26o_socket_held(className,1):0u);
+     if(h5748t_sso_eq(objectName,"VRMECH",6u)){s26n_mechanism_token(className,functionName);return 1u;}
++    if(h5748t_sso_eq(objectName,"VRBOB",5u)){
++        if(h5748t_sso_eq(functionName,"RESET",5u)){s26ch_bob_reset();return 1u;}
++        if(h5748t_sso_eq(functionName,"SET",3u)&&g_s26chBobReady&&g_h576mScriptRuntimePublished==1&&p2_xr_on()&&s26ch_bob_packet(className))return 1u;
++        s26ch_bob_reset();return 0u;
++    }
+     if(h5748t_sso_eq(objectName,"VRCOMFORT",9u)){
+         if(h5748t_sso_eq(className,"R",1u)&&h5748t_sso_eq(functionName,"C",1u)){
+             if(g_h576mScriptRuntimePublished==1&&p2_xr_on())h5735_request_recenter("VR-settings-center");return 1u;
+@@ -13737,6 +13796,7 @@
+     if(!visual_pose_valid(hand)||!p2_xr_origin_set()||!p2_camera_obj())return 0;
+     volatile float* origin=p2_xr_origin();float dx=g_lastPose[hand].position.x-origin[0],dy=g_lastPose[hand].position.y-origin[1],dz=g_lastPose[hand].position.z-origin[2],wx,wy,wz;tracking_delta_to_game(dx,dy,dz,&wx,&wy,&wz);
+     float* body=(float*)((u8*)p2_camera_obj()+0x10);pos[0]=body[0]+wx;pos[1]=body[1]+wy;pos[2]=body[2]+wz;
++    s26ch_bob_apply(p2_camera_obj(),pos);
+     float spread=*p2_hand_spread()-0.18f,reach=*p2_hand_reach()-0.40f,height=*p2_hand_drop()+0.18f,side=(hand==0)?-spread:spread,offx=0.0f,offz=0.0f;
+     h5748o_tracking_horizontal_to_game(side,reach,&offx,&offz);if(h5748o_yaw_zero_active())g_h5748oFrameSyncOffsetCalls++;
+     pos[0]+=offx;pos[1]+=height;pos[2]+=offz;h10_make_model(hand,pos,1.0f,M);
+@@ -20256,6 +20316,7 @@
+ }
+ static void s26_install_held_filter(u8* soma){
+     s26bt_install_buoyancy_filter(soma);
++    s26ch_bob_install(soma);
+     if(g_s26OverlapReady||!soma)return;
+     const u8 sig[15]={0x48,0x89,0x5c,0x24,8,0x57,0x48,0x83,0xec,0x20,0x48,0x8b,0xca,0x49,0x8b};
+     const u8 getSig[8]={0x48,0x8b,0x81,0x70,1,0,0,0xc3};
+--- S26CG/runtime/script/player/MoveState_Normal.hps
++++ S26CH/runtime/script/player/MoveState_Normal.hps
+@@ -170,6 +170,8 @@
+ 	
+ 	void OnLeaveState(int alNextStateId)
+ 	{
++        if(mbVRBobDeltaSent) cScript_RunGlobalFunc("VRBOB","","RESET");
++        mbVRBobDeltaSent=false;
+ 		if(mlRunBreathingID>=0)
+ 		{
+ 			Emotion_StopBackgroundBreath(mlRunBreathingID);
+@@ -188,6 +190,8 @@
+ 	//------------------------------------------------------------
+ 	void Reset()
+ 	{
++        if(mbVRBobDeltaSent) cScript_RunGlobalFunc("VRBOB","","RESET");
++        mbVRBobDeltaSent=false;
+ 		/*mfJumpCount = 0;
+ 		mlExtraJumpCount =0;
+ 		mbJumping = false;
+@@ -740,12 +744,34 @@
+ 		
+ 		////////////////////////
+ 		//Set The Camera Add Position
+-		mBaseObj.mpPlayer.SetCameraPosAdd(eCameraAddType_Bob, mvHeadBob * mfHeadBobMul * fToolHeadBobMul);
+-		mBaseObj.mpPlayer.SetCameraRoll(ePlayerRoll_Move, cMath_ToRad(3*mvHeadBob.y * mfHeadBobMul + 15*mvHeadBob.y*fHealthMul * mfHeadBobMul));
+-	}
+-	
+-	//------------------------------------------------------------
+-	
++		ApplyVRMovementBob(mvHeadBob * mfHeadBobMul * fToolHeadBobMul,
++            cMath_ToRad(3*mvHeadBob.y * mfHeadBobMul + 15*mvHeadBob.y*fHealthMul * mfHeadBobMul));
++	}
++	
++	//------------------------------------------------------------
++	
++    // Keep the bob oscillator, footsteps and landing state alive. Only split
++    // its final presentation; crouch/lean/shake and physical XR motion are separate.
++    void ApplyVRMovementBob(const cVector3f &in bob,float roll)
++    {
++        cScript_SetGlobalReturnInt(0);
++        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetBobMask");
++        int mask=cScript_GetGlobalReturnInt();
++        bool hideHead=(mask&1)!=0;
++        bool hideHands=(mask&2)!=0;
++        cVector3f handDelta=(hideHead==hideHands) ? cVector3f(0) : (hideHead ? bob : bob*-1.0f);
++        // Cache only the difference between desired hand bob and camera bob.
++        // Native code converts this using the exact character basis when the
++        // matching camera offset is applied, before either hand consumes it.
++        if(handDelta!=cVector3f(0))
++            cScript_RunGlobalFunc("VRBOB",""+handDelta.x+"|"+handDelta.y+"|"+handDelta.z,"SET");
++        else if(mbVRBobDeltaSent) cScript_RunGlobalFunc("VRBOB","","RESET");
++        mbVRBobDeltaSent=handDelta!=cVector3f(0);
++        mBaseObj.mpPlayer.SetCameraPosAdd(eCameraAddType_Bob,hideHead ? cVector3f(0) : bob);
++        mBaseObj.mpPlayer.SetCameraRoll(ePlayerRoll_Move,hideHead ? 0.0f : roll);
++    }
++    [nosave] bool mbVRBobDeltaSent=false;
++
+ 	bool mbCrawlingWasMoving=false;
+ 	int mlCrawlingMoveDir=0;
+ 	
+--- S26CG/runtime/script/modules/MenuHandler.hps
++++ S26CH/runtime/script/modules/MenuHandler.hps
+@@ -975,6 +975,8 @@
+     [nosave] bool mbVRHideTrails=false;
+     [nosave] bool mbVRHideBlur=false;
+     [nosave] bool mbVRHideShake=false;
++    [nosave] bool mbVRHideHeadBob=false;
++    [nosave] bool mbVRHideHandBob=false;
+     [nosave] int mlVRVignette=0;
+     [nosave] array<int> mvVRButtonMap={0,1,2,3,4,5};
+     [nosave] int mlVRBindAction=-1;
+@@ -1046,6 +1048,8 @@
+             mbVRHideTrails=p.GetBool("SOMA_VR_Comfort","HideTrails",false);
+             mbVRHideBlur=p.GetBool("SOMA_VR_Comfort","HideBlur",false);
+             mbVRHideShake=p.GetBool("SOMA_VR_Comfort","HideShake",false);
++            mbVRHideHeadBob=p.GetBool("SOMA_VR_Comfort","HideHeadBob",false);
++            mbVRHideHandBob=p.GetBool("SOMA_VR_Comfort","HideHandBob",false);
+             mlVRVignette=p.GetInt("SOMA_VR_Comfort","Vignette",0);
+             if(mlVRVignette<0 || mlVRVignette>3) mlVRVignette=0;
+             array<bool> seen={false,false,false,false,false,false};bool valid=true;
+@@ -1099,6 +1103,8 @@
+         p.SetBool("SOMA_VR_Comfort","HideTrails",mbVRHideTrails);
+         p.SetBool("SOMA_VR_Comfort","HideBlur",mbVRHideBlur);
+         p.SetBool("SOMA_VR_Comfort","HideShake",mbVRHideShake);
++        p.SetBool("SOMA_VR_Comfort","HideHeadBob",mbVRHideHeadBob);
++        p.SetBool("SOMA_VR_Comfort","HideHandBob",mbVRHideHandBob);
+         p.SetInt("SOMA_VR_Comfort","Vignette",mlVRVignette);
+         p.SetBool("SOMA_VR_Eyes","Environment",mbVREyeEnvironment);p.SetBool("SOMA_VR_Eyes","AI",mbVREyeAI);
+         p.SetBool("SOMA_VR_Eyes","Flashlight",mbVREyeFlashlight);p.SetBool("SOMA_VR_Eyes","ExtraDistortion",mbVREyeDistortion);
+@@ -1235,10 +1241,11 @@
+             if(HPL3VR_Option("VIDEO",2)) next=2;
+             if(HPL3VR_Option("EYE TRACKING",3)) next=4;
+             if(HPL3VR_Option("AUDIO",4)) next=5;
++            if(HPL3VR_Option("MOVEMENT BOBBING",5)) next=6;
+             if(next>=0)
+             {
+                 mlVRComfortCategory=next;
+-                msVRSettingsSelected=next==0 ? "MOVEMENT DIRECTION" : (next==1 ? "TURNING" : (next==4 ? "REACTIVE ENVIRONMENT" : (next==5 ? "SPATIAL AUDIO" : "HIDE DISTORTION")));
++                msVRSettingsSelected=next==6 ? "HIDE HEAD BOBBING" : next==0 ? "MOVEMENT DIRECTION" : (next==1 ? "TURNING" : (next==4 ? "REACTIVE ENVIRONMENT" : (next==5 ? "SPATIAL AUDIO" : "HIDE DISTORTION")));
+                 msFocusNextFrame=msVRSettingsSelected;
+                 ImGui_SetTransCategory(cat); return true;
+             }
+@@ -1334,6 +1341,13 @@
+             changed=env!=mbVREyeEnvironment || ai!=mbVREyeAI || flash!=mbVREyeFlashlight || distortion!=mbVREyeDistortion;
+             mbVREyeEnvironment=env;mbVREyeAI=ai;mbVREyeFlashlight=flash;mbVREyeDistortion=distortion;
+         }
++        else if(mlVRComfortCategory==6)
++        {
++            bool head=HPL3VR_Toggle("HIDE HEAD BOBBING",0,mbVRHideHeadBob);
++            bool hands=HPL3VR_Toggle("HIDE HAND BOBBING",1,mbVRHideHandBob);
++            changed=head!=mbVRHideHeadBob || hands!=mbVRHideHandBob;
++            mbVRHideHeadBob=head;mbVRHideHandBob=hands;
++        }
+         else if(mlVRComfortCategory==5)
+         {
+             array<tString> modes={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};
+@@ -1350,7 +1364,7 @@
+             }
+             else if(mlVRComfortCategory>=0)
+             {
+-                msVRSettingsSelected=mlVRComfortCategory==0 ? "GAMEPLAY" : (mlVRComfortCategory==1 ? "CONTROLS" : (mlVRComfortCategory==4 ? "EYE TRACKING" : (mlVRComfortCategory==5 ? "AUDIO" : "VIDEO")));
++                msVRSettingsSelected=mlVRComfortCategory==6 ? "MOVEMENT BOBBING" : mlVRComfortCategory==0 ? "GAMEPLAY" : (mlVRComfortCategory==1 ? "CONTROLS" : (mlVRComfortCategory==4 ? "EYE TRACKING" : (mlVRComfortCategory==5 ? "AUDIO" : "VIDEO")));
+                 mlVRComfortCategory=-1; msFocusNextFrame=msVRSettingsSelected;
+             }
+             else
+@@ -1365,6 +1379,11 @@
+     }
+ 
+ 	void HPL3VR_GetRuntimeActive() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive); }
++
++    void HPL3VR_GetBobMask()
++    {
++        cScript_SetGlobalReturnInt(gbHPL3VRRuntimeActive ? ((mbVRHideHeadBob ? 1 : 0)+(mbVRHideHandBob ? 2 : 0)) : 0);
++    }
+ 
+     void HPL3VR_GetHideShake()
+     {
+--- S26CG/scripts/apply_payload.py
++++ S26CH/scripts/apply_payload.py
+@@ -85,7 +85,7 @@
+ SUBMIT_EYE_CALL_RVAS=(0xD315,0xD338,0xF6FC,0xF721)
+ SUBMIT_EYE_OLD_RVA=0x139F0
+ BANNER_OLD=b'hpl3vr S5-P2 %s %s  \x00'
+-BANNER_NEW=b'hpl3vr S26CG_ %s %s \x00'
++BANNER_NEW=b'hpl3vr S26CH_ %s %s \x00'
+ KEYHELP_REPLACEMENTS=(
+  (b'Keys:  F2  = engine hook (enable this first)', b'Keys:  legacy keyboard debug lockout active'),
+  (b'       F10 = native stereo, side by side     F11 = swap halves', b'       Gameplay VR controls are OpenXR-controller native.'),

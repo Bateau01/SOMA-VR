@@ -1,0 +1,227 @@
+--- S26CD/source/s26n.c
++++ S26CE/source/s26n.c
+@@ -5277,10 +5277,11 @@
+ 
+ static const void* g_s26bvReadableWrapper;
+ static u32 g_s26bvReadableStep;
++static i32 g_s26ceDirectGrabDispatch;
+ static void h30_native_use_begin(i32 hand,const void* body,i32 jointed,void* owner){
+     if(hand<0||hand>1||!p_h16MouseEvent)return;
+     if(g_h30NativeMouseDown)return;
+-    i32 readable=body==g_s26bvReadableWrapper&&g_s26bvReadableStep==g_h14PhysicsSteps;
++    i32 readable=g_s26ceDirectGrabDispatch||(body==g_s26bvReadableWrapper&&g_s26bvReadableStep==g_h14PhysicsSteps);
+     g_s26bvReadableWrapper=0;
+     if(!readable)p_h16MouseEvent(0x0002u,0,0,0,0);
+     h39_reset_use(hand);g_h39NativeUseProp[hand]=owner;g_h42UseStartYaw[hand]=p2_player_yaw();g_h42UseStartLookFrames[hand]=g_h16LookFrames;g_h42LookTailFrames=0;
+@@ -12785,6 +12786,30 @@
+     ext_Log(">>> S6-HANDS5756T OMNITOOL UPGRADE-CHIP CONTACT-SEAT %s #%u: stock Prop_Tool pickup accepted, exact SAME fresh-contact body %p seated from the already-authorized H25 contact at (%+.3f %+.3f %+.3f) | mass %.3f kg | no post-pickup BV/proximity query",hand==0?"L":"R",g_h576oChipContactSeatWins,body,(double)p->contact[0],(double)p->contact[1],(double)p->contact[2],(double)mass);
+     ext_Log(">>> S6-HANDS5756T OMNITOOL UPGRADE-CHIP PHYSICAL ACQUIRE %s #%u: authored Prop_Tool pickup + inventory registration succeeded; exact world chip is now HQ-held and persistent physical regrabs bypass PlayerState_Interact_Grab",hand==0?"L":"R",g_h576kChipPickupLatches);return 1;
+ }
++static const void* h568_first_external_joint(const void* body);
++static i32 s26ce_latch_readable(i32 hand,const H25PendingInteract* p,void* owner,void* wrapper){
++    if(hand<0||hand>1||!p||p->jointed||g_h14GripBody[hand]||
++       wrapper!=g_s26bvReadableWrapper||g_s26bvReadableStep!=g_h14PhysicsSteps||
++       p->physicsStep!=g_h5755haGripEdgeStep[hand]||!g_lastSqueezeActive[hand]||g_lastSqueeze[hand]<=0.55f)return 0;
++    if(h482_body_owner(p->newtonBody,0)!=owner||h568_first_external_joint(p->newtonBody))return 0;
++    if(g_h30NativeMouseDown&&(g_h30NativeUseHand!=hand||g_h39NativeUseProp[hand]!=owner))return 0;
++    float mass=0,ix=0,iy=0,iz=0;if(!p_h14GetMass)return 0;
++    p_h14GetMass(p->newtonBody,&mass,&ix,&iy,&iz);if(!(mass>0.001f))return 0;
++    float hp[3],hm[16],gc[3];if(!h14_hand_pose(hand,hp,hm)||!h15_grip_center_world(hand,hm,gc))return 0;
++    h30_native_use_begin(hand,wrapper,0,owner);
++    g_h5755gwPreserveExistingGrabUse[hand]=1;g_h552ContactLatchBypass[hand]=1;
++    h14_latch(hand,p->newtonBody,0.0f,mass,hm,gc,0.035f,p->contact,0,0,0);
++    g_h552ContactLatchBypass[hand]=0;g_h5755gwPreserveExistingGrabUse[hand]=0;
++    if(g_h14GripBody[hand]!=p->newtonBody)return 0;
++    // Adopt the native readable state once; never replay its open callback.
++    g_h5755chGrabPending[hand].valid=0;
++    g_h5755chGrabExpected=0;g_h5755chGrabStateActive=1;
++    g_h5755chGrabStateBody=p->newtonBody;g_h5755chGrabStateWrapper=wrapper;
++    g_h5755chGrabStateOwner=owner;g_h5755chGrabPrimaryHand=hand;
++    g_h5755cjGrabExpectedStep=0;h5755ch_detach_native_grab_button(hand);h5755ch_verify_grab_script();
++    ext_Log(">>> S26CE READABLE: exact accepted pickup contact latched in the same transaction");
++    return 1;
++}
+ static H25PendingInteract g_h25Pending[2];
+ static u8 g_h25PendingValid[2];
+ static const void* g_h25AttemptBody[2];
+@@ -13372,6 +13397,10 @@
+     for(i32 hand=0;hand<2;++hand){
+         H5755CHGrabPending p=g_h5755chGrabPending[hand];if(!p.valid)continue;g_h5755chGrabPending[hand].valid=0;
+         if(!p.body||g_h14GripBody[hand]!=p.body||(g_h15GripJointed[hand]&&!g_h484ClusterGrip[hand])){g_h5755chGrabFallback[hand]++;continue;}
++        if(!s26_physical_only_body(p.body)&&h5720_streq(g_h5729LastClassName,"cScrPlayerState_Interact_Terminal")){
++            h576aa_run_global("State_Interact_Terminal","cScrPlayerState_Interact_Terminal","_Global_VRLeaveForPhysicalPickup");
++            h5729_state_boundary_observe("physical-pickup-terminal-exit");
++        }
+         if(s26_physical_only_body(p.body)||!h5720_streq(g_h5729LastClassName,"cScrPlayerState_Normal")){
+             if(g_s26GrabCommitSkips++<24u)ext_Log(">>> S26K GRAB COMMIT SKIPPED: hand %d physical inventory or non-Normal state %s; tracked hold retained",hand,g_h5729LastClassName);
+             continue;
+@@ -13383,7 +13412,7 @@
+         PFN_H25_CanInteract fCan=(PFN_H25_CanInteract)can;PFN_H25_OnInteract fOn=(PFN_H25_OnInteract)on;u64 cr=fCan(entity,0,wrapper);
+         if(!(cr&0xffu)){g_h5755chGrabFallback[hand]++;ext_Log(">>> S6-HANDS5755CJ NATIVE GRAB CanInteract FALSE %s: owner %p body %p | VR physical hold retained",hand==0?"L":"R",entity,p.body);continue;}
+         h5724_capture_pre_interact_state(hand);h5724_commit_pre_interact_state(hand);
+-        g_h5755chGrabExpected=1;g_h5755chGrabStateBody=p.body;g_h5755chGrabStateWrapper=wrapper;g_h5755chGrabStateOwner=entity;g_h5755chGrabPrimaryHand=hand;g_h5755cjGrabExpectedStep=g_h14PhysicsSteps;h30_native_use_begin(hand,wrapper,0,entity);
++        g_h5755chGrabExpected=1;g_h5755chGrabStateBody=p.body;g_h5755chGrabStateWrapper=wrapper;g_h5755chGrabStateOwner=entity;g_h5755chGrabPrimaryHand=hand;g_h5755cjGrabExpectedStep=g_h14PhysicsSteps;g_s26ceDirectGrabDispatch=1;h30_native_use_begin(hand,wrapper,0,entity);g_s26ceDirectGrabDispatch=0;
+         H25TString empty;zero_bytes(&empty,sizeof(empty));empty.capacity=15u;u64 orv=fOn(entity,0,wrapper,p.contact,&empty);
+         if(!(orv&0xffu)){g_h5755chGrabFallback[hand]++;h5755cj_abort_grab_expectation("cLuxProp::OnInteract returned FALSE after pre-armed native Interact");continue;}
+         if(s26_physical_only_body(p.body)||g_h576avThetaPendingHand==hand){
+@@ -13610,6 +13639,7 @@
+                 // Do not arm a competing native mouse/Grab lifetime on the slot.
+                 g_h25LastDispatchBody=p.newtonBody;g_h25LastDispatchStep=g_h14PhysicsSteps;continue;
+             }
++            if(s26ce_latch_readable(hand,&p,entity,wrapper)){g_h25LastDispatchBody=p.newtonBody;g_h25LastDispatchStep=g_h14PhysicsSteps;continue;}
+             h30_native_use_begin(hand,wrapper,p.jointed,entity);
+             i32 h5755haEdgeLoose=h5755ha_arm_edge_native_after_true(hand,&p,entity,wrapper,h5755haPreMass,h5755haPostMass);
+             if(!h5755haEdgeLoose&&!p.jointed)h481_bind_nearby_mechanism(hand,p.physicsStep,p.contact,entity,wrapper);
+--- S26CD/runtime/script/player/PlayerState_Interact.hps
++++ S26CE/runtime/script/player/PlayerState_Interact.hps
+@@ -66,7 +66,13 @@
+ 	void EnterInteractState(int alPrevStateId)
+ 	{
+ 		if(alPrevStateId<0) mlPreviousState = ePlayerState_Normal;
+-		else				mlPreviousState = alPrevStateId;
++		else                mlPreviousState = alPrevStateId;
++        if(alPrevStateId==ePlayerState_Terminal && _HPL3VR_RuntimeActive_Interact())
++        {
++            cScript_SetGlobalReturnInt(ePlayerState_Normal);
++            cScript_RunGlobalFunc("State_Interact_Terminal","","_Global_VRGetPhysicalReturnState");
++            mlPreviousState=cScript_GetGlobalReturnInt();
++        }
+ 	}
+ 
+ 	//-----------------------------------------------------------------------
+--- S26CD/runtime/script/player/PlayerState_Interact_Slide.hps
++++ S26CE/runtime/script/player/PlayerState_Interact_Slide.hps
+@@ -195,6 +195,7 @@
+   mvLastMouseAdd =cVector2f(0); 
+  
+   mfSlideSpeed =0; 
++  mbHPL3VRTrackedSlide = false;
+   mbHPL3VRDirectSpeed = false;
+   mfHPL3VRDirectSpeed = 0.0f;
+    
+@@ -237,7 +238,24 @@
+   if (msGrabEndSound!="") 
+    cLux_ID_Prop(mPropID).PlaySound("GrabEnd",msGrabEndSound,true, true); 
+     
+-  cLux_ID_Body(mBodyID).SetGravity(mbHasGravity); 
++  iPhysicsBody@ releasedBody=cLux_ID_Body(mBodyID);
++  if(releasedBody !is null)
++  {
++   if(_HPL3VR_RuntimeActive_Slide() && mbHPL3VRTrackedSlide)
++   {
++    iPhysicsJoint@ rail=cLux_ID_Joint(mCurrentJointID);
++    if(rail !is null)
++    {
++     cVector3f pin=rail.GetPinDir();
++     cVector3f velocity=releasedBody.GetLinearVelocity();
++     releasedBody.SetLinearVelocity(velocity-pin*cMath_Vector3Dot(pin,velocity));
++    }
++    mfSlideSpeed=0; mfHPL3VRDirectSpeed=0;
++    mbHPL3VRDirectSpeed=false; mbHPL3VRTrackedSlide=false;
++    mvMoveAdd=cVector2f(0); mvLastMouseAdd=cVector2f(0);
++   }
++   releasedBody.SetGravity(mbHasGravity);
++  } 
+   
+   ///////////////////////////// 
+   //Resets some general stuff 
+@@ -423,9 +441,9 @@
+   //Update speed. H57.55EA's VR-only sentinel supplies physical rail speed
+   //directly. Desktop/mouse/gamepad keeps the exact authored recurrence.
+   float fPrevSlideSpeed = mfSlideSpeed;
+-  if(mbHPL3VRDirectSpeed)
++  if(mbHPL3VRTrackedSlide)
+   {
+-   mfSlideSpeed = mfHPL3VRDirectSpeed;
++   mfSlideSpeed = mbHPL3VRDirectSpeed ? mfHPL3VRDirectSpeed : 0.0f;
+   }
+   else
+   {
+@@ -533,6 +551,7 @@
+    {
+     mfHPL3VRDirectSpeed = avAmount.x;
+     mbHPL3VRDirectSpeed = true;
++    mbHPL3VRTrackedSlide = true;
+     return false;
+    }
+    cVector2f vAmount(avAmount.x, avAmount.y); 
+@@ -547,11 +566,7 @@
+   // Moving 
+   else if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove) 
+   { 
+-   if (avAmount.SqrLength() < 0.01) return true; 
+-    
+-   cVector2f vAmount(avAmount.x, avAmount.y*-1); 
+-   mvMoveAdd += vAmount * mfMoveToMouseAddFactor; 
+-   return true; 
++   return true; // S26CE: locomotion is not drawer drag input. 
+   } 
+    
+   return true; 
+@@ -660,6 +675,7 @@
+  
+  float mfSlideSpeed; 
+  bool mbHPL3VRDirectSpeed;
++ bool mbHPL3VRTrackedSlide=false;
+  float mfHPL3VRDirectSpeed;
+  
+  float mfMoveToMouseAddFactor; 
+--- S26CD/runtime/script/player/PlayerState_Interact_Terminal.hps
++++ S26CE/runtime/script/player/PlayerState_Interact_Terminal.hps
+@@ -193,6 +193,30 @@
+ 	
+ 	//------------------------------------------------------------
+ 	
++    void _Global_VRGetPhysicalReturnState()
++    {
++        // Preserve authored destinations such as Sit, without re-entering a
++        // terminal whose OnLeaveState already released its prop and GUI.
++        cScript_SetGlobalReturnInt(mlPreviousState==ePlayerState_Terminal ? ePlayerState_Normal : mlPreviousState);
++    }
++    void _Global_VRLeaveForPhysicalPickup()
++    {
++        if(!_HPL3VR_RuntimeActive_TerminalState()) return;
++        cLuxMap@ map=cLux_GetCurrentMap();
++        if(map is null) return;
++        if(msLeaveCallback!="" && map.ScriptMethodExists("void "+msLeaveCallback+"(const tString &in asEntityName)"))
++        {
++            // A map may explicitly permit pickups from a walk-up terminal.
++            // Other authored callbacks retain their chair/sequence ownership.
++            tString signature="bool VR_CanLeaveTerminalForPhysicalPickup(const tString &in asEntityName)";
++            cLuxProp@ terminal=cLux_ID_Prop(mPropID);
++            if(terminal is null || !map.ScriptMethodExists(signature) || !map.ScriptPrepare(signature)) return;
++            tString name=terminal.GetName();
++            map.SetArgString(0,name);
++            if(!map.ScriptExecute() || !map.GetReturnBool()) return;
++        }
++        mBaseObj.mpPlayer.ChangeState(mlPreviousState);
++    }
+ 	void Exit()
+ 	{
+ 		mbExit=true;
+--- S26CD/runtime/maps/chapter00/00_01_apartment/00_01_apartment.hps
++++ S26CE/runtime/maps/chapter00/00_01_apartment/00_01_apartment.hps
+@@ -1670,6 +1670,12 @@
+ 		mbUsingLaptop = false;
+ 	}
+ 
++    bool VR_CanLeaveTerminalForPhysicalPickup(const tString &in asEntityName)
++    {
++        // Laptop_OnExit only releases the mail UI; no chair or cutscene owns it.
++        return asEntityName=="laptop_touchscreen_1";
++    }
++
+ 	//-------------------------------------------------------
+ 
+ 	void Laptop_OnGui(const tString&in asEntityName, float afTimeStep) 
+--- S26CD/scripts/apply_payload.py
++++ S26CE/scripts/apply_payload.py
+@@ -85,7 +85,7 @@
+ SUBMIT_EYE_CALL_RVAS=(0xD315,0xD338,0xF6FC,0xF721)
+ SUBMIT_EYE_OLD_RVA=0x139F0
+ BANNER_OLD=b'hpl3vr S5-P2 %s %s  \x00'
+-BANNER_NEW=b'hpl3vr S26CD_ %s %s \x00'
++BANNER_NEW=b'hpl3vr S26CE_ %s %s \x00'
+ KEYHELP_REPLACEMENTS=(
+  (b'Keys:  F2  = engine hook (enable this first)', b'Keys:  legacy keyboard debug lockout active'),
+  (b'       F10 = native stereo, side by side     F11 = swap halves', b'       Gameplay VR controls are OpenXR-controller native.'),

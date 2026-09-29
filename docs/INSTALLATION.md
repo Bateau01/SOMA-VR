@@ -30,13 +30,13 @@ If you crash, please also include the crash log found in your SOMA game root dir
 
 ## Settings and calibration
 
-Use the in-game **VR SETTINGS** page. Your existing `hpl3vr_vr_settings.ini` is not replaced by this package. The root calibration file is also preserved. On a fresh installation, the launcher copies the reference rig calibration out of `defaults` only if the root calibration is missing. The reference contains hand orientation and bone-fit parameters.
+Use the in-game **VR SETTINGS** page. The package now includes a root `hpl3vr_vr_settings.ini` with clean defaults (`body_slot_debug_visual=0`). Back up or keep your existing root INI when extracting an update if you have customized it. Extracting the packaged INI over yours replaces its values. The launcher only creates it from `defaults` when it is missing; it never overwrites an existing INI. In-game menu preferences in your user profile are separate. The root calibration file is also preserved. On a fresh installation, the launcher copies the reference rig calibration out of `defaults` only if the root calibration is missing. The reference contains hand orientation and bone-fit parameters.
 
 Do not copy another player's saves or runtime FOV cache. Let the runtime create its own cache. Retired SET_HAND batch files are not included; normal story-driven hand selection remains the intended path.
 
 ## If something goes wrong
 
-- **Unsupported executable:** the launcher detected a different `Soma.exe` hash. Report the game edition/version and hash. Do not assume fixed native addresses are compatible with another executable.
+- **Other storefront or unsupported executable:** run `Check-SOMA-VR-Compatibility.cmd` and send `SOMA-VR-compatibility-report.json` with the storefront/version. An equivalent-engine result can be tried with `Launch-SOMA-VR.cmd -Experimental`; a different engine layout remains blocked and needs a native port. See the compatibility guide. GOG/Epic have not been validated.
 - **SOMA remains running after quitting:** relaunch with Launch-SOMA-VR.cmd, or run Stop-SOMA-VR.cmd to close it without restarting. Both commands close all Soma.exe / Soma_NoSteam.exe instances, including active games; save progress first.
 - **VR initialization fails:** confirm the headset connection and active OpenXR runtime, then examine `hpl3vr.log` in the game directory.
 - **Missing hand family/material:** check that all `hand_*.skin`, `hands_*.dds` and `entities/soma_vr` files were copied, not only the DLL.

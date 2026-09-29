@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "description": "S26CM reference: tested Steam executable. Engine-layout equivalence is not storefront gameplay validation.",
+  "sha256": "7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113",
+  "machine": 34404,
+  "characteristics": 34,
+  "optional_header_sha256": "d67b86ac8be01b602e3e52aee15187aa31255cb8423aaab5b35850f602cef766",
+  "sections": [
+    {
+      "name": ".text",
+      "header_sha256": "b721500d750dbfed6792b988932da893393ea8474362a668b77ac0f0437043c5",
+      "rva": 4096,
+      "virtual_size": 6830256,
+      "raw_size": 6830592,
+      "raw_offset": 1024,
+      "sha256": "3e8f945afea8d04f80a368d825862f09a481eea565940ee69f3ddbeeffd20a4a"
+    },
+    {
+      "name": ".rdata",
+      "header_sha256": "124456eff863b7b2d62f4a47797fef5f66a0050666d9823e378efffb1e16c227",
+      "rva": 6836224,
+      "virtual_size": 1579400,
+      "raw_size": 1579520,
+      "raw_offset": 6831616,
+      "sha256": "e647a1748532578815e6ba8b240b4dc1908608a1d01f2657675dc0d0e0efdc58"
+    },
+    {
+      "name": ".data",
+      "header_sha256": "f1623199a611428dc498b9bd70d9bdcd8929bff86bfcabdabc3595422d81a742",
+      "rva": 8417280,
+      "virtual_size": 213784,
+      "raw_size": 55296,
+      "raw_offset": 8411136,
+      "sha256": "bf7666ff377f5b2400f9bb94b2ee8fffa2a5a48d65ba554c25a296022d59fe12"
+    },
+    {
+      "name": ".pdata",
+      "header_sha256": "3c79861fa00664c8bffaa37e09c527edfb858cc078d39e0e7665a14714066948",
+      "rva": 8634368,
+      "virtual_size": 248928,
+      "raw_size": 249344,
+      "raw_offset": 8466432,
+      "sha256": "24a9849f4b71899fc26130b5b4987881330732bfe4db1caf81c622bd68bcf1ff"
+    },
+    {
+      "name": ".tls",
+      "header_sha256": "41ca40c618430dcb035825b703879edce1e5704479b15e32fe881ef0a4919cb3",
+      "rva": 8884224,
+      "virtual_size": 121,
+      "raw_size": 512,
+      "raw_offset": 8715776,
+      "sha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+    },
+    {
+      "name": ".rsrc",
+      "header_sha256": "ce7e1eb7699f101eb9be656e626011947b5f31309654c4762d04945946ee164c",
+      "rva": 8888320,
+      "virtual_size": 470912,
+      "raw_size": 471040,
+      "raw_offset": 8716288,
+      "sha256": null
+    },
+    {
+      "name": ".reloc",
+      "header_sha256": "a37cd171b91b5e61d8f474ddb627b1bab3dccefa0b0ffb12d854109dd9301da9",
+      "rva": 9359360,
+      "virtual_size": 53366,
+      "raw_size": 53760,
+      "raw_offset": 9187328,
+      "sha256": "7ec108f904a844c57cbe6a94446516d01fa09c5122969ead63049ca9b5a6b293"
+    }
+  ]
+}
