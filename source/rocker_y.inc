@@ -1,6 +1,6 @@
 /* S26Y EXPERIMENT: only script-identified rocker assets; no general icon13 override. */
 static i32 s26y_gate(void){return g_h576mScriptRuntimePublished==1&&p2_xr_on()&&p2_xr_running()&&!g_h576bfMapTransitionActive&&g_h5753cAuthorityEnabled;}
-static void s26y_reset(void){zero_bytes(g_s26yRocker,sizeof(g_s26yRocker));g_s26yCount=0;g_s26yCapture=0;g_s26yMainWrapper=0;g_s26yMainRaw=0;g_s26yOwner=0;}
+static void s26y_reset(void){s26dd_forget_button_contacts();zero_bytes(g_s26yRocker,sizeof(g_s26yRocker));g_s26yCount=0;g_s26yCapture=0;g_s26yMainWrapper=0;g_s26yMainRaw=0;g_s26yOwner=0;}
 static i32 s26y_id(const H5730TString* text,u32* id){
     char value[16];if(!h5748n_copy_tstring((void*)text,value,sizeof(value))||!value[0])return 0;
     u32 n=0;for(u32 i=0;value[i];++i){u32 d=(u32)(value[i]-'0');if(d>9u||n>214748364u||(n==214748364u&&d>7u))return 0;n=n*10u+d;}*id=n;return 1;

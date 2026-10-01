@@ -1232,7 +1232,7 @@ class cScrMap : iScrMap
     {
         mfVRAlphaPoll-=afTimeStep;
         if(mfVRAlphaPoll>0) return;
-        mfVRAlphaPoll=0.1f;
+        mfVRAlphaPoll=0.05f; // S26CX: match flower contact polling.
         if(!_HPL3VR_AlphaActive() || !HPL3VR_AlphaEligible()) return;
         iLuxEntity@ entity=Map_GetEntity("04_03_wau_monster_mouth_1");
         if(entity is null) return;
@@ -1253,7 +1253,9 @@ class cScrMap : iScrMap
         cVector3f axis=rim-root.GetWorldPosition();
         float length=axis.Length();if(length<0.01f) return;
         axis*=1.0f/length;
-        cVector3f target=rim-axis*0.08f;
+        // S26DB: j_lip endpoints belong to the inner jaw. The outer fleshy
+        // opening in anus_low is farther forward; keep insertion behind it.
+        cVector3f target=rim+axis*0.22f;
         cScript_RunGlobalFunc("VRHEAL","Alpha","C");
         iPhysicsBody@ body=mouth.GetMainBody();
         cScript_RunGlobalFunc("VRHEAL","Alpha","D");

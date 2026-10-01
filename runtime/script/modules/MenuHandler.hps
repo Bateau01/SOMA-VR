@@ -778,6 +778,25 @@ class cLastOnSomaScreen
 				cImGuiGfx gfxScreenshot(msEntry, eImGuiGfx_Texture);
 				cVector3f vGfxScreenshotPos = NrmPos(0.25f, 1.0f/7.0f, fZ);
 				cVector2f vGfxScreenshotSize = GetRatioCorrectSizeByNrmWidth(gfxScreenshot, 0.5f);
+                        // S26CS: width-only fitting can put the text below the
+                        // bottom of an ultrawide loading screen. Bound height
+                        // before fitting text, and preserve physical image ratio.
+                        cVector2f vVRGroup = mpImGui.GetCurrentGroupSize();
+                        cVector2f vVRScreen = cGraphics_GetLowLevel().GetScreenSizeFloat();
+                        if(vVRGroup.x>0 && vVRGroup.y>0 && vVRScreen.x>0 && vVRScreen.y>0)
+                        {
+                            vGfxScreenshotSize.y *= (vVRScreen.x/vVRScreen.y)/(vVRGroup.x/vVRGroup.y);
+                            float fMaxScreenshotHeight = vVRGroup.y*0.48f;
+                            if(vGfxScreenshotSize.y>fMaxScreenshotHeight)
+                                vGfxScreenshotSize *= fMaxScreenshotHeight/vGfxScreenshotSize.y;
+                            vGfxScreenshotPos.x = (vVRGroup.x-vGfxScreenshotSize.x)*0.5f;
+                            if(mvVRLoadingLayoutSize.x!=vVRGroup.x || mvVRLoadingLayoutSize.y!=vVRGroup.y)
+                            {
+                                mvVRLoadingLayoutSize=vVRGroup;
+                                mfFontHeight=26.0f; mbFontSizeNeedsAdjust=true;
+                            }
+                        }
+
 				
 				mpImGui.SetAlignment(eImGuiAlign_TopLeft);
 				mpImGui.DoImage(gfxScreenshot, vGfxScreenshotPos, vGfxScreenshotSize);
@@ -928,6 +947,7 @@ class cLastOnSomaScreen
 	tString msEntry;
 	tWString msText;
 	
+	cVector2f mvVRLoadingLayoutSize = cVector2f(0);
 	bool mbFontSizeNeedsAdjust;
 	float mfFontHeight;
 	uint lNumMaxLines;
@@ -969,6 +989,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] int mlVRSubtitleDistance=18;
     [nosave] int mlVRMoveHand=0;
     [nosave] int mlVRCrouchMode=0;
+    [nosave] bool mbVRDoubleTapSprint=false;
     [nosave] int mlVRTurnMode=0;
     [nosave] bool mbVRHideDistortion=false;
     [nosave] bool mbVRHideChromatic=false;
@@ -1038,6 +1059,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             if(mlVRMoveHand<0 || mlVRMoveHand>1) mlVRMoveHand=0;
             mlVRGrabControls=p.GetInt("SOMA_VR_Comfort","GrabControls",0);
             if(mlVRGrabControls<0 || mlVRGrabControls>3) mlVRGrabControls=0;
+            mbVRDoubleTapSprint=p.GetBool("SOMA_VR_Comfort","DoubleTapSprint",false);
             mlVRCrouchMode=p.GetInt("SOMA_VR_Comfort","CrouchMode",0);
             if(mlVRCrouchMode<0 || mlVRCrouchMode>2) mlVRCrouchMode=0;
             mlVRTurnMode=p.GetInt("SOMA_VR_Comfort","TurnMode",0);
@@ -1079,6 +1101,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         cScript_RunGlobalFunc("VRAUDIO","",""+mlVRAudioMode);
         cScript_RunGlobalFunc("VRCOMFORT","G",""+mlVRGrabControls);
         cScript_RunGlobalFunc("VRCOMFORT","C",""+mlVRCrouchMode);
+        cScript_RunGlobalFunc("VRCOMFORT","J",mbVRDoubleTapSprint ? "1" : "0");
         for(int i=0;i<6;i++) cScript_RunGlobalFunc("VRBIND",""+i,""+mvVRButtonMap[i]);
         cScript_RunGlobalFunc("VRCOMFORT","T",""+mlVRTurnMode);
         cScript_RunGlobalFunc("VRCOMFORT","V",""+mlVRVignette);
@@ -1096,6 +1119,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         p.SetInt("SOMA_VR_Comfort","SubtitleDistanceIndex",mlVRSubtitleDistance);
         p.SetInt("SOMA_VR_Comfort","GrabControls",mlVRGrabControls);
         p.SetInt("SOMA_VR_Comfort","CrouchMode",mlVRCrouchMode);
+        p.SetBool("SOMA_VR_Comfort","DoubleTapSprint",mbVRDoubleTapSprint);
         for(int i=0;i<6;i++) p.SetInt("SOMA_VR_Buttons","Role"+i,mvVRButtonMap[i]);
         p.SetInt("SOMA_VR_Comfort","TurnMode",mlVRTurnMode);
         p.SetBool("SOMA_VR_Comfort","HideDistortion",mbVRHideDistortion);
@@ -1273,6 +1297,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 
 
 
+
         }
         else if(mlVRComfortCategory==1)
         {
@@ -1293,7 +1318,9 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             int rightGrab=OptionMenu_ButtonOptionsMultiSelect("RIGHT GRAB",kMainMenuButtonPos,3,msVRSettingsSelected,grabControls,(mlVRGrabControls>>1)&1,false,mlActionHorizontal,"");
             ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("RIGHT GRAB",msVRSettingsSelected);
             int grabMask=leftGrab+(rightGrab*2);changed=changed || grabMask!=mlVRGrabControls;mlVRGrabControls=grabMask;
-            if(HPL3VR_Option("BUTTON BINDINGS",4))
+            bool sprint=HPL3VR_Toggle("DOUBLE-TAP SPRINT",4,mbVRDoubleTapSprint);
+            changed=changed || sprint!=mbVRDoubleTapSprint;mbVRDoubleTapSprint=sprint;
+            if(HPL3VR_Option("BUTTON BINDINGS",5))
             {
                 HPL3VR_CancelBinding();HPL3VR_ReadBindings();cScript_RunGlobalFunc("VRBIND","","PROFILE");
                 mlVRComfortCategory=3;msVRSettingsSelected=HPL3VR_BindingLabel(0);msFocusNextFrame=msVRSettingsSelected;
@@ -3271,8 +3298,30 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 		{
 			/////////////////////////////////////
 			// Background
-			cImGuiGfx gfx("menu_background.tga", eImGuiGfx_Texture);
-			ImGui_DrawGfx(gfx, OptionMenu_GetTopLeftOffset(cVector2f(0,0), -1.0f), OptionMenu_GetScaledSize(cVector2f(1280,720)));
+			if(_HPL3VR_RuntimeActive_Menu())
+            {
+                // S26CS: use SOMA's supplied ultrawide artwork, covering the
+                // full UI with uniform physical scaling, never a stretched edge.
+                cVector2f vScreen = cGraphics_GetLowLevel().GetScreenSizeFloat();
+                float fAspect = vScreen.x/cMath_Max(vScreen.y,1.0f);
+                if(fAspect>=3.75f) fAspect/=3.0f;
+                tString sBackground = fAspect>2.0f ? "menu_background219.tga" : "menu_background.tga";
+                cImGuiGfx gfx(sBackground, eImGuiGfx_Texture);
+                cVector2f vTexture = GetUsedGfxSize(gfx,-1.0f);
+                cVector2f vArea = cLux_GetHudVirtualCenterScreenSize();
+                cVector2f vDraw = vArea;
+                if(vTexture.x>0 && vTexture.y>0)
+                    vDraw.y *= fAspect*vTexture.y/vTexture.x;
+                if(vDraw.y>0 && vDraw.y<vArea.y) vDraw*=vArea.y/vDraw.y;
+                cVector3f vPos = cLux_GetHudVirtualCenterScreenStartPos();
+                vPos.x+=(vArea.x-vDraw.x)*0.5f; vPos.y+=(vArea.y-vDraw.y)*0.5f; vPos.z=19.0f;
+                ImGui_DrawGfx(gfx,vPos,vDraw);
+            }
+            else
+            {
+                cImGuiGfx gfx("menu_background.tga", eImGuiGfx_Texture);
+                ImGui_DrawGfx(gfx, OptionMenu_GetTopLeftOffset(cVector2f(0,0), -1.0f), OptionMenu_GetScaledSize(cVector2f(1280,720)));
+            }
 			
 			/////////////////////////////////////
 			// Varying elements
@@ -3413,6 +3462,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 			mfBGAnimationTime += afTimeStep;
 			
 			cVector3f vLightPos = OptionMenu_GetTopLeftOffset(cVector2f(758, 76), 0.0f);
+                if(_HPL3VR_RuntimeActive_Menu()) vLightPos.x=cLux_GetHudVirtualCenterScreenStartPos().x+cLux_GetHudVirtualCenterScreenSize().x*(758.0f/1280.0f);
 			
 			////////////////////////////////
 			// Face Alpa
@@ -3464,6 +3514,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 			
 				// Cath's face
 				cVector3f vFacePos = OptionMenu_GetTopLeftOffset(cVector2f(960, 400), -0.005f);
+                if(_HPL3VR_RuntimeActive_Menu()) vFacePos.x=cLux_GetHudVirtualCenterScreenStartPos().x+cLux_GetHudVirtualCenterScreenSize().x*(960.0f/1280.0f);
 				
 				cImGuiGfx gfxJaw(sPhasePrefix + "jaw.tga", eImGuiGfx_Texture);
 				cImGuiGfx gfxLeft(sPhasePrefix + "left.tga", eImGuiGfx_Texture);

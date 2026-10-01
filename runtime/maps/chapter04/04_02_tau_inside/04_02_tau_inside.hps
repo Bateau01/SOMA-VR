@@ -4968,8 +4968,26 @@ class cScrMap : iScrMap
 		//-------------------------------------------------------
 		
 		bool mbLastOnSomaTextSet = false;
+        // S26CV: pickup is still inside the authored placement volume. Reuse
+        // the physical-key-item exit gate; a timer alone permits instant re-use.
+        void VR_ArmArkPickupExitGate()
+        {
+            cScript_SetGlobalReturnBool(false);
+            cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+            if(!cScript_GetGlobalReturnBool()) return;
+            array<tString> areas={"CargoElevatorArea_1", "CargoElevatorArea_2", "CargoElevatorArea_3", "ArkPlacementArea"};
+            for(uint i=0;i<areas.length();++i)
+            {
+                if(!Entity_GetCollide("ARK",areas[i])) continue;
+                Entity_SetVarString("ARK","VRReturnSlot","");
+                Entity_SetVarString("ARK","VRReturnArea",areas[i]);
+                return;
+            }
+        }
+
 		bool OnPickup_ARK(const tString &in asTool)
 		{
+            VR_ArmArkPickupExitGate();
 			if(mbLastOnSomaTextSet==false)
 			{
 				LastOnSoma_SetText("04_02_tau_inside_2");
@@ -5525,6 +5543,17 @@ class cScrMap : iScrMap
 		
 		bool OnUse_ARK(const tString &in asTool, const tString &in asEntity)
 		{
+            // S26CT: VR pickup makes the authored static ARK dynamic for
+            // carrying. Return it to the stock placed state BEFORE the native
+            // elevator overlap scan; otherwise its own body is counted as an
+            // obstruction and disabling collision lets it fall through the lift.
+            cScript_SetGlobalReturnBool(false);
+            cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+            if(cScript_GetGlobalReturnBool())
+            {
+                Prop_SetStaticPhysics("ARK", true);
+                LogNewLine("S26CT ARK: restored authored static placement at "+asEntity);
+            }
 			Entity_SetActive("ARK", true);
 			//Prop_SetStaticPhysics("ARK", false);
 			Entity_SetInteractionDisabled("ARK", false);

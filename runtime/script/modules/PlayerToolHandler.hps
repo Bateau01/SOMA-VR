@@ -1078,7 +1078,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 			pBody.SetCollideCharacter(false);
 			if (pBody.GetMass() < 0.05f) pBody.SetMass(0.50f);
 			pBody.SetGravity(true);
-			pBody.SetAutoDisable(false);
+			pBody.SetAutoDisable(true); // S26CW: native sleep after release; WakeUp below remains.
 			pProp.WakeUp();
 			cScript_RunGlobalFunc("VROMNIINV", sName, "R");
             if(!mbVRShoulderRetrieveBodyAccepted) return false;
@@ -1573,7 +1573,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
                 if(pAliasBody is null){complete=false;continue;}
                 pAliasBody.SetCollide(true);pAliasBody.SetCollideCharacter(false);
                 if(pAliasBody.GetMass()<0.05f)pAliasBody.SetMass(0.50f);
-                pAliasBody.SetGravity(true);pAliasBody.SetAutoDisable(false);pAliasProp.WakeUp();
+                pAliasBody.SetGravity(true);pAliasBody.SetAutoDisable(true);pAliasProp.WakeUp();
                 cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "I");
             }
             else

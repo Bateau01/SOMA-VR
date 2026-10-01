@@ -60,14 +60,10 @@ These systems preserve authored story callbacks where implemented. Their presenc
 Download the latest `SOMA-VR-vx.xx.zip` from this repository's **Releases** section. Consider creating a backup of your existing SOMA game folder. I tried to implement dual-mode functionality, but that hasn't been fully tested yet.
 
 1. Download and extract the latest release of SOMA-VR in the "Releases" section.
-2. Extract contents of the "SOMA-VR-vx.xx" to the root of your SOMA game directory (where Soma.exe is located). Replace all files if prompted. I recommend creating a backup of your existing SOMA game folder.
-3. [FIRST TIME INSTALLATION ONLY] Navigate to your user settings config file (C:\Users[YOUR_NAME]\Documents\My Games\Soma\Main), open the "YOURNAME_ID_user_settings.cfg", and make these changes:
-
-- Engine LimitFPS="false"
-- FullScreen="false"
-
-4. Start SteamVR and ensure that your headset and controllers are connected. Ensure that SteamVR is using OpenXR as its runtime.
-5. To launch SOMA VR, run "Launch-SOMA-VR.cmd" from your root game directory. If prompted with an error stating "access is denied," or "elevation required," or anything in that regard, run that same file as an administrator.
+2. Run the SOMA-VR setup.exe file.
+3. Ensure that the path to your SOMA game directory, as well as the folder containing your user_settings.cfg folder are detected. If the setup isn't able to automatically detect those folders, you can manually search for them.
+4. Press "Install". If done correctly, you should receive a confirmation prompt stating that the VR mod was successfully installed.
+5. To launch SOMA VR, navigate to your SOMA game directory, and run the "LAUNCH-SOMA-VR.cmd" file. It should run as an administrator. Ensure that your VR headset and controllers are connected, and SteamVR or VD is running using the OpenXR or VDXR runtime.
 
 Existing `hpl3vr_vr_settings.ini` and root hand calibration files are preserved. For a new installation, the launcher seeds the included reference hand-rig calibration only if a calibration file does not already exist. The runtime supplies default comfort settings when no settings file exists. Manual injection users should also copy `defaults/hpl3vr_hand_calibration.ini` to the game root on a fresh install.
 

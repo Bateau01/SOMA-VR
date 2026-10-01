@@ -1742,6 +1742,7 @@ static volatile i32* p2_native_h_ptr(void);
 static volatile u32 g_h5755asNativeUiScope;
 /* S26CA: ApplyUserConfig must rebuild GUI resources in the same native
    dimensions in TITLE and PAUSE. This is an authored, nested call scope. */
+static u32 g_s26cqUiSyncPending;
 static u32 g_s26caMenuApplyDepth,g_s26caMenuSavedScope,g_s26caMenuApplyLogs;
 static i32 g_s26caMenuSavedW,g_s26caMenuSavedH;
 static void s26ca_menu_apply_scope(i32 begin){
@@ -1758,6 +1759,7 @@ static void s26ca_menu_apply_scope(i32 begin){
         __atomic_store_n(p2_native_w_ptr(),g_s26caMenuSavedW,__ATOMIC_RELEASE);
         __atomic_store_n(p2_native_h_ptr(),g_s26caMenuSavedH,__ATOMIC_RELEASE);
         __atomic_store_n(&g_h5755asNativeUiScope,g_s26caMenuSavedScope,__ATOMIC_RELEASE);
+        g_s26cqUiSyncPending=1;
     }
 }
 static volatile u32 g_h5755asUiIslandActive;
@@ -2293,6 +2295,7 @@ static volatile u8 g_s26CutsceneHandsHidden;
 static volatile u32 g_s26vDeathActive,g_s26vDeathReady,g_s26vDeathRetry,g_s26vDeathLoading;
 static u8 g_s26vDeathNeutral;
 static volatile u32 g_s26wIntroActive;
+static volatile u32 g_s26dcCreditsActive;
 /* Intro OnLeave precedes destination map construction. Never promote the old
    intro world just because its player pointer is still readable. */
 static u32 g_s26cbIntroHandoffPending,g_s26cbIntroEndMapEnters;
@@ -2309,12 +2312,13 @@ static i32 g_s26HealCaptureScope;
 static const void* g_s26HealCapturedBody;
 static char g_s26HealCaptureName[192];
 static const void* g_s26HealPassBody[2];
+static u32 g_s26daHealStep[2],g_s26daHealLogs[2];
 static u32 g_s26HealPassStep[2];
 static const void* g_s26HealFilterHand[2];
 static const void* g_s26HealFilterFlower[2];
 static void s26_clear_heal_contact(void){
     g_s26HealCaptureScope=0;g_s26HealCapturedBody=0;g_s26HealCaptureName[0]=0;
-    for(i32 h=0;h<2;++h){g_s26HealPassBody[h]=0;g_s26HealPassStep[h]=0;g_s26HealFilterHand[h]=0;g_s26HealFilterFlower[h]=0;}
+    for(i32 h=0;h<2;++h){g_s26daHealStep[h]=0;g_s26daHealLogs[h]=0;g_s26HealPassBody[h]=0;g_s26HealPassStep[h]=0;g_s26HealFilterHand[h]=0;g_s26HealFilterFlower[h]=0;}
 }
 
 static i32 g_h576mScriptRuntimePublished=-1;
@@ -3614,6 +3618,48 @@ static void h5755as_resolve_sdl_window_api(void){
     if(!p_h5755asSDLGLGetDrawableSize)p_h5755asSDLGLGetDrawableSize=(PFN_H5755AS_SDL_GL_GetDrawableSize)ext_GetProcAddress(m,"SDL_GL_GetDrawableSize");
     if(!p_h5755asSDLSetWindowPosition)p_h5755asSDLSetWindowPosition=(PFN_H5755AS_SDL_SetWindowPosition)ext_GetProcAddress(m,"SDL_SetWindowPosition");
 }
+/* S26CR: mirror the GUI-only portion of LuxBase::ApplyGraphicsSettings.
+   A cGraphics resize alone rebuilds textures, but leaves virtual GUI geometry
+   at the preceding VR aspect. Use the native layout math, with the measured
+   drawable; do not reapply unrelated graphics/audio preferences. */
+static i32 s26cr_refresh_native_gui(i32 w,i32 h){
+    u8* soma=(u8*)ext_GetModuleHandleA(0);
+    if(!soma||w<320||h<200)return 0;
+    static const u8 calcSig[]={0xf3,0x0f,0x10,0x1a,0xf3,0x0f,0x5e,0x5a,0x04};
+    static const u8 setSig[]={0x8b,0x02,0x89,0x81,0x00,0x01,0x00,0x00};
+    for(u32 i=0;i<sizeof(calcSig);i++)if(soma[0x1AF620u+i]!=calcSig[i])return 0;
+    for(u32 i=0;i<sizeof(setSig);i++)if(soma[0x213400u+i]!=setSig[i])return 0;
+    u8* base=*(u8**)(soma+H5754AA_LUX_GLOBAL_RVA);
+    if(!base||!h20_mem_readable(base,0xC0u))return 0;
+    void* hud=*(void**)(base+0x50);void* pixel=*(void**)(base+0x48);
+    u8* immediate=*(u8**)(base+0xB8);void* immediateSet=0;
+    if(immediate){if(!h20_mem_readable(immediate,0x50u))return 0;immediateSet=*(void**)(immediate+0x48);}
+    if((hud&&!h20_mem_readable(hud,0x118u))||(pixel&&!h20_mem_readable(pixel,0x118u))||
+       (immediateSet&&!h20_mem_readable(immediateSet,0x118u)))return 0;
+    typedef void (__attribute__((ms_abi)) *Calc)(const float*,const float*,float*,float*,float*,float*);
+    Calc calc=(Calc)(void*)(soma+0x1AF620u);
+    PFN_H5755DU_SetVirtualSize set=(PFN_H5755DU_SetVirtualSize)(void*)(soma+0x213400u);
+    float screen[2]={(float)w,(float)h},zero[2]={0,0},start[2]={0,0};
+    if(hud){
+        *(float*)(base+0x58)=1024.0f;*(float*)(base+0x5C)=768.0f;
+        calc((float*)(base+0x58),screen,(float*)(base+0x60),(float*)(base+0x68),(float*)(base+0x7C),start);
+        *(float*)(base+0x70)=-*(float*)(base+0x68);*(float*)(base+0x74)=-*(float*)(base+0x6C);*(float*)(base+0x78)=0;
+        *(float*)(base+0x84)=start[0];*(float*)(base+0x88)=start[1];*(float*)(base+0x8C)=0;
+        set(hud,(float*)(base+0x60),-1000.0f,1000.0f,(float*)(base+0x68));
+    }
+    if(pixel)set(pixel,screen,-1000.0f,1000.0f,zero);
+    if(immediateSet)set(immediateSet,(float*)(base+0x60),-1000.0f,1000.0f,(float*)(base+0x68));
+    static u32 logs;if(logs++<24u)ext_Log(">>> S26CR NATIVE GUI LAYOUT: drawable %dx%d virtual %.2fx%.2f offset %.2f,%.2f",w,h,*(float*)(base+0x60),*(float*)(base+0x64),*(float*)(base+0x68),*(float*)(base+0x6C));
+    return 1;
+}
+static void s26cr_rebuild_native_menu(i32 w,i32 h){
+    u32 pending=g_s26cqUiSyncPending;
+    s26ca_menu_apply_scope(1);
+    o_h5755adGraphicsOwnerSetSize(g_h5755adGraphicsOwner,(u32)w,(u32)h);
+    if(!s26cr_refresh_native_gui(w,h))ext_Log(">>> S26CR NATIVE GUI LAYOUT REJECT: native layout unavailable; no unverified native call");
+    s26ca_menu_apply_scope(0);
+    g_s26cqUiSyncPending=pending;
+}
 static i32 h5755as_enter_native_ui_island(void){
     if(__atomic_load_n(&g_h5755asUiIslandActive,__ATOMIC_ACQUIRE))return 1;
     g_h5755asUiEnterAttempts++;h5755ak_resolve_window_api();h5755as_resolve_sdl_window_api();
@@ -3649,9 +3695,12 @@ static i32 h5755as_enter_native_ui_island(void){
     /* Suspend persistent managed hand constraints while Pause/title owns the UI
        island. HPL keeps the bodies world-owned; no DestroyBody runs here. */
     h34_request_destroy(0,"H57.55as native UI island");h34_request_destroy(1,"H57.55as native UI island");g_h5755asHandSuspends+=2u;
-    i32 mw=g_h5754eMenuW>0?g_h5754eMenuW:2560,mh=g_h5754eMenuH>0?g_h5754eMenuH:1440;
+    i32 mw=g_h5755asLastDrawableW,mh=g_h5755asLastDrawableH;
+    if(mw<320||mh<200){mw=g_h5755asLastClientW;mh=g_h5755asLastClientH;}
+    g_h5754eMenuW=mw;g_h5754eMenuH=mh;
+    if(g_h5754dPanelAnchorValid)g_h5754dPanelH=g_h5754dPanelW*(float)mh/(float)mw;
     if(g_h5755adGraphicsOwner&&o_h5755adGraphicsOwnerSetSize){
-        g_h5755asNativeOwnerCalls++;o_h5755adGraphicsOwnerSetSize(g_h5755adGraphicsOwner,(u32)mw,(u32)mh);g_h5755asNativeOwnerPass++;
+        g_h5755asNativeOwnerCalls++;s26cr_rebuild_native_menu(mw,mh);g_h5755asNativeOwnerPass++;
     }else g_h5755asNativeOwnerReject++;
     g_h5755asUiEnterPass++;
     ext_Log(">>> S6-HANDS5755AS H57.55AB NATIVE UI ISLAND PASS: AK gameplay client -> saved Windowed client %dx%d via SDL-owned resize | SDL %dx%d drawable %dx%d | native graphics owner replayed at %dx%d with VR-envelope SetScreenSize injection SUSPENDED | p2_full now %dx%d",g_h5755asLastClientW,g_h5755asLastClientH,g_h5755asLastSDLW,g_h5755asLastSDLH,g_h5755asLastDrawableW,g_h5755asLastDrawableH,mw,mh,p2_full_w(),p2_full_h());
@@ -3690,7 +3739,48 @@ static void h5755be_title_semantic_game_step(void){
     h5755bi_game_handoff_step();
 }
 
+/* Startup previously left the GUI at the VR allocation size while its real
+   drawable remained desktop-sized. Enter the proven native UI path once the
+   graphics owner exists, after XR submission rather than mid-render. */
+static void h5754d_release_menu_inputs(void);
+static u32 g_s26cpStartupUiDone,g_s26cpStartupUiAttempts,g_s26cpStartupUiDue;
+static void s26cp_startup_native_ui(void){
+    if(g_s26cpStartupUiDone||g_h5755kGameplaySeen||!h5754d_menu_wanted()||g_s26wIntroActive)return;
+    if(g_h5755asUiIslandActive){g_s26cpStartupUiDone=1;return;}
+    if(!g_h5755adGraphicsOwner||!o_h5755adGraphicsOwnerSetSize||g_h5754dEndCalls<g_s26cpStartupUiDue||g_s26cpStartupUiAttempts>=8u)return;
+    g_s26cpStartupUiAttempts++;g_s26cpStartupUiDue=g_h5754dEndCalls+60u;
+    h5755ag_resolve_query_apis();
+    void* dc=p_h5755agWglGetCurrentDC?p_h5755agWglGetCurrentDC():0;
+    if(dc)h5755ak_cache_window_from_hdc(dc);
+    if(!g_h5755akSnapshotValid||g_h5755akSavedClientW<320||g_h5755akSavedClientH<200)return;
+    i32 oldW=g_h5754eMenuW,oldH=g_h5754eMenuH;
+    g_h5754eMenuW=g_h5755akSavedClientW;g_h5754eMenuH=g_h5755akSavedClientH;
+    if(h5755as_enter_native_ui_island()){
+        g_s26cpStartupUiDone=1;g_h5754dPanelAnchorValid=0;h5754d_release_menu_inputs();
+        ext_Log(">>> S26CP STARTUP NATIVE UI: menu resources and drawable %dx%d; gameplay promotion remains on authored resume",g_h5754eMenuW,g_h5754eMenuH);
+    }else{g_h5754eMenuW=oldW;g_h5754eMenuH=oldH;}
+}
+static i32 s26cb_flat_drawable_extent(i32*,i32*);
+/* ApplyUserConfig may rebuild at its saved resolution without changing the
+   current window. Reconcile once, after submission, for title AND pause UI. */
+static void s26cq_reconcile_menu_extent(void){
+    if(!g_s26cqUiSyncPending)return;
+    g_s26cqUiSyncPending=0;
+    if(!g_h5755asUiIslandActive||!(h5754d_menu_wanted()||h5754h_pause_active()))return;
+    i32 w=0,h=0;
+    if(!s26cb_flat_drawable_extent(&w,&h)||w<320||h<200||w>8192||h>8192)return;
+    if(w==g_h5754eMenuW&&h==g_h5754eMenuH)return;
+    if(!g_h5755adGraphicsOwner||!o_h5755adGraphicsOwnerSetSize)return;
+    g_h5754eMenuW=w;g_h5754eMenuH=h;
+    u32 scope=g_h5755asNativeUiScope;g_h5755asNativeUiScope=1;
+    s26cr_rebuild_native_menu(w,h);
+    g_h5755asNativeUiScope=scope;
+    if(g_h5754dPanelAnchorValid)g_h5754dPanelH=g_h5754dPanelW*(float)h/(float)w;
+    static u32 logs;if(logs++<12u)ext_Log(">>> S26CQ MENU RECONCILE: settings resource extent restored to actual drawable %dx%d after submission",w,h);
+}
 static void h5755as_post_endframe_transition(void){
+    s26cp_startup_native_ui();
+    s26cq_reconcile_menu_extent();
     /* H57.55bi: all visible lifecycle transitions originate in exact authored
        MenuHandler script events.  This post-submit slot is used only to perform
        renderer/window ownership work safely after xrEndFrame. */
@@ -4184,8 +4274,28 @@ static i32 h5750xr1_write_cache(void){
     for(i32 e=0;e<2;++e)for(i32 a=0;a<2;++a)g_h5750xr1CachedFrac[e][a]=c.frac[e][a];g_h5750xr1CacheWrites++;return 1;
 }
 static i32 h5750xr1_even_ceil(float v){i32 n=h5750x_ceil_pos(v);return (n+1)&~1;}
+/* Resolve HPL's -1 desktop-mode sentinel before choosing the menu raster and
+   shared allocation. Never interpret a headset eye size as the desktop menu. */
+typedef struct {
+    unsigned short device[32],spec,driver,size,extra;
+    u32 fields; i32 x,y; u32 orientation,fixedOutput;
+    short color,duplex,yResolution,ttOption,collate;
+    unsigned short form[32],logPixels;
+    u32 bits,width,height,flags,frequency,icmMethod,icmIntent,media,dither,reserved1,reserved2,panningWidth,panningHeight;
+} S26CODisplayMode;
+typedef i32 (__attribute__((ms_abi)) *S26COEnumDisplaySettings)(const unsigned short*,u32,S26CODisplayMode*);
+static i32 s26co_resolve_auto_video_mode(u32* w,u32* h){
+    if(*w!=0xffffffffu&&*h!=0xffffffffu)return 0;
+    void* user=ext_GetModuleHandleA("user32.dll");
+    S26COEnumDisplaySettings query=user?(S26COEnumDisplaySettings)ext_GetProcAddress(user,"EnumDisplaySettingsW"):0;
+    S26CODisplayMode mode;zero_bytes(&mode,sizeof(mode));mode.size=(unsigned short)sizeof(mode);
+    if(!query||!query(0,0xffffffffu,&mode)||mode.width<320u||mode.height<200u||mode.width>8192u||mode.height>8192u)return 0;
+    if(*w==0xffffffffu)*w=mode.width;if(*h==0xffffffffu)*h=mode.height;
+    return 1;
+}
 static u8 __attribute__((ms_abi,noinline,used)) h5750xr1_lowlevel_init_detour(void* self,u32 a1,u32 a2,u32 a3,u32 a4,u32 a5,u32 a6,u32 a7,void* a8,void* a9){
     g_h5750xr1LowLevelCalls++;
+    if(s26co_resolve_auto_video_mode(&a1,&a2))ext_Log(">>> S26CO AUTO DESKTOP MODE: resolved native -1 video mode to %ux%u before menu/shared allocation; headset eye resolution remains runtime-owned",a1,a2);
     void* h55kCaller=__builtin_return_address(0);u8* h55kSoma=(u8*)ext_GetModuleHandleA(0);
     i32 h55kPostGameplayReinit=(g_h5755kGameplaySeen&&g_h5750xr1LowLevelCalls>1u)?1:0;
     if(h55kPostGameplayReinit){g_h5755kReinitAttempts++;g_h5755kLastReinitCaller=(u64)(void*)h55kCaller;g_h5755kLastReinitCallerDelta=(h55kCaller&&h55kSoma)?(u64)((u8*)h55kCaller-h55kSoma):0u;if(g_h5755kReinitCallerLogs<8u){g_h5755kReinitCallerLogs++;ext_Log(">>> S6-HANDS5755K REAL GRAPHICS REINIT OBSERVED #%u: LowLevelInit call %u after gameplay | caller %p SomaDelta 0x%llx | incoming video mode %ux%u | exact H57.51a VR allocation scope will be used",g_h5755kReinitAttempts,g_h5750xr1LowLevelCalls,h55kCaller,(unsigned long long)g_h5755kLastReinitCallerDelta,a1,a2);}}
@@ -4360,12 +4470,29 @@ void __attribute__((ms_abi,noinline,used)) h5750x_set_screen_size_detour(void* s
 
 /* H57.55bk source cleanup: retired compiler-dead static h5754e_apply_logical_mode. */
 
+static i32 s26cb_flat_drawable_extent(i32*,i32*);
+static u32 g_s26cqStageReady;
+static void s26cq_restore_desktop_menu(void);
+static i32 s26cp_flat_submission(u32* tex,i32* w,i32* h){
+    if(!g_h5755asUiIslandActive||!(h5754d_menu_wanted()||h5754h_pause_active()))return 0;
+    if(!g_s26cqStageReady||!h5750y_resolve_ready_for_eye(0))return 0;
+    *tex=g_h5750yResolveFbo[0];*w=g_h5750yResolveW;*h=g_h5750yResolveH;return 1;
+}
 void __attribute__((ms_abi,noinline,used)) h5750x_submit_eye_wrapper(void* sess,i32 eye,u32 tex,i32 srcW,i32 srcH){
     PFN_H5750X_SubmitEye p=h5750x_p2_submit_eye();
-    if(eye>=0&&eye<=1&&h5750y_resolve_ready_for_eye(eye)){
+    if(eye>=0&&eye<=1&&s26cp_flat_submission(&tex,&srcW,&srcH)){
+        static u32 logs;if(logs++<8u)ext_Log(">>> S26CQ FLAT SUBMIT: pre-mirror staged image %dx%d -> eye %d; default framebuffer is never read after mirror composition",srcW,srcH,eye);
+    }else if(eye>=0&&eye<=1&&!(g_h5755asUiIslandActive&&(h5754d_menu_wanted()||h5754h_pause_active()))&&h5750y_resolve_ready_for_eye(eye)){
         tex=g_h5750yResolveFbo[eye];srcW=g_h5750yResolveW;srcH=g_h5750yResolveH;g_h5750yDirectSubmit[eye]++;
     }else if(p2_xr_on()&&p2_xr_running()){g_h5750yDirectSubmitRejects++;}
-    if(p)p(sess,eye,tex,srcW,srcH);if(!sess||eye<0||eye>1){g_h5750xSubmitRejects++;return;}g_h5750xSubmitCalls[eye]++;
+    /* The second copy into OpenXR also obeys scissor; native menu bounds may
+       be shorter than the eye texture. Restore the caller's state afterward. */
+    u8 flatScissor=g_s26cqStageReady?ext_glIsEnabled(0x0C11u):0;
+    if(flatScissor)ext_glDisable(0x0C11u);
+    if(p)p(sess,eye,tex,srcW,srcH);
+    if(flatScissor)ext_glEnable(0x0C11u);
+    if(eye==1&&g_s26cqStageReady)s26cq_restore_desktop_menu();
+    if(!sess||eye<0||eye>1){g_h5750xSubmitRejects++;return;}g_h5750xSubmitCalls[eye]++;
     i32 w=*(volatile i32*)((u8*)sess+0x40+eye*0x20),h=*(volatile i32*)((u8*)sess+0x44+eye*0x20);if(w<=0||h<=0){g_h5750xSubmitRejects++;return;}
     volatile i32* r=(volatile i32*)((u8*)sess+0x148+eye*0x60);r[0]=0;r[1]=0;r[2]=w;r[3]=h;g_h5750xFullRectWrites[eye]++;
 
@@ -4679,6 +4806,27 @@ static i32 s26n_rebase_hold_tick(i64 now,i32 held,i32 neutral){
     if(!g_h5710RightClickFired&&now-g_s26nRebaseStartTime>=1000000000LL){g_h5710RightClickFired=1;return 1;}
     return 0;
 }
+// S26DB: XR timestamps, not frame counts. A neutral sample is required after
+// focus/state loss, avoiding an accidental sprint when resuming with stick held.
+typedef struct { i64 last,first; i32 ready,forward,running; } S26DBSprint;
+static S26DBSprint g_s26dbSprint;
+static u32 g_s26dbDoubleTapSprint;
+static i32 s26db_sprint_tick(S26DBSprint* s,i64 now,i32 allowed,float x,float y){
+    if(!allowed||now<=0||!(x>=-1.0f&&x<=1.0f&&y>=-1.0f&&y<=1.0f)){
+        zero_bytes(s,sizeof(*s));return 0;
+    }
+    if(!s->last||now<s->last||now-s->last>250000000LL){
+        zero_bytes(s,sizeof(*s));s->last=now;
+    }
+    s->last=now;
+    if(x*x+y*y<=0.04f){s->running=0;s->forward=0;s->ready=1;}
+    if(s->first&&now-s->first>350000000LL)s->first=0;
+    if(s->ready&&!s->forward&&y>=0.70f&&x>=-0.50f&&x<=0.50f){
+        s->forward=1;s->ready=0;
+        if(s->first){s->running=1;s->first=0;}else s->first=now;
+    }
+    return s->running;
+}
 static void h5710_update_controller_buttons(i64 displayTime){
     u32 l=(g_h5710StickClickActive[0]&&g_h5710StickClick[0])?1u:0u;
     u32 r=(g_h5710StickClickActive[1]&&g_h5710StickClick[1])?1u:0u;
@@ -4720,11 +4868,15 @@ static void h5710_update_controller_buttons(i64 displayTime){
         else if(exactVrGrab){static u8 fmRunLog;if(!fmRunLog){fmRunLog=1;ext_Log(">>> S6-HANDS5755FM HELD-OBJECT RUN BRIDGE ACTIVE: exact committed VR PlayerState_Interact_Grab keeps B as native Run; Grab/Interact lifetime remains unchanged");}}
     }
 
+    i32 tapRun=s26db_sprint_tick(&g_s26dbSprint,displayTime,
+        g_s26dbDoubleTapSprint&&!menu&&gameplayActions&&g_h5753cAuthorityEnabled&&
+        !g_h576bfMapTransitionActive&&g_lastSyncResult>=0&&g_lastStickXActive[0]&&g_lastStickYActive[0],
+        g_lastStickX[0],g_lastStickY[0]);
     if(menu){
         if(a&&!g_h5715PrevAProbe){g_h5754dMenuAcceptEdges++;ext_Log(">>> S6-HANDS5755DJ MENU A ACCEPT: A/click remains native SOMA cursor Select/Accept; gameplay Jump is suppressed while menu authority is active");}
         if(g_h5735SprintDesired){g_h5735SprintDesired=0;g_h5735SprintDirty=1;g_h5735SprintReleaseEdges++;g_h5754dMenuSprintReleases++;}
     }else{
-        u32 run=(gameplayActions&&b)?1u:0u;
+        u32 run=(gameplayActions&&(b||tapRun))?1u:0u;
         if(run!=g_h5735SprintDesired){g_h5735SprintDesired=run;g_h5735SprintDirty=1;if(run)g_h5715AEdges++;else g_h5735SprintReleaseEdges++;}
         if(a&&!g_h5715PrevAProbe&&g_h5753cAuthorityEnabled&&gameplayActions){g_h5755djJumpPending=1;if(exactVrGrab){static u8 fmJumpLog;if(!fmJumpLog){fmJumpLog=1;ext_Log(">>> S6-HANDS5755FM HELD-OBJECT JUMP BRIDGE ACTIVE: exact committed VR PlayerState_Interact_Grab forwards A through the existing native eAction_Jump pulse; authored jump eligibility remains SOMA-owned");}}ext_Log(">>> S6-HANDS5755DJ JUMP BUTTON EDGE: A/click queued native SOMA eAction_Jump PRESS PULSE; no keyboard binding is synthesized");}
     }
@@ -6765,6 +6917,7 @@ static void h5754d_release_menu_inputs(void){h5754d_release_click();h5754d_relea
 static i32 h5754d_menu_source_dims(i32* outW,i32* outH){
     i32 w=p2_full_w(),h=p2_full_h();if((h5754d_menu_wanted()||h5754h_pause_active())&&g_h5754eMenuW>0&&g_h5754eMenuH>0){w=g_h5754eMenuW;h=g_h5754eMenuH;}h5754d_resolve_platform();
     {i32 cw=0,ch=0;h5755ag_default_client(&cw,&ch);if(cw>0&&ch>0){g_h5754dLastClientW=cw;g_h5754dLastClientH=ch;}}
+    if((h5754d_menu_wanted()||h5754h_pause_active())&&(g_h5754eMenuW<=0||g_h5754eMenuH<=0)&&g_h5754dLastClientW>=320&&g_h5754dLastClientH>=200){w=g_h5754dLastClientW;h=g_h5754dLastClientH;}
     if(w<320||h<200||w>8192||h>8192){g_h5754dWindowSourceRejects++;return 0;}if(outW)*outW=w;if(outH)*outH=h;return 1;
 }
 /* H57.55n: H57.55m proved the full XR imageRect is not the remaining crop.
@@ -9619,6 +9772,82 @@ typedef struct {
 
 
 
+/* Copy at entry to P2 d_Swap, BEFORE its CompositeMirror clears GL_BACK.
+   glBlitFramebuffer obeys scissor state even though it ignores the viewport. */
+static i32 s26cq_copy_menu_backbuffer(u32 dst,i32 sw,i32 sh,i32 dw,i32 dh){
+    PFN_H5750V_BindFramebuffer bind=h5750v_bind_fbo();
+    PFN_H5750V_BlitFramebuffer blit=h5750v_blit();
+    h5750v_resolve_read_buffer();
+    if(!dst||sw<1||sh<1||dw<1||dh<1||!bind||!blit||!p_h5750vReadBuffer)return 0;
+    i32 read=0,draw=0,backRead=0;
+    ext_glGetIntegerv(0x8CAAu,&read);ext_glGetIntegerv(0x8CA6u,&draw);
+    u8 scissor=ext_glIsEnabled(0x0C11u);
+    bind(0x8CA8u,0);ext_glGetIntegerv(0x0C02u,&backRead);p_h5750vReadBuffer(0x0405u);
+    bind(0x8CA9u,dst);if(scissor)ext_glDisable(0x0C11u);
+    blit(0,0,sw,sh,0,0,dw,dh,0x4000u,0x2601u);
+    if(scissor)ext_glEnable(0x0C11u);
+    p_h5750vReadBuffer((u32)backRead);bind(0x8CA8u,(u32)read);bind(0x8CA9u,(u32)draw);
+    return 1;
+}
+/* P2 mirrors its gameplay eye targets, which are deliberately not the native
+   title GUI. Restore the staged menu after both eye copies, before real SwapBuffers. */
+static void s26cq_restore_desktop_menu(void){
+    i32 w=0,h=0;if(!s26cb_flat_drawable_extent(&w,&h))return;
+    PFN_H5750V_BindFramebuffer bind=h5750v_bind_fbo();
+    PFN_H5750V_BlitFramebuffer blit=h5750v_blit();
+    void* ogl=ext_GetModuleHandleA("opengl32.dll");
+    PFN_H5754AQ_DrawBuffer drawBuffer=ogl?(PFN_H5754AQ_DrawBuffer)ext_GetProcAddress(ogl,"glDrawBuffer"):0;
+    if(!bind||!blit||!drawBuffer)return;
+    i32 read=0,draw=0,buffer=0;ext_glGetIntegerv(0x8CAAu,&read);ext_glGetIntegerv(0x8CA6u,&draw);
+    u8 scissor=ext_glIsEnabled(0x0C11u);
+    bind(0x8CA8u,g_h5750yResolveFbo[0]);bind(0x8CA9u,0);ext_glGetIntegerv(0x0C01u,&buffer);drawBuffer(0x0405u);
+    if(scissor)ext_glDisable(0x0C11u);
+    blit(0,0,g_h5750yResolveW,g_h5750yResolveH,0,0,w,h,0x4000u,0x2601u);
+    if(scissor)ext_glEnable(0x0C11u);
+    drawBuffer((u32)buffer);bind(0x8CA8u,(u32)read);bind(0x8CA9u,(u32)draw);
+}
+/* Explicit opt-in only: bounded GPU readback for validation, never a per-frame
+   production probe. Place hpl3vr_capture_menu.flag beside the validation game. */
+static void s26cq_dump(u32 fbo,i32 w,i32 h,const char* name){
+    PFN_H5750V_BindFramebuffer bind=h5750v_bind_fbo();
+    void* ogl=ext_GetModuleHandleA("opengl32.dll");
+    PFN_H5754AQ_ReadPixels read=ogl?(PFN_H5754AQ_ReadPixels)ext_GetProcAddress(ogl,"glReadPixels"):0;
+    i32 pack=0,row=0,skipR=0,skipP=0,pbo=0;ext_glGetIntegerv(0x0D05u,&pack);ext_glGetIntegerv(0x0D02u,&row);ext_glGetIntegerv(0x0D03u,&skipR);ext_glGetIntegerv(0x0D04u,&skipP);ext_glGetIntegerv(0x88EDu,&pbo);
+    if(!bind||!read||!p_h5750vReadBuffer||w<1||h<1||w>8192||h>8192||pbo||row||skipR||skipP||pack>4)return;
+    u64 bytes=(u64)w*(u64)h*4u;u8* pixels=(u8*)ext_malloc(bytes);if(!pixels)return;
+    i32 prev=0,buffer=0;ext_glGetIntegerv(0x8CAAu,&prev);bind(0x8CA8u,fbo);ext_glGetIntegerv(0x0C02u,&buffer);
+    p_h5750vReadBuffer(fbo?0x8CE0u:0x0405u);read(0,0,w,h,0x80E1u,0x1401u,pixels);
+    p_h5750vReadBuffer((u32)buffer);bind(0x8CA8u,(u32)prev);
+    void* out=ext_fopen(name,"wb");if(out){u8 head[18];zero_bytes(head,18);head[2]=2;head[12]=(u8)w;head[13]=(u8)(w>>8);head[14]=(u8)h;head[15]=(u8)(h>>8);head[16]=32;head[17]=8;ext_fwrite(head,1,18,out);ext_fwrite(pixels,1,bytes,out);ext_fclose(out);ext_Log(">>> S26CQ GPU READBACK: %s %dx%d fbo %u",name,w,h,fbo);}ext_free(pixels);
+}
+typedef i32 (__attribute__((ms_abi)) *S26CQSwap)(void*);
+static S26CQSwap o_s26cqSwap;
+static u32 g_s26cqHookAttempted;
+static i32 __attribute__((ms_abi)) s26cq_swap(void* dc){
+    g_s26cqStageReady=0;
+    if(g_h5755asUiIslandActive&&(h5754d_menu_wanted()||h5754h_pause_active())){
+        i32 w=0,h=0;
+        if(s26cb_flat_drawable_extent(&w,&h)&&h5750y_ensure_resolve_targets()){
+            g_s26cqStageReady=s26cq_copy_menu_backbuffer(g_h5750yResolveFbo[0],w,h,g_h5750yResolveW,g_h5750yResolveH);
+            static u32 diagnosticInit,diagnosticOn,diagnosticFrames;
+            if(!diagnosticInit){diagnosticInit=1;void* flag=ext_fopen("hpl3vr_capture_menu.flag","rb");if(flag){diagnosticOn=1;ext_fclose(flag);}}
+            if(diagnosticOn){diagnosticFrames++;if(diagnosticFrames==180u||diagnosticFrames==900u){
+                s26cq_dump(0,w,h,diagnosticFrames==180u?"menu-window-early.tga":"menu-window-late.tga");
+                s26cq_dump(g_h5750yResolveFbo[0],g_h5750yResolveW,g_h5750yResolveH,diagnosticFrames==180u?"menu-stage-early.tga":"menu-stage-late.tga");
+            }}
+
+            static u32 logs;if(logs++<8u)ext_Log(">>> S26CQ PRE-MIRROR CAPTURE: copied %dx%d -> %dx%d ready %u before P2 mirror; scissor state preserved",w,h,g_h5750yResolveW,g_h5750yResolveH,g_s26cqStageReady);
+        }
+    }
+    i32 result=o_s26cqSwap?o_s26cqSwap(dc):0;g_s26cqStageReady=0;return result;
+}
+static void s26cq_install_swap(void){
+    if(g_s26cqHookAttempted)return;g_s26cqHookAttempted=1;
+    void* target=(void*)(p2_base()+H5750B_P2_SWAP_RVA);
+    i32 cr=ext_MH_CreateHook(target,(void*)s26cq_swap,(void**)&o_s26cqSwap);
+    i32 er=cr==0?ext_MH_EnableHook(target):-999;
+    ext_Log(">>> S26CQ PRE-MIRROR HOOK: create %d enable %d original %p",cr,er,o_s26cqSwap);
+}
 /* H57.55bk source cleanup: retired compiler-dead static h5754ar_ensure_stage_target. */
 /* H57.55bk source cleanup: retired compiler-dead static h5754ar_current_drawable_size. */
 /* H57.55bk source cleanup: retired compiler-dead static h5754ar_capture_flat_preswap. */
@@ -9876,6 +10105,7 @@ static void h5750a_try_install_early_xr_frame_hook(void){
     g_h5750aRenderHookReady=1;
     ext_Log(">>> S6-HANDS5750A EARLY XR FRAME PACING READY: P2 d_Render +0x114A0 hooked; successful BeginFrame now occurs before scene render and sets P2 g_xrFrameBegun so d_Swap submits/ends without a second BeginFrame");
     h5750v_try_install_native_post();
+    s26cq_install_swap();
 }
 
 static void h5745_try_install_head_recenter_hook(void){
@@ -10185,7 +10415,7 @@ static i32 h5729_state_key(void** outState,void** outModule,void** outScript){
     if(outState)*outState=st;if(outModule)*outModule=mod;if(outScript)*outScript=sobj;return 1;
 }
 static void h5753c_auto_hand_visibility_step(void){
-    if(g_s26wIntroActive){__atomic_store_n(p2_hand_draw_ptr(),0,__ATOMIC_RELEASE);return;}
+    if(g_s26wIntroActive||g_s26dcCreditsActive){__atomic_store_n(p2_hand_draw_ptr(),0,__ATOMIC_RELEASE);return;}
     void *st=0,*mod=0,*obj=0;i32 live=h5729_state_key(&st,&mod,&obj);
     i32 cur=__atomic_load_n(p2_hand_draw_ptr(),__ATOMIC_ACQUIRE)?1:0;
     i32 poses=(g_lastActive[0]&&g_lastActive[1])?1:0;
@@ -11103,7 +11333,7 @@ static void h5755bi_on_lifecycle_token(i32 ev){
     if((ev==H5755BI_LIFE_PAUSE||ev==H5755BI_LIFE_RESUME)&&(g_s26vDeathActive||g_s26vDeathLoading)){__atomic_store_n(&g_h5755biResumePending,0u,__ATOMIC_RELEASE);return;}
 
     if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME||ev==H5755BI_LIFE_LOAD_BEGIN)s26y_reset();
-    if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME||ev==H5755BI_LIFE_LOAD_BEGIN){g_s26wIntroActive=0;g_s26cbIntroHandoffPending=0;}
+    if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME||ev==H5755BI_LIFE_LOAD_BEGIN){g_s26wIntroActive=0;g_s26dcCreditsActive=0;g_s26cbIntroHandoffPending=0;}
     if(ev==H5755BI_LIFE_LOAD_BEGIN||ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME){g_s26vDeathActive=0;g_s26vDeathReady=0;g_s26vDeathRetry=0;}
     if(ev==H5755BI_LIFE_TITLE||ev==H5755BI_LIFE_NEW_GAME)g_s26vDeathLoading=0;
     g_h5755biLifeTokens++;
@@ -12071,6 +12301,21 @@ static void s26_capture_heal_hand(i32 hand){
     for(i32 j=0;j<hs->jointCount;++j)s26_local_hand_pose(hand,j,g_s26HealBones[j]);
     g_s26HealHand=hand;g_s26HealPoseValid=1;
 }
+// S26CZ: use the closed fist's PIP knuckles, not a half-curled
+// grasp centre behind them. len includes an optional metacarpal, so PIP is
+// len-2 for both three- and four-bone finger chains. Actual pose uses the
+// same joint inputs as the rendered mesh; raw intent only authorizes entry.
+static i32 s26cz_fist_front(i32 hand,const float* m,i32 actual,float* out){
+    float sum[3]={0,0,0};
+    for(i32 f=1;f<5;++f){
+        float c[4],pt[5][3];i32 len=0;
+        for(i32 d=0;d<4;++d)c[d]=actual?h18_joint_input(hand,f,d):s26q_raw_joint(hand,f,d);
+        if(!h18_finger_points_world(hand,f,c,m,pt,&len)||len<3||len>4)return 0;
+        for(i32 a=0;a<3;++a)sum[a]+=pt[len-2][a];
+    }
+    for(i32 a=0;a<3;++a)out[a]=sum[a]*0.25f;
+    return 1;
+}
 static void s26_heal_token(void* handler,const H5730TString* owner,const H5730TString* data){
     if(h5748t_sso_eq(data,"E",1u)){g_s26ManualHeal=0;g_s26HealPoseValid=0;g_s26HealHand=-1;s26_clear_heal_contact();return;}
     if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running())return;
@@ -12101,7 +12346,7 @@ static void s26_heal_token(void* handler,const H5730TString* owner,const H5730TS
         float pos[3],m[16],contact[3];if(!h14_hand_pose_raw(hand,pos,m))continue;
         if(v[3]>=2.0f){
             float curl=0;for(i32 f=1;f<5;++f)curl+=h10_raw_finger_input(hand,f);
-            if(curl<2.8f)continue;h15_grip_center_world(hand,m,contact);
+            if(curl<2.8f||!s26cz_fist_front(hand,m,0,contact))continue;
         }else{
             float curl=h10_raw_finger_input(hand,1);
             float c[4]={s26q_raw_joint(hand,1,0),s26q_raw_joint(hand,1,1),s26q_raw_joint(hand,1,2),s26q_raw_joint(hand,1,3)},points[5][3];i32 len=0;
@@ -12114,15 +12359,32 @@ static void s26_heal_token(void* handler,const H5730TString* owner,const H5730TS
             float axial=d[0]*v[4]+d[1]*v[5]+d[2]*v[6];
             float radial2=d[0]*d[0]+d[1]*d[1]+d[2]*d[2]-axial*axial;
             float unit=h5755ea_world_units_per_meter();
+            if(v[3]>=2.0f&&g_s26daHealLogs[hand]<96u&&
+               (u32)(g_h14PhysicsSteps-g_s26daHealStep[hand])>=60u&&
+               d[0]*d[0]+d[1]*d[1]+d[2]*d[2]<0.25f*unit*unit){
+                float pm[16],pc[3];
+                if(h34_physical_hand_model(hand,pm)&&s26cz_fist_front(hand,pm,1,pc)){
+                    float pd[3]={pc[0]-v[0],pc[1]-v[1],pc[2]-v[2]};
+                    float pa=pd[0]*v[4]+pd[1]*v[5]+pd[2]*v[6];
+                    float pr=pd[0]*pd[0]+pd[1]*pd[1]+pd[2]*pd[2]-pa*pa;
+                    g_s26daHealStep[hand]=g_h14PhysicsSteps;g_s26daHealLogs[hand]++;
+                    ext_Log(">>> S26DA WAU GEOMETRY: stage %.0f hand %d raw axial/radial %.4f/%.4f physical %.4f/%.4f unit %.3f target(%+.4f %+.4f %+.4f) axis(%+.4f %+.4f %+.4f) body %p",
+                        v[3],hand,axial,ext_Sqrtf(radial2>0?radial2:0),pa,ext_Sqrtf(pr>0?pr:0),unit,v[0],v[1],v[2],v[4],v[5],v[6],g_s26HealCapturedBody);
+                }
+            }
             // Only the central approach corridor may pass the flower's solid sphere.
-            float reach=v[3]==4.0f?0.70f:0.22f, width=v[3]==4.0f?0.12f:0.085f;
-            if(axial>=-0.035f*unit&&axial<=reach*unit&&radial2<=width*width*unit*unit){
+            float reach=v[3]==4.0f?0.70f:0.22f, width=v[3]==4.0f?0.14f:0.085f;
+            // S26CX: a fist passing the small deep target must not lose its
+            // mouth-only collision exemption and be expelled by the solid body.
+            float back=v[3]>=2.0f?0.18f:0.035f;
+            if(axial>=-back*unit&&axial<=reach*unit&&radial2<=width*width*unit*unit){
                 g_s26HealPassBody[hand]=g_s26HealCapturedBody;g_s26HealPassStep[hand]=g_h14PhysicsSteps;
             }else continue;
             // The physical fist must actually reach the deep target. Raw tracking
             // authorizes entry but cannot trigger while collision still holds it out.
             if(!h34_physical_hand_model(hand,m))continue;
-            if(v[3]>=2.0f||h10_raw_finger_input(hand,1)>0.45f||h10_raw_finger_input(hand,2)>0.6f)h15_grip_center_world(hand,m,contact);
+            if(v[3]>=2.0f){if(!s26cz_fist_front(hand,m,1,contact))continue;}
+            else if(h10_raw_finger_input(hand,1)>0.45f||h10_raw_finger_input(hand,2)>0.6f)h15_grip_center_world(hand,m,contact);
             else{
                 float c[4]={s26q_raw_joint(hand,1,0),s26q_raw_joint(hand,1,1),s26q_raw_joint(hand,1,2),s26q_raw_joint(hand,1,3)},points[5][3];i32 len=0;
                 if(!h18_finger_points_world(hand,1,c,m,points,&len)||len<1||len>4)continue;
@@ -12133,7 +12395,17 @@ static void s26_heal_token(void* handler,const H5730TString* owner,const H5730TS
         float dx=contact[0]-v[0],dy=contact[1]-v[1],dz=contact[2]-v[2];
         float d2=dx*dx+dy*dy+dz*dz;
         if(g_s26HealLogs<16u&&(g_s26HealProbes%40u)==1u)ext_Log(">>> S26E HEAL CONTACT: hand %d stage %.0f distance %.3f radius %.3f",hand,v[3],ext_Sqrtf(d2),radius);
-        if(!(d2>=0.0f&&d2<=radius*radius))continue;
+        i32 reached=d2>=0.0f&&d2<=radius*radius;
+        if(flower&&v[3]>=2.0f){
+            // Deep insertion volume, not an outer-surface touch. The target is
+            // behind the visible opening (Alpha uses the outer fleshy rim, not
+            // the inner jaw bones). Test the actual physical fist.
+            float axial=dx*v[4]+dy*v[5]+dz*v[6];
+            float radial2=d2-axial*axial,unit=h5755ea_world_units_per_meter();
+            float width=v[3]==4.0f?0.12f:0.045f;
+            reached=axial>=-0.14f*unit&&axial<=0.015f*unit&&radial2<=width*width*unit*unit;
+        }
+        if(!reached)continue;
         if(v[3]==4.0f){h576aa_run_global("PlayerHandsHandler","cScrPlayerHandsHandler","HPL3VR_AlphaTouch");return;}
         s26_capture_heal_hand(hand);
         H5730TString cls,fn;h5730_literal_string(&cls,"cScrPropEnergySource");h5730_literal_string(&fn,"_Global_VRBeginHeal");
@@ -12318,6 +12590,31 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
     // Accept the retired height message from older installed scripts without
     // changing camera, hand or holster positions. Current scripts no longer send it.
     if(h5748t_sso_eq(objectName,"VRHEIGHT",8u))return 1;
+    if(h5748t_sso_eq(objectName,"VRFINALE",8u)){
+        if(h5748t_sso_eq(functionName,"B",1u)&&p2_xr_on()&&p2_xr_running()){
+            if(g_s26dcCreditsActive)return 1;
+            g_s26dcCreditsActive=1;
+            h576bo_release_pointer(0,"end credits");
+            __atomic_store_n(&g_h5755biResumePending,0u,__ATOMIC_RELEASE);
+            __atomic_store_n(&g_h5755biGameplayHandoffPending,0u,__ATOMIC_RELEASE);
+            __atomic_store_n(&g_h5755biNewGameAwaitFreshWorld,0u,__ATOMIC_RELEASE);
+            __atomic_store_n(&g_h5755bbTitlePresentationLatch,1u,__ATOMIC_RELEASE);
+            __atomic_store_n(&g_h5755beTitleSemanticGameCandidate,0u,__ATOMIC_RELEASE);
+            g_h5754hPauseActive=0;g_h5754hPauseRequested=0;g_h5754dPanelAnchorValid=0;
+            h5755bh_set_presentation(H5755BH_TITLE_FLAT,"authored end credits");
+            h5753c_gate_menu_camera("authored end credits",1);
+            if(!__atomic_load_n(&g_h5755asUiIslandActive,__ATOMIC_ACQUIRE))
+                __atomic_store_n(&g_h5755asUiEnterArmed,1u,__ATOMIC_RELEASE);
+            ext_Log(">>> S26DC CREDITS: flat presentation begins; no player/world teardown");return 1;
+        }
+        if(h5748t_sso_eq(functionName,"E",1u)&&g_s26dcCreditsActive){
+            g_s26dcCreditsActive=0;
+            g_s26cbIntroHandoffPending=1;g_s26cbIntroEndMapEnters=g_h576bfMapEnters;
+            h5755bi_on_lifecycle_token(H5755BI_LIFE_GAME_HANDOFF);
+            ext_Log(">>> S26DC CREDITS: await ARK destination map + ready steps before VR");return 1;
+        }
+        return 0;
+    }
     if(h5748t_sso_eq(objectName,"VRINTRO",7u)){
         if(h5748t_sso_eq(functionName,"B",1u)){
             if(!p2_xr_on()||!p2_xr_running())return 0;
@@ -12458,6 +12755,8 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
             }else if(h5748t_sso_eq(className,"A",1u)){
                 if(h5748t_sso_eq(functionName,"0",1u))s26q_set_move_stick(0);
                 else if(h5748t_sso_eq(functionName,"1",1u))s26q_set_move_stick(1);
+            }else if(h5748t_sso_eq(className,"J",1u)){
+                g_s26dbDoubleTapSprint=h5748t_sso_eq(functionName,"1",1u)?1u:0u;
             }else if(h5748t_sso_eq(className,"G",1u)){
                 for(u32 i=0;i<4u;++i){char v[2]={(char)('0'+i),0};if(h5748t_sso_eq(functionName,v,1u))s26q_set_analog_bindings(i);}
             }else if(h5748t_sso_eq(className,"C",1u)){
@@ -13306,6 +13605,8 @@ static void h25_reset_hand(i32 hand){
     if(hand<0||hand>1)return;g_h25AttemptBody[hand]=0;g_h25PendingValid[hand]=0;g_h5755ejContactFirstPending[hand]=0;g_h5755ejContactFirstStep[hand]=0;
     g_h5755hlBlockBody[hand]=0;g_h5755hlBlockOwner[hand]=0;g_h5755hlBlockStep[hand]=0;g_h5755hmBlockEdgeStep[hand]=0;g_h5755hlBlockRayValid[hand]=0;
 }
+static const void* g_s26dbCableClaim[2];
+static u32 g_s26dbCableClaimStep[2];
 static i32 h5755ha_arm_edge_native_after_true(i32 hand,const H25PendingInteract* p,void* entity,void* wrapper,float preMass,float postMass);
 static i32 h5755hm_try_enclosed_carry_after_false(i32 hand,const H25PendingInteract* p,void* directOwner);
 
@@ -14585,7 +14886,52 @@ static void h481_hinge_end(i32 hand){
     g_h481HingeBody[hand]=0;g_h481HingeJoint[hand]=0;g_h481HingeValid[hand]=0;g_h481HingeCharGuard[hand]=0;g_h481HingeCameraStartValid[hand]=0;
 }
 typedef struct {void* owner;void* joint;const void* body;void* wrapper;i32 kind;float score;char jrtti[96];} H481MechanismCandidate;
+// The InteractAux script publishes its exact area/parent/main-body tuple.
+// This is authored identity, not an owner inferred from nearby bodies.
+static i32 s26db_aux_cable(i32 hand,void* area,void** ownerOut,void** wrapperOut,const void** rawOut){
+    if(!area||area!=g_s26ayAuxArea||g_s26ayAuxCapture||
+       (u32)(g_h14PhysicsSteps-g_s26ayAuxStep)>1u||g_h576bfMapTransitionActive)return 0;
+    void* owner=g_s26ayAuxParent;void* w=g_s26ayAuxWrapper;
+    if(!owner||!w||!h20_mem_readable(w,0x2f0)||!h37_native_wrapper_matches_entity(w,owner))return 0;
+    const void* raw=*(const void**)((u8*)w+0x2e8);
+    if(!raw||!p_h14GetUserData||p_h14GetUserData(raw)!=w||
+       !h568_first_external_joint(raw)||h553_body_semantic_mechanism(raw,0)!=H481_MECH_NONE)return 0;
+    if(!h20_mem_readable(owner,8))return 0;void** vt=*(void***)owner;
+    if(!vt||!h20_mem_readable((u8*)vt+0x68,8))return 0;
+    void* iconFn=*(void**)((u8*)vt+0x68);if(!h25_soma_code_ptr(iconFn))return 0;
+    i32 icon=((PFN_H25_GetInteractIconId)iconFn)(owner,0,w);
+    if((icon!=2&&icon!=3)||!h484_classify_compliant_cluster(hand,raw,owner))return 0;
+    if(ownerOut)*ownerOut=owner;if(wrapperOut)*wrapperOut=w;if(rawOut)*rawOut=raw;return 1;
+}
+static i32 s26db_bind_aux_cable(i32 hand,u32 step,const float* contact,void* accepted){
+    if(hand<0||hand>1||!contact||g_h14GripBody[hand]||step!=g_h5755haGripEdgeStep[hand]||
+       !g_lastSqueezeActive[hand]||g_lastSqueeze[hand]<=0.55f||
+       !g_h30NativeMouseDown||g_h30NativeUseHand!=hand)return 0;
+    void* owner=0;void* w=0;const void* raw=0;
+    if(!s26db_aux_cable(hand,accepted,&owner,&w,&raw))return 0;
+    float mass=h482_body_mass(raw);if(!(mass>0.001f&&mass<100000.0f))return 0;
+    float hm[16],inv[16],local[3],mesh[3],bary[3],gap=999,anchor[3];i32 tri=-1;
+    if(!h34_physical_hand_model(hand,hm))return 0;
+    h14_rigid_inverse(hm,inv);h14_transform_point(inv,contact,local);
+    if(!h20_nearest_hand_mesh_local(hand,local,mesh,&tri,bary,&gap)||gap>H483_CURTAIN_SHELL_M)return 0;
+    // The authored auxiliary volume is the handle. Preserve the current hand
+    // position and its offset from the plug; do not snap to the body centre.
+    h14_transform_point(hm,mesh,anchor);s26ay_aux_clear();
+    g_h31NativeUseBody=w;g_h31NativeUseJointed=0;g_h39NativeUseProp[hand]=owner;
+    g_h5755gwPreserveExistingGrabUse[hand]=1;
+    h14_latch(hand,raw,0.0f,mass,hm,anchor,0.0f,anchor,0,1,h568_first_external_joint(raw));
+    g_h5755gwPreserveExistingGrabUse[hand]=0;
+    if(g_h14GripBody[hand]!=raw)return 0;
+    g_h5755chGrabPending[hand].valid=0;
+    g_h5755chGrabExpected=1;g_h5755chGrabStateActive=0;g_h5755chGrabStateBody=raw;
+    g_h5755chGrabStateWrapper=w;g_h5755chGrabStateOwner=owner;g_h5755chGrabPrimaryHand=hand;
+    g_h5755cjGrabExpectedStep=g_h14PhysicsSteps;
+    h5755gw_adopt_existing_same_owner_grab(hand,owner);
+    static u32 logs;if(logs++<32u)ext_Log(">>> S26DB AUX CABLE ATTACHED: hand %d area %p -> authored owner %p body %p; native pull spring preserved, no second OnInteract",hand,accepted,owner,raw);
+    return 1;
+}
 static i32 h481_bind_nearby_mechanism(i32 hand,u32 physicsStep,const float* contact,void* acceptedEntity,void* acceptedWrapper){
+    if(s26db_bind_aux_cable(hand,physicsStep,contact,acceptedEntity))return 1;
     if(hand<0||hand>1||!contact||!g_h30NativeMouseDown||g_h30NativeUseHand!=hand)return 0;g_h481BindSearches[hand]++;if(g_h40PropCacheStep[hand]!=physicsStep){g_h481BindNoMatch[hand]++;ext_Log(">>> S6-HANDS481 MECHANISM BIND %s: H40 cache step %u != accepted interaction step %u; fail-safe unresolved path retained",hand==0?"L":"R",g_h40PropCacheStep[hand],physicsStep);return 0;}
     void* authoredOwner=s26ay_mechanism_owner(acceptedEntity);if(!authoredOwner)return 0;
     H481MechanismCandidate c[16];i32 n=0;for(i32 q=0;q<16;++q){c[q].owner=0;c[q].joint=0;c[q].body=0;c[q].wrapper=0;c[q].kind=H481_MECH_NONE;c[q].score=999.0f;c[q].jrtti[0]=0;}
@@ -14961,12 +15307,31 @@ static void h31_release_velocity(i32 hand,const void* body,float* rv,float* rw){
 #define H34_PLAYER_VTABLE_RVA 0x6C5D88u
 #define H34_LUX_GLOBAL_RVA 0x8147C0u
 
+/* S26DD: a button debounce latch owns no body. Its pointer must not survive
+   map departure, save replacement, or a raw-world replacement. In particular,
+   Phi's launch button can remain latched throughout the ending and credits;
+   querying it when ARK hands resume dereferences the destroyed Phi collision.
+   Local invalidation only: never query or release objects during teardown. */
+static void s26dd_forget_button_contacts(void){
+    for(i32 h=0;h<2;++h){
+        g_h574RockerLatchBody[h]=0;g_h574RockerPassBody[h]=0;g_h574RockerClearStreak[h]=0;
+        g_h48PokeBodyWrapper[h]=0;g_h48PokeEntity[h]=0;g_h48PokeMissStreak[h]=0;
+        g_h485PokePrevTipValid[h]=0;g_h5755gjPokeNativeUse[h]=0;
+        g_h5755gjControlNearBody[h]=0;g_h5755gjControlNearStep[h]=0;
+        g_h5755cRockerValid[h]=0;g_h5755cRockerClear[h]=0;g_h5755cRockerBody[h]=0;
+        g_h5755cRockerWrapper[h]=0;g_h5755cRockerEntity[h]=0;g_h5755cRockerCan[h]=0;g_h5755cRockerOn[h]=0;
+        g_h576buRockerNormalValid[h]=0;g_s26RockerPlaneValid[h]=0;
+        g_h576buRockerNormalBody[h]=0;g_h576buRockerNormalStep[h]=0;
+        g_h576btRenderProbeValid[h]=0;g_h576btRockerBodyPrevValid[h]=0;g_h576btRockerBodyPrev[h]=0;
+    }
+}
 static void h34_zero_hand_state(i32 h){
     if(h<0||h>1)return;g_h34HandWrapper[h]=0;g_h34HandNewton[h]=0;g_h34BodyToHandValid[h]=0;g_h34PrevTargetValid[h]=0;g_h34FilterValid[h]=0;g_h34LastPosError[h]=g_h34LastRotError[h]=g_h34LastForce[h]=g_h34LastTorque[h]=0.0f;g_h35RootCorrection[h][0]=g_h35RootCorrection[h][1]=g_h35RootCorrection[h][2]=0.0f;g_h504FreeCurlValid[h]=0;g_h510FreeJointValid[h]=0;g_h510PalmShape[h]=0;g_h536NativePalmShape[h]=0;g_h511PrevRawValid[h]=0;g_h511RootPlaneValid[h]=0;g_h512VisualPhysical[h]=0;g_h513SafeValid[h]=0;g_h514RootContact[h]=0;g_h530WorldContactHold[h]=0;g_h532Dormant[h]=0;g_h532ArmState[h]=0;g_h532ArmStartStep[h]=0;
     g_h5755cRockerValid[h]=0;g_h5755cRockerClear[h]=0;g_h5755cRockerBody[h]=0;g_h5755cRockerWrapper[h]=0;g_h5755cRockerEntity[h]=0;g_h5755cRockerCan[h]=0;g_h5755cRockerOn[h]=0;
     g_h576buRockerNormalValid[h]=0;g_s26RockerPlaneValid[h]=0;g_h576buRockerNormalBody[h]=0;g_h576buRockerNormalStep[h]=0;g_h576buRockerNormal[h][0]=g_h576buRockerNormal[h][1]=g_h576buRockerNormal[h][2]=0.0f;
 }
 static void h576bf_detach_world_bound_refs(const char* why){
+    s26dd_forget_button_contacts();
     g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;g_h576avThetaPendingHand=-1;g_h576avThetaPendingLogical[0]=0;g_h576avThetaPendingStartStep=g_h576avThetaPendingLastStep=0;
     h576ah_reset_subtitle_world_refs(why);h576b_forget_body("BF normal-map world-bound reset");
     g_h576bHolsterLocalBasis[0]=1;g_h576bHolsterLocalBasis[1]=0;g_h576bHolsterLocalBasis[2]=0;g_h576bHolsterLocalBasis[3]=0;g_h576bHolsterLocalBasis[4]=0;g_h576bHolsterLocalBasis[5]=1;g_h576bHolsterLocalBasis[6]=0;g_h576bHolsterLocalBasis[7]=-1;g_h576bHolsterLocalBasis[8]=0;g_h576bHolsterBasisValid=1;g_h576bHolsterBasisYaw=0;g_h576bOmniState=H576B_OMNI_UNKNOWN;
@@ -15043,7 +15408,7 @@ static void h5755bi_resume_post_endframe(void){
     h5754at_exit_startup_eye_route();__atomic_store_n(&g_h5755anHaveLast,0u,__ATOMIC_RELEASE);
     g_h5754hPauseActive=0;g_h5754hPauseRequested=0;g_h5754hPauseImageReady=0;g_h5754tLastTargetEnd=0xffffffffu;g_h5754hPauseResumes++;
     __atomic_store_n(&g_h5755asResumeClassifyActive,0u,__ATOMIC_RELEASE);g_h5755asResumeStableCount=0;
-    if(g_s26wIntroActive||g_s26cbIntroHandoffPending||__atomic_load_n(&g_h5755bbTitlePresentationLatch,__ATOMIC_ACQUIRE)){
+    if(g_s26wIntroActive||g_s26dcCreditsActive||g_s26cbIntroHandoffPending||__atomic_load_n(&g_h5755bbTitlePresentationLatch,__ATOMIC_ACQUIRE)){
         /* Pause is an overlay. Only the authored VRINTRO E event may end the
            opening slideshow or a pending save load, never the Resume button. */
         g_h5755adRefreshArmed=0;
@@ -15073,7 +15438,7 @@ static void* s26cb_menu_render_window(void){
     return g_h5755akWindow;
 }
 static void h5755bi_game_handoff_step(void){
-    if(g_s26wIntroActive||!s26cb_intro_destination_ready())return;
+    if(g_s26wIntroActive||g_s26dcCreditsActive||!s26cb_intro_destination_ready())return;
     if(g_s26cbIntroHandoffPending){
         g_s26cbIntroHandoffPending=0;
         __atomic_store_n(&g_h5755biGameplayGraphicsCommitted,0u,__ATOMIC_RELEASE);
@@ -15141,6 +15506,7 @@ static void h34_on_raw_world(const void* world){
     // A Newton world teardown already owns/deletes every HPL-managed body in its
     // lists. Never dereference an old hand pointer after a map/world replacement.
     if(g_h34RawWorldSeen)ext_Log(">>> S6-HANDS34 PHYSICAL PALM WORLD CHANGE: raw Newton world %p -> %p; stale proxy handles discarded (old HPL world owns teardown)",g_h34RawWorldSeen,world);
+    s26dd_forget_button_contacts();
     g_h34RawWorldSeen=world;
     if(__atomic_load_n(&g_h5755biNewGameAwaitFreshWorld,__ATOMIC_ACQUIRE)&&(!g_h5755biNewGameOldWorld||(u64)world!=g_h5755biNewGameOldWorld)){
         __atomic_store_n(&g_h5755biNewGameAwaitFreshWorld,0u,__ATOMIC_RELEASE);__atomic_store_n(&g_h5755biGameplayHandoffPending,1u,__ATOMIC_RELEASE);__atomic_store_n(&g_h5755biGameplayGraphicsCommitted,0u,__ATOMIC_RELEASE);
@@ -15512,6 +15878,15 @@ static i32 h5755ct_noncharacter_body_eligible(i32 hand,const void* body){
     return 1;
 }
 
+// S26CY: queries and Newton share the same exact-mouth permission.
+// Re-evaluate expiry for pre-Newton queries instead of borrowing last step's
+// callback snapshot. Never exclude another object or the opposite hand.
+static i32 s26cy_heal_body_pass(i32 hand,const void* body){
+    if(hand<0||hand>1||!body||g_h576mScriptRuntimePublished!=1||!p2_xr_on())return 0;
+    if(g_h14GripBody[hand]||!visual_pose_valid(hand)||g_s26HealPassBody[hand]!=body)return 0;
+    return (g_s26ManualHeal&&g_s26HealHand==hand)||
+        (u32)(g_h14PhysicsSteps-g_s26HealPassStep[hand])<=12u;
+}
 static i32 s26_heal_pair_pass(const void* a,const void* b);
 static i32 __attribute__((ms_abi)) h530_hand_overlap_filter(const void* material,const void* body0,const void* body1,i32 threadIndex){
     if(s26_heal_pair_pass(body0,body1))return 0;
@@ -15851,6 +16226,7 @@ static void* h522_body_shape_relaxed(const void* body,i32 hand){
     if(shapeCol!=bodyCol)g_h522ShapeIdentityMismatch[hand]++;
     g_h522ShapeResolved[hand]++;return sh;
 }
+#include "ark_query_ct.inc"
 static i32 h523_ensure_broad_shape(i32 hand){
     if(hand<0||hand>1)return 0;if(g_h523BroadShape[hand])return 1;if(!g_h34PhysicsWorldWrapper||!p_h34CreateBoxShape||!h20_load_cpu_skin(hand))return 0;
     // Fit the neutral authored mesh, then explicitly expand the bounds with the
@@ -15868,13 +16244,13 @@ static i32 h523_ensure_broad_shape(i32 hand){
 static void h522_prepare_near_cache(const void* world,i32 hand,const float* a,const float* b){
     H504Near raw;zero_bytes(&raw,sizeof(raw));zero_bytes(&g_h522Near[hand],sizeof(g_h522Near[hand]));zero_bytes(g_h522NearShape[hand],sizeof(g_h522NearShape[hand]));zero_bytes(g_h523NearBodyM[hand],sizeof(g_h523NearBodyM[hand]));zero_bytes(g_h523NearBodyHpl[hand],sizeof(g_h523NearBodyHpl[hand]));g_h523ActiveMask[hand]=0;g_h523ActiveMaskValid[hand]=0;
     h504_collect_near(world,hand,a,b,&raw);g_h522NearScans[hand]++;
-    for(i32 i=0;i<raw.count&&g_h522Near[hand].count<H504_NEAR_MAX;++i){const void* body=raw.body[i];void* w=p_h14GetUserData?p_h14GetUserData(body):0;if(g_h520SkipWorldFrames[hand]&&g_h520SkipWorldWrapper[hand]&&w==g_h520SkipWorldWrapper[hand])continue;void* sh=h522_body_shape_relaxed(body,hand);if(!sh)continue;i32 q=g_h522Near[hand].count++;g_h522Near[hand].body[q]=body;g_h522NearShape[hand][q]=sh;if(p_h14GetMatrix){p_h14GetMatrix(body,g_h523NearBodyM[hand][q]);h508_newton_to_hpl_matrix(g_h523NearBodyM[hand][q],g_h523NearBodyHpl[hand][q]);}}
+    for(i32 i=0;i<raw.count&&g_h522Near[hand].count<H504_NEAR_MAX;++i){const void* body=raw.body[i];if(s26cy_heal_body_pass(hand,body))continue;void* w=p_h14GetUserData?p_h14GetUserData(body):0;if(g_h520SkipWorldFrames[hand]&&g_h520SkipWorldWrapper[hand]&&w==g_h520SkipWorldWrapper[hand])continue;void* sh=h522_body_shape_relaxed(body,hand);if(!sh)continue;i32 q=g_h522Near[hand].count++;g_h522Near[hand].body[q]=body;g_h522NearShape[hand][q]=sh;if(p_h14GetMatrix){p_h14GetMatrix(body,g_h523NearBodyM[hand][q]);h508_newton_to_hpl_matrix(g_h523NearBodyM[hand][q],g_h523NearBodyHpl[hand][q]);}}
     g_h522NearBodies[hand]+=(u32)g_h522Near[hand].count;g_h522NearStep[hand]=g_h14PhysicsSteps;
 }
 static u32 h523_broad_mask_for_pose(i32 hand,const float* handM){
     if(hand<0||hand>1||!handM||g_h522NearStep[hand]!=g_h14PhysicsSteps)return 0u;if(g_h522Near[hand].count<=0){g_h523ActiveMask[hand]=0;g_h523ActiveMaskValid[hand]=1;return 0u;}
     if(!g_h523BroadShape[hand]&&!h523_ensure_broad_shape(hand)){u32 all=(g_h522Near[hand].count>=32)?0xffffffffu:((1u<<(u32)g_h522Near[hand].count)-1u);g_h523BroadFallback[hand]++;g_h523ActiveMask[hand]=all;g_h523ActiveMaskValid[hand]=1;return all;}
-    float ah[16];h508_newton_to_hpl_matrix(handM,ah);u32 mask=0u;for(i32 i=0;i<g_h522Near[hand].count;++i){void* bodyShape=g_h522NearShape[hand][i];if(!bodyShape)continue;H508Contact cp;H508CollideData cd;zero_bytes(&cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=&cp;cd.end=&cp+1;cd.cap=&cp+1;g_h523BroadTests[hand]++;u8 hit=p_h508CheckShapeCollision(g_h34PhysicsWorldWrapper,g_h523BroadShape[hand],ah,bodyShape,g_h523NearBodyHpl[hand][i],&cd,1,0,0);if(hit){mask|=(1u<<(u32)i);g_h523BroadHits[hand]++;}}
+    float ah[16];h508_newton_to_hpl_matrix(handM,ah);u32 mask=0u;for(i32 i=0;i<g_h522Near[hand].count;++i){void* bodyShape=g_h522NearShape[hand][i];if(!bodyShape)continue;H508Contact cp;H508CollideData cd;zero_bytes(&cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=&cp;cd.end=&cp+1;cd.cap=&cp+1;g_h523BroadTests[hand]++;u8 hit=ct_check_shape_collision(g_h34PhysicsWorldWrapper,g_h523BroadShape[hand],ah,bodyShape,g_h523NearBodyHpl[hand][i],&cd,1,0,0);if(hit){mask|=(1u<<(u32)i);g_h523BroadHits[hand]++;}}
     g_h523ActiveMask[hand]=mask;g_h523ActiveMaskValid[hand]=1;return mask;
 }
 
@@ -15892,7 +16268,7 @@ static i32 h5755dr_ensure_finger_broad_shape(i32 hand,i32 finger){
 static u32 h5755dr_finger_broad_mask_for_pose(i32 hand,i32 finger,const float* handM,u32 safeFallback){
     if(hand<0||hand>1||finger<0||finger>4||!handM||g_h522NearStep[hand]!=g_h14PhysicsSteps)return safeFallback;if(g_h522Near[hand].count<=0)return 0u;
     if(!g_h5755drFingerBroadShape[hand][finger]&&!h5755dr_ensure_finger_broad_shape(hand,finger)){g_h5755drFingerBroadFallback[hand]++;return safeFallback;}
-    float ah[16];h508_newton_to_hpl_matrix(handM,ah);u32 mask=0u;for(i32 i=0;i<g_h522Near[hand].count;++i){if(!(safeFallback&(1u<<(u32)i)))continue;void* bodyShape=g_h522NearShape[hand][i];if(!bodyShape)continue;H508Contact cp;H508CollideData cd;zero_bytes(&cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=&cp;cd.end=&cp+1;cd.cap=&cp+1;g_h5755drFingerBroadTests[hand]++;u8 hit=p_h508CheckShapeCollision(g_h34PhysicsWorldWrapper,g_h5755drFingerBroadShape[hand][finger],ah,bodyShape,g_h523NearBodyHpl[hand][i],&cd,1,0,0);if(hit){mask|=(1u<<(u32)i);g_h5755drFingerBroadHits[hand]++;}}
+    float ah[16];h508_newton_to_hpl_matrix(handM,ah);u32 mask=0u;for(i32 i=0;i<g_h522Near[hand].count;++i){if(!(safeFallback&(1u<<(u32)i)))continue;void* bodyShape=g_h522NearShape[hand][i];if(!bodyShape)continue;H508Contact cp;H508CollideData cd;zero_bytes(&cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=&cp;cd.end=&cp+1;cd.cap=&cp+1;g_h5755drFingerBroadTests[hand]++;u8 hit=ct_check_shape_collision(g_h34PhysicsWorldWrapper,g_h5755drFingerBroadShape[hand][finger],ah,bodyShape,g_h523NearBodyHpl[hand][i],&cd,1,0,0);if(hit){mask|=(1u<<(u32)i);g_h5755drFingerBroadHits[hand]++;}}
     if(!mask)g_h5755drFingerBroadZero[hand]++;return mask;
 }
 
@@ -15905,7 +16281,7 @@ static i32 h522_pair_contacts_cached(i32 hand,void* handShape,const float* handM
     if(g_h523ActiveMaskValid[hand]&&!(g_h523ActiveMask[hand]&(1u<<(u32)nearIndex))){g_h523ExactSkipped[hand]++;return 0;}
     if(!h522_pair_begin(hand))return 0;const void* body=g_h522Near[hand].body[nearIndex];void* bodyShape=g_h522NearShape[hand][nearIndex];if(!body||!bodyShape)return 0;
     float ah[16];h508_newton_to_hpl_matrix(handM,ah);H508Contact cp[H522_CONTACT_MAX];H508CollideData cd;zero_bytes(cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=cp;cd.end=cp+H522_CONTACT_MAX;cd.cap=cp+H522_CONTACT_MAX;g_h522PairTests[hand]++;
-    u8 hit=p_h508CheckShapeCollision(g_h34PhysicsWorldWrapper,handShape,ah,bodyShape,g_h523NearBodyHpl[hand][nearIndex],&cd,H522_CONTACT_MAX,1,0);if(!hit||cd.count<1)return 0;i32 n=cd.count;if(n>H522_CONTACT_MAX)n=H522_CONTACT_MAX;if(n>outMax)n=outMax;int wr=0;
+    u8 hit=ct_check_shape_collision(g_h34PhysicsWorldWrapper,handShape,ah,bodyShape,g_h523NearBodyHpl[hand][nearIndex],&cd,H522_CONTACT_MAX,1,0);if(!hit||cd.count<1)return 0;i32 n=cd.count;if(n>H522_CONTACT_MAX)n=H522_CONTACT_MAX;if(n>outMax)n=outMax;int wr=0;
     for(i32 i=0;i<n;++i){float dep=cp[i].depth,nn[3]={cp[i].normal[0],cp[i].normal[1],cp[i].normal[2]};if(!h9_good(dep,1.0f)||dep<=0.000001f||dep>0.25f||!h10_norm3(nn))continue;float toCenter[3]={handM[12]-cp[i].point[0],handM[13]-cp[i].point[1],handM[14]-cp[i].point[2]};if(h10_dot(toCenter,nn)<0.0f){nn[0]=-nn[0];nn[1]=-nn[1];nn[2]=-nn[2];}out[wr]=cp[i];out[wr].normal[0]=nn[0];out[wr].normal[1]=nn[1];out[wr].normal[2]=nn[2];wr++;}
     if(wr){g_h522PairHits[hand]++;g_h522ContactPoints[hand]+=(u32)wr;}return wr;
 }
@@ -15913,7 +16289,7 @@ static i32 h524_whole_contacts_cached(i32 hand,const float* handM,i32 nearIndex,
     if(hand<0||hand>1||!handM||nearIndex<0||nearIndex>=g_h522Near[hand].count||!out||outMax<1||!g_h524WholeShape[hand]||!p_h508CheckShapeCollision||!g_h34PhysicsWorldWrapper)return 0;
     if(!h522_pair_begin(hand))return 0;const void* body=g_h522Near[hand].body[nearIndex];void* bodyShape=g_h522NearShape[hand][nearIndex];if(!body||!bodyShape)return 0;
     float ah[16];h508_newton_to_hpl_matrix(handM,ah);H508Contact cp[H524_WHOLE_CONTACT_MAX];H508CollideData cd;zero_bytes(cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=cp;cd.end=cp+H524_WHOLE_CONTACT_MAX;cd.cap=cp+H524_WHOLE_CONTACT_MAX;g_h522PairTests[hand]++;g_h524WholePairTests[hand]++;
-    u8 hit=p_h508CheckShapeCollision(g_h34PhysicsWorldWrapper,g_h524WholeShape[hand],ah,bodyShape,g_h523NearBodyHpl[hand][nearIndex],&cd,H524_WHOLE_CONTACT_MAX,1,0);if(!hit||cd.count<1)return 0;i32 n=cd.count;if(n>H524_WHOLE_CONTACT_MAX)n=H524_WHOLE_CONTACT_MAX;if(n>outMax)n=outMax;i32 wr=0;
+    u8 hit=ct_check_shape_collision(g_h34PhysicsWorldWrapper,g_h524WholeShape[hand],ah,bodyShape,g_h523NearBodyHpl[hand][nearIndex],&cd,H524_WHOLE_CONTACT_MAX,1,0);if(!hit||cd.count<1)return 0;i32 n=cd.count;if(n>H524_WHOLE_CONTACT_MAX)n=H524_WHOLE_CONTACT_MAX;if(n>outMax)n=outMax;i32 wr=0;
     for(i32 i=0;i<n;++i){float dep=cp[i].depth,nn[3]={cp[i].normal[0],cp[i].normal[1],cp[i].normal[2]};if(!h9_good(dep,1.0f)||dep<=0.000001f||dep>0.25f||!h10_norm3(nn))continue;float toHand[3]={handM[12]-cp[i].point[0],handM[13]-cp[i].point[1],handM[14]-cp[i].point[2]};if(h10_dot(toHand,nn)<0.0f){nn[0]=-nn[0];nn[1]=-nn[1];nn[2]=-nn[2];}out[wr]=cp[i];out[wr].normal[0]=nn[0];out[wr].normal[1]=nn[1];out[wr].normal[2]=nn[2];wr++;}
     if(wr){g_h522PairHits[hand]++;g_h522ContactPoints[hand]+=(u32)wr;g_h524WholePairHits[hand]++;g_h524WholeContactPts[hand]+=(u32)wr;}return wr;
 }
@@ -18782,6 +19158,22 @@ static void h26_prepare_rigid_loose(float handM[2][16],const i32 handOk[2],float
                     bsGapLogs,h==0?"L":"R",body,(double)d,(double)bm[12],(double)bm[13],(double)bm[14],(double)target[12],(double)target[13],(double)target[14],(double)g_h14GripRel[h][12],(double)g_h14GripRel[h][13],(double)g_h14GripRel[h][14],(double)g_h32ControllerGripOffset[h][12],(double)g_h32ControllerGripOffset[h][13],(double)g_h32ControllerGripOffset[h][14]);
             }
         }
+        /* S26CT: the owned ARK has 168 authored collision children. Profiling
+           measured 9--13 ms average (80+ ms peaks) in repeated predictive world
+           queries while carrying it. Keep its complete collision shape, but use
+           the existing Newton force/torque authority continuously, as the shared
+           two-hand path already does. Never treat a skipped query as clearance
+           for SetMatrix. Other props and mechanisms retain their existing path. */
+        H576AAInvItem* ctItem=h576aa_inv_find_body(body);
+        if(ctItem&&!ctItem->stowed&&h576c_ci_streq(ctItem->logical,"ARK")){
+            if(g_h530WorldContactHold[h]||g_h5755dcHandExternalThisStep[h]){
+                h5755dg_note_held_mode(h,body,2,bm,target);
+                h10_matmul(handM[h],g_h14GripRel[h],target);
+            }else h5755dg_note_held_mode(h,body,6,bm,target);
+            h26_prepare_lock_slot(h,body,target,dt);
+            g_h567LegacyServoBypass[h]++;
+            continue;
+        }
         i32 sweepClear=h569_swept_world_clear(h,body,bm,target);
         // S26BS: an empty endpoint/path sample is not permission for a metre-
         // scale teleport on release from a shared hold. Catch up with the native
@@ -19194,11 +19586,24 @@ static i32 h18_finger_points_world(i32 hand,i32 finger,const float inCurl[4],con
     return s26q_finger_points_pose(hand,finger,inCurl,handM,out,outLen,(hand>=0&&hand<2&&finger>=0&&finger<5)?s26q_root_applied(hand,finger):0ULL);
 }
 /* H57.55bk source cleanup: retired compiler-dead declaration h18_joint_hits. */
+/* The held articulation scope contains no physics integration or body
+   transforms. Resolve and validate its unchanged held-body shape/matrix once;
+   discard the view when that synchronous scope ends. */
+static i32 ct_held_body_view(i32 hand,const void* body,void** outShape,float* outHpl){
+    static u32 epoch;static const void* savedBody;static void* savedWorld;static void* shape;static float matrix[16];
+    if(g_ctHeldScope&&epoch==g_ctHeldEpoch&&savedBody==body&&savedWorld==g_h34PhysicsWorldWrapper){
+        *outShape=shape;h10_copy_f(outHpl,matrix,16);return 1;
+    }
+    void* current=h522_body_shape_relaxed(body,hand);if(!current)return 0;
+    float raw[16];p_h14GetMatrix(body,raw);h508_newton_to_hpl_matrix(raw,outHpl);*outShape=current;
+    if(g_ctHeldScope){epoch=g_ctHeldEpoch;savedBody=body;savedWorld=g_h34PhysicsWorldWrapper;shape=current;h10_copy_f(matrix,outHpl,16);}
+    return 1;
+}
 static i32 h553_exact_capsule_hits_body(i32 hand,i32 slot,const float* capM,const void* body,float* outDepth){
     if(outDepth)*outDepth=0.0f;if(hand<0||hand>1||slot<0||slot>=H519_LINK_COUNT||!capM||!body||!g_h34PhysicsWorldWrapper||!p_h508CheckShapeCollision||!g_h519FingerShape[hand][slot])return -1;
-    void* bodyShape=h522_body_shape_relaxed(body,hand);if(!bodyShape)return -1;float rawBody[16],capHpl[16],bodyHpl[16];p_h14GetMatrix(body,rawBody);h508_newton_to_hpl_matrix(capM,capHpl);h508_newton_to_hpl_matrix(rawBody,bodyHpl);
+    void* bodyShape=0;float capHpl[16],bodyHpl[16];if(!ct_held_body_view(hand,body,&bodyShape,bodyHpl))return -1;h508_newton_to_hpl_matrix(capM,capHpl);
     H508Contact cp;H508CollideData cd;zero_bytes(&cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=&cp;cd.end=&cp+1;cd.cap=&cp+1;g_h553HeldExactCapsuleTests[hand]++;
-    u8 hit=p_h508CheckShapeCollision(g_h34PhysicsWorldWrapper,g_h519FingerShape[hand][slot],capHpl,bodyShape,bodyHpl,&cd,1,0,0);if(!hit||cd.count<1)return 0;float dep=cp.depth;if(!h9_good(dep,1.0f)||dep<0.0f||dep>H508_MAX_VALID_DEPTH)return -1;if(outDepth)*outDepth=dep;g_h553HeldExactHits[hand]++;return 1;
+    u8 hit=ct_held_shape_collision(g_h34PhysicsWorldWrapper,g_h519FingerShape[hand][slot],capHpl,bodyShape,bodyHpl,&cd,1,0,0);if(!hit||cd.count<1)return 0;float dep=cp.depth;if(!h9_good(dep,1.0f)||dep<0.0f||dep>H508_MAX_VALID_DEPTH)return -1;if(outDepth)*outDepth=dep;g_h553HeldExactHits[hand]++;return 1;
 }
 static i32 h557_ensure_guard_shapes(i32 hand){
     if(hand<0||hand>1)return 0;if(g_h557GuardReady[hand])return 1;if(!g_h34PhysicsWorldWrapper||!p_h504CreateCapsuleShape||!g_h504FingerShapesReady[hand])return 0;
@@ -19209,7 +19614,7 @@ fail:
     g_h557GuardCreateFail[hand]++;for(i32 q=0;q<H556_HELD_SLOT_COUNT;++q){if(g_h557GuardShape[hand][q]){p_h34DestroyShape(g_h34PhysicsWorldWrapper,g_h557GuardShape[hand][q]);g_h557GuardShape[hand][q]=0;}else if(made[q])p_h34DestroyShape(g_h34PhysicsWorldWrapper,made[q]);}return 0;
 }
 static i32 h557_shape_hits_body(i32 hand,void* shape,const float* capM,const void* body){
-    if(hand<0||hand>1||!shape||!capM||!body||!g_h34PhysicsWorldWrapper||!p_h508CheckShapeCollision)return 1;void* bodyShape=h522_body_shape_relaxed(body,hand);if(!bodyShape)return 1;float rawBody[16],capHpl[16],bodyHpl[16];p_h14GetMatrix(body,rawBody);h508_newton_to_hpl_matrix(capM,capHpl);h508_newton_to_hpl_matrix(rawBody,bodyHpl);H508Contact cp;H508CollideData cd;zero_bytes(&cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=&cp;cd.end=&cp+1;cd.cap=&cp+1;g_h557PairTests[hand]++;u8 hit=p_h508CheckShapeCollision(g_h34PhysicsWorldWrapper,shape,capHpl,bodyShape,bodyHpl,&cd,1,0,0);if(hit&&cd.count>0){g_h557PairHits[hand]++;return 1;}return 0;
+    if(hand<0||hand>1||!shape||!capM||!body||!g_h34PhysicsWorldWrapper||!p_h508CheckShapeCollision)return 1;void* bodyShape=0;float capHpl[16],bodyHpl[16];if(!ct_held_body_view(hand,body,&bodyShape,bodyHpl))return 1;h508_newton_to_hpl_matrix(capM,capHpl);H508Contact cp;H508CollideData cd;zero_bytes(&cp,sizeof(cp));zero_bytes(&cd,sizeof(cd));cd.begin=&cp;cd.end=&cp+1;cd.cap=&cp+1;g_h557PairTests[hand]++;u8 hit=ct_held_shape_collision(g_h34PhysicsWorldWrapper,shape,capHpl,bodyShape,bodyHpl,&cd,1,0,0);if(hit&&cd.count>0){g_h557PairHits[hand]++;return 1;}return 0;
 }
 /* H57.55bk source cleanup: retired compiler-dead static h557_chain_hits. */
 /* H57.55bk source cleanup: retired compiler-dead static h557_recover_base_overlap. */
@@ -19250,7 +19655,7 @@ static void h556_clear_held_ceilings(i32 hand){
 
 /* H57.55bk source cleanup: retired compiler-dead static h18_segment_hits_body. */
 /* H57.55bk source cleanup: retired compiler-dead static h18_joint_hits. */
-static void h18_update_contact_joints(i32 hand,const float* handM,const void* body){
+static void h18_update_contact_joints_uncached_scope(i32 hand,const float* handM,const void* body){
     if(!body||hand<0||hand>1)return;g_h552HeldAnalogFrames[hand]++;if(!h557_ensure_guard_shapes(hand))return;
     for(i32 f=0;f<5;++f){
         i32 chain=h10_chain_for_finger(hand,f),len=(chain>=0)?g_chainLen[hand][chain]:0;if(len>4)len=4;if(len<1)continue;
@@ -19287,9 +19692,13 @@ static void h18_update_contact_joints(i32 hand,const float* handM,const void* bo
         float sum=0.0f;for(i32 d=0;d<len;++d){g_h554HeldSafeCurl[hand][f][d]=cur[d];g_h18JointCurl[hand][f][d]=cur[d];g_h18JointBlockCurl[hand][f][d]=cur[d];g_h18JointValid[hand][f][d]=1;sum+=cur[d];}for(i32 d=len;d<4;++d){g_h18JointCurl[hand][f][d]=0.0f;g_h18JointValid[hand][f][d]=0;g_h18JointBlocked[hand][f][d]=0;}g_h554HeldSafeValid[hand][f]=1;g_h14ContactCurl[hand][f]=sum/(float)len;g_h14ContactValid[hand][f]=1;
     }
 }
+static void h18_update_contact_joints(i32 hand,const float* handM,const void* body){
+    ct_held_queries_begin();h18_update_contact_joints_uncached_scope(hand,handM,body);ct_held_queries_end();
+}
+
 
 static u32 g_h5755dkHeldSeedSolves[2],g_h5755dkHeldSeedRejects[2];
-static void h5755dk_seed_held_articulation(i32 hand,const float* handM,const void* body){
+static void h5755dk_seed_held_articulation_uncached_scope(i32 hand,const float* handM,const void* body){
     if(hand<0||hand>1||!handM||!body||!h557_ensure_guard_shapes(hand)){if(hand>=0&&hand<2)g_h5755dkHeldSeedRejects[hand]++;return;}
     /* The old latch copied the discrete free-hand proxy pose (often squeeze=2)
        directly into the held solver, producing one visible full-fist frame before
@@ -19303,6 +19712,10 @@ static void h5755dk_seed_held_articulation(i32 hand,const float* handM,const voi
     g_h5755dkHeldSeedSolves[hand]++;
     if(g_h5755dkHeldSeedSolves[hand]<=12u)ext_Log(">>> S6-HANDS5755DK HELD ARTICULATION SEEDED %s: same-latch H560 contact solve converged from open pose to current object-specific wrap; no discrete full-fist visual handoff",hand==0?"L":"R");
 }
+static void h5755dk_seed_held_articulation(i32 hand,const float* handM,const void* body){
+    ct_held_queries_begin();h5755dk_seed_held_articulation_uncached_scope(hand,handM,body);ct_held_queries_end();
+}
+
 
 
 static i32 h483_surface_target_info(void* wrapper,void* entity,i32* outIcon,const void** outRaw,void** outCan,void** outOn){
@@ -19362,6 +19775,105 @@ static i32 h576ad_probe_contact_ready(i32 hand){
     return 0;
 }
 static i32 s26v_authored_surface_shell(i32 hand,const float* handM,i32 commit);
+// S26CX: fresh Grip can use the same physical contact that produced READY.
+// No new spatial scan, stale READY latch, held-Grip retry, or owner substitution.
+// S26DA: static authored pickups must compete before a mechanism
+// retires the physical hand. Revalidate a last-step exact contact against the
+// current hand mesh and native availability; no radius search or new scan.
+static const void* g_s26daItemClaim[2];
+static u32 g_s26daItemClaimStep[2];
+static i32 s26da_queue_contact_item(i32 hand,const float* handM){
+    if(hand<0||hand>1||!handM||g_h14GripBody[hand]||g_h30NativeMouseDown)return 0;
+    if((u32)(g_h14PhysicsSteps-g_h5755hjStaticContactStep[hand])>1u)return 0;
+    const void* chosen=0;void* chosenOwner=0;i32 slot=-1;
+    for(i32 i=0;i<(i32)g_h5755hjStaticContactCount[hand]&&i<H5755HJ_STATIC_CONTACT_MAX;++i){
+        const void* body=g_h5755hjStaticContactBody[hand][i];
+        if(!body||!g_h5755hjStaticContactPointValid[hand][i])continue;
+        void* wrapper=0;void* owner=h482_body_owner(body,&wrapper);const void* raw=0;i32 icon=-1;
+        if(!h576ad_target_can_interact(wrapper,owner,&raw,&icon))continue;
+        // Player_Types.hps: carry-one, carry-two, pickup, read. Doors, drawers,
+        // terminals, lamps and interaction areas cannot claim this priority.
+        if(icon!=2&&icon!=3&&icon!=14&&icon!=22)continue;
+        float inv[16],local[3],mesh[3],bary[3],gap=999;i32 tri=-1;
+        h14_rigid_inverse(handM,inv);h14_transform_point(inv,g_h5755hjStaticContactPoint[hand][i],local);
+        if(!h20_nearest_hand_mesh_local(hand,local,mesh,&tri,bary,&gap)||gap>0.012f)continue;
+        if(chosenOwner&&chosenOwner!=owner)return -1; // ambiguous items must not become a drawer grab
+        if(!chosen){chosen=body;chosenOwner=owner;slot=i;}
+    }
+    if(!chosen)return 0;
+    if(!h25_queue_native_interact(hand,chosen,handM,g_h5755hjStaticContactPoint[hand][slot],0.0f,0))return -1;
+    g_s26daItemClaim[hand]=chosen;g_s26daItemClaimStep[hand]=g_h14PhysicsSteps;
+    return 1;
+}
+// S26DB: jointed carry props were omitted from both loose-body contact and
+// mechanism contact. Consume only exact contacts on their native interaction
+// body; never use a cable child to remotely select its plug or the panel door.
+static i32 s26db_queue_contact_cable(i32 hand,const float* handM){
+    if(hand<0||hand>1||!handM||g_h14GripBody[hand]||g_h30NativeMouseDown)return 0;
+    const void* chosen=0;const float* cp=0;
+    for(i32 group=0;group<2;++group){
+        if(group==0&&(u32)(g_h14PhysicsSteps-g_h5755hjStaticContactStep[hand])>1u)continue;
+        if(group==1&&g_h5755eiContactPropAge[hand]>1u)continue;
+        i32 count=group?(i32)g_h5755eiContactPropCount[hand]:(i32)g_h5755hjStaticContactCount[hand];
+        i32 limit=group?H5755EI_CONTACT_PROP_MAX:H5755HJ_STATIC_CONTACT_MAX;
+        for(i32 i=0;i<count&&i<limit;++i){
+            const void* body=group?g_h5755eiContactProp[hand][i]:g_h5755hjStaticContactBody[hand][i];
+            if(!body||!(group?g_h5755ghContactPointValid[hand][i]:g_h5755hjStaticContactPointValid[hand][i]))continue;
+            void* wrapper=0;void* owner=h482_body_owner(body,&wrapper);const void* raw=0;i32 icon=-1;
+            if(!h568_first_external_joint(body)||h553_body_semantic_mechanism(body,0)!=H481_MECH_NONE)continue;
+            if(!h576ad_target_can_interact(wrapper,owner,&raw,&icon)||raw!=body||(icon!=2&&icon!=3))continue;
+            const float* point=group?g_h5755ghContactPoint[hand][i]:g_h5755hjStaticContactPoint[hand][i];
+            float inv[16],local[3],mesh[3],bary[3],gap=999;i32 tri=-1;
+            h14_rigid_inverse(handM,inv);h14_transform_point(inv,point,local);
+            if(!h20_nearest_hand_mesh_local(hand,local,mesh,&tri,bary,&gap)||gap>0.012f)continue;
+            if(!h484_classify_compliant_cluster(hand,body,owner))continue;
+            if(chosen&&chosen!=body)return -1;
+            chosen=body;cp=point;
+        }
+    }
+    if(!chosen)return 0;
+    if(!h25_queue_native_interact(hand,chosen,handM,cp,0.0f,0))return -1;
+    g_s26dbCableClaim[hand]=chosen;g_s26dbCableClaimStep[hand]=g_h14PhysicsSteps;
+    g_s26daItemClaim[hand]=chosen;g_s26daItemClaimStep[hand]=g_h14PhysicsSteps;
+    static u32 logs;if(logs++<32u)ext_Log(">>> S26DB CABLE CONTACT: hand %d body %p exact native carry body queued; socket spring and detach callback remain authored",hand,chosen);
+    return 1;
+}
+static i32 s26cx_queue_contact_mechanism(i32 hand,const float* handM){
+    if(hand<0||hand>1||!handM||g_h14GripBody[hand]||g_h30NativeMouseDown)return 0;
+    if(g_h5755eiContactPropAge[hand]>1u)return 0;
+    const void* chosen=0;void* chosenOwner=0;void* chosenWrapper=0;
+    i32 chosenIndex=-1,chosenKind=0;
+    for(i32 i=0;i<(i32)g_h5755eiContactPropCount[hand]&&i<H5755EI_CONTACT_PROP_MAX;++i){
+        const void* body=g_h5755eiContactProp[hand][i];
+        if(!body||!g_h5755ghContactPointValid[hand][i])continue;
+        void* owner=0;int kind=h553_body_semantic_mechanism(body,&owner);
+        if(kind!=H481_MECH_HINGE&&kind!=H481_MECH_SLIDER)continue;
+        void* wrapper=p_h14GetUserData?p_h14GetUserData(body):0;
+        const void* raw=0;
+        if(!h576ad_target_can_interact(wrapper,owner,&raw,0)||raw!=body)continue;
+        // Distinct touched mechanisms are ambiguous; keep the existing selector.
+        if(chosenOwner&&chosenOwner!=owner)return 0;
+        if(!chosen){chosen=body;chosenOwner=owner;chosenWrapper=wrapper;chosenIndex=i;chosenKind=kind;}
+    }
+    if(!chosen)return 0;
+    const float* cp=g_h5755ghContactPoint[hand][chosenIndex];
+    // Last-step manifold must still lie on the current physical hand mesh.
+    float inv[16],local[3],mesh[3],bary[3],gap=999;int tri=-1;
+    h14_rigid_inverse(handM,inv);h14_transform_point(inv,cp,local);
+    if(!h20_nearest_hand_mesh_local(hand,local,mesh,&tri,bary,&gap)||gap>0.035f)return 0;
+    if(chosenKind==H481_MECH_SLIDER){
+        H47Candidate c;zero_bytes(&c,sizeof(c));c.body=chosen;c.wrapper=chosenWrapper;c.owner=chosenOwner;
+        for(i32 k=0;k<3;++k)c.contact[k]=cp[k];
+        return h47_queue_slider_candidate(hand,&c,handM);
+    }
+    if(!h25_queue_native_interact(hand,chosen,handM,cp,0.0f,1))return 0;
+    // S26CZ: native selection and physical attachment are one transaction.
+    // The contact path bypasses the authored scan, so H559 cannot attach it.
+    float mass=0,ix=0,iy=0,iz=0;p_h14GetMass(chosen,&mass,&ix,&iy,&iz);
+    h14_latch(hand,chosen,0.0f,mass,handM,cp,0.0f,cp,0,1,h568_first_external_joint(chosen));
+    if(g_h14GripBody[hand]!=chosen){g_h25PendingValid[hand]=0;return 0;}
+    return 1;
+}
 static i32 h576ad_probe_area_ready(i32 hand,const float* handM){
     if(hand<0||hand>1||g_h14PhysicsSteps<g_h576adAreaProbeNextStep[hand])return 0;
     g_h576adAreaProbeNextStep[hand]=g_h14PhysicsSteps+8u;g_h576adAreaProbeCalls[hand]++;
@@ -19381,8 +19893,29 @@ static i32 s26v_is_area(void* entity){char rt[96];return h25_owner_kind(entity,r
 static i32 s26v_authored_surface_shell(i32 hand,const float* handM,i32 commit){
     if(hand<0||hand>1||!handM||g_h25PendingValid[hand]||g_h30NativeMouseDown||g_h14GripBody[hand])return 0;PFN_H37_GetClosestEntity fn=0;void* helper=h37_map_helper(&fn);if(!helper||!fn)return 0;
     float center[3];h15_grip_center_world(hand,handM,center);float dirs[6][3]={{handM[0],handM[1],handM[2]},{-handM[0],-handM[1],-handM[2]},{handM[4],handM[5],handM[6]},{-handM[4],-handM[5],-handM[6]},{handM[8],handM[9],handM[10]},{-handM[8],-handM[9],-handM[10]}};
+    float origins[9][3];for(i32 k=0;k<3;++k)origins[0][k]=center[k];i32 originCount=1;
+    if(commit==2){
+        float inv[16];h14_rigid_inverse(handM,inv);
+        for(i32 group=0;group<2&&originCount<9;++group){
+            if(group==0&&(u32)(g_h14PhysicsSteps-g_h5755hjStaticContactStep[hand])>1u)continue;
+            if(group==1&&g_h5755eiContactPropAge[hand]>1u)continue;
+            i32 count=group?(i32)g_h5755eiContactPropCount[hand]:(i32)g_h5755hjStaticContactCount[hand];
+            i32 limit=group?H5755EI_CONTACT_PROP_MAX:H5755HJ_STATIC_CONTACT_MAX;
+            for(i32 q=0;q<count&&q<limit&&originCount<9;++q){
+                if(!(group?g_h5755ghContactPointValid[hand][q]:g_h5755hjStaticContactPointValid[hand][q]))continue;
+                const float* pt=group?g_h5755ghContactPoint[hand][q]:g_h5755hjStaticContactPoint[hand][q];
+                float local[3],mesh[3],bary[3],gap=999;i32 tri=-1;
+                h14_transform_point(inv,pt,local);
+                if(!h20_nearest_hand_mesh_local(hand,local,mesh,&tri,bary,&gap)||gap>0.012f)continue;
+                i32 duplicate=0;for(i32 n=0;n<originCount;++n)
+                    if(h10_len3(pt[0]-origins[n][0],pt[1]-origins[n][1],pt[2]-origins[n][2])<0.015f)duplicate=1;
+                if(duplicate)continue;
+                for(i32 k=0;k<3;++k)origins[originCount][k]=pt[k];++originCount;
+            }
+        }
+    }
     void* bestW=0;void* bestE=0;const void* bestRaw=0;void* bestCan=0;void* bestOn=0;float bestGap=999.0f,bestFocus[3]={0,0,0},secondGap=999.0f;void* secondE=0;i32 bestIcon=-1,bestJointed=0;
-    for(i32 i=0;i<6;++i){if(!h10_norm3(dirs[i]))continue;float start[3]={center[0]-dirs[i][0]*(H483_CURTAIN_RAY_M*0.5f),center[1]-dirs[i][1]*(H483_CURTAIN_RAY_M*0.5f),center[2]-dirs[i][2]*(H483_CURTAIN_RAY_M*0.5f)};float dist=9999999.0f;void* w=0;void* e=0;g_h483CurtainShellQueries[hand]++;u8 ok=fn(helper,start,dirs[i],H483_CURTAIN_RAY_M,0,0,&dist,&w,&e);if(!ok||!w||!e||dist<0.0f||dist>H483_CURTAIN_RAY_M)continue;float hit[3]={start[0]+dirs[i][0]*dist,start[1]+dirs[i][1]*dist,start[2]+dirs[i][2]*dist};float dx=hit[0]-center[0],dy=hit[1]-center[1],dz=hit[2]-center[2],gap=h10_len3(dx,dy,dz);if(gap>H483_CURTAIN_SHELL_M)continue;i32 icon=-1;const void* raw=0;void* can=0;void* on=0;if(!h483_surface_target_info(w,e,&icon,&raw,&can,&on)||(icon==17||!s26v_is_area(e))){if(icon>=0)g_h483CurtainShellWrongIcon[hand]++;continue;}if(icon==H482_POKE_SWITCH_ICON)g_h485AuthoredShellIcon13[hand]++;g_h483CurtainShellHits[hand]++;if(e==bestE){if(gap<bestGap){bestGap=gap;bestW=w;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}continue;}if(gap<bestGap){secondGap=bestGap;secondE=bestE;bestGap=gap;bestW=w;bestE=e;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}else if(gap<secondGap){secondGap=gap;secondE=e;}}
+    for(i32 ray=0;ray<originCount*6;++ray){i32 i=ray%6;for(i32 k=0;k<3;++k)center[k]=origins[ray/6][k];if(!h10_norm3(dirs[i]))continue;float start[3]={center[0]-dirs[i][0]*(H483_CURTAIN_RAY_M*0.5f),center[1]-dirs[i][1]*(H483_CURTAIN_RAY_M*0.5f),center[2]-dirs[i][2]*(H483_CURTAIN_RAY_M*0.5f)};float dist=9999999.0f;void* w=0;void* e=0;g_h483CurtainShellQueries[hand]++;u8 ok=fn(helper,start,dirs[i],H483_CURTAIN_RAY_M,0,0,&dist,&w,&e);if(!ok||!w||!e||dist<0.0f||dist>H483_CURTAIN_RAY_M)continue;float hit[3]={start[0]+dirs[i][0]*dist,start[1]+dirs[i][1]*dist,start[2]+dirs[i][2]*dist};float dx=hit[0]-center[0],dy=hit[1]-center[1],dz=hit[2]-center[2],gap=h10_len3(dx,dy,dz);if(gap>H483_CURTAIN_SHELL_M)continue;i32 icon=-1;const void* raw=0;void* can=0;void* on=0;if(!h483_surface_target_info(w,e,&icon,&raw,&can,&on)||(icon==17||!s26v_is_area(e))){if(icon>=0)g_h483CurtainShellWrongIcon[hand]++;continue;}if(commit==2&&!s26db_aux_cable(hand,e,0,0,0))continue;if(icon==H482_POKE_SWITCH_ICON)g_h485AuthoredShellIcon13[hand]++;g_h483CurtainShellHits[hand]++;if(e==bestE){if(gap<bestGap){bestGap=gap;bestW=w;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}continue;}if(gap<bestGap){secondGap=bestGap;secondE=bestE;bestGap=gap;bestW=w;bestE=e;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}else if(gap<secondGap){secondGap=gap;secondE=e;}}
     if(!bestW||!bestE||!bestRaw)return 0;if(secondE&&secondE!=bestE&&secondGap-bestGap<H483_CURTAIN_TIE_M){g_h483CurtainShellAmbiguous[hand]++;if(commit)ext_Log(">>> S6-HANDS483 CURTAIN/SCRIPTED SHELL %s: ambiguous authored-control surfaces best %.4f second %.4f (< %.3f tie); acquisition rejected",hand==0?"L":"R",bestGap,secondGap,H483_CURTAIN_TIE_M);return 0;}
     if(!commit){h576ad_mark_interact_ready(hand,bestRaw,bestE,"shared live selection for haptic and Grip");return 1;}
     if(g_h25AttemptBody[hand]==bestRaw)return 0;g_h25AttemptBody[hand]=bestRaw;H25PendingInteract* p=&g_h25Pending[hand];zero_bytes(p,sizeof(*p));p->newtonBody=bestRaw;p->bodyWrapper=bestW;p->entity=bestE;p->canFn=bestCan;p->onFn=bestOn;p->contact[0]=bestFocus[0];p->contact[1]=bestFocus[1];p->contact[2]=bestFocus[2];p->authoredAreaShell=1;p->meshGap=bestGap;p->broadGap=bestGap;p->ownerOffset=0x2c0;p->physicsStep=g_h14PhysicsSteps;p->jointed=(u8)(bestJointed?1:0);g_h25PendingValid[hand]=1;g_h25Queued[hand]++;g_h483CurtainShellQueued[hand]++;g_h483CurtainLastGap[hand]=bestGap;ext_Log(">>> S26V SHARED AREA GRIP %s: icon %d exact owner %p wrapper %p jointed %d queued from bounded 3D palm shell gap %.4f m; no global interaction radius expansion",hand==0?"L":"R",bestIcon,bestE,bestW,bestJointed,bestGap);return 1;
@@ -19859,6 +20392,19 @@ static void h14_physics_step(const void* world,float dt){
                Zero-mass semantics therefore move to the exact post-solver fresh-edge
                bridge below; no previous-step contact is allowed to become authority. */
         }
+        if(gripEdge&&!looseContactWon&&!nativeQueuedThisStep){
+            i32 cable=s26db_queue_contact_cable(h,handM[h]);
+            if(cable){looseContactWon=1;if(cable>0)nativeQueuedThisStep=1;}
+        }
+        if(gripEdge&&!looseContactWon&&!nativeQueuedThisStep&&s26v_authored_surface_shell(h,handM[h],2)){
+            nativeQueuedThisStep=1;looseContactWon=1;
+        }
+        if(gripEdge&&!looseContactWon&&!nativeQueuedThisStep){
+            i32 item=s26da_queue_contact_item(h,handM[h]);
+            if(item){looseContactWon=1;if(item>0)nativeQueuedThisStep=1;}
+        }
+        if(gripEdge&&!looseContactWon&&!nativeQueuedThisStep)
+            nativeQueuedThisStep=s26cx_queue_contact_mechanism(h,handM[h]);
         i32 sliderFailClosed=0;
         // S26AK: preserve the established mechanism scan before area fallback.
         if(gripEdge&&!looseContactWon&&!nativeQueuedThisStep){{u64 eg=h5755eg_tick();authOK=h558_build_authored_scan(h,world,authM,&authScan);h5755eg_phys_add_since(H5755EG_P_AUTH,eg);}if(authOK){authoredScan=&authScan;authoredM=authM;}
@@ -19939,7 +20485,7 @@ static void h14_physics_step(const void* world,float dt){
            successful native handshake prevented h482_jointed_prepare(), the
            body-relative hand anchor, character-collision guard, and camera guard.
            Loose props are excluded: this branch is JOINTED-only. */
-        if(gripEdge&&!sliderFailClosed&&!g_h14GripBody[h]&&authoredScan->best&&authoredScan->bestPoint>=0&&authoredScan->bestJointed&&authoredScan->bestGap<0.025f){
+        if(gripEdge&&!looseContactWon&&!sliderFailClosed&&!g_h14GripBody[h]&&authoredScan->best&&authoredScan->bestPoint>=0&&authoredScan->bestJointed&&authoredScan->bestGap<0.025f){
             g_h559JointDualAttempts[h]++;if(nativeQueuedThisStep)g_h559JointDualNativeQueued[h]++;
             u32 beforeJoint=g_h14GrabCount[h];
             h14_latch(h,authoredScan->best,authoredScan->bestGap,authoredScan->bestMass,authoredM,authoredScan->p[authoredScan->bestPoint],authoredScan->rad[authoredScan->bestPoint],authoredScan->bestContact,authoredScan->bestPoint,1,authoredScan->bestJoint);
@@ -19959,7 +20505,7 @@ static void h14_physics_step(const void* world,float dt){
             }
         }
         if(g_h14GripBody[h]){h5755ea_hold_character_guard_tick(g_h14GripBody[h]);s26t_gravity_tick(g_h14GripBody[h]);if(g_lastSqueezeActive[h]&&squeeze<0.28f)h14_release(h,"squeeze released");}
-        else if(gripEdge&&!sliderFailClosed&&!nativeQueuedThisStep&&!(g_h30NativeMouseDown&&g_h30NativeUseHand==h)){
+        else if(gripEdge&&!looseContactWon&&!sliderFailClosed&&!nativeQueuedThisStep&&!(g_h30NativeMouseDown&&g_h30NativeUseHand==h)){
             /* Preserve H48.6's raw-jointed fallback. This path is constrained-body
                handling, not a loose mass-capped grab. */
             if(authoredScan->best&&authoredScan->bestPoint>=0&&authoredScan->bestJointed&&authoredScan->bestGap<0.025f){
@@ -20072,7 +20618,11 @@ static i32 h5755gw_try_current_same_owner_contact(i32 hand,void* owner,const voi
         const void* body=g_h5755eiContactProp[hand][i];if(!body||!h5755ei_body_is_contact_cLuxProp(body)||(requiredBody&&body!=requiredBody))continue;
         void* wrapper=0;void* bodyOwner=h482_body_owner(body,&wrapper);if(!bodyOwner||bodyOwner!=owner)continue;
         void* semOwner=0;if(h553_body_semantic_mechanism(body,&semOwner)!=H481_MECH_NONE)continue;
-        if(h568_first_external_joint(body))continue;
+        if(h568_first_external_joint(body)&&
+           !(preserveExistingGrabUse&&g_s26dbCableClaim[hand]==body&&
+             g_s26dbCableClaimStep[hand]==g_h5755haGripEdgeStep[hand]&&
+             g_h5755haEdgeNativeActive[hand]&&g_h5755haEdgeNativeBody[hand]==body&&
+             h484_classify_compliant_cluster(hand,body,owner)))continue;
         float mass=0,ix=0,iy=0,iz=0;if(!p_h14GetMass)continue;p_h14GetMass(body,&mass,&ix,&iy,&iz);if(!(mass>0.001f&&mass<100000.0f))continue;
         g_h5755eiContactPropLatchAttempts[hand]++;
         i32 latched=0;
@@ -20171,7 +20721,10 @@ static i32 h5755ha_arm_edge_native_after_true(i32 hand,const H25PendingInteract*
     if(!g_lastSqueezeActive[hand]||clamp01(g_lastSqueeze[hand])<=0.55f)return 0;
     if(p->meshGap>0.0120f)return 0;
     if(g_h30NativeUseHand!=hand||!g_h30NativeMouseDown||g_h31NativeUseJointed||g_h39NativeUseProp[hand]!=entity)return 0;
-    void* semOwner=0;if(h553_body_semantic_mechanism(p->newtonBody,&semOwner)!=H481_MECH_NONE||h568_first_external_joint(p->newtonBody))return 0;
+    void* semOwner=0;if(h553_body_semantic_mechanism(p->newtonBody,&semOwner)!=H481_MECH_NONE)return 0;
+    if(h568_first_external_joint(p->newtonBody)&&
+       !(g_s26dbCableClaim[hand]==p->newtonBody&&g_s26dbCableClaimStep[hand]==p->physicsStep&&
+         h484_classify_compliant_cluster(hand,p->newtonBody,entity)))return 0;
     /* Do not let the edge bridge reinterpret known touch/curtain controls as a
        loose extraction candidate. Unknown ordinary cLuxProp icons are allowed
        to arm, but can still latch only after a positive-mass same-owner H526. */
@@ -20247,6 +20800,8 @@ static void h5755hk_post_solver_zero_mass_edge_semantics(void){
         if(!g_lastSqueezeActive[h]||clamp01(g_lastSqueeze[h])<=0.55f||g_h14GripBody[h])continue;
         if(g_h30NativeMouseDown&&g_h30NativeUseHand==h)continue;
         if(g_h5755hjStaticContactStep[h]!=g_h14PhysicsSteps||!g_h5755hjStaticContactCount[h])continue;
+        if(g_s26daItemClaimStep[h]==g_h14PhysicsSteps&&g_h25PendingValid[h]&&
+           g_h25Pending[h].newtonBody==g_s26daItemClaim[h])continue;
         g_h5755hkPostEdgeChecks[h]++;
         if(g_h5755eiContactPropAge[h]==0u&&g_h5755eiContactPropStep[h]==g_h14PhysicsSteps&&g_h5755eiContactPropCount[h]){
             g_h5755hkPostEdgeDynamicFirst[h]++;
@@ -20375,8 +20930,7 @@ static void s26_prepare_heal_filter(i32 active){
     for(i32 h=0;h<2;++h){
         g_s26HealFilterHand[h]=0;g_s26HealFilterFlower[h]=0;
         if(!active||g_h576mScriptRuntimePublished!=1||!p2_xr_on()||g_h14GripBody[h])continue;
-        if(!g_s26HealPassBody[h]||!visual_pose_valid(h))continue;
-        if(!(g_s26ManualHeal&&g_s26HealHand==h)&&(u32)(g_h14PhysicsSteps-g_s26HealPassStep[h])>12u)continue;
+        if(!s26cy_heal_body_pass(h,g_s26HealPassBody[h]))continue;
         g_s26HealFilterHand[h]=g_h34HandNewton[h];g_s26HealFilterFlower[h]=g_s26HealPassBody[h];
     }
 }

@@ -1,70 +1,8 @@
 {
-  "version": "S26CM",
-  "dll_sha256": "0f48045c9b6ecb1dae38043cbc911b9a6091e5474b8db1829231d838f4b715c9",
-  "native_dll": "Byte-identical to S26CL",
-  "injector_sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
-  "compatibility_tests": {
-    "checks": 13,
-    "passed": true,
-    "cases": [
-      {
-        "name": "verified",
-        "status": "VerifiedExecutable"
-      },
-      {
-        "name": "overlay",
-        "status": "EquivalentEngineUnverified"
-      },
-      {
-        "name": "checksum",
-        "status": "EquivalentEngineUnverified"
-      },
-      {
-        "name": "resource",
-        "status": "EquivalentEngineUnverified"
-      },
-      {
-        "name": "code",
-        "status": "Incompatible"
-      },
-      {
-        "name": "data",
-        "status": "Incompatible"
-      },
-      {
-        "name": "truncated",
-        "status": "ERROR"
-      },
-      {
-        "name": "x86",
-        "status": "ERROR"
-      },
-      {
-        "name": "alternate",
-        "status": "Incompatible"
-      },
-      {
-        "name": "launcher_verified_",
-        "passed": true
-      },
-      {
-        "name": "launcher_resource_",
-        "passed": true
-      },
-      {
-        "name": "launcher_code_-Experimental",
-        "passed": true
-      },
-      {
-        "name": "launcher_verified_-Executable_not-soma.exe",
-        "passed": true
-      }
-    ],
-    "scope": "PE comparison and actual launcher CheckOnly. No mutated fixture, alternate storefront executable, injector or game was launched."
-  },
-  "gog_epic_tested": false,
-  "scope": "Launch preflight and packaging only. The changed launcher was tested in CheckOnly mode, not through a new full game launch. No alternate storefront executable was available. No new engine offsets or runtime signatures added.",
-  "installed_game_modified": false,
-  "root_ini_included": true,
-  "updating_custom_ini": "Keep/back up the existing root INI rather than overwrite custom values during extraction."
+  "version": "1.03-S26DF",
+  "base": "1.02-S26DD",
+  "dll_sha256": "8205c7a1c507d2e83acaebe5f2f4f8a92238bf797dc3c630e637eade7371e96c",
+  "validation": "docs/S26DF-validation.txt",
+  "upstream_docs_commit": "65b77e3b2312a62cc657fa621b04508436952916",
+  "release_notes_installed": false
 }

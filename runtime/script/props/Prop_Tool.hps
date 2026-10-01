@@ -292,7 +292,9 @@ class cScrPropTool : iScrProp, iScrProp_Interface
 		pBody.SetCollideCharacter(false);
 		if (pBody.GetMass() < 0.05f) pBody.SetMass(0.20f);
 		pBody.SetGravity(true);
-		pBody.SetAutoDisable(false);
+		// S26CW: released inventory carriers may sleep once settled. Native
+        // pickup/retrieval still wakes them; held AddForce/AddTorque wake normally.
+        pBody.SetAutoDisable(true);
 		mBaseObj.WakeUp();
 		// I re-publishes exact inventory-owned physical identity after save/retrieval.
 		// P remains reserved for the completed stock pickup transaction.

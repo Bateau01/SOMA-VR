@@ -1,0 +1,1 @@
+Copy the contents of ../runtime into ./payload, create ./output, then run source/Build.ps1 in Windows PowerShell. Uses the .NET Framework C# compiler included with Windows. The resulting setup requests administrator access. FullTests.cs exercises the installer engine in an isolated target folder.

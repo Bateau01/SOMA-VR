@@ -603,7 +603,11 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 	void HPL3VR_SetSceneOverride()
 	{
 		if(!_HPL3VR_RuntimeActive_PlayerHands()) return;
-		mlVRSceneOverride=cScript_GetGlobalArgInt(0);
+		bool bWasReplaced=mlVRSceneOverride==0;
+        mlVRSceneOverride=cScript_GetGlobalArgInt(0);
+        iLuxEntity@ pHands=cLux_ID_Entity(m_idHands);
+        if(bWasReplaced && mlVRSceneOverride!=0 && mbActive && pHands !is null)
+            pHands.GetMeshEntity().SetVisible(mbEntityVisible && !HPL3VR_ReplaceAuthoredHands());
 		HPL3VR_PublishSceneHands();
 	}
 	[nosave] int mlVRScenePublished = -1;

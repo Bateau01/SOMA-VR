@@ -2,27 +2,21 @@
 
 ## What to download
 
-Download the latest release build `SOMA-VR.vx.xx.zip`. It contains the cumulative overlay: the DLL, injector, OpenXR loader, scripts, modified entity/map data, all current hand families, audio components and a launcher.
+Download `SOMA-VR-1.03-S26DF-Installer.zip`, extract it, run `SOMA-VR-1.03-S26DF-Setup.exe`, and select **INSTALL / UPDATE / REPAIR**. The installer requests administrator access and preserves customized settings. The manual overlay instructions below apply to the `runtime` folder in the source archive. It contains the cumulative overlay: the DLL, injector, OpenXR loader, scripts, modified entity/map data, all current hand families, audio components and a launcher.
 
 This is for an existing compatible SOMA installation. It does not contain `Soma.exe`, the full maps, game audio, or the other files needed to run the game independently.
 
 ## Installation:
 
 1. Download and extract the latest release of SOMA-VR in the "Releases" section.
-2. Extract contents of the "SOMA-VR-vx.xx" to the root of your SOMA game directory (where Soma.exe is located). Replace all files if prompted. I recommend creating a backup of your existing SOMA game folder.
-3. [FIRST TIME INSTALLATION ONLY] Navigate to your user settings config file (C:\Users[YOUR_NAME]\Documents\My Games\Soma\Main), open the "YOURNAME_ID_user_settings.cfg", and make these changes:
-
-- Engine LimitFPS="false"
-- FullScreen="false"
-
-4. Start SteamVR and ensure that your headset and controllers are connected. Ensure that SteamVR is using OpenXR as its runtime.
-5. To launch SOMA VR, run "Launch-SOMA-VR.cmd" from your root game directory. If prompted with an error stating "access is denied," or "elevation required," or anything in that regard, run that same file as an administrator.
+2. Run the SOMA-VR setup.exe file.
+3. Ensure that the path to your SOMA game directory, as well as the folder containing your user_settings.cfg folder are detected. If the setup isn't able to automatically detect those folders, you can manually search for them.
+4. Press "Install". If done correctly, you should receive a confirmation prompt stating that the VR mod was successfully installed.
+5. To launch SOMA VR, navigate to your SOMA game directory, and run the "LAUNCH-SOMA-VR.cmd" file. It should run as an administrator. Ensure that your VR headset and controllers are connected, and SteamVR or VD is running using the OpenXR or VDXR runtime.
 
 ## Troubleshooting:
 
 - If your game immediately crashes upon injection, ensure that SteamVR is using OpenXR as its runtime.
-- If your game still immediately crashes, navigate to your user settings config file (C:\Users[YOUR_NAME]\Documents\My Games\Soma\Main), open the "YOURNAME_ID_user_settings.cfg" file, and ensure that your screen's width and height is set to your monitor's resolution (E.G, Width = 2560, Height = 1440 for 2560x1440).
-- If your game's menu looks weirdly cropped, ensure that your game is running in windowed mode instead of fullscreen.
 
 For any other in-game related issues, please upload "hpl3vr.log" from your game's root directory, and "hpl.log" from your C:\Users[YOUR_NAME]\Documents\My Games\Soma\Main. Include a description of what the issue is, where this issue occurred, what VR headset and controllers you're using, and your operating system.
 

@@ -11,10 +11,10 @@ python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
 Output: `build/hpl3vr.dll`. The checked release hash is:
 
 ```text
-dde3b2839a3953f3a713ed86a617b5f5d425710d5e9dc7c17db0f0f3a10a6415
+8205c7a1c507d2e83acaebe5f2f4f8a92238bf797dc3c630e637eade7371e96c
 ```
 
-The S26CC test package was rebuilt using this portable script and matched that hash. The extracted native-rendering regression test reproduces the pre-fix failure and passes after the fix. It mocks engine calls and a small rig; it is not a test of all live controller interactions.
+The 1.03-S26DF package was rebuilt using this portable script and matched that hash. The extracted native-rendering regression test reproduces the pre-fix failure and passes after the fix. It mocks engine calls and a small rig; it is not a test of all live controller interactions.
 
 ## How this code is built
 

@@ -1,5 +1,42 @@
-param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly, [string]$Executable = '', [switch]$Experimental)
+param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly, [string]$Executable = '', [switch]$Experimental, [switch]$SkipSettingsRepair, [switch]$KeepSSAO, [int]$MonitorIndex = -1, [string]$SettingsPath = '', [string]$SettingsDirectory = '')
 $ErrorActionPreference = 'Stop'
+# Elevate before cleanup, config writes or injection. SOMA and the injector
+# inherit this token. Serialize arguments as data rather than executable text.
+$launchIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$launchPrincipal = New-Object Security.Principal.WindowsPrincipal($launchIdentity)
+if (!$launchPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    $forward = @{}
+    foreach ($key in $PSBoundParameters.Keys) {
+        $value = $PSBoundParameters[$key]
+        if ($value -is [Management.Automation.SwitchParameter]) { $value = [bool]$value }
+        $forward[$key] = $value
+    }
+    $packet = @{ Script=$PSCommandPath; Parameters=$forward; OwnerSid=$launchIdentity.User.Value }
+    $data = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([Management.Automation.PSSerializer]::Serialize($packet)))
+    $bootstrap = @'
+$ErrorActionPreference = 'Stop'
+try {
+    $packet = [Management.Automation.PSSerializer]::Deserialize([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__DATA__')))
+    if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $packet.OwnerSid) {
+        throw 'Approve administrator access for the same Windows account. A different account would use different SOMA saves, settings and VR runtime registration.'
+    }
+    $arguments = $packet.Parameters
+    & $packet.Script @arguments
+    exit 0
+} catch {
+    Write-Host $_ -ForegroundColor Red
+    [void](Read-Host 'Press Enter to close')
+    exit 1
+}
+'@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($bootstrap.Replace('__DATA__',$data)))
+    try {
+        $child = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) -PassThru -Wait
+        exit $child.ExitCode
+    } catch {
+        throw ('Administrator approval is required to start SOMA VR. No game was started by this launcher. ' + $_.Exception.Message)
+    }
+}
 # Use the Windows PowerShell modules even when a parent shell supplied a PowerShell 7 module path.
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility')
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Management')
@@ -73,6 +110,20 @@ public static class SomaVrLaunch {
 }
 '@
 Stop-SomaInstances
+if (!$SettingsPath -and !$SettingsDirectory) {
+    $optionFile = Join-Path $gameDir 'SOMA-VR-Install-Options.json'
+    if (Test-Path -LiteralPath $optionFile -PathType Leaf) {
+        $options = Get-Content -LiteralPath $optionFile -Raw | ConvertFrom-Json
+        if ($options.OwnerSid -eq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) {
+            $SettingsDirectory = [string]$options.SettingsDirectory
+        }
+    }
+}
+if (!$SkipSettingsRepair) {
+    if ($GameArguments -and !$SettingsPath) { throw 'Custom game arguments require -SettingsPath for the intended profile, or -SkipSettingsRepair.' }
+    . (Join-Path $gameDir 'SOMA-VR-Settings.ps1')
+    Repair-SomaVrSettings -GameDirectory $gameDir -SettingsPath $SettingsPath -SettingsDirectory $SettingsDirectory -MonitorIndex $MonitorIndex -KeepSSAO:$KeepSSAO
+}
 $settings = Join-Path $gameDir 'hpl3vr_vr_settings.ini'
 if (!(Test-Path -LiteralPath $settings)) {
     Copy-Item -LiteralPath (Join-Path $gameDir 'defaults\hpl3vr_vr_settings.ini') -Destination $settings
@@ -116,3 +167,4 @@ try {
     [void][SomaVrLaunch]::CloseHandle($pi.thread)
     [void][SomaVrLaunch]::CloseHandle($pi.process)
 }
+

@@ -21,6 +21,7 @@ typedef struct{XrQuaternionf orientation;XrVector3f position;}XrPosef;
 #define ext_Sqrtf sqrtf
 #define H5755BH_TITLE_FLAT 0
 #define H5755BH_GAMEPLAY_VR 1
+static u32 g_s26cqUiSyncPending;
 static u32 checks,commits,gates,presentation,g_h5755bbTitlePresentationLatch;
 #define CHECK(x) do{checks++;if(!(x)){printf("FAIL %d\n",__LINE__);exit(1);}}while(0)
 static u32 g_h5755asNativeUiScope,g_s26caMenuApplyDepth,g_s26caMenuSavedScope,g_s26caMenuApplyLogs;

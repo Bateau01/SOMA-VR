@@ -1,0 +1,496 @@
+{
+  "assets": [
+    {
+      "asset": "entities/station/terminals/camera_portable/camera_portable.ent",
+      "submesh": "screen1",
+      "screen_size": "640 411",
+      "mesh": "entities/station/terminals/camera_portable/camera_portable.dae",
+      "normal_axis": 2,
+      "plane": [
+        -7.816710756323743e-18,
+        -1.3877787807814457e-17,
+        0.04600160000000002
+      ],
+      "plane_error_relative": 7.643665325833496e-17,
+      "node_transforms": [
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"translation003\">0 0 0</ns0:translate>\n                    ",
+        "<ns0:scale xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"scale006\">1 1 1</ns0:scale>\n                    "
+      ],
+      "fit": "affine",
+      "error_uv": 2.406157156384656e-15,
+      "local_axes": [
+        0,
+        1
+      ],
+      "coefficients": [
+        [
+          1.0000000000000018,
+          1.285875192174275e-15
+        ],
+        [
+          2.2382913366333555e-15,
+          -0.9999999999999989
+        ],
+        [
+          -2.406157156384656e-15,
+          0.9999999999999984
+        ]
+      ],
+      "uv_min": [
+        0.0,
+        0.0
+      ],
+      "uv_max": [
+        1.0,
+        1.0
+      ],
+      "bounds_min": [
+        -0.151773,
+        -0.0699801,
+        0.0460016
+      ],
+      "bounds_max": [
+        0.120566,
+        0.101214,
+        0.0460016
+      ]
+    },
+    {
+      "asset": "entities/station/terminals/camera_portable/camera_portable_hud.ent",
+      "submesh": "screen1",
+      "screen_size": "640 411",
+      "mesh": "entities/station/terminals/camera_portable/camera_portable.dae",
+      "normal_axis": 2,
+      "plane": [
+        -7.816710756323743e-18,
+        -1.3877787807814457e-17,
+        0.04600160000000002
+      ],
+      "plane_error_relative": 7.643665325833496e-17,
+      "node_transforms": [
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"translation003\">0 0 0</ns0:translate>\n                    ",
+        "<ns0:scale xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"scale006\">1 1 1</ns0:scale>\n                    "
+      ],
+      "fit": "affine",
+      "error_uv": 2.406157156384656e-15,
+      "local_axes": [
+        0,
+        1
+      ],
+      "coefficients": [
+        [
+          1.0000000000000018,
+          1.285875192174275e-15
+        ],
+        [
+          2.2382913366333555e-15,
+          -0.9999999999999989
+        ],
+        [
+          -2.406157156384656e-15,
+          0.9999999999999984
+        ]
+      ],
+      "uv_min": [
+        0.0,
+        0.0
+      ],
+      "uv_max": [
+        1.0,
+        1.0
+      ],
+      "bounds_min": [
+        -0.151773,
+        -0.0699801,
+        0.0460016
+      ],
+      "bounds_max": [
+        0.120566,
+        0.101214,
+        0.0460016
+      ]
+    },
+    {
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "submesh": "medium_screen",
+      "screen_size": "613 768",
+      "mesh": "entities/station/tech/computer_panels/computer_panel_medium_GUI.dae",
+      "normal_axis": 2,
+      "plane": [
+        1.0281913065206708e-18,
+        8.326672684688674e-17,
+        0.120149
+      ],
+      "plane_error_relative": 1.0609334701786183e-16,
+      "node_transforms": [
+        "<ns0:matrix xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"transform\">\n        1 0 0 0\n        0 1 0 0\n        0 0 1 0\n        0 0 0 1\n    </ns0:matrix>\n                "
+      ],
+      "fit": "affine",
+      "error_uv": 5.551115123125783e-16,
+      "local_axes": [
+        0,
+        1
+      ],
+      "coefficients": [
+        [
+          0.9997217209999997,
+          -1.4196386556991331e-16
+        ],
+        [
+          -1.2197274440461925e-17,
+          -0.9999523313699994
+        ],
+        [
+          0.0002602790000001207,
+          1.00000733137
+        ]
+      ],
+      "uv_min": [
+        0.000260279,
+        5.500000000002725e-05
+      ],
+      "uv_max": [
+        0.999982,
+        1.00000733137
+      ],
+      "bounds_min": [
+        -0.38783,
+        -0.285898,
+        0.120149
+      ],
+      "bounds_max": [
+        0.397014,
+        0.339336,
+        0.120149
+      ]
+    },
+    {
+      "asset": "entities/station/terminals/datapad/datapad_hud.ent",
+      "submesh": "medium_screen",
+      "screen_size": "613 768",
+      "mesh": "entities/station/tech/computer_panels/computer_panel_medium_GUI.dae",
+      "normal_axis": 2,
+      "plane": [
+        1.0281913065206708e-18,
+        8.326672684688674e-17,
+        0.120149
+      ],
+      "plane_error_relative": 1.0609334701786183e-16,
+      "node_transforms": [
+        "<ns0:matrix xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"transform\">\n        1 0 0 0\n        0 1 0 0\n        0 0 1 0\n        0 0 0 1\n    </ns0:matrix>\n                "
+      ],
+      "fit": "affine",
+      "error_uv": 5.551115123125783e-16,
+      "local_axes": [
+        0,
+        1
+      ],
+      "coefficients": [
+        [
+          0.9997217209999997,
+          -1.4196386556991331e-16
+        ],
+        [
+          -1.2197274440461925e-17,
+          -0.9999523313699994
+        ],
+        [
+          0.0002602790000001207,
+          1.00000733137
+        ]
+      ],
+      "uv_min": [
+        0.000260279,
+        5.500000000002725e-05
+      ],
+      "uv_max": [
+        0.999982,
+        1.00000733137
+      ],
+      "bounds_min": [
+        -0.38783,
+        -0.285898,
+        0.120149
+      ],
+      "bounds_max": [
+        0.397014,
+        0.339336,
+        0.120149
+      ]
+    },
+    {
+      "asset": "entities/urban/tech/cellphone/cellphone_smartphone_terminal.ent",
+      "submesh": "screen",
+      "screen_size": "256 512",
+      "mesh": "entities/urban/tech/cellphone/cellphone_smartphone.dae",
+      "normal_axis": 1,
+      "plane": [
+        -7.783110276888087e-16,
+        6.661338147750939e-16,
+        1.1894580000000003
+      ],
+      "plane_error_relative": 7.742205824770894e-17,
+      "node_transforms": [
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"translate\">0 0 0</ns0:translate>\n        ",
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotatePivot\">0 0.01718587 0</ns0:translate>\n        ",
+        "<ns0:rotate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotateZ\">0 0 1 0</ns0:rotate>\n        ",
+        "<ns0:rotate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotateY\">0 1 0 0</ns0:rotate>\n        ",
+        "<ns0:rotate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotateX\">1 0 0 0</ns0:rotate>\n        ",
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotatePivotInverse\">0 -0.01718587 0</ns0:translate>\n        ",
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"scalePivot\">0 0.01718587 0</ns0:translate>\n        ",
+        "<ns0:scale xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"scale\">1 1 1</ns0:scale>\n        ",
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"scalePivotInverse\">0 -0.01718587 0</ns0:translate>\n        "
+      ],
+      "fit": "affine",
+      "error_uv": 6.661338147750939e-16,
+      "local_axes": [
+        0,
+        2
+      ],
+      "coefficients": [
+        [
+          -5.268213055734946e-16,
+          0.9999999999999998
+        ],
+        [
+          -0.9999999999999996,
+          -2.572597393715738e-16
+        ],
+        [
+          1.0000000000000002,
+          3.425910379618299e-17
+        ]
+      ],
+      "uv_min": [
+        0.0,
+        0.0
+      ],
+      "uv_max": [
+        1.0,
+        1.0
+      ],
+      "bounds_min": [
+        -7.223097,
+        1.189458,
+        -4.055896
+      ],
+      "bounds_max": [
+        7.116783,
+        1.189458,
+        4.055895
+      ]
+    },
+    {
+      "asset": "entities/urban/tech/cellphone/cellphone_smartphone_terminal_hud.ent",
+      "submesh": "screen",
+      "screen_size": "256 512",
+      "mesh": "entities/urban/tech/cellphone/cellphone_smartphone.dae",
+      "normal_axis": 1,
+      "plane": [
+        -7.783110276888087e-16,
+        6.661338147750939e-16,
+        1.1894580000000003
+      ],
+      "plane_error_relative": 7.742205824770894e-17,
+      "node_transforms": [
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"translate\">0 0 0</ns0:translate>\n        ",
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotatePivot\">0 0.01718587 0</ns0:translate>\n        ",
+        "<ns0:rotate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotateZ\">0 0 1 0</ns0:rotate>\n        ",
+        "<ns0:rotate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotateY\">0 1 0 0</ns0:rotate>\n        ",
+        "<ns0:rotate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotateX\">1 0 0 0</ns0:rotate>\n        ",
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"rotatePivotInverse\">0 -0.01718587 0</ns0:translate>\n        ",
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"scalePivot\">0 0.01718587 0</ns0:translate>\n        ",
+        "<ns0:scale xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"scale\">1 1 1</ns0:scale>\n        ",
+        "<ns0:translate xmlns:ns0=\"http://www.collada.org/2005/11/COLLADASchema\" sid=\"scalePivotInverse\">0 -0.01718587 0</ns0:translate>\n        "
+      ],
+      "fit": "affine",
+      "error_uv": 6.661338147750939e-16,
+      "local_axes": [
+        0,
+        2
+      ],
+      "coefficients": [
+        [
+          -5.268213055734946e-16,
+          0.9999999999999998
+        ],
+        [
+          -0.9999999999999996,
+          -2.572597393715738e-16
+        ],
+        [
+          1.0000000000000002,
+          3.425910379618299e-17
+        ]
+      ],
+      "uv_min": [
+        0.0,
+        0.0
+      ],
+      "uv_max": [
+        1.0,
+        1.0
+      ],
+      "bounds_min": [
+        -7.223097,
+        1.189458,
+        -4.055896
+      ],
+      "bounds_max": [
+        7.116783,
+        1.189458,
+        4.055895
+      ]
+    }
+  ],
+  "instances": [
+    {
+      "map": "maps/chapter00/00_01_apartment/00_01_apartment.hpm_Entity",
+      "name": "CellPhoneArm",
+      "asset": "entities/urban/tech/cellphone/cellphone_smartphone_terminal.ent",
+      "gui": "OnGuiCellPhone",
+      "enter": null,
+      "leave": "OnExitCellPhone"
+    },
+    {
+      "map": "maps/chapter00/00_02_subway/00_02_subway.hpm_Entity",
+      "name": "Cellphone",
+      "asset": "entities/urban/tech/cellphone/cellphone_smartphone_terminal.ent",
+      "gui": "OnGuiPhone",
+      "enter": null,
+      "leave": "LeaveGui_Phone"
+    },
+    {
+      "map": "maps/chapter00/00_03_laboratory/00_03_laboratory.hpm_Entity",
+      "name": "Cellphone",
+      "asset": "entities/urban/tech/cellphone/cellphone_smartphone_terminal.ent",
+      "gui": "OnGui_Cellphone",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter01/01_04_transport_station/01_04_transport_station.hpm_Entity",
+      "name": "AmyCargoPad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiAmyCargoPad",
+      "enter": null,
+      "leave": "LeaveAmyCargoPad"
+    },
+    {
+      "map": "maps/chapter02/02_03_delta/02_03_delta.hpm_Entity",
+      "name": "MaggieCamera",
+      "asset": "entities/station/terminals/camera_portable/camera_portable.ent",
+      "gui": "OnGuiMaggieCamera",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter02/02_05_theta_inside/02_05_theta_inside.hpm_Entity",
+      "name": "datapad_1",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiCathsDatapad",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter03/03_02_omicron_inside/03_02_omicron_inside.hpm_Entity",
+      "name": "DatapadBiolab",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "DatapadBiolab_OnGui",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter03/03_02_omicron_inside/03_02_omicron_inside.hpm_Entity",
+      "name": "ARKDatapad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "ARKDatapad_OnGui",
+      "enter": null,
+      "leave": ""
+    },
+    {
+      "map": "maps/chapter04/04_02_tau_inside/04_02_tau_inside.hpm_Entity",
+      "name": "CathPad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiCatherinePad",
+      "enter": null,
+      "leave": "OnLeave_HandheldTerminal"
+    },
+    {
+      "map": "maps/chapter04/04_02_tau_inside/04_02_tau_inside.hpm_Entity",
+      "name": "ToBeFlesherPad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiToBeFlesher",
+      "enter": null,
+      "leave": "OnLeaveToBeFlesher"
+    },
+    {
+      "map": "maps/chapter04/04_02_tau_inside/04_02_tau_inside.hpm_Entity",
+      "name": "CrewPad",
+      "asset": "entities/station/terminals/datapad/datapad.ent",
+      "gui": "OnGuiCrewMember_1",
+      "enter": null,
+      "leave": "OnLeave_HandheldTerminal"
+    }
+  ],
+  "continuous_input_maps": [
+    {
+      "map": "maps/chapter00/00_00_intro/00_00_intro.hps",
+      "input_uses": [
+        {
+          "line": 882,
+          "code": "mfSlideShowSpeed = ImGui_DoSliderHorizontal(\"Speed\", 0.25f, 0.0f, 1.0f)*4.0f; //, float afStepSize=-1, const cVector3f&in avPos=cVector3f_Zero, const cVector2f&in avSize=cVector2f_MinusOne);"
+        },
+        {
+          "line": 904,
+          "code": "cVector2f vMousePos = ImGui_GetMousePosition();"
+        }
+      ]
+    },
+    {
+      "map": "maps/chapter01/01_02_upsilon_inside/01_02_upsilon_inside.hps",
+      "input_uses": [
+        {
+          "line": 6850,
+          "code": "if (ImGui_GetMouseRel().Length()>0.01f)"
+        },
+        {
+          "line": 6852,
+          "code": "cVector2f vVec = ImGui_GetMousePosition();"
+        }
+      ]
+    },
+    {
+      "map": "maps/chapter03/03_02_omicron_inside/03_02_omicron_inside.hps",
+      "input_uses": [
+        {
+          "line": 12591,
+          "code": "cVector2f vMouse = ImGui_GetMousePosition() / mvSize;"
+        }
+      ]
+    },
+    {
+      "map": "maps/_e3/_e3_01_02/_e3_01_02.hps",
+      "input_uses": [
+        {
+          "line": 6980,
+          "code": "if (ImGui_GetMouseRel().Length()>0.01f)"
+        },
+        {
+          "line": 6982,
+          "code": "cVector2f vVec = ImGui_GetMousePosition();"
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "asset": "entities\\oceanbottom\\door\\theta_gate_inner_layer\\theta_gate_inner_layer_door_right.ent",
+      "error": "not well-formed (invalid token): line 68, column 51"
+    },
+    {
+      "asset": "entities\\station\\doors\\slidedoor_theta_small\\slidedoor_theta_small_no_sound.ent",
+      "error": "not well-formed (invalid token): line 88, column 43"
+    }
+  ]
+}

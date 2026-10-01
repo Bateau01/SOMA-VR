@@ -1,0 +1,29 @@
+SOMA VR 1.02-S26CO - automatic desktop menu resolution fix
+
+The supplied log shows HPL initializing with -1/-1 (automatic desktop mode),
+while the mod retained no native menu dimensions. Its flat panel used the
+2528x2704 headset-eye aspect while capture read the 3440x1440 SDL window.
+
+Changes:
+- Resolve automatic desktop video dimensions before menu/shared allocation.
+- Keep explicit resolutions unchanged, including launcher-selected monitor sizes.
+- If desktop-mode lookup fails, flat-panel sizing can fall back to the actual
+  game client dimensions instead of assuming that an eye image is a menu raster.
+- Keep runtime-owned headset resolution/FOV and gameplay rendering paths intact.
+
+Validation:
+- Native DLL built with warnings treated as errors.
+- 71 extracted-code checks for resolution, Windows display-mode structure layout,
+  failed-query fallback, menu sizing and gameplay dimensions passed.
+- Existing 2209 menu recovery checks and 701 transition checks passed.
+- These tests mock engine state; they do not establish a headset visual pass.
+
+Please test on the affected 3440x1440 PC: initial menu, settings/sliders, pointer
+alignment, new-game opening, transition to gameplay, and pause/resume.
+If still incorrect, send the new hpl3vr.log, hpl.log, launcher output and a
+screenshot. Look for S26CO AUTO DESKTOP MODE when HPL requests automatic size.
+
+Includes the latest installer styling, creator credit, administrator requests,
+completion confirmation and the settings-repair launcher. Experimental OFXR
+and CPU-audit changes are not included. Personal settings remain preserved by
+installer update. No installed SOMA files were changed during preparation.

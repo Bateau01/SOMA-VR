@@ -378,6 +378,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+        mbVRLaunchButtonWindow=false; VRLaunchHands(-1);
 		Player_SetLadderMoveMul(1.0f);
 		PlayerEnergy_SetAllowCathComment(false);
 	}
@@ -541,8 +542,28 @@ class cScrMap : iScrMap
 	
 	//-------------------------------------------------------
 	
+
+    // S26DC: only the authored final-button window replaces the seated arms.
+    bool mbVRLaunchButtonWindow=false;
+    [nosave] int mlVRLaunchHandsPublished=-2;
+    void VRLaunchHands(int state)
+    {
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        if(!cScript_GetGlobalReturnBool()) { mlVRLaunchHandsPublished=-2; return; }
+        if(mlVRLaunchHandsPublished==state) return;
+        cScript_SetGlobalArgInt(0,state);
+        cScript_RunGlobalFunc("PlayerHandsHandler","","HPL3VR_SetSceneOverride");
+        mlVRLaunchHandsPublished=state;
+    }
+
 	void Update(float afTimeStep)
 	{
+        // Recover the authored waiting window from saves made before S26DC.
+        if(!mbVRLaunchButtonWindow && !mbARKLaunched && !mbControllingLoaderArm &&
+           cLux_GetPlayer().GetCurrentStateId()==ePlayerState_InteractiveCameraAnimation &&
+           !Map_GetEntity("LaunchButton").GetInteractionDisabled()) mbVRLaunchButtonWindow=true;
+        VRLaunchHands(mbVRLaunchButtonWindow ? 0 : -1);
 		if(mbControllingLoaderArm)
 		{
 			LoaderArm_Update(afTimeStep);
@@ -3912,6 +3933,7 @@ class cScrMap : iScrMap
 			Entity_SetEffectsActive("TerminalLaunch_Button", true, true);
 			Terminal_SetGuiActive("TerminalLaunch_Button", true, 0.25f);
 			Entity_SetInteractionDisabled("LaunchButton", false);
+            mbVRLaunchButtonWindow=true; VRLaunchHands(0);
 			Lamp_SetLit("launch_lamp_ready", true, true);
 			Lamp_SetLit("launch_lamp_standby", true, true);
 			
@@ -3979,7 +4001,8 @@ class cScrMap : iScrMap
 
 		void TerminalLaunchInteract_OnPlayerInteract(const tString &in asEntity)
 		{
-			cLux_AddDebugMessage("Launch button pressed");
+			mbVRLaunchButtonWindow=false; VRLaunchHands(-1);
+            cLux_AddDebugMessage("Launch button pressed");
 			Sound_CreateAtEntity("LaunchButton", "05_01_phi_inside/SFX/spacegun_sequence/launch_button", "Player");
 			Sound_PreloadGroup("Player/foley/default/hand_animation/long", true);
 			
@@ -4897,7 +4920,8 @@ class cScrMap : iScrMap
 				Map_AddTimer("CreditsMusic", 4.5f, "CreditsMusic");
 				
 				RichPresence_SetCurrent(eRichPresence_Credits );
-				Credits_Start("config/Credits.cfg", "OnCreditsComplete",0,0.006f);
+				cScript_RunGlobalFunc("VRFINALE","","B");
+                Credits_Start("config/Credits.cfg", "OnCreditsComplete",0,0.006f);
 			}
 			else if (Sequence_DoStepAndPause())
 			{
@@ -4915,7 +4939,8 @@ class cScrMap : iScrMap
 				PauseMenu_Enabled(true);
 				mbEscSkipsCredits = false;
 				Music_Stop(1.0f,eMusicPrio_OverrideAll);
-				Map_ChangeMap("05_02_ARK_inside.hpm", "PlayerStartArea_1", "","");
+				cScript_RunGlobalFunc("VRFINALE","","E");
+                Map_ChangeMap("05_02_ARK_inside.hpm", "PlayerStartArea_1", "","");
 				Inventory_SetEnabled(true);
 				
 			}
