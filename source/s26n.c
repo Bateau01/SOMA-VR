@@ -4310,6 +4310,7 @@ static i32 h5750xr1_write_cache(void){
     void* fp=ext_fopen(path,"wb"); if(!fp){g_h5750xr1CacheWriteReject++;return 0;} u64 put=ext_fwrite(&c,sizeof(c),1,fp);ext_fclose(fp); if(put!=1){g_h5750xr1CacheWriteReject++;return 0;}
     for(i32 e=0;e<2;++e)for(i32 a=0;a<2;++a)g_h5750xr1CachedFrac[e][a]=c.frac[e][a];g_h5750xr1CacheWrites++;return 1;
 }
+#include "render_scale_ed.inc"
 static i32 h5750xr1_even_ceil(float v){i32 n=h5750x_ceil_pos(v);return (n+1)&~1;}
 /* Resolve HPL's -1 desktop-mode sentinel before choosing the menu raster and
    shared allocation. Never interpret a headset eye size as the desktop menu. */
@@ -4351,6 +4352,14 @@ static u8 __attribute__((ms_abi,noinline,used)) h5750xr1_lowlevel_init_detour(vo
             if(pw!=rw||ph!=rh){g_h5755eProbeRefreshChanged++;ext_Log(">>> S6-HANDS5755E RUNTIME BASE REFRESH: frozen P2 ProbeHeadsetResolution superseded stale %dx%d with current runtime %dx%d before native allocation",rw,rh,pw,ph);}
             else ext_Log(">>> S6-HANDS5755E RUNTIME BASE REFRESH: frozen P2 ProbeHeadsetResolution confirmed current runtime %dx%d before native allocation",pw,ph);
             rw=pw;rh=ph;
+            /* S26ED: user render scale multiplies only the fresh runtime value,
+               so a later re-init never compounds it. */
+            s26ed_load_render_scale();
+            if(g_s26edScaleActive!=100u){
+                i32 sw=s26ed_scaled_dim(rw,g_s26edScaleActive),sh=s26ed_scaled_dim(rh,g_s26edScaleActive);
+                ext_Log(">>> S26ED RENDER SCALE %u%%: runtime %dx%d -> eye output %dx%d (swapchain, envelope and resolve follow)",g_s26edScaleActive,rw,rh,sw,sh);
+                rw=sw;rh=sh;
+            }
         }else{
             g_h5750xr3ProbeFail++;g_h5755eProbeRefreshFail++;
             ext_Log(">>> S6-HANDS5755E RUNTIME BASE REFRESH FAILED: exact frozen P2 probe returned no valid size; retaining preexisting %dx%d allocation base",rw,rh);
@@ -4593,6 +4602,10 @@ static float g_h5745RawMoveX,g_h5745RawMoveY,g_h5745BodyMoveX,g_h5745BodyMoveY;
 static volatile u32 g_h5745MoveMode;
 static u32 g_s26nCrouchMode,g_s26nCrouchOwned,g_s26nCrouchPoll,g_s26nHeadValidFrame;
 static u8 g_s26nHeadHeightFresh;
+/* S26ED: raw HMD orientation (x,y,z,w) latched with the head-height sample. */
+static float g_s26edHeadQ[4]={0,0,0,1};
+/* S26ED: SOMA ladder state published by PlayerHandsHandler (VRLADDER). */
+static volatile u32 g_s26edOnLadder;
 static u8 g_s26nHeightValid,g_s26nCrouchLow;
 static float g_s26nStandingY;
 static i32 h5754h_pause_active(void);
@@ -7047,6 +7060,8 @@ static i32 h5755gk_view_center(const u8* F,float* out){
     float tx=V[3],ty=V[7],tz=V[11];out[0]=-(V[0]*tx+V[4]*ty+V[8]*tz);out[1]=-(V[1]*tx+V[5]*ty+V[9]*tz);out[2]=-(V[2]*tx+V[6]*ty+V[10]*tz);return 1;
 }
 
+static const XrFrameEndInfo* s26ed_depth_end_frame(const XrFrameEndInfo* in,i32 gameplay);
+static void s26ed_depth_end_result(const XrFrameEndInfo* submitted,i32 r);
 static i32 __attribute__((ms_abi)) h5754d_xr_end_frame(Handle session,const XrFrameEndInfo* in){
     g_h5754dEndCalls++;
     /* H57.55ao: catch MENU->LOAD/title after SOMA has consumed the native Exit
@@ -7081,8 +7096,11 @@ static i32 __attribute__((ms_abi)) h5754d_xr_end_frame(Handle session,const XrFr
         }
     }
 
+    /* S26ED: gameplay frames may carry the per-eye scene depth. Readiness is
+       consumed on every EndFrame so a menu/quad frame never ships stale depth. */
+    const XrFrameEndInfo* submit=s26ed_depth_end_frame(in,!want&&in&&in->layerCount&&in->layers);
     if(!want||!in||in->layerCount==0||!in->layers){
-        i32 r=orig(session,in);if(r<0)g_h5754dEndErrors++;
+        i32 r=orig(session,submit);if(r<0)g_h5754dEndErrors++;s26ed_depth_end_result(submit,r);
         h5755as_post_endframe_transition();
         if(g_h5755adRefreshArmed&&!__atomic_load_n(&g_h5755asUiIslandActive,__ATOMIC_ACQUIRE)){(void)h5755an_revalidate_gameplay_drawable();h5755ad_apply_native_owner_refresh();}
         return r;
@@ -9271,6 +9289,7 @@ static u8 __attribute__((ms_abi)) h5745_current_head_pose_detour(float* q,float*
     g_s26nHeadHeightFresh=0;
     if(!ret||!q)return ret;
     g_s26nHeadValidFrame=g_frameCounter;g_s26nHeadHeightFresh=1;
+    for(i32 k=0;k<4;++k)g_s26edHeadQ[k]=q[k];
     g_h5745HeadPoseCalls++;
     float rawC=1.0f,rawS=0.0f;h5745_yaw_basis_from_q(q,&rawC,&rawS);
     g_h5745LastRawYawC=rawC;g_h5745LastRawYawS=rawS;
@@ -10080,6 +10099,7 @@ static i32 h5755gl_view_is_rigid_enough(const u8* F){
 
 #include "shadow_leases_dm.inc"
 #include "light_evidence_dn.inc"
+#include "depth_ed.inc"
 #include "light_projection_do.inc"
 void __attribute__((ms_abi,noinline,used)) s6_h5755gn_scene_entry_wrapper(void* a,float b,void* c,void* d,void* e,void* f,u8 g,void* h){
     PFN_H5750A_Render* slot=(PFN_H5750A_Render*)(p2_base()+H5750V_P2_ORIGINAL_RENDER_SLOT_RVA);PFN_H5750A_Render render=0;if(h20_mem_readable(slot,sizeof(*slot)))render=__atomic_load_n(slot,__ATOMIC_ACQUIRE);
@@ -10116,8 +10136,9 @@ void __attribute__((ms_abi,noinline,used)) s6_h5755gn_scene_entry_wrapper(void* 
     i32 dmLive=live&&dmStamp&&c==__atomic_load_n(p2_main_frustum_ptr(),__ATOMIC_ACQUIRE);
     u32 dmLeases=s26dm_shadow_begin(dmLive,a,d,c,g_frameCounter,dmNative,dmEye);
     void* doPreviousRenderer=g_s26doLightRenderer;void* doPreviousFrustum=g_s26doLightFrustum;
-    if(dmLive){s26do_install_light_setup();g_s26doLightRenderer=a;g_s26doLightFrustum=c;}
+    if(dmLive){s26do_install_light_setup();g_s26doLightRenderer=a;g_s26doLightFrustum=c;g_s26edDepthSeen[dmEye]=0;}
     render(a,b,c,d,e,f,g,h);
+    if(dmLive)s26ed_depth_capture(dmEye);
     g_s26doLightRenderer=doPreviousRenderer;g_s26doLightFrustum=doPreviousFrustum;
     s26dm_shadow_end(dmLive,a,d,c,g_frameCounter,dmNative,dmEye);
 
@@ -12701,12 +12722,13 @@ static u64 s26_native_hand_token(const H5730TString* cls,const H5730TString* fn)
 }
 
 #include "haptics_ec.inc"
-/* S26EC HANDS AND HAPTICS options: VRCOMFORT <class> "0"/"1". Returns -1 when
-   the class is not one of these options. */
+/* S26EC HANDS AND HAPTICS options (and S26ED H/L/Q/Y): VRCOMFORT <class>
+   "0"/"1". Returns -1 when the class is not one of these options. */
 static i32 s26ec_comfort_option(const H5730TString* cls,const H5730TString* fn){
-    static const char classes[6]="UZPKXI";
-    static const u32 bits[6]={S26EC_SET_SMART_GRIP,S26EC_SET_PRESSURE,S26EC_SET_POINT,S26EC_SET_ANY_FINGER,S26EC_SET_CREATURE,S26EC_SET_HINTS};
-    for(u32 k=0;k<6u;++k){
+    static const char classes[10]="UZPKXIHLQY";
+    static const u32 bits[10]={S26EC_SET_SMART_GRIP,S26EC_SET_PRESSURE,S26EC_SET_POINT,S26EC_SET_ANY_FINGER,S26EC_SET_CREATURE,S26EC_SET_HINTS,
+                               S26EC_SET_HEAD_TAP,S26EC_SET_LADDER,S26EC_SET_DEPTH,S26EC_SET_TEXTURE};
+    for(u32 k=0;k<10u;++k){
         char c[2]={classes[k],0};if(!h5748t_sso_eq(cls,c,1u))continue;
         if(h5748t_sso_eq(fn,"1",1u)){s26ec_set_option(bits[k],1u);return 1;}
         if(h5748t_sso_eq(fn,"0",1u)){s26ec_set_option(bits[k],0u);return 1;}
@@ -12884,6 +12906,16 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
             for(u32 n=1;n<=5;++n){char digit[2]={(char)('0'+n),0};if(h5748t_sso_eq(functionName,digit,1u))return state==1u&&g_s26eaResetCountdown==n;}
             return 0u;
         }
+        if(h5748t_sso_eq(className,"O",1u)){
+            /* S26ED render scale: "<index>" saves a request; "A<index>" asks
+               whether that index is the scale this session is running at. */
+            char v[8];if(!h5748n_copy_tstring((void*)functionName,v,sizeof(v)))return 0u;
+            u32 at=v[0]=='A'?1u:0u,index=0,digits=0;
+            while(v[at+digits]>='0'&&v[at+digits]<='9'&&digits<2u){index=index*10u+(u32)(v[at+digits]-'0');++digits;}
+            if(!digits||v[at+digits]||index>S26ED_SCALE_INDEX_MAX)return 0u;
+            if(at)return s26ed_scale_from_index(index)==g_s26edScaleActive?1u:0u;
+            s26ed_request_render_scale(index);return 1u;
+        }
         if(h5748t_sso_eq(className,"R",1u)&&h5748t_sso_eq(functionName,"C",1u)){
             if(g_h576mScriptRuntimePublished==1&&p2_xr_on())h5735_request_recenter("VR-settings-center");return 1u;
         }
@@ -12941,6 +12973,14 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
             }
         }
         return 1u;
+    }
+    if(h5748t_sso_eq(objectName,"VRLADDER",8u)){
+        /* S26ED: "1"/"0" ladder state from PlayerHandsHandler; "Q" asks
+           whether hand climbing (and therefore visible ladder hands) is on. */
+        if(h5748t_sso_eq(functionName,"Q",1u))return s26ec_option(S26EC_SET_LADDER)?1u:0u;
+        if(h5748t_sso_eq(functionName,"1",1u)){__atomic_store_n(&g_s26edOnLadder,1u,__ATOMIC_RELEASE);return 1u;}
+        if(h5748t_sso_eq(functionName,"0",1u)){__atomic_store_n(&g_s26edOnLadder,0u,__ATOMIC_RELEASE);return 1u;}
+        return 0u;
     }
     if(h5748t_sso_eq(objectName,"VRSCENE",7u)){
         if(h5748t_sso_eq(functionName,"H",1u)){
@@ -14173,39 +14213,7 @@ static i32 h5755hj_queue_current_zero_mass_contact(i32 hand,const float* handM){
     return 1;
 }
 
-/* Optional S26K experiment for the verified Steam Soma.exe.
-   FUN_1402de9c0 gates ready texture uploads at DAT_14080cca8 (1 GiB).
-   Keep the 60 MiB/s rate and map-preload priority untouched. */
-static i32 g_s26TextureSetting=-1,g_s26TextureVerified,g_s26TextureOwned;
-static u64* g_s26TextureBudget;
-static void s26_texture_budget_policy(i32 active,u64* budget,i32* owned){
-    if(!budget||!owned)return;
-    if(active){
-        if(*budget==0x40000000ull){*budget=0x60000000ull;*owned=1;}
-    }else if(*owned){
-        if(*budget==0x60000000ull)*budget=0x40000000ull;
-        *owned=0;
-    }
-}
-static void s26_texture_streaming_step(void){
-    if(g_s26TextureSetting<0){
-        g_s26TextureSetting=0;
-        void* f=ext_fopen("hpl3vr_texture_streaming.txt","rb");
-        if(f){char c=0;if(ext_fread(&c,1,1,f)==1&&c=='1')g_s26TextureSetting=1;ext_fclose(f);}
-    }
-    if(!g_s26TextureSetting)return;
-    if(!g_s26TextureVerified){
-        g_s26TextureVerified=1;
-        u8* base=(u8*)ext_GetModuleHandleA(0);
-        const u8 sig[29]={0x48,0x89,0x74,0x24,0x20,0x41,0x54,0x41,0x55,0x41,0x56,0x48,0x83,0xec,0x60,0x48,0x8b,0x05,0xda,0xe2,0x52,0x00,0x0f,0x29,0x74,0x24,0x50,0x66,0x0f};
-        if(!base||!h20_mem_readable(base+0x2de9c0,29)||!h20_mem_readable(base+0x80cca8,16))return;
-        for(u32 i=0;i<29u;++i)if(base[0x2de9c0+i]!=sig[i])return;
-        if(*(u64*)(base+0x80cca8)!=0x40000000ull)return;
-        g_s26TextureBudget=(u64*)(base+0x80cca8);
-        ext_Log(">>> S26K OPTIONAL TEXTURE BUDGET: verified engine threshold 1024 -> 1536 MiB while VR runs; upload rate and map priority unchanged; not total VRAM limit");
-    }
-    s26_texture_budget_policy(g_h576mScriptRuntimePublished==1&&p2_xr_on()&&p2_xr_running(),g_s26TextureBudget,&g_s26TextureOwned);
-}
+#include "texture_streaming_i.inc"
 
 static void h25_dispatch_pending(void){
     s26_texture_streaming_step();
@@ -18387,12 +18395,35 @@ static void h5747_dispatch_native_look(void){
     if(g_h5747LookDispatches<=6u)ext_Log(">>> S6-HANDS5747 NATIVE LOOK PACKET #%u: raw(%+.3f %+.3f) -> scaledYaw %+.3f (gain %.3f) -> OnAnalogInput(id %d, x %+.3f y +0.000) | immediate playerYaw step %+.5f rad; USER32 mouse motion absent",g_h5747LookDispatches,g_h5747RawLookX,g_h5747RawLookY,g_h5747NativeLookX,(double)H5747_LOOK_GAIN,g_h5747LookAnalogId,x,d);
 }
 
+#include "ladder_ed.inc"
+static S26EDLadder g_s26edLadder;
+static u8 g_s26edLadderGrip[2];
+static u32 g_s26edLadderLogs;
+/* Hand-pull climb input for the native ladder state, or 0 when inactive. */
+static float s26ed_ladder_input(void){
+    i32 active=__atomic_load_n(&g_s26edOnLadder,__ATOMIC_ACQUIRE)&&s26ec_option(S26EC_SET_LADDER)&&
+               g_h576mScriptRuntimePublished==1&&p2_xr_on()&&p2_xr_running()&&!h5754h_pause_active();
+    if(!active){if(g_s26edLadder.lastT)s26ed_ladder_reset(&g_s26edLadder);g_s26edLadderGrip[0]=g_s26edLadderGrip[1]=0;return 0.0f;}
+    i32 grip[2]={0,0};float y[2]={0,0};
+    for(i32 h=0;h<2;++h){
+        float g=g_lastSqueezeActive[h]?g_lastSqueeze[h]:0.0f;
+        if(g>=S26ED_LADDER_GRIP_ON)g_s26edLadderGrip[h]=1;else if(g<=S26ED_LADDER_GRIP_OFF)g_s26edLadderGrip[h]=0;
+        grip[h]=g_s26edLadderGrip[h]&&visual_pose_valid(h);y[h]=g_lastPose[h].position.y;
+    }
+    u8* xr=(u8*)p2_xr_obj();i64 now=xr&&h20_mem_readable(xr+0xE8,8)?*(i64*)(xr+0xE8):0;
+    i32 rung=-1;float climb=s26ed_ladder_step(&g_s26edLadder,grip,y,now,&rung);
+    if(rung>=0)h576ac_queue_haptic(rung,H576AC_HAPTIC_READY);
+    if(climb!=0.0f&&g_s26edLadderLogs<6u){g_s26edLadderLogs++;ext_Log(">>> S26ED LADDER HAND CLIMB #%u: input %+.2f -> native Move analog (stick idle)",g_s26edLadderLogs,(double)climb);}
+    return climb;
+}
 static void h5735_dispatch_native_move(void){
     u32 sample=g_h5735MoveSampleActive;float x=sample?g_h5735MoveX:0.0f,y=sample?g_h5735MoveY:0.0f;
     i32 hmd=sample&&__atomic_load_n(&g_h5745MoveMode,__ATOMIC_RELAXED);
     /* Refresh heading at native input dispatch, not only when XR actions sync. */
     if(hmd){float dx=0,dy=0;h5743_radial_deadzone(g_h5745RawMoveX,g_h5745RawMoveY,&dx,&dy);s26n_relative_move(dx,dy,&x,&y);}
     else if(sample){float dx=0,dy=0;h5743_radial_deadzone(g_h5745RawMoveX,g_h5745RawMoveY,&dx,&dy);s26bv_body_move(dx,dy,&x,&y);}
+    /* S26ED: on a ladder an idle stick yields to hand climbing. */
+    {float climb=s26ed_ladder_input();if(climb!=0.0f&&x*x+y*y<0.0225f){x=0.0f;y=climb;}}
     u32 nonzero=(x!=0.0f||y!=0.0f)?1u:0u;
     if(!nonzero&&!g_h5735MoveWasNonzero)return;
     if(!p_h34PlayerAnalog||!h5735_resolve_move_analog_id()){g_h5735MoveRejects++;return;}void* pi=h34_player_input_interface();if(!pi){g_h5735MoveRejects++;return;}
@@ -18463,41 +18494,36 @@ static i32 h5711_native_player_callbacks(void** outPi,PFN_H5711_PlayerExit* outE
    transition remains SOMA-owned. Only its first render discontinuity is softened
    later in the VR view matrix; no physics or player transform is changed here. */
 
-/* S26A: head-touch flashlight gesture. New press near the headset, empty hand,
-   normal/VR-Grab gameplay only. Native Player.OnAction retains disabled/discovery rules.
-   Both controls must be released to rearm; two hands cannot double-toggle. */
-static u8 g_s26FlashPressed[2];
+/* S26ED: head-tap flashlight (supersedes S26A's press-near-face gesture).
+   Normal/VR-Grab gameplay only; native Player.OnAction retains the game's
+   disabled/discovery rules. See head_tap_ed.inc for the crown zone. */
+#include "head_tap_ed.inc"
+static S26EDTap g_s26edTap;
 static i32 g_s26FlashAction=-1;
 static u8 g_s26FlashResolveTried;
 static u8 g_s26FlashActionLogs;
 static void s26_dispatch_head_flashlight(void){
-    i32 edge[2]={0,0};
+    /* Untracked samples count as "still near": a tracking dropout while the
+       hand rests on the head must not re-arm a second toggle. */
+    i32 inside[2]={0,0},near[2]={1,1},eligible[2]={0,0};
+    i32 headFresh=g_s26nHeadHeightFresh&&(u32)(g_frameCounter-g_s26nHeadValidFrame)<=2u;
+    volatile float* head=p2_eye_mid();
     for(i32 h=0;h<2;++h){
-        float grip=g_lastSqueezeActive[h]?g_lastSqueeze[h]:0.0f;
-        float trigger=g_lastTriggerActive[h]?g_lastTrigger[h]:0.0f;
-        i32 down=grip>=0.55f||trigger>=0.55f;
-        edge[h]=down&&!g_s26FlashPressed[h];
-        if(down)g_s26FlashPressed[h]=1;
-        else if(grip<=0.25f&&trigger<=0.25f)g_s26FlashPressed[h]=0;
+        if(!headFresh||!visual_pose_valid(h))continue;
+        float d[3]={g_lastPose[h].position.x-head[0],g_lastPose[h].position.y-head[1],g_lastPose[h].position.z-head[2]};
+        inside[h]=s26ed_crown_zone(g_s26edHeadQ,d,0.0f);
+        near[h]=inside[h]||s26ed_crown_zone(g_s26edHeadQ,d,S26ED_CROWN_EXIT_PAD);
+        eligible[h]=!g_h14GripBody[h];
     }
-    if(!edge[0]&&!edge[1])return;
+    u8* xr=(u8*)p2_xr_obj();i64 now=xr&&h20_mem_readable(xr+0xE8,8)?*(i64*)(xr+0xE8):0;
+    i32 hand=s26ed_tap_step(&g_s26edTap,inside,near,eligible,now);
+    if(hand<0||!s26ec_option(S26EC_SET_HEAD_TAP))return;
     if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||
        !p2_xr_origin_set()||h5754h_pause_active()||g_s26CutsceneHandsHidden)return;
     i32 gameplay=(h5720_streq(g_h5729LastModuleName,"player/PlayerState_Normal.hps")&&
                  h5720_streq(g_h5729LastClassName,"cScrPlayerState_Normal"))||
                  h5755fm_grab_gameplay_actions_allowed();
     if(!gameplay)return;
-    volatile float* head=p2_eye_mid();
-    i32 hit=0;
-    for(i32 h=0;h<2;++h){
-        if(!edge[h]||!visual_pose_valid(h)||g_h14GripBody[h])continue;
-        float x=g_lastPose[h].position.x-head[0];
-        float y=g_lastPose[h].position.y-head[1];
-        float z=g_lastPose[h].position.z-head[2];
-        float d2=x*x+y*y+z*z;
-        if(d2>=0.0f&&d2<=0.22f*0.22f)hit=1;
-    }
-    if(!hit)return;
     if(!g_s26FlashResolveTried){
         g_s26FlashResolveTried=1;
         if(!h5735_resolve_enum_item("eAction","eAction_Flashlight",&g_s26FlashAction))return;
@@ -18506,7 +18532,8 @@ static void s26_dispatch_head_flashlight(void){
     void* pi=0;PFN_H5711_PlayerExit ex=0;PFN_H5711_PlayerAction ac=0;
     if(!h5711_native_player_callbacks(&pi,&ex,&ac)||!ac)return;
     ac(pi,g_s26FlashAction,1);ac(pi,g_s26FlashAction,0);
-    if(g_s26FlashActionLogs<16u){g_s26FlashActionLogs++;ext_Log(">>> SOMA-VR S26A FLASHLIGHT ACTION #%u: head-touch press sent to native eAction_Flashlight; native disabled/discovery rules remain authoritative",(u32)g_s26FlashActionLogs);}
+    h576ac_queue_haptic(hand,H576AC_HAPTIC_CONFIRM);
+    if(g_s26FlashActionLogs<16u){g_s26FlashActionLogs++;ext_Log(">>> SOMA-VR S26ED FLASHLIGHT HEAD TAP #%u: %s hand on crown -> native eAction_Flashlight; native disabled/discovery rules remain authoritative",(u32)g_s26FlashActionLogs,hand?"right":"left");}
 }
 
 static void h5711_dispatch_semantic_actions(void){

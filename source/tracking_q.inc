@@ -12,6 +12,8 @@ typedef i32 (__attribute__((ms_abi)) *S26QDestroy)(Handle);
 static S26QCreateInstance g_s26qCreateInstance;
 static S26QEnumExtensions g_s26qEnumExtensions;
 static S26QDestroy g_s26qDestroySession;
+/* S26ED: XR_KHR_composition_layer_depth, used only by the opt-in depth layer. */
+static u8 g_s26edDepthExtension;
 static u8 g_s26qTrackerEnabled;
 static Handle g_s26qWaistAction,g_s26qWaistSpace,g_s26qTrackerSession;
 static u32 g_s26qTrackingLogs;
@@ -46,31 +48,37 @@ static i32 s26q_name_eq(const char* a,const char* b){
     for(u32 i=0;i<128u;++i){if(a[i]!=b[i])return 0;if(!a[i])return 1;}return 0;
 }
 static i32 __attribute__((ms_abi)) s26q_create_instance(const S26QInstanceInfo* in,Handle* out){
-    g_s26qTrackerEnabled=0;g_s26qHandExtension=0;g_s26sEyeExtension=0;g_s26dgFrameExtension=0;g_s26dnMotionRangeEnabled=0;
+    g_s26qTrackerEnabled=0;g_s26qHandExtension=0;g_s26sEyeExtension=0;g_s26dgFrameExtension=0;g_s26dnMotionRangeEnabled=0;g_s26edDepthExtension=0;
     if(!g_s26qCreateInstance)return -6;
     if(!in||!out||in->type!=3||in->enabledExtensionCount>64u||
        (in->enabledExtensionCount&&!in->enabledExtensionNames)||!g_s26qEnumExtensions)
         return g_s26qCreateInstance(in,out);
-    static const char optional[5][64]={"XR_HTCX_vive_tracker_interaction","XR_EXT_hand_tracking","XR_EXT_eye_gaze_interaction","XR_VALVE_frame_controller_interaction","XR_EXT_hand_joints_motion_range"};
-    u8 available[5]={0},present[5]={0},enabled[5]={0};
+    static const char optional[6][64]={"XR_HTCX_vive_tracker_interaction","XR_EXT_hand_tracking","XR_EXT_eye_gaze_interaction","XR_VALVE_frame_controller_interaction","XR_EXT_hand_joints_motion_range","XR_KHR_composition_layer_depth"};
+    u8 available[6]={0},present[6]={0},enabled[6]={0};
     u32 count=0;i32 r=g_s26qEnumExtensions(0,0,&count,0);
     if(r>=0&&count&&count<=512u){
         S26QExtension* props=(S26QExtension*)ext_malloc((u64)count*sizeof(S26QExtension));
         if(props){
             zero_bytes(props,(u64)count*sizeof(S26QExtension));for(u32 i=0;i<count;++i)props[i].type=2;
             u32 actual=0;r=g_s26qEnumExtensions(0,count,&actual,props);
-            if(r>=0&&actual<=count)for(u32 i=0;i<actual;++i)for(u32 j=0;j<5u;++j)
+            if(r>=0&&actual<=count)for(u32 i=0;i<actual;++i)for(u32 j=0;j<6u;++j)
                 if(s26q_name_eq(props[i].extensionName,optional[j]))available[j]=1;
             ext_free(props);
         }
     }
-    const char* names[69];u32 n=in->enabledExtensionCount;
-    for(u32 i=0;i<n;++i){names[i]=in->enabledExtensionNames[i];for(u32 j=0;j<5u;++j)if(s26q_name_eq(names[i],optional[j]))present[j]=1;}
-    for(u32 j=0;j<5u;++j){enabled[j]=present[j];if(available[j]&&!present[j]&&(j!=4u||enabled[1])){names[n++]=optional[j];enabled[j]=1;}}
+    const char* names[70];u32 n=in->enabledExtensionCount;
+    for(u32 i=0;i<n;++i){names[i]=in->enabledExtensionNames[i];for(u32 j=0;j<6u;++j)if(s26q_name_eq(names[i],optional[j]))present[j]=1;}
+    for(u32 j=0;j<6u;++j){enabled[j]=present[j];if(available[j]&&!present[j]&&(j!=4u||enabled[1])){names[n++]=optional[j];enabled[j]=1;}}
     S26QInstanceInfo ci;
     for(u32 i=0;i<sizeof(ci);++i)((volatile u8*)&ci)[i]=((const u8*)in)[i];
     ci.enabledExtensionCount=n;ci.enabledExtensionNames=names;
     r=g_s26qCreateInstance(n==in->enabledExtensionCount?in:&ci,out);
+    if(r<0&&enabled[5]&&!present[5]){
+        /* Appended last, so it is dropped first; nothing else depends on it. */
+        *out=0;enabled[5]=0;--n;ci.enabledExtensionCount=n;
+        ext_Log(">>> S26ED depth-layer extension rejected (%d); retaining prior tracking configuration",r);
+        r=g_s26qCreateInstance(n==in->enabledExtensionCount?in:&ci,out);
+    }
     if(r<0&&enabled[4]&&!present[4]){
         *out=0;enabled[4]=0;--n;ci.enabledExtensionCount=n;
         ext_Log(">>> S26DN motion-range extension rejected (%d); retaining prior tracking configuration",r);
@@ -84,13 +92,13 @@ static i32 __attribute__((ms_abi)) s26q_create_instance(const S26QInstanceInfo* 
         r=g_s26qCreateInstance(&ci,out);
     }
     if(r<0&&n!=in->enabledExtensionCount){
-        *out=0;enabled[0]=present[0];enabled[1]=present[1];enabled[2]=present[2];enabled[3]=present[3];enabled[4]=present[4];
+        *out=0;enabled[0]=present[0];enabled[1]=present[1];enabled[2]=present[2];enabled[3]=present[3];enabled[4]=present[4];enabled[5]=present[5];
         ext_Log(">>> S26Q optional tracking extensions rejected (%d); retrying original OpenXR configuration",r);
         r=g_s26qCreateInstance(in,out);
     }
-    if(r>=0&&*out){g_s26qTrackerEnabled=enabled[0];g_s26qHandExtension=enabled[1];g_s26sEyeExtension=enabled[2];g_s26dgFrameExtension=enabled[3];g_s26dnMotionRangeEnabled=enabled[4];
+    if(r>=0&&*out){g_s26qTrackerEnabled=enabled[0];g_s26qHandExtension=enabled[1];g_s26sEyeExtension=enabled[2];g_s26dgFrameExtension=enabled[3];g_s26dnMotionRangeEnabled=enabled[4];g_s26edDepthExtension=enabled[5];
         ext_Log(">>> S26DN unobstructed finger motion request %s",enabled[4]?"enabled":"unsupported; runtime default");
-        ext_Log(">>> S26Q OpenXR tracking extensions: waist %u skeletal hands %u eye gaze %u Steam Frame %u",(u32)enabled[0],(u32)enabled[1],(u32)enabled[2],(u32)enabled[3]);}
+        ext_Log(">>> S26Q OpenXR tracking extensions: waist %u skeletal hands %u eye gaze %u Steam Frame %u depth layer %u",(u32)enabled[0],(u32)enabled[1],(u32)enabled[2],(u32)enabled[3],(u32)enabled[5]);}
     return r;
 }
 u8 __attribute__((ms_abi)) s26q_instance_wrapper(void* self){

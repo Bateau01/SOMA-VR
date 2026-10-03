@@ -11,12 +11,15 @@ This inventory describes included implementation, not a claim that every interac
 - Spatial subtitles and hints, subtitle distance settings, and adjustable flat-panel presentation distance.
 - Presentation routes for menus, loading, startup sequences, pause and death/retry. These have received fixes but remain part of regression testing.
 - Comfort controls for selected post effects, distortion, vignette and camera shake.
+- VR SETTINGS > VIDEO: RENDER SCALE (60-150% of the runtime's recommended eye size, applied at the next launch), DEPTH FOR REPROJECTION (submits the scene depth through XR_KHR_composition_layer_depth when the runtime offers it; off by default) and TEXTURE BUDGET BOOST (raises the engine's texture upload budget from 1 GiB to 1.5 GiB on the verified executable; off by default).
 
 ## Movement, body and input
 
 - Smooth and snap turning; HMD-, body- and controller-relative movement options.
 - Physical crouching and seated/standing-related options, plus button controls.
 - Body heading and shoulder holster tracking/recentering logic.
+- Hand-over-hand ladder climbing: grip and pull down to climb up, push up to climb down; the stick keeps working and hands stay visible on ladders (HANDS AND HAPTICS > CLIMB LADDERS WITH HANDS).
+- Experimental SHOW BODY (off by default): Simon's authored diving-suit body stands at your feet and turns with you, in diving-suit sections only. Its pose and facing are unverified on hardware.
 - Native-styled VR SETTINGS menus, including bindings and slider settings.
 - Analog grip/trigger finger animation, with additional tracked-finger paths gated by available hardware/runtime data.
 - Optional tracker and eye-gaze integration. Eye gaze is not a replacement for the rendered headset FOV.
@@ -34,7 +37,7 @@ This inventory describes included implementation, not a claim that every interac
 - Manual key-item acquisition, use, storage, retrieval, insertion and removal, with story-specific script bridges and save/reload recovery.
 - Stun Baton and Tracer Fluid interaction paths; WAU healing and Site Alpha interaction paths.
 - Manual cables/connectors and phone-call interaction paths.
-- Head-touch flashlight gesture gated by the game's flashlight availability.
+- Head-tap flashlight: tap the top of your head with an empty hand to toggle the flashlight, with a haptic confirmation, gated by the game's flashlight availability (HANDS AND HAPTICS > HEAD TAP FLASHLIGHT).
 - Authored-animation suppression and physical-hand visibility rules for story sequences.
 - Controller haptics whenever something is interactable, or as a reference to the shoulder stowing radius. Pulses vary in intensity depending on the interaction. 
 

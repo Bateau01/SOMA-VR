@@ -4,7 +4,7 @@ No Newton/AngelScript simulation; hardware pickup still needs confirmation.
 from pathlib import Path
 import subprocess,sys
 R=Path(__file__).resolve().parents[1];s=(R/'source/s26n.c').read_text();a=s.index('static i32 s26da_queue_contact_item(');b=s.index('// S26DB:',a);fn=s[a:b]
-post=s[s.index('static i32 h5755hj_queue_current_zero_mass_contact('):s.index('/* Optional S26K')]
+post=s[s.index('static i32 h5755hj_queue_current_zero_mass_contact('):s.index('#include "texture_streaming_i.inc"')]
 head=r'''
 #include <stdio.h>
 #include <string.h>
@@ -85,5 +85,5 @@ B=R/'build';c=B/'readable_contact_test.c';c.write_text(head+fn+post+main);exe=c.
 a=s.index('static i32 h25_queue_native_interact(');b=s.index('static void h5755em_queue_native_grab_semantics_ex',a)
 assert 'meshGap>gate&&body!=g_s26dpReadableContactBody' in s[a:b]
 assert 'g_h25AttemptBody[hand]==body' in s[a:b]
-assert 'g_s26dpReadableContactBody=exactRead?chosen:0;' in s[s.index('static i32 h5755hj_queue_current_zero_mass_contact('):s.index('/* Optional S26K')]
+assert 'g_s26dpReadableContactBody=exactRead?chosen:0;' in s[s.index('static i32 h5755hj_queue_current_zero_mass_contact('):s.index('#include "texture_streaming_i.inc"')]
 print('PASS production queue retains per-squeeze deduplication and scoped contact gate')
