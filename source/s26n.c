@@ -7199,6 +7199,7 @@ static void s26s_eye_end(Handle session);
 #include "tracking_q.inc"
 #include "eyes_s.inc"
 #include "frame_dg.inc"
+#include "index_ec.inc"
 #include "reference_q.inc"
 
 static void controller_setup(void* self) {
@@ -7364,7 +7365,7 @@ static void controller_setup(void* self) {
         XrInteractionProfileSuggestedBinding sb; zero_bytes(&sb,sizeof(sb));
         sb.type=XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING; sb.interactionProfile=profile;
         if (i==0) { sb.countSuggestedBindings=oculusBindCount; sb.suggestedBindings=oculusBinds; }
-        else if(i==1&&indexPaths){sb.countSuggestedBindings=oculusBindCount;sb.suggestedBindings=indexBinds;}
+        else if(i==1&&indexPaths){suggestRes[i]=s26ec_index_binding(inst,profile,indexBinds,oculusBindCount);continue;}
         else { sb.countSuggestedBindings=2; sb.suggestedBindings=poseBinds; }
         XrActionSuggestedBinding coreBinds[23];u32 coreCount=0,coreInputs=0;
         if(i>=2){
@@ -7382,9 +7383,6 @@ static void controller_setup(void* self) {
         if(i>=2){
             if(!ok(suggestRes[i])&&coreCount>coreInputs){sb.countSuggestedBindings=coreInputs;suggestRes[i]=pSuggestBindings(inst,&sb);}
             coreAccepted[i-2]=ok(suggestRes[i])?1:0;
-        }
-        if(i==1&&indexPaths&&!ok(suggestRes[i])&&sb.countSuggestedBindings==23u){
-            sb.countSuggestedBindings=21u;suggestRes[i]=pSuggestBindings(inst,&sb);
         }
         if(i==0&&!ok(suggestRes[i])&&hapticActionsCreated){sb.countSuggestedBindings=21u;sb.suggestedBindings=oculusBinds;suggestRes[i]=pSuggestBindings(inst,&sb);if(ok(suggestRes[i])){hapticActionsCreated=0;ext_Log(">>> S6-HANDS5756AC HAPTIC BINDING FALLBACK: 23-binding Oculus suggestion rejected, exact pre-haptics 21-input suggestion accepted; haptics disabled without changing controller input");}}
     }

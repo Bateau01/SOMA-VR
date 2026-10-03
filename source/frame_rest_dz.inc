@@ -1,4 +1,5 @@
-/* Experimental Frame-only released-pose reference. A button's touch state is
+/* Released-pose reference for capacitive skeletal controllers (Steam Frame,
+   Valve Index). A button's touch state is
    not an independent finger sensor: it only permits observing a stable,
    partly open pose. Never infer a rest pose from a closed finger or unknown
    touch input. Once learned, the reference may decrease but never increase.

@@ -1,3 +1,15 @@
+# SOMA VR 1.05-S26EC
+
+Valve Index ("Knuckles") controller support, at parity with the Steam Frame path. Steam Frame support is unchanged.
+
+- Dedicated Index binding: right A = jump/accept, right B = run/back, left A = pause, left B = center camera, left stick click = crouch, hold right stick click = hand rebase. Grab uses the grip's capacitive closure (squeeze value), so closing the hand grabs; trigger, sticks and haptics are unchanged.
+- Index capacitive sensors now feed the per-group finger release: thumb (thumbstick, trackpad, A and B touch), index finger (trigger touch) and grip (squeeze value). Lifting a finger group off the controller lets the stable released-pose reference open that part of the hand, exactly as on Steam Frame. RESET FINGER TRACKING also uses these contacts.
+- Index hands request the full, unobstructed finger range (XR_EXT_hand_joints_motion_range) when SteamVR offers it, so a closed fist reaches the authored fist pose instead of stopping at the controller handle.
+- Both Index trackpad presses (trackpad force) are new remappable sources in VR SETTINGS > CONTROLS > BUTTON BINDINGS, labelled LEFT TRACKPAD and RIGHT TRACKPAD. Like the other extra buttons they have no default action. Frame-only extra buttons show as UNAVAILABLE on Index.
+- Extra-button and contact actions are now created once and shared by the Index and Frame profiles, with separate bound state per profile. Each optional Index layer (contacts, trackpads, haptics) is dropped on its own if the runtime rejects it; the established Index bindings remain.
+
+Validation: new production-code contract test `tests/test_index_bindings.py` (252 checks: binding paths limited to the Index profile, fallback ordering, shared-action reuse with Frame, controller policy, contact release across all touch/press combinations, and menu labels). All previously passing regression groups pass unchanged. No Index or Steam Frame hardware test was performed for this build; grab feel, the threshold the runtime applies to trackpad force and squeeze value, and Index grip-pose hand placement need headset confirmation.
+
 # SOMA VR 1.04-S26EB
 
 - Generalized finger tracking: accepts active, valid OpenXR hand-joint data without an Index/Steam Frame controller whitelist. All controllers use the authored resting pose and curl path. The FINGER TRACKING toggle retains grip/trigger fallback when disabled; unavailable/invalid skeletal data also falls back. Runtime-estimated poses may still be unsuitable on controllers without individual finger sensing.
