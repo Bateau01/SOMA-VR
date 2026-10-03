@@ -1,6 +1,6 @@
 {
-  "version": "1.05-S26EC",
-  "base": "1.04-S26EB",
+  "version": "2.0-S26ED",
+  "base": "1.05-S26EC",
   "dll_sha256": "f7845cb5fb58fafc2777fb563185e125c5ad9e9aeb4c9658ac0627e83e75993e",
   "validation": "docs/S26EC-validation.txt",
   "upstream_docs_commit": "c5f903e801095442a1ed3b608f96813b862f9fc0",

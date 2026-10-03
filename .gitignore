@@ -18,6 +18,9 @@ Soma.exe
 *.bak
 *.tmp
 hpl3vr_vr_settings.ini
+# Shipped clean defaults; the launcher seeds the root INI from defaults/ on a fresh install.
+!/runtime/hpl3vr_vr_settings.ini
+!/runtime/defaults/hpl3vr_vr_settings.ini
 hpl3vr_hand_calibration.bin
 hpl3vr_hand_joints.bin
 hpl3vr_runtime_fov_cache.bin
