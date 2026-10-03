@@ -1,7 +1,7 @@
 SOMA VR 1.05-S26EC validation record
 
 Build: python -X utf8 scripts/build.py --zig <zig 0.13.0>  (x86_64 Linux host, deterministic)
-hpl3vr.dll SHA256: 974237615afe8ffc36ed6badcc303f864259910c2413a58a0b670c92a98810bc
+hpl3vr.dll SHA256: 07574577cb69a9aaf06c196cae6e69a7106bee53fdb6d2ac4d4e4d5cd8369495
 Build reproducibility: unchanged 1.04-S26EB source rebuilt on the same host matched a989e9ca75b1f1c7e7c4c6ff1d8b4781b8be82a1b7b1d4b5b2af0e78842497f7.
 
 New: tests/test_index_bindings.py - PASS 252 production Valve Index binding/policy/contact checks; menu labels and setup wiring.

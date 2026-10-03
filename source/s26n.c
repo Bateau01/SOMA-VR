@@ -21430,6 +21430,7 @@ u8 __attribute__((ms_abi)) s6_h11_begin_wrapper(void* self) {
     s26s_eye_tick(sess,baseSpace,displayTime,g_lastSyncResult);
     s26q_tracker_tick(sess,baseSpace,displayTime,g_lastSyncResult);
     s26dl_rest_tick(sess,g_lastSyncResult==0);
+    s26ec_index_tick(sess,g_lastSyncResult==0);
     s26q_hands_tick(sess,baseSpace,displayTime,g_lastSyncResult==0);
 
     for (i32 i=0;i<2;++i) {

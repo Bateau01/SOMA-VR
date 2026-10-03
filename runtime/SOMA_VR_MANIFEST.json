@@ -346,8 +346,8 @@
       "bytes": 22369776
     },
     "hpl3vr.dll": {
-      "sha256": "974237615afe8ffc36ed6badcc303f864259910c2413a58a0b670c92a98810bc",
-      "bytes": 1978368
+      "sha256": "07574577cb69a9aaf06c196cae6e69a7106bee53fdb6d2ac4d4e4d5cd8369495",
+      "bytes": 1982976
     },
     "hpl3vr_inject.exe": {
       "sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
@@ -466,7 +466,7 @@
       "bytes": 422552
     },
     "PACKAGE_VERIFICATION.json": {
-      "sha256": "b5d35ed90220a2e658e27d0487c2bf7d0bf049ac60e7a8b95e99f51dadf68cac",
+      "sha256": "74459e7089470982fef882f61ebc566ce03876e473c2ebf16cf0c46933ae9b10",
       "bytes": 297
     },
     "script/areas/Area_InteractAux.hps": {
