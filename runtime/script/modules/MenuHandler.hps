@@ -1017,7 +1017,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         int src=mvVRButtonMap[role]; int hand=(src==0 || src==1 || src==5 || src==7 || src==10 || src==11 || src==13) ? 1 : 0;
         int profile=mvVRBindingProfiles[hand];
         if(profile==0) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="LEFT X";buttons[3]="LEFT Y"; }
-        if(profile==1) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="LEFT A";buttons[3]="LEFT B"; }
+        if(profile==1) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="LEFT A";buttons[3]="LEFT B";buttons[6]="LEFT TRACKPAD";buttons[7]="RIGHT TRACKPAD";for(int i=8;i<14;i++) buttons[i]="UNAVAILABLE"; }
         if(profile==5) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="D-PAD LEFT";buttons[3]="D-PAD UP"; }
         if(profile==2) { buttons[0]="RIGHT PAD CLICK";buttons[1]="RIGHT MENU";buttons[2]="LEFT MENU";buttons[3]="UNAVAILABLE";buttons[4]="LEFT PAD CLICK";buttons[5]="UNAVAILABLE"; }
         if(profile==3) { buttons[0]="RIGHT MENU";buttons[1]="RIGHT PAD CLICK";buttons[2]="LEFT MENU";buttons[3]="LEFT PAD CLICK"; }

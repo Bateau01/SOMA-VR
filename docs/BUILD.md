@@ -11,10 +11,10 @@ python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
 Output: `build/hpl3vr.dll`. The checked release hash is:
 
 ```text
-a989e9ca75b1f1c7e7c4c6ff1d8b4781b8be82a1b7b1d4b5b2af0e78842497f7
+974237615afe8ffc36ed6badcc303f864259910c2413a58a0b670c92a98810bc
 ```
 
-The 1.03-S26DF package was rebuilt using this portable script and matched that hash. The extracted native-rendering regression test reproduces the pre-fix failure and passes after the fix. It mocks engine calls and a small rig; it is not a test of all live controller interactions.
+The 1.05-S26EC DLL was built with this script and Zig 0.13.0 on x86_64 Linux; the build is deterministic, and the same script reproduces the 1.04-S26EB hash (`a989e9ca...`) from that release's unchanged source, so the host OS does not affect the output. The 1.03-S26DF package was also rebuilt using this portable script and matched its hash. The extracted native-rendering regression test reproduces the pre-fix failure and passes after the fix. It mocks engine calls and a small rig; it is not a test of all live controller interactions.
 
 ## How this code is built
 
@@ -47,6 +47,12 @@ Additional regression checks:
 ```powershell
 python -X utf8 tests/test_transition_height.py "C:\Tools\zig\zig.exe"
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/test_launcher_cleanup.ps1
+```
+
+Valve Index binding, shared-action and capacitive-contact checks (mocked OpenXR runtime):
+
+```powershell
+python -X utf8 tests/test_index_bindings.py "C:\Tools\zig\zig.exe"
 ```
 
 Menu-state regression checks (mocked engine state):

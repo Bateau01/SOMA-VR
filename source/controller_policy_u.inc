@@ -19,7 +19,10 @@ static i32 s26u_controller_fingers_allowed(Handle session,i32 hand){
     if(allowed&&g_s26ebRestProfile[hand]!=state.interactionProfile){
         g_s26ebRestProfile[hand]=state.interactionProfile;g_s26ebProfileChanged[hand]=1;
     }
-    g_s26diFrameHand[hand]=(u8)(allowed && state.interactionProfile==g_s26nProfiles[5]);
+    /* S26EC: Valve Index and Steam Frame both sense each finger group and bind
+       the shared contact actions, so both use the unobstructed motion range and
+       contact-gated rest learning. Other profiles keep the generic path. */
+    g_s26diFrameHand[hand]=(u8)(allowed && (state.interactionProfile==g_s26nProfiles[5]||state.interactionProfile==g_s26nProfiles[1]));
     static XrPath previous[2];static Handle previousSession;static u32 logs;
     if(previousSession!=session){previousSession=session;previous[0]=previous[1]=0;logs=0;}
     if(previous[hand]!=state.interactionProfile && logs<16u){

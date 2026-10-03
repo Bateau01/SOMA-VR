@@ -1,0 +1,22 @@
+SOMA VR 1.05-S26EC validation record
+
+Build: python -X utf8 scripts/build.py --zig <zig 0.13.0>  (x86_64 Linux host, deterministic)
+hpl3vr.dll SHA256: 974237615afe8ffc36ed6badcc303f864259910c2413a58a0b670c92a98810bc
+Build reproducibility: unchanged 1.04-S26EB source rebuilt on the same host matched a989e9ca75b1f1c7e7c4c6ff1d8b4781b8be82a1b7b1d4b5b2af0e78842497f7.
+
+New: tests/test_index_bindings.py - PASS 252 production Valve Index binding/policy/contact checks; menu labels and setup wiring.
+Mutation checks: removing the Index profile from the controller policy, or making shared action creation non-idempotent, fails this test.
+
+Unchanged and passing: apartment, auto_load, bob, cable_handoff, extra_buttons, finger_reset, frame_gaze, frame_mapping, frame_rest,
+handheld, light_evidence, light_projection, menu_capture, menu_checkpoint, menu_gl_state, menu_recovery, menu_resize,
+native_hand_scale, readable_contact, shadow_leases, skeletal_publish, tracer_two_hands, tracking_extensions, tracking_menu,
+transition_height.
+
+Not run on this host (same status before and after the change): ark_native, desktop_settings and launcher_compatibility need
+Soma.exe; human_mesh needs numpy; desktop_window, menu_auto and native_gui build Windows executables; small_lever already failed
+its assertion on the unmodified 1.04-S26EB source.
+
+scripts/verify_package.py: every shipped overlay file matches the manifest except hpl3vr_vr_settings.ini and
+defaults/hpl3vr_vr_settings.ini, which are gitignored and absent from the repository (also true for 1.04-S26EB).
+
+No headset or controller hardware test was performed.
