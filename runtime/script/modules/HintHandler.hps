@@ -440,6 +440,7 @@ class cScrHintHandler : iScrUserModule, iScrUserModule_Interface, iScrHintHandle
 			return;
 		}
 		if (mpVRFont is null) @mpVRFont = cResources_CreateFontData(Helper_Font_GetFontName(eLuxFontType_Default_Medium_Outline));
+		HPL3VR_DrawWristHint();
 		if(mbHintsEnabled==false || mCurrentHint.IsEmpty() || mfTextAlpha==0 || mpVRFont is null) return;
 		// Prepare the same native 3D surface and per-eye route as VR subtitles.
 		// Use an explicit set handle; no global HUD redirection survives this call.
@@ -463,6 +464,25 @@ class cScrHintHandler : iScrUserModule, iScrUserModule_Interface, iScrHintHandle
 		}
 	}
 	
+	// S26EC: thumb-rest button hint above the wrist (Valve Index A/B touch).
+	// Native supplies alpha, hand*8+source and the bound role; the label
+	// follows BUTTON BINDINGS remaps and fades when the button is pressed.
+	void HPL3VR_DrawWristHint()
+	{
+		if(mpVRFont is null || !cScript_RunGlobalFunc("VRWRIST", "", "Q")) return;
+		cVector3f vHint = cScript_GetGlobalReturnVector3f();
+		float fAlpha = cMath_Clamp(vHint.x, 0.0f, 1.0f);
+		int lSource = int(vHint.y + 0.5f) % 8;
+		int lRole = int(vHint.z + (vHint.z < 0 ? -0.5f : 0.5f));
+		if(fAlpha <= 0.0f || !cScript_RunGlobalFunc("VRWRIST", "", "P")) return;
+		cGuiSet@ pWristSet = cGui_GetSetFromName("VR_WristHint");
+		if(pWristSet is null) return;
+		array<tString> vRoles = {"JUMP / ACCEPT","RUN / BACK","PAUSE","CENTER CAMERA","CROUCH","HAND REBASE"};
+		tString sText = (lSource == 0 || lSource == 2) ? "A" : "B";
+		sText += (lRole >= 0 && lRole < 6) ? "  " + vRoles[lRole] : "  UNASSIGNED";
+		pWristSet.DrawFontEx(cString_To16Char(sText), mpVRFont, cVector3f(256, 40, 1), cVector2f(48), cColor(1,1,1,fAlpha), eFontAlign_Center, eGuiMaterial_FontNormal);
+	}
+
 	void OnPostRender(float afFrameTime)
 	{
 	

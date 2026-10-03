@@ -116,3 +116,31 @@ static void s26ec_index_tick(Handle session,i32 focused){
         }
     }
 }
+/* GRIP PRESSURE: 0..1 between lo and hi grip force, or -1 when this hand has
+   no force sensing (non-Index) or the option is off, meaning "unchanged". */
+static float s26ec_pressure01(i32 hand,float lo,float hi){
+    if(hand<0||hand>1||!s26ec_option(S26EC_SET_PRESSURE)||!g_s26ecForceValid[hand]||!(hi>lo))return -1.0f;
+    return clamp01((g_s26ecForce[hand]-lo)/(hi-lo));
+}
+/* Tear: pull only progresses while squeezing; easing off slips (one pulse). */
+#define S26EC_TEAR_FORCE_LO 0.05f
+#define S26EC_TEAR_FORCE_HI 0.40f
+static u8 g_s26ecTearGripped[2];
+static float s26ec_tear_scale(i32 hand){
+    float p=s26ec_pressure01(hand,S26EC_TEAR_FORCE_LO,S26EC_TEAR_FORCE_HI);
+    if(p<0.0f){g_s26ecTearGripped[hand&1]=0;return 1.0f;}
+    if(p<=0.0f&&g_s26ecTearGripped[hand])h576ac_queue_haptic(hand,H576AC_HAPTIC_READY);
+    g_s26ecTearGripped[hand]=(u8)(p>0.0f);
+    return p;
+}
+/* Wheel/valve: a loose grip cannot spin it fast; a firm squeeze allows the
+   full authored 4 rad/s. */
+#define S26EC_WHEEL_FORCE_LO 0.02f
+#define S26EC_WHEEL_FORCE_HI 0.30f
+#define S26EC_WHEEL_LOOSE_CAP 1.5f
+#define S26EC_WHEEL_FULL_CAP 4.0f
+static float s26ec_wheel_cap(const i32 valid[2]){
+    float best=-1.0f;
+    for(i32 h=0;h<2;++h)if(valid[h]){float p=s26ec_pressure01(h,S26EC_WHEEL_FORCE_LO,S26EC_WHEEL_FORCE_HI);if(p>best)best=p;}
+    return best<0.0f?S26EC_WHEEL_FULL_CAP:S26EC_WHEEL_LOOSE_CAP+(S26EC_WHEEL_FULL_CAP-S26EC_WHEEL_LOOSE_CAP)*best;
+}

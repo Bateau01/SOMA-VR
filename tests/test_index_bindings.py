@@ -17,6 +17,10 @@ header=r'''
 static int checks;
 static void zero_bytes(void*p,u64 n){memset(p,0,n);}
 static void ext_Log(const char*f,...){(void)f;}
+static float clamp01(float v){return v<0?0:v>1?1:v;}
+enum{H576AC_HAPTIC_READY=1};static int hapticPulses;static void h576ac_queue_haptic(int h,unsigned l){(void)h;(void)l;++hapticPulses;}
+#define S26EC_SET_PRESSURE 2u
+static unsigned optionMask=~0u;static int s26ec_option(unsigned b){return (optionMask&b)!=0;}
 static XrPath g_s26nProfiles[6]={10,11,12,13,14,15},g_handPath[2]={20,21};
 static u8 g_s26dgFrameExtension=1;
 static XrPath currentProfile=11;

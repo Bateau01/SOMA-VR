@@ -21,7 +21,7 @@ This inventory describes included implementation, not a claim that every interac
 - Analog grip/trigger finger animation, with additional tracked-finger paths gated by available hardware/runtime data.
 - Optional tracker and eye-gaze integration. Eye gaze is not a replacement for the rendered headset FOV.
 
-Valve Index ("Knuckles") controllers have a dedicated binding: right A = jump/accept, right B = run/back, left A = pause, left B = center camera, left stick click = crouch, hold right stick click = hand rebase. Their capacitive sensors (thumbstick, trackpad, A/B, trigger and grip) drive finger rest release, with the full, unobstructed finger range requested from SteamVR. Both trackpad presses are available in BUTTON BINDINGS. These bindings have contract tests but no Index hardware test.
+Valve Index ("Knuckles") controllers have a dedicated binding: right A = jump/accept, right B = run/back, left A = pause, left B = center camera, left stick click = crouch, hold right stick click = hand rebase. Their capacitive sensors (thumbstick, trackpad, A/B, trigger and grip) drive finger rest release, with the full, unobstructed finger range requested from SteamVR. Both trackpad presses are available in BUTTON BINDINGS. HANDS AND HAPTICS settings add smart grip (pinch grabs, finger-open release), grip pressure, point to press, creature haptics and thumb-rest button hints for Index (and Steam Frame) controllers. These have contract tests but no Index hardware test.
 
 Quest Touch controllers do not provide independent full-finger tracking. A device claiming a tracking extension does not prove that it supplies complete, usable finger data. Broad compatibility with PSVR2, Pimax, gloves, etee or other devices is not asserted by this release.
 
