@@ -1,3 +1,18 @@
+# SOMA VR 1.04-S26EB
+
+- Generalized finger tracking: accepts active, valid OpenXR hand-joint data without an Index/Steam Frame controller whitelist. All controllers use the authored resting pose and curl path. The FINGER TRACKING toggle retains grip/trigger fallback when disabled; unavailable/invalid skeletal data also falls back. Runtime-estimated poses may still be unsuitable on controllers without individual finger sensing.
+- RESET FINGER TRACKING now supports compatible skeletal controllers generally. Select START RESET, release fingers during the five-second countdown, and hold a steady resting pose. Controllers without capacitive contact actions can use this explicit reset. Known touch/press, unstable or saturated input rejects the sample; failure retains the old reference. The reference is session-only and is cleared when the controller profile changes.
+- Neutral controller wording: D-PAD LEFT, D-PAD UP, D-PAD DOWN, D-PAD RIGHT, LEFT SHOULDER and RIGHT SHOULDER. No headset brand appears in the reset menu.
+- Expanded the button remapper to accept both shoulder buttons, the remaining D-pad directions, right X/Y, View and Menu when exposed by the supported input profile. Existing six default assignments and saved source IDs are preserved. Extra buttons have no default gameplay action until rebound.
+- Removed temporary skeletal joint dumps, alternate-motion-range comparison queries and human-mesh bone-pose captures. Retained bounded startup, capability and reset-result messages.
+- Retains the verified human-pinky repair, lighting/shadow correction and exact desktop client-size correction from 1.03-S26EA. No hand mesh, weights, material or texture files changed in this update.
+
+Validation: all 17 automated regression groups passed, including live SDL client-size tests at 1920x1080, 2560x1440 and 3440x1440, OpenXR failure/fallback simulations, skeletal geometry/publication, delayed reset, all fourteen button sources, saved assignments, menu layout and mesh consistency. The user's latest S26EA log recorded startup correction from 2560x1431 to 2560x1440 and four native menu transitions with matching 2560x1440 client, drawable and graphics-owner dimensions. The user confirmed the pinky repair and finger reset worked.
+
+These tests do not certify every headset/controller driver. Third-party controllers such as etee require their runtime to expose usable XR_EXT_hand_tracking data and supported gameplay actions; no etee hardware test was performed. The shared neutral-pose mapping and new shoulder-button assignments still need hardware confirmation. Runtime-generated coupling between fingers cannot be reconstructed into independent sensor measurements by the mod.
+
+Install/update using the included installer. Personal VR settings are preserved. Release notes remain a separate download and are not copied into the game folder.
+
 # SOMA VR 1.03 (S26DF)
 
 - Moved DOUBLE-TAP SPRINT to VR SETTINGS > CONTROLS, directly above BUTTON BINDINGS. BACK and all options have separate rows.

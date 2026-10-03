@@ -2,7 +2,7 @@
 
 ## What to download
 
-Download `SOMA-VR-1.03-S26DF-Installer.zip`, extract it, run `SOMA-VR-1.03-S26DF-Setup.exe`, and select **INSTALL / UPDATE / REPAIR**. The installer requests administrator access and preserves customized settings. The manual overlay instructions below apply to the `runtime` folder in the source archive. It contains the cumulative overlay: the DLL, injector, OpenXR loader, scripts, modified entity/map data, all current hand families, audio components and a launcher.
+Download `SOMA-VR-1.04-S26EB-Installer.zip`, extract it, run `SOMA-VR-1.04-S26EB-Setup.exe`, and select **INSTALL / UPDATE / REPAIR**. The installer requests administrator access and preserves customized settings. The manual overlay instructions below apply to the `runtime` folder in the source archive. It contains the cumulative overlay: the DLL, injector, OpenXR loader, scripts, modified entity/map data, all current hand families, audio components and a launcher.
 
 This is for an existing compatible SOMA installation. It does not contain `Soma.exe`, the full maps, game audio, or the other files needed to run the game independently.
 
@@ -14,9 +14,16 @@ This is for an existing compatible SOMA installation. It does not contain `Soma.
 4. Press "Install". If done correctly, you should receive a confirmation prompt stating that the VR mod was successfully installed.
 5. To launch SOMA VR, navigate to your SOMA game directory, and run the "LAUNCH-SOMA-VR.cmd" file. It should run as an administrator. Ensure that your VR headset and controllers are connected, and SteamVR or VD is running using the OpenXR or VDXR runtime.
 
+# NOTE:
+
+- If it's your first time installing SOMA, please launch SOMA flatscreen first and complete the initial menu setup **before installing the VR mod**, as SOMA needs to generate the user_setting.cfg files.
+- To use eye-tracking features (on a VR headset with eye-tracking), **in your SteamVR application on your PC, open Settings > Steam Link > toggle "Share eye tracking data to other apps on this PC" on. If you're using Virtual Desktop, open Streaming > toggle "Forward tracking data to PC". Restart SOMA if it's already open.**
+
 ## Troubleshooting:
 
 - If your game immediately crashes upon injection, ensure that SteamVR is using OpenXR as its runtime.
+- If your SOMA main menu looks out of place, try re-centering your camera using its designated keybind.
+- If your cursor won't appear in SOMA's main menu when using your VR controllers, ensure that your SOMA game window is focused on your PC.
 
 For any other in-game related issues, please upload "hpl3vr.log" from your game's root directory, and "hpl.log" from your C:\Users[YOUR_NAME]\Documents\My Games\Soma\Main. Include a description of what the issue is, where this issue occurred, what VR headset and controllers you're using, and your operating system.
 

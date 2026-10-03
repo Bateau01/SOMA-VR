@@ -21,6 +21,8 @@ static H10Skin skins[2];
 static void *g_s26NativeMesh[2],*g_h14GripBody[2],*g_s26NativeBones[2][32];
 static i32 g_s26NativeFamily[2],g_h5748Family=0,g_s26MeshCapture,g_s26MeshSuccess,g_s26MeshReady=1,g_s26ManualHeal;
 static u8 g_s26NativeHandVisible[2];static u32 g_s26NativeMeshLogs;
+static u32 g_h14PhysicsSteps=1000;
+static float h18_joint_input(int h,int f,int d){(void)h;(void)d;return f==2?1.0f:0.0f;}
 static int calls[2],boneCalls,resetCalls,allowed=1,poseOK=1;
 static float h5755ea_world_units_per_meter(void){return metric;}
 static H10Skin* p2_skin(void){return skins;}

@@ -11,6 +11,7 @@ header=r'''
 #include <stdio.h>
 #include <stdlib.h>
 typedef unsigned u32;typedef int i32;
+static void s26dy_checkpoint_menu_window(void){}
 #define ext_Log(...) ((void)0)
 static int checks;
 static u32 g_s26cqStageReady=1,g_h5750yResolveFbo[2]={77,78};

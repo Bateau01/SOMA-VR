@@ -83,7 +83,10 @@ function Repair-SomaVrSettings([string]$GameDirectory,[string]$SettingsPath,[int
         $documents = [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments,[Environment+SpecialFolderOption]::DoNotVerify)
         if (!$documents -and !$SettingsDirectory) { throw 'Windows Documents folder could not be located. Select a user config folder in the installer or pass -SettingsDirectory.' }
         $main = if ($SettingsDirectory) { [IO.Path]::GetFullPath($SettingsDirectory) } else { Join-Path $documents 'My Games\Soma\Main' }
-        $files = @(Get-ChildItem -LiteralPath $main -Filter '*user_settings.cfg' -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+        $files = @()
+        if (Test-Path -LiteralPath $main -ErrorAction Stop) {
+            $files = @(Get-ChildItem -LiteralPath $main -Filter '*user_settings.cfg' -File -ErrorAction Stop | Select-Object -ExpandProperty FullName)
+        }
         # Seed the standard default profile on a first installation. Do not edit game defaults.
         if (!$files.Count) { $files = @(Join-Path $main 'Default_user_settings.cfg') }
     }
@@ -98,6 +101,13 @@ function Repair-SomaVrSettings([string]$GameDirectory,[string]$SettingsPath,[int
     foreach ($plan in $plans) {
         if ($plan.Exists -and $plan.Original -ceq $plan.Updated) { Write-Output ('Settings already prepared: ' + $plan.Path); continue }
         Write-SomaVrSettingsPlan $plan
+    }
+    # Verify on disk, including files that already appeared prepared.
+    foreach ($plan in $plans) {
+        $actual = [IO.File]::ReadAllText($plan.Path)
+        if ((Convert-SomaVrSettings $actual $display.Width $display.Height ([bool]$KeepSSAO)) -cne $actual) {
+            throw ('Settings changed during launch preparation: ' + $plan.Path + '. Game startup stopped; retry the launcher.')
+        }
     }
     Write-Output ('VR desktop target: ' + $display.Device + ' ' + $display.Width + 'x' + $display.Height + ' physical pixels. Headset resolution unchanged.')
 }

@@ -15,11 +15,15 @@ static S26QCreateHand p_s26qCreateHand;
 static S26QLocateHand p_s26qLocateHand;
 static S26QDestroyHand p_s26qDestroyHand;
 static u8 g_s26qHandExtension;
+static u8 g_s26dnMotionRangeEnabled;
+#include "motion_range_dn.inc"
 static Handle g_s26qHandSession,g_s26qHandTracker[2];
 static u64 g_s26qFingerInput[2][5]; /* four 12-bit curls plus validity bit */
 static u64 g_s26qHeldFingerInput[2][5],g_s26qIdleFingerInput[2][5];
 static u8 g_s26qHandReported[2];
 static u32 g_s26qHandLogs;
+#include "frame_rest_dz.inc"
+#include "finger_reset_ea.inc"
 static void s26q_hook_destroy(void* self);
 static void s26q_clear_root_input(void);
 static void s26q_clear_finger_input(void){
@@ -41,6 +45,8 @@ static void s26q_hands_setup(void* self){
     if(get(inst,"xrCreateHandTrackerEXT",(void**)&p_s26qCreateHand)<0||!p_s26qCreateHand||
        get(inst,"xrLocateHandJointsEXT",(void**)&p_s26qLocateHand)<0||!p_s26qLocateHand||
        get(inst,"xrDestroyHandTrackerEXT",(void**)&p_s26qDestroyHand)<0||!p_s26qDestroyHand)return;
+    s26dz_rest_reset(0);s26dz_rest_reset(1);
+    g_s26eaResetState=0;g_s26eaResetRequest=0;
     s26q_clear_finger_input();g_s26qHandSession=session;s26q_hook_destroy(self);
     for(i32 h=0;h<2;++h){
         S26QHandCreate ci;zero_bytes(&ci,sizeof(ci));ci.type=1000051001;ci.hand=h+1;
@@ -89,20 +95,35 @@ static i32 s26q_retarget_finger(const S26QJoint* joints,i32 finger,float curl[4]
     }
     return 1;
 }
+#include "frame_curl_di.inc"
+
 static void s26q_hands_tick(Handle session,Handle space,i64 time,i32 focused){
-    if(session!=g_s26qHandSession||!space||time<=0||!focused){s26q_clear_finger_input();return;}
+    if(session!=g_s26qHandSession||!space||time<=0||!focused){s26q_clear_finger_input();if(g_s26eaResetState==1||g_s26eaResetState==2)g_s26eaResetState=4;return;}
+    float resetRaw[2][5]={{0}};u8 resetValid[2]={1,1};
     for(i32 h=0;h<2;++h){
         S26QJoint joints[26];zero_bytes(joints,sizeof(joints));
         S26QJoints out;zero_bytes(&out,sizeof(out));out.type=1000051003;out.count=26;out.joints=joints;
         S26QHandLocate li;zero_bytes(&li,sizeof(li));li.type=1000051002;li.baseSpace=space;li.time=time;
-        u8 valid=s26u_controller_fingers_allowed(session,h)&&g_s26qHandTracker[h]&&p_s26qLocateHand&&p_s26qLocateHand(g_s26qHandTracker[h],&li,&out)==0&&out.active&&out.count==26;
+        u8 allowed=s26u_controller_fingers_allowed(session,h);
+        S26DNMotionRange range;s26dn_motion_range(&li,&range,g_s26dnMotionRangeEnabled&&g_s26diFrameHand[h]);
+        u8 valid=allowed&&g_s26qHandTracker[h]&&p_s26qLocateHand&&p_s26qLocateHand(g_s26qHandTracker[h],&li,&out)==0&&out.active&&out.count==26;
         u8 any=0;
-        for(i32 f=0;f<5;++f){float cv[4];u64 packed=valid&&s26q_retarget_finger(joints,f,cv)?s26q_pack_finger(cv):0;
+        /* Missing profile/tracking data must not erase a confirmed reference. */
+        if(g_s26ebProfileChanged[h]){s26dz_rest_reset(h);g_s26ebProfileChanged[h]=0;if(g_s26eaResetState==1||g_s26eaResetState==2)g_s26eaResetState=4;}
+        for(i32 f=0;f<5;++f){float cv[4];
+            i32 mapped=valid&&s26di_frame_curl(joints,h,f,cv);
+            if(mapped)resetRaw[h][f]=cv[0]/(f==0?0.55f:1.0f);else resetValid[h]=0;
+            if(mapped)s26dz_rest_correct(h,f,time,cv);
+            u64 packed=mapped?s26q_pack_finger(cv):0;
+            // A learned resting reference does not replace runtime motion.
+            // Unknown/invalid skeletal samples retain the existing fallback.
             __atomic_store_n(&g_s26qFingerInput[h][f],packed,__ATOMIC_RELEASE);
-            __atomic_store_n(&g_s26qRootInput[h][f],packed?s26q_root_from_joints(joints,f):0ULL,__ATOMIC_RELEASE);if(packed)any=1;}
+            __atomic_store_n(&g_s26qRootInput[h][f],0ULL,__ATOMIC_RELEASE);if(packed)any=1;}
         if(any!=g_s26qHandReported[h]&&g_s26qHandLogs<24u){++g_s26qHandLogs;ext_Log(">>> S26Q skeletal hand %d input %s",h,any?"active":"unavailable; controller curl fallback");}
         g_s26qHandReported[h]=any;
+
     }
+    s26ea_finger_reset_tick(time,focused,resetRaw,resetValid);
 }
 static i32 s26q_finger_values(i32 hand,i32 finger,float out[4]){
     if(hand<0||hand>1||finger<0||finger>4)return 0;
@@ -124,3 +145,4 @@ static i32 s26q_hand_input_changed(i32 hand,const u64 previous[5]){
 static void s26q_save_hand_input(i32 hand,u64 previous[5]){
     for(i32 f=0;f<5;++f)previous[f]=__atomic_load_n(&g_s26qFingerInput[hand][f],__ATOMIC_ACQUIRE);
 }
+

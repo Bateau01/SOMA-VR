@@ -1002,6 +1002,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] int mlVRBindAction=-1;
     [nosave] array<int> mvVRBindingProfiles={-1,-1};
     [nosave] int mlVRGrabControls=0;
+    [nosave] bool mbVRFingerTracking=true;
+    [nosave] bool mbVRFingerResetPending=false;
     [nosave] bool mbVREyeEnvironment=true;
     [nosave] bool mbVREyeAI=true;
     [nosave] bool mbVREyeFlashlight=false;
@@ -1011,11 +1013,12 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     tString HPL3VR_BindingLabel(int role)
     {
         array<tString> roles={"JUMP / ACCEPT","RUN / BACK","PAUSE","CENTER CAMERA","CROUCH","HAND REBASE"};
-        array<tString> buttons={"RIGHT PRIMARY","RIGHT SECONDARY","LEFT PRIMARY","LEFT SECONDARY","LEFT STICK CLICK","RIGHT STICK CLICK"};
-        int src=mvVRButtonMap[role]; int hand=(src==0 || src==1 || src==5) ? 1 : 0;
+        array<tString> buttons={"RIGHT PRIMARY","RIGHT SECONDARY","LEFT PRIMARY","LEFT SECONDARY","LEFT STICK CLICK","RIGHT STICK CLICK","LEFT SHOULDER","RIGHT SHOULDER","D-PAD DOWN","D-PAD RIGHT","RIGHT X","RIGHT Y","VIEW","MENU"};
+        int src=mvVRButtonMap[role]; int hand=(src==0 || src==1 || src==5 || src==7 || src==10 || src==11 || src==13) ? 1 : 0;
         int profile=mvVRBindingProfiles[hand];
         if(profile==0) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="LEFT X";buttons[3]="LEFT Y"; }
         if(profile==1) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="LEFT A";buttons[3]="LEFT B"; }
+        if(profile==5) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="D-PAD LEFT";buttons[3]="D-PAD UP"; }
         if(profile==2) { buttons[0]="RIGHT PAD CLICK";buttons[1]="RIGHT MENU";buttons[2]="LEFT MENU";buttons[3]="UNAVAILABLE";buttons[4]="LEFT PAD CLICK";buttons[5]="UNAVAILABLE"; }
         if(profile==3) { buttons[0]="RIGHT MENU";buttons[1]="RIGHT PAD CLICK";buttons[2]="LEFT MENU";buttons[3]="LEFT PAD CLICK"; }
         if(profile==4) { buttons[0]="UNAVAILABLE";buttons[1]="RIGHT MENU";buttons[2]="LEFT MENU";buttons[3]="UNAVAILABLE";buttons[4]="UNAVAILABLE";buttons[5]="UNAVAILABLE"; }
@@ -1023,8 +1026,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     }
     void HPL3VR_ReadBindings()
     {
-        for(int h=0;h<2;h++) { mvVRBindingProfiles[h]=-1;for(int i=0;i<5;i++) if(cScript_RunGlobalFunc("VRBIND","P"+h,""+i)) { mvVRBindingProfiles[h]=i;break; } }
-        for(int r=0;r<6;r++) for(int v=0;v<6;v++)
+        for(int h=0;h<2;h++) { mvVRBindingProfiles[h]=-1;for(int i=0;i<6;i++) if(cScript_RunGlobalFunc("VRBIND","P"+h,""+i)) { mvVRBindingProfiles[h]=i;break; } }
+        for(int r=0;r<6;r++) for(int v=0;v<14;v++)
             if(cScript_RunGlobalFunc("VRBIND",""+r,"Q"+v)) { mvVRButtonMap[r]=v;break; }
     }
     void HPL3VR_CancelBinding()
@@ -1074,9 +1077,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
                 p.GetBool("SOMA_VR_Comfort","HideHeadBob",false) || p.GetBool("SOMA_VR_Comfort","HideHandBob",false));
             mlVRVignette=p.GetInt("SOMA_VR_Comfort","Vignette",0);
             if(mlVRVignette<0 || mlVRVignette>3) mlVRVignette=0;
-            array<bool> seen={false,false,false,false,false,false};bool valid=true;
-            for(int i=0;i<6;i++) { int v=p.GetInt("SOMA_VR_Buttons","Role"+i,i);if(v<0 || v>=6 || seen[v]) { valid=false;break; }mvVRButtonMap[i]=v;seen[v]=true; }
+            array<bool> seen={false,false,false,false,false,false,false,false,false,false,false,false,false,false};bool valid=true;
+            for(int i=0;i<6;i++) { int v=p.GetInt("SOMA_VR_Buttons","Role"+i,i);if(v<0 || v>=14 || seen[v]) { valid=false;break; }mvVRButtonMap[i]=v;seen[v]=true; }
             if(!valid) for(int i=0;i<6;i++) mvVRButtonMap[i]=i;
+            mbVRFingerTracking=p.GetBool("SOMA_VR_Comfort","FingerTrackingEnabled",true);
             mbVREyeEnvironment=p.GetBool("SOMA_VR_Eyes","Environment",true);
             mbVREyeAI=p.GetBool("SOMA_VR_Eyes","AI",true);
             mbVREyeFlashlight=p.GetBool("SOMA_VR_Eyes","Flashlight",false);
@@ -1094,6 +1098,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         cScript_RunGlobalFunc("VRCOMFORT","D",""+mlVRPanelDistance);
         cScript_RunGlobalFunc("VRCOMFORT","S",""+mlVRSubtitleDistance);
         cScript_RunGlobalFunc("VRCOMFORT","A",""+mlVRMoveHand);
+        cScript_RunGlobalFunc("VRCOMFORT","F",mbVRFingerTracking ? "1" : "0");
         cScript_RunGlobalFunc("VREYES","0",mbVREyeEnvironment?"1":"0");
         cScript_RunGlobalFunc("VREYES","1",mbVREyeAI?"1":"0");
         cScript_RunGlobalFunc("VREYES","2",mbVREyeFlashlight?"1":"0");
@@ -1120,6 +1125,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         p.SetInt("SOMA_VR_Comfort","GrabControls",mlVRGrabControls);
         p.SetInt("SOMA_VR_Comfort","CrouchMode",mlVRCrouchMode);
         p.SetBool("SOMA_VR_Comfort","DoubleTapSprint",mbVRDoubleTapSprint);
+        p.SetBool("SOMA_VR_Comfort","FingerTrackingEnabled",mbVRFingerTracking);
         for(int i=0;i<6;i++) p.SetInt("SOMA_VR_Buttons","Role"+i,mvVRButtonMap[i]);
         p.SetInt("SOMA_VR_Comfort","TurnMode",mlVRTurnMode);
         p.SetBool("SOMA_VR_Comfort","HideDistortion",mbVRHideDistortion);
@@ -1142,6 +1148,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     void HPL3VR_MenuHoldEnd() { mbVRMenuHeld=false; mfVRMenuHoldTime=0; }
     void HPL3VR_UpdateComfort(float dt)
     {
+        if(mbVRFingerResetPending && (!mbMenuActive || !mbVRComfortOpen || mlVRComfortCategory!=6))
+        {
+            cScript_RunGlobalFunc("VRCOMFORT","FTRESET","CANCEL");mbVRFingerResetPending=false;
+        }
         if(mlVRBindAction>=0)
         {
             if(!mbMenuActive || !mbVRComfortOpen || mlVRComfortCategory!=3) HPL3VR_CancelBinding();
@@ -1206,6 +1216,14 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         msVRSettingsSelected=OptionMenu_UpdateFocus(label,msVRSettingsSelected);
         return next;
     }
+    void HPL3VR_ResetLabel(tString text, int row)
+    {
+        cImGuiLabelData data;
+        data.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
+        data.mFont.mvSize=OptionMenu_GetScaledSize(cVector2f(20,20));
+        data.mFont.mColor=cColor(1,1);
+        cLux_GetCurrentImGui().DoLabel(cString_To16Char(text),data,OptionMenu_GetTopLeftOffset(kMainMenuButtonPos+cVector2f(0,38*row),1.0f));
+    }
     bool HPL3VR_DrawComfort()
     {
         if(!mbVRComfortOpen) return false;
@@ -1217,6 +1235,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(mlVRComfortCategory==3) title="BUTTON BINDINGS";
         if(mlVRComfortCategory==4) title="EYE TRACKING";
         if(mlVRComfortCategory==5) title="AUDIO";
+        if(mlVRComfortCategory==6) title="RESET FINGER TRACKING";
         cVector2f size=mlVRComfortCategory==3 ? kOptionsMappingBgSize : (mlVRComfortCategory==2 ? kOptionsVideoBgSize : kOptionsBgSize);
         OptionMenu_ResetExtraWidth();
         OptionMenu_UpdateExtraButtonWidth_Toggle();
@@ -1230,7 +1249,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             array<tString> grabControls={"GRIP","TRIGGER"};
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(grabControls,"");
             OptionMenu_UpdateExtraWidth("RIGHT GRAB",true);
-            size.y=360;
+            OptionMenu_UpdateExtraWidth("RESET FINGER TRACKING",true);
+            size.y=440;
             ImGui_SetTransCategory("");
         }
         if(mlVRComfortCategory==2)
@@ -1253,6 +1273,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(mlVRComfortCategory==3) { size.y=430;for(int i=0;i<6;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
         if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=360;
         if(mlVRComfortCategory==0) size.y=430;
+        if(mlVRComfortCategory==6) { size.y=360;size.x=600; }
         if(mlVRComfortCategory==4) OptionMenu_UpdateExtraWidth("GAZE-DIRECTED FLASHLIGHT",true);
         if(mlVRComfortCategory==5) { array<tString> audio={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};OptionMenu_UpdateExtraButtonWidth_MultiSelection(audio,"");ImGui_SetTransCategory(""); }
         size.x+=OptionMenu_GetExtraWidth();
@@ -1320,7 +1341,15 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             int grabMask=leftGrab+(rightGrab*2);changed=changed || grabMask!=mlVRGrabControls;mlVRGrabControls=grabMask;
             bool sprint=HPL3VR_Toggle("DOUBLE-TAP SPRINT",4,mbVRDoubleTapSprint);
             changed=changed || sprint!=mbVRDoubleTapSprint;mbVRDoubleTapSprint=sprint;
-            if(HPL3VR_Option("BUTTON BINDINGS",5))
+            bool fingers=HPL3VR_Toggle("FINGER TRACKING",5,mbVRFingerTracking);
+            changed=changed || fingers!=mbVRFingerTracking;mbVRFingerTracking=fingers;
+            if(HPL3VR_Option("RESET FINGER TRACKING",6))
+            {
+                cScript_RunGlobalFunc("VRCOMFORT","FTRESET","CANCEL");
+                mlVRComfortCategory=6;msVRSettingsSelected="START RESET";msFocusNextFrame=msVRSettingsSelected;
+                ImGui_SetTransCategory(cat);return true;
+            }
+            if(HPL3VR_Option("BUTTON BINDINGS",7))
             {
                 HPL3VR_CancelBinding();HPL3VR_ReadBindings();cScript_RunGlobalFunc("VRBIND","","PROFILE");
                 mlVRComfortCategory=3;msVRSettingsSelected=HPL3VR_BindingLabel(0);msFocusNextFrame=msVRSettingsSelected;
@@ -1379,10 +1408,32 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("SPATIAL AUDIO",msVRSettingsSelected);
             changed=mode!=mlVRAudioMode;mlVRAudioMode=mode;
         }
-        if(changed) HPL3VR_SaveComfort();
-        if(HPL3VR_Option("BACK",(mlVRComfortCategory==0 || mlVRComfortCategory==2) ? 7 : (mlVRComfortCategory==3 ? 9 : (mlVRComfortCategory==1 ? 6 : 5))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
+        else if(mlVRComfortCategory==6)
         {
-            if(mlVRComfortCategory==3)
+            bool waiting=cScript_RunGlobalFunc("VRCOMFORT","FTRESET","WAIT");
+            bool sampling=cScript_RunGlobalFunc("VRCOMFORT","FTRESET","SAMPLE");
+            tString status="CONTROLLER FINGER REST POSE";
+            if(waiting)
+            {
+                status="RELEASE FINGERS";
+                for(int i=1;i<=5;i++) if(cScript_RunGlobalFunc("VRCOMFORT","FTRESET",""+i)) status="RELEASE FINGERS - "+i;
+            }
+            else if(sampling) status="HOLD FINGERS RELEASED AND STILL";
+            else if(cScript_RunGlobalFunc("VRCOMFORT","FTRESET","DONE")) status="REST POSE RESET COMPLETE";
+            else if(cScript_RunGlobalFunc("VRCOMFORT","FTRESET","FAIL")) status="RESET FAILED - PREVIOUS POSE RETAINED";
+            HPL3VR_ResetLabel(status,0);
+            HPL3VR_ResetLabel("AFTER START: RELEASE BUTTONS, STICKS AND GRIP.",1);
+            HPL3VR_ResetLabel("KEEP CONTROLLERS SECURE. WAIT FOR COMPLETION.",2);
+            if(!waiting && !sampling && HPL3VR_Option("START RESET",3)) mbVRFingerResetPending=cScript_RunGlobalFunc("VRCOMFORT","FTRESET","BEGIN");
+        }
+        if(changed) HPL3VR_SaveComfort();
+        if(HPL3VR_Option("BACK",(mlVRComfortCategory==0 || mlVRComfortCategory==2) ? 7 : (mlVRComfortCategory==3 ? 9 : (mlVRComfortCategory==1 ? 8 : 5))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
+        {
+            if(mlVRComfortCategory==6)
+            {
+                cScript_RunGlobalFunc("VRCOMFORT","FTRESET","CANCEL");mlVRComfortCategory=1;msVRSettingsSelected="RESET FINGER TRACKING";msFocusNextFrame=msVRSettingsSelected;
+            }
+            else if(mlVRComfortCategory==3)
             {
                 HPL3VR_CancelBinding();mlVRComfortCategory=1;msVRSettingsSelected="BUTTON BINDINGS";msFocusNextFrame=msVRSettingsSelected;
             }

@@ -16,19 +16,28 @@ static i32 s26s_view_frame(float p[3],float R[9]){
 static void s26s_rotate3(const float R[9],const float v[3],float out[3]){for(i32 k=0;k<3;++k)out[k]=R[3*k]*v[0]+R[3*k+1]*v[1]+R[3*k+2]*v[2];}
 static float g_s26sReadOrigin[3],g_s26sReadDirection[3],g_s26sReadLocal[3];
 static i32 g_s26sReadValid;
+static u32 g_s26dgEyeBridgeSeen;
+static i32 s26dg_eye_bridge_status(u32 reason){
+    u32 bit=1u<<reason;
+    if(!(g_s26dgEyeBridgeSeen&bit)){
+        g_s26dgEyeBridgeSeen|=bit;
+        ext_Log(">>> S26DG eye gameplay bridge status %u (0=ready 1=camera/frame unavailable 2=no fresh tracked sample 3=eye/head origin mismatch 4=script-vector signature mismatch)",reason);
+    }
+    return reason==0;
+}
 static i32 s26s_read_gaze(void){
-    g_s26sReadValid=0;float cp[3],R[9];if(!s26s_view_frame(cp,R)||!s26s_eye_lock())return 0;
+    g_s26sReadValid=0;float cp[3],R[9];if(!s26s_view_frame(cp,R))return s26dg_eye_bridge_status(1);if(!s26s_eye_lock())return 0;
     S26SEyeSample sample=g_s26sEyeSample;s26s_eye_unlock();
     u8* xr=(u8*)p2_xr_obj();i64 now=xr?*(i64*)(xr+0xE8):0;
-    if(!sample.valid||!sample.headValid||now<=0||sample.time>now+100000000LL||sample.time<now-100000000LL)return 0;
+    if(!sample.valid||!sample.headValid||now<=0||sample.time>now+100000000LL||sample.time<now-100000000LL)return s26dg_eye_bridge_status(2);
     XrQuaternionf inv={-sample.head.orientation.x,-sample.head.orientation.y,-sample.head.orientation.z,sample.head.orientation.w};
     float f[3]={0,0,-1},raw[3],local[3],offset[3],offlocal[3],offworld[3];
     s26s_quat_rotate(&sample.eye.orientation,f,raw);s26s_quat_rotate(&inv,raw,local);
     for(i32 k=0;k<3;++k)offset[k]=(&sample.eye.position.x)[k]-(&sample.head.position.x)[k];
-    if(h10_len3(offset[0],offset[1],offset[2])>.20f)return 0;
+    if(h10_len3(offset[0],offset[1],offset[2])>.20f)return s26dg_eye_bridge_status(3);
     s26s_quat_rotate(&inv,offset,offlocal);s26s_rotate3(R,offlocal,offworld);
     for(i32 k=0;k<3;++k){g_s26sReadOrigin[k]=cp[k]+offworld[k]*h5755ea_world_units_per_meter();g_s26sReadLocal[k]=local[k];}
-    s26s_rotate3(R,local,g_s26sReadDirection);g_s26sReadValid=1;return 1;
+    s26s_rotate3(R,local,g_s26sReadDirection);g_s26sReadValid=1;return s26dg_eye_bridge_status(0);
 }
 typedef void (__attribute__((ms_abi)) *S26SSetVector)(const float*);
 static S26SSetVector p_s26sSetVector;
@@ -36,14 +45,14 @@ static i32 s26s_set_vector(const float value[3]){
     if(!p_s26sSetVector){
         u8* base=(u8*)ext_GetModuleHandleA(0);if(!base||!h20_mem_readable(base+0x48ed40,12))return 0;
         static const u8 expected[12]=S26S_VECTOR_SIGNATURE;
-        for(i32 k=0;k<12;++k)if(base[0x48ed40+k]!=expected[k])return 0;
+        for(i32 k=0;k<12;++k)if(base[0x48ed40+k]!=expected[k])return s26dg_eye_bridge_status(4);
         p_s26sSetVector=(S26SSetVector)(void*)(base+0x48ed40);
     }
     p_s26sSetVector(value);return 1;
 }
 static u64 s26s_eye_token(const H5730TString* cls,const H5730TString* fn){
     if(h5748t_sso_eq(fn,"VR",2u))return s26s_vr_active();
-    if(h5748t_sso_eq(fn,"AVAILABLE",9u))return g_s26sEyeSpace!=0;
+    if(h5748t_sso_eq(fn,"AVAILABLE",9u))return g_s26sEyeSpace!=0&&g_s26dgEyeView!=0;
     if(h5748t_sso_eq(fn,"BLINK",5u))return 0; /* No valid blink provider; never infer from loss. */
     if(h5748t_sso_eq(fn,"ACTIVE",6u))return s26s_read_gaze();
     if(h5748t_sso_eq(fn,"ENV",3u))return (g_s26sEyeOptions&1u)!=0;

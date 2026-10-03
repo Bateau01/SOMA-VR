@@ -31,7 +31,7 @@ static volatile i32* p2_native_h_ptr(void){return &nh;}
 static u32 g_h5755biResumePending,g_s26vDeathActive,g_s26vDeathLoading,g_h5755asUiEnterArmed;
 static u32 g_h5754wCaptureActive,g_h5754zCaptureActive,g_h5755anHaveLast;
 static u32 g_h5754hPauseActive,g_h5754hPauseRequested,g_h5754hPauseImageReady,g_h5754tLastTargetEnd,g_h5754hPauseResumes;
-static u32 g_h5755asResumeClassifyActive,g_h5755asResumeStableCount,g_s26wIntroActive;
+static u32 g_h5755asResumeClassifyActive,g_h5755asResumeStableCount,g_s26wIntroActive,g_s26dcCreditsActive;
 static u32 g_s26cbIntroHandoffPending,g_s26cbIntroEndMapEnters,g_h576bfMapEnters;
 static u32 g_h576bhMapReadySeen,g_h14PhysicsSteps,g_h576bhMapReadyStep;
 static i32 dw,dh;static void* window;

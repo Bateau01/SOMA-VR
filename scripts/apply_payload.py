@@ -85,7 +85,7 @@ CREATE_SWAPCHAINS_OLD_RVA=0x13210
 SUBMIT_EYE_CALL_RVAS=(0xD315,0xD338,0xF6FC,0xF721)
 SUBMIT_EYE_OLD_RVA=0x139F0
 BANNER_OLD=b'hpl3vr S5-P2 %s %s  \x00'
-BANNER_NEW=b'hpl3vr S26DF_ %s %s \x00'
+BANNER_NEW=b'hpl3vr S26EB_ %s %s \x00'
 KEYHELP_REPLACEMENTS=(
  (b'Keys:  F2  = engine hook (enable this first)', b'Keys:  legacy keyboard debug lockout active'),
  (b'       F10 = native stereo, side by side     F11 = swap halves', b'       Gameplay VR controls are OpenXR-controller native.'),
@@ -553,6 +553,8 @@ def main(inp,objp,outp):
 if __name__=='__main__':
  if len(sys.argv)!=4:raise SystemExit('usage: apply_s26an.py input.dll payload.o output.dll')
  main(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]))
+
+
 
 
 

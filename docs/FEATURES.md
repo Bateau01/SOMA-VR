@@ -20,8 +20,7 @@ This inventory describes included implementation, not a claim that every interac
 - Native-styled VR SETTINGS menus, including bindings and slider settings.
 - Analog grip/trigger finger animation, with additional tracked-finger paths gated by available hardware/runtime data.
 - Optional tracker and eye-gaze integration. Eye gaze is not a replacement for the rendered headset FOV.
-
-Quest Touch controllers do not provide independent full-finger tracking. A device claiming a tracking extension does not prove that it supplies complete, usable finger data. Broad compatibility with Valve Index, PSVR2, Pimax, gloves, etee or other devices is not asserted by this release.
+- Finger tracking for controllers that have finger tracking capabilities, like Valve Index Kunckles, Steam Frame controllers, etc.
 
 ## Physical interactions
 
