@@ -1,109 +1,126 @@
 # SOMA VR
 
-A native VR mod for SOMA, created using its existing HPL3 engine. Includes 6DOF Motion controls, manual/physical interactions, native VR settings, and stereoscopic rendering.
+SOMA VR is an unofficial mod that lets you play SOMA, Frictional Games' sci-fi horror game, in a VR headset. It runs inside the game's own HPL3 engine instead of mirroring a flat screen. SOMA renders both eyes in stereo through OpenXR, your head and hands are tracked in 6DOF, and you open doors, turn valves, type on terminals and pick things up with your own hands. The game's story, scripts and lighting are kept, and VR options live in the game's own menus under **VR SETTINGS**.
 
-<img width="1734" height="907" alt="exec-6791d6ff-6d40-43cb-bac3-711e245ed17b" src="https://github.com/user-attachments/assets/57e607ae-82e5-47cb-811f-e36af853c133" />
+This repository is a fork of [Bateau01/SOMA-VR](https://github.com/Bateau01/SOMA-VR), the original mod (up to version 1.04-S26EB). The fork adds Valve Index controller support, finger-aware hand interactions and haptics, and a set of presence and performance options. [What this fork adds and changes](#what-this-fork-adds-and-changes) lists all of them.
 
-<img width="1024" height="1536" alt="exec-0732d610-9d19-434a-824e-22f9dee6b318" src="https://github.com/user-attachments/assets/da439dec-0070-4f9e-bf7b-02b16d6f9941" />
+<img width="1734" height="907" alt="SOMA VR gameplay" src="https://github.com/user-attachments/assets/57e607ae-82e5-47cb-811f-e36af853c133" />
 
+<img width="1024" height="1536" alt="SOMA VR hands" src="https://github.com/user-attachments/assets/da439dec-0070-4f9e-bf7b-02b16d6f9941" />
 
-# Features and validation status
+## What the mod does
 
-This inventory describes included implementation, not a claim that every interaction or hardware combination has passed physical testing.
+- **Stereo VR rendering** through OpenXR, using the headset's own per-eye field of view and resolution, with world-scale control and recentering.
+- **Physical hands** that change with the story (human, diving suit, deep-sea suit and damaged variants), with real collisions, grabbing, throwing and two-handed objects.
+- **Hands-on interactions** for doors, drawers, wheels, valves, levers, buttons, keypads and terminals, readables, the Omni-Tool, key items, cables and phones. Authored story callbacks are preserved.
+- **Movement and comfort**: smooth or snap turning, head-, body- or controller-relative movement, physical crouching, and comfort toggles for screen shake, distortion, vignette and head bob.
+- **VR-placed text**: spatial subtitles and hints, and adjustable distance for menus and loading screens.
+- **Optional extras**: finger tracking where the controllers support it, eye-gaze and tracker integration, and binaural (HRTF) audio through Steam Audio.
+- **Flatscreen still works**: launch SOMA normally without the VR launcher and the modified scripts take their original non-VR paths.
 
-## Rendering and presentation
+The full inventory and its testing status is in [docs/FEATURES.md](docs/FEATURES.md).
 
-- OpenXR stereoscopic rendering with runtime-provided per-eye FOV and recommended image sizes; asymmetric eye crops and submission.
-- Tracked head rotation and translation, world-scale control and recentering.
-- Native lighting, shadows and materials for story-dependent human, diving, deep-sea and amputated hand variants, including wrist closures.
-- World-scale compensation for apparent hand size; S26BY adds the missing native mesh-update compensation; S26CC retains authored eye height without additional world-scale height compensation.
-- Spatial subtitles and hints, subtitle distance settings, and adjustable flat-panel presentation distance.
-- Presentation routes for menus, loading, startup sequences, pause and death/retry. These have received fixes but remain part of regression testing.
-- Comfort controls for selected post effects, distortion, vignette and camera shake.
-- VR SETTINGS > VIDEO: RENDER SCALE (60-150% of the runtime's recommended eye size, applied at the next launch), DEPTH FOR REPROJECTION (submits the scene depth through XR_KHR_composition_layer_depth when the runtime offers it; off by default) and TEXTURE BUDGET BOOST (raises the engine's texture upload budget from 1 GiB to 1.5 GiB on the verified executable; off by default).
+## What this fork adds and changes
 
-## Movement, body and input
+Both sets of changes below are on `main`. Neither is in a published release yet.
 
-- Smooth and snap turning; HMD-, body- and controller-relative movement options.
-- Physical crouching and seated/standing-related options, plus button controls.
-- Body heading and shoulder holster tracking/recentering logic.
-- Hand-over-hand ladder climbing: grip and pull down to climb up, push up to climb down; the stick keeps working and hands stay visible on ladders (HANDS AND HAPTICS > CLIMB LADDERS WITH HANDS).
-- Experimental SHOW BODY (off by default): Simon's authored diving-suit body stands at your feet and turns with you, in diving-suit sections only. Its pose and facing are unverified on hardware.
-- Native-styled VR SETTINGS menus, including bindings and slider settings.
-- Analog grip/trigger finger animation, with additional tracked-finger paths gated by available hardware/runtime data.
-- Optional tracker and eye-gaze integration. Eye gaze is not a replacement for the rendered headset FOV.
+### 1.05-S26EC: Valve Index controllers and HANDS AND HAPTICS
 
-Valve Index ("Knuckles") controllers have a dedicated binding: right A = jump/accept, right B = run/back, left A = pause, left B = center camera, left stick click = crouch, hold right stick click = hand rebase. Their capacitive sensors (thumbstick, trackpad, A/B, trigger and grip) drive finger rest release, with the full, unobstructed finger range requested from SteamVR. Both trackpad presses are available in BUTTON BINDINGS. HANDS AND HAPTICS settings add smart grip (pinch grabs, finger-open release), grip pressure, point to press, creature haptics and thumb-rest button hints for Index (and Steam Frame) controllers. These have contract tests but no Index hardware test.
+- **Valve Index ("Knuckles") support** at the same level as the Steam Frame path:
+  - Dedicated bindings: right A = jump/accept, right B = run/back, left A = pause, left B = center camera, left stick click = crouch, hold right stick click = hand rebase.
+  - The capacitive sensors (stick, trackpad, A/B, trigger, grip) open and close each finger group.
+  - The full finger range is requested, so a closed fist reaches the fist pose.
+  - Both trackpad presses can be remapped in BUTTON BINDINGS.
+- **New VR SETTINGS > HANDS AND HAPTICS page.** It uses the per-finger sensing of Index and Steam Frame controllers; other controllers keep their previous behaviour.
+  - **Smart grip:** a thumb-and-index pinch grabs (light items sit between your fingertips), and opening your fingers releases at once.
+  - **Grip pressure:** squeeze strength matters for tearing, spinning wheels and holding heavy items.
+  - **Point to press:** only a pointing finger presses terminals, screens and switches.
+  - **Any finger on keypads:** optional; lets any extended finger press.
+  - **Creature haptics:** the creature-proximity static becomes a rumble in both controllers.
+  - **Button hints:** rest your thumb on A or B to see that button's current action above your wrist.
 
-Quest Touch controllers do not provide independent full-finger tracking. A device claiming a tracking extension does not prove that it supplies complete, usable finger data. Broad compatibility with PSVR2, Pimax, gloves, etee or other devices is not asserted by this release.
+### S26ED: presence and performance
 
-## Physical interactions
+| Option | Where | Default | What it does |
+| --- | --- | --- | --- |
+| HEAD TAP FLASHLIGHT | HANDS AND HAPTICS | On | Tap the top of your head with an empty hand to switch the flashlight on or off, with a short confirmation pulse. |
+| CLIMB LADDERS WITH HANDS | HANDS AND HAPTICS | On | Grip and pull down to climb up, push up to climb down. The stick still works, and a light pulse marks each step. |
+| SHOW BODY (EXPERIMENTAL) | HANDS AND HAPTICS | Off | Shows Simon's diving-suit body at your feet, turning with you. Diving-suit sections only. |
+| RENDER SCALE | VIDEO | 100% | 60-150% of the headset's recommended resolution, in 5% steps. Applies at the next launch. |
+| DEPTH FOR REPROJECTION | VIDEO | Off | Sends scene depth to the VR runtime so its frame smoothing can use distance. It turns itself off for the session if anything doesn't match. |
+| TEXTURE BUDGET BOOST | VIDEO | Off | Raises the engine's texture upload budget from 1 GiB to 1.5 GiB. |
 
-- Physical hands with native collision queries and articulated contact handling.
-- Loose-object grabbing, two-hand ownership handling and multi-body object support.
-- Hinged/sliding doors, drawers, wheels, valves, levers, faucets, flush levers, buttons and special lock mechanisms.
-- Finger-driven terminals and keypads, including special screen interaction paths and exit recovery.
-- Physical readables such as documents and photographs, with authored interaction callbacks.
-- Manual Omni-Tool carrying, slots, panel swipes, retrieval and holstering.
-- Manual key-item acquisition, use, storage, retrieval, insertion and removal, with story-specific script bridges and save/reload recovery.
-- Stun Baton and Tracer Fluid interaction paths; WAU healing and Site Alpha interaction paths.
-- Manual cables/connectors and phone-call interaction paths.
-- Head-tap flashlight: tap the top of your head with an empty hand to toggle the flashlight, with a haptic confirmation, gated by the game's flashlight availability (HANDS AND HAPTICS > HEAD TAP FLASHLIGHT).
-- Authored-animation suppression and physical-hand visibility rules for story sequences.
-- Controller haptics whenever something is interactable, or as a reference to the shoulder stowing radius. Pulses vary in intensity depending on the interaction. 
+### Behaviour that changed from the original mod
 
-These systems preserve authored story callbacks where implemented. Their presence is not proof of every map/save-state combination; continue reporting reproducible failures.
+- **Flashlight:** toggled by tapping the top of your head (it was a grip or trigger press near your face). It can be turned off in HANDS AND HAPTICS.
+- **Ladders:** your hands now stay visible on ladders while hand climbing is on.
+- **Texture budget:** the boost is a menu toggle. The hidden `hpl3vr_texture_streaming.txt` file is no longer read.
+- **Index controllers:**
+  - The grip uses the capacitive closure of your fingers.
+  - With smart grip on, just holding the controller (middle, ring and little finger closed) no longer starts a grab.
+- **Point to press:** with finger tracking on, terminals and keypads need a pointing finger. Turn POINT TO PRESS off for the old behaviour.
 
-## Audio and dual mode
+Every new option can be switched off in VR SETTINGS. The fork's additions have automated tests (see [docs/BUILD.md](docs/BUILD.md)), but **none has been tested on Index, Steam Frame or other headset hardware yet**. Grab feel, thresholds, haptic strength, ladder feel and the body's pose still need real-world confirmation. Reports are welcome.
 
-- Optional binaural HRTF processing using Steam Audio through the mod's FMOD Ex adapter.
-- The adapter retains SOMA's authored attenuation, occlusion, reverb and event handling. This is not a new geometry-based acoustic simulation of every room.
-- Script bridges distinguish an active VR runtime from ordinary flatscreen gameplay. Launch SOMA without injection for flatscreen; the modified scripts retain their non-VR paths.
+Release-by-release details are in [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md).
 
-## Download and install
+## Install
 
-Download the latest `SOMA-VR-vx.xx.zip` from this repository's **Releases** section. Consider creating a backup of your existing SOMA game folder. I tried to implement dual-mode functionality, but that hasn't been fully tested yet.
+You need an existing copy of SOMA. The mod is an overlay for your game folder, not a standalone game. Back up your SOMA folder first.
 
-1. Download and extract the latest release of SOMA-VR in the "Releases" section.
-2. Run the SOMA-VR setup.exe file.
-3. Ensure that the path to your SOMA game directory, as well as the folder containing your user_settings.cfg folder are detected. If the setup isn't able to automatically detect those folders, you can manually search for them.
-4. Press "Install". If done correctly, you should receive a confirmation prompt stating that the VR mod was successfully installed.
-5. To launch SOMA VR, navigate to your SOMA game directory, and run the "LAUNCH-SOMA-VR.cmd" file. It should run as an administrator. Ensure that your VR headset and controllers are connected, and SteamVR or VD is running using the OpenXR or VDXR runtime.
+**This fork has no prebuilt release yet.** The original mod's installers are on [Bateau01/SOMA-VR Releases](https://github.com/Bateau01/SOMA-VR/releases), but they don't include this fork's additions. To install this fork, use one of these:
 
-Existing `hpl3vr_vr_settings.ini` and root hand calibration files are preserved. For a new installation, the launcher seeds the included reference hand-rig calibration only if a calibration file does not already exist. The runtime supplies default comfort settings when no settings file exists. Manual injection users should also copy `defaults/hpl3vr_hand_calibration.ini` to the game root on a fresh install.
+- **Build the installer** (Windows): follow [installer/README.txt](installer/README.txt). Copy `runtime/` into `installer/payload`, create `installer/output`, then run `installer/source/Build.ps1`.
+- **Copy the overlay by hand:** copy the contents of `runtime/` into your SOMA game folder. See [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
-Read [installation and troubleshooting](docs/INSTALLATION.md), [features and compatibility](docs/FEATURES.md), and [release notes](docs/RELEASE_NOTES.md).
+With the installer:
 
-## Compatibility and status
+1. Run the setup and check that it found your SOMA game folder and the folder containing `user_settings.cfg`. Browse to them yourself if not.
+2. Press **Install**. A confirmation appears when the mod is installed.
+3. Start SteamVR (or Virtual Desktop) with OpenXR as the active runtime, connect your headset and controllers, then run `Launch-SOMA-VR.cmd` from the SOMA game folder. It runs as administrator.
 
-The supplied runtime targets one verified 64-bit Windows `Soma.exe`. Its SHA256 is `7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113`. The launcher checks this before injection. Other executable versions require testing and may need different native addresses.
+If this is your first time running SOMA, launch it once in flatscreen and finish the initial menu setup before installing, so the game creates its settings files.
 
-This mod was created using my existing hardware setup, which includes a Meta Quest 3S via Steam Link, with an RTX 5080. OpenXR runtime discovery, eye projections and render dimensions are dynamic; that does not establish compatibility with every headset, runtime or controller. Eye gaze, finger tracking and tracker support depend on both hardware and runtime exposure.
+Your existing `hpl3vr_vr_settings.ini` and hand calibration files are kept when you update. Troubleshooting is in [docs/INSTALLATION.md](docs/INSTALLATION.md).
+
+## Compatibility
+
+- **Executable:** the mod targets one verified 64-bit Windows `Soma.exe` (SHA256 `7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113`), and the launcher checks it before injecting. GOG and Epic builds are untested; [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) explains how to check yours.
+- **Headsets:** the original mod was developed on a Meta Quest 3S over Steam Link with an RTX 5080. Eye sizes and projections come from the runtime, but that doesn't guarantee every headset, runtime or controller works.
+- **Controllers:** Quest Touch controllers don't provide independent full-finger tracking, so the finger-based HANDS AND HAPTICS features don't apply to them. PSVR2, Pimax, gloves and etee are not claimed as supported.
+
+## Building from source
+
+The native DLL builds with Python 3 and Zig 0.13.0, and the build is deterministic:
+
+```powershell
+python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
+```
+
+[docs/BUILD.md](docs/BUILD.md) has the expected hash, the regression tests and how the payload is linked into the frozen base DLL.
 
 ## Repository layout
 
-- `runtime/`: cumulative player overlay, launcher, native hand assets and audio components.
-- `source/`: current native payload, included support code and audio adapter source.
-- `scripts/`: portable build and package-verification tools.
-- `tests/`: native hand-size, menu/height and launcher regression tests, including the pre-fix hand-size fixture.
-- `third_party/`: the frozen base DLL required by the current native build.
+- `runtime/`: the player overlay: DLL, injector, launcher, scripts, hand assets and audio components.
+- `source/`: the native payload (`s26n.c` and its `.inc` modules) and the audio adapter.
+- `installer/`: the Windows installer source.
+- `scripts/`: build and package-verification tools.
+- `tests/`: regression and contract tests.
+- `third_party/`: the frozen base DLL the build links against.
 - `reference/`: Steam Audio development headers.
-- `legacy/`: recovered session-4 and session-5 C++ source snapshots; not the active build.
-- `docs/`: installation, feature status, build details, provenance, release notes and GitHub instructions.
-
-See [BUILD.md](docs/BUILD.md) for the verified native build.
+- `legacy/`: recovered historical C++ snapshots. This is not the active build.
+- `docs/`: installation, features, compatibility, build details and release notes.
 
 ## Reporting a problem
 
-Describe the issue, map, object, steps to reproduce, headset/controllers, OpenXR runtime, refresh rate and build. Include whether it was a new game or an existing save. Additionally, please upload hpl3vr.log and hpl.log for debugging.
+Describe the issue, the map or object, the steps to reproduce, your headset and controllers, OpenXR runtime, refresh rate and build, and whether it was a new game or an existing save. Attach `hpl3vr.log` from the game folder and `hpl.log` from `Documents\My Games\Soma\Main`, plus the crash log if the game crashed.
 
 ## Credits and notices
 
-SOMA and its original scripts and assets are by Frictional Games. This is an unofficial mod. Steam Audio is by Valve; OpenXR is a Khronos standard, with the OpenXR loader included here. MinHook notices are included.
+SOMA and its original scripts and assets are by Frictional Games; this is an unofficial mod. The original SOMA VR mod is by [Bateau01](https://github.com/Bateau01/SOMA-VR). Steam Audio is by Valve. OpenXR is a Khronos standard, and the OpenXR loader is included. MinHook notices are included.
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). GPL3.0 Licensed.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Licensed under GPL-3.0.
 
-## AI Disclaimer
+## AI disclaimer
 
-This project was created with AI assistance. Despite that, I've already poured over 250 hours on this project. HPL3 is not an easy engine to work with, and this mod took a lot of iterating, testing, decompilation, fixing, and testing again. 
-
+This project was created with AI assistance. From the original author: "Despite that, I've already poured over 250 hours on this project. HPL3 is not an easy engine to work with, and this mod took a lot of iterating, testing, decompilation, fixing, and testing again." This fork's additions were also written with AI assistance.
