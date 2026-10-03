@@ -20,8 +20,7 @@ This inventory describes included implementation, not a claim that every interac
 - Native-styled VR SETTINGS menus, including bindings and slider settings.
 - Analog grip/trigger finger animation, with additional tracked-finger paths gated by available hardware/runtime data.
 - Optional tracker and eye-gaze integration. Eye gaze is not a replacement for the rendered headset FOV.
-
-Quest Touch controllers do not provide independent full-finger tracking. A device claiming a tracking extension does not prove that it supplies complete, usable finger data. Broad compatibility with Valve Index, PSVR2, Pimax, gloves, etee or other devices is not asserted by this release.
+- Finger tracking for controllers that have finger tracking capabilities, like Valve Index Kunckles, Steam Frame controllers, etc.
 
 ## Physical interactions
 
@@ -58,4 +57,3 @@ These systems preserve authored story callbacks where implemented. Their presenc
 
 S26CM adds an executable compatibility report and opt-in launch for engine-equivalent executables; it is not a verified GOG/Epic native port. See the compatibility guide. The root hpl3vr_vr_settings.ini is included with clean defaults.
 
-HIDE HEAD AND HAND BOBBING remains under VR SETTINGS > VIDEO, below HIDE SCREEN SHAKE. S26CK physical handheld datapads/camera and the earlier Tracer Fluid/independent-hand changes remain included.

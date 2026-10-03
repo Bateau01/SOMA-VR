@@ -1,3 +1,16 @@
+SOMA VR 1.04-S26EE
+
+MSAA gameplay image-copy correction
+
+- Extend multisample handling to both finished gameplay eyes. Resolve the full source at native size, then apply the existing per-eye crop and resize to the VR target.
+- Keep the single-copy path when the window has no multisampling. Reuse the native-size intermediate buffer rather than allocating one per frame.
+- Select the destination explicitly, preserve scissor/read/draw state, and reject capture errors instead of reporting success. Bounded EYE COPY diagnostics identify the eye, sample count, crop and error.
+- Retain S26ED menu startup correction and all existing 1.04 functionality. Installer preserves personalized settings. Release notes are separate.
+
+Evidence: player logs now confirm two samples in the window framebuffer. The player confirms disabling MSAA resolves the frozen-menu gameplay issue. The gameplay capture previously performed the same unsupported resolve-plus-resize operation corrected in the menu path.
+
+Validation: real OpenGL tests at 1080p, 1440p and ultrawide sizes, with zero/two/four samples. Verified distinct left/right pixel contents and crops through repeated menu/gameplay cycles, state restoration and incomplete-framebuffer rejection. Existing window/menu regression groups passed. These are isolated rendering tests, not a full headset playthrough; MSAA-enabled gameplay confirmation on the affected PC remains required.
+
 # SOMA VR 1.04-S26EB
 
 - Generalized finger tracking: accepts active, valid OpenXR hand-joint data without an Index/Steam Frame controller whitelist. All controllers use the authored resting pose and curl path. The FINGER TRACKING toggle retains grip/trigger fallback when disabled; unavailable/invalid skeletal data also falls back. Runtime-estimated poses may still be unsuitable on controllers without individual finger sensing.

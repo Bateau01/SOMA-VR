@@ -1,8 +1,8 @@
 {
-  "version": "1.04-S26EB",
-  "base": "1.03-S26EA",
-  "dll_sha256": "a989e9ca75b1f1c7e7c4c6ff1d8b4781b8be82a1b7b1d4b5b2af0e78842497f7",
-  "validation": "docs/S26EB-validation.txt",
-  "upstream_docs_commit": "c5f903e801095442a1ed3b608f96813b862f9fc0",
+  "version": "1.04-S26EE",
+  "base": "1.04-S26EB",
+  "dll_sha256": "4c478d65089a676514d49c474308dc82f22bd92f426e69e20908f98e925352f0",
+  "validation": "docs/S26EE-validation.txt",
+  "upstream_docs_commit": "802c6f39f61e77ce855bbb70fac06ea904f8b419",
   "release_notes_installed": false
 }

@@ -1,5 +1,5 @@
 {
-  "version": "1.04-S26EB",
+  "version": "1.04-S26EE",
   "files": {
     "Check-SOMA-VR-Compatibility.cmd": {
       "sha256": "1c9186797da4dd711fd91b1f487fb2647ddbf05f172a284b727be2d13983833b",
@@ -346,8 +346,8 @@
       "bytes": 22369776
     },
     "hpl3vr.dll": {
-      "sha256": "a989e9ca75b1f1c7e7c4c6ff1d8b4781b8be82a1b7b1d4b5b2af0e78842497f7",
-      "bytes": 1977344
+      "sha256": "4c478d65089a676514d49c474308dc82f22bd92f426e69e20908f98e925352f0",
+      "bytes": 1981440
     },
     "hpl3vr_inject.exe": {
       "sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
@@ -466,8 +466,8 @@
       "bytes": 422552
     },
     "PACKAGE_VERIFICATION.json": {
-      "sha256": "ac03433e77a893d538c8876725d63c3137ddea0033792c3373c4dc2387f26677",
-      "bytes": 297
+      "sha256": "5027ea8f69db80485c4091f1be330c515cade8cee9a85a70be3215450bb0fb1b",
+      "bytes": 295
     },
     "script/areas/Area_InteractAux.hps": {
       "sha256": "4642a496e00bee5b068ae972f37a433622b90a6b337c1e6ef0dc675b3f0b5baf",

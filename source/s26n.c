@@ -9477,6 +9477,7 @@ static i32 s26cb_flat_drawable_extent(i32* w,i32* h){
     if(dw<1||dh<1)return 0;
     *w=dw;*h=dh;return 1;
 }
+static i32 s26ee_copy_eye(i32,u32,i32,i32,i32,i32,i32,i32,i32,i32);
 static i32 h5750v_capture_finished_eye(i32 eye){
     /* H57.55EQ: EP final-frustum stereo probe retired; shared frustum is restored by capture time. */
     if(eye<0||eye>1||!h5750v_targets_ready()){g_h5750vCaptureRejects++;return 0;}
@@ -9516,13 +9517,13 @@ static i32 h5750v_capture_finished_eye(i32 eye){
         }
         if(sw>=320&&sh>=200){
             g_h5750xCrop[eye][0]=0;g_h5750xCrop[eye][1]=0;g_h5750xCrop[eye][2]=sw;g_h5750xCrop[eye][3]=sh;
-            blit(0,0,sw,sh,0,0,dw,dh,0x4000u,0x2601u);
+            if(!s26ee_copy_eye(eye,dst,sw,sh,0,0,sw,sh,dw,dh)){g_h5750vCaptureRejects++;return 0;}
             g_h5750xCropFrames[eye]++;if(yDirect)g_h5750yResolveFrames[eye]++;g_h5754dWindowResolveFrames++;g_h5755cStartupMenuResolveFrames++;
-        }else {blit(0,0,sw,sh,0,0,dw,dh,0x4000u,0x2601u);g_h5750xCropRejects[eye]++;}
+        }else {if(!s26ee_copy_eye(eye,dst,sw,sh,0,0,sw,sh,dw,dh)){g_h5750vCaptureRejects++;return 0;}g_h5750xCropRejects[eye]++;}
     }else {
         if(h5750x_eye_geometry(eye,sw,sh,crop,0,0)){for(i32 k=0;k<4;++k)g_h5750xCrop[eye][k]=crop[k];
-        blit(crop[0],crop[1],crop[2],crop[3],0,0,dw,dh,0x4000u,0x2601u);g_h5750xCropFrames[eye]++;if(yDirect)g_h5750yResolveFrames[eye]++;}
-        else{blit(0,0,sw,sh,0,0,dw,dh,0x4000u,0x2601u);g_h5750xCropRejects[eye]++;}
+        if(!s26ee_copy_eye(eye,dst,sw,sh,crop[0],crop[1],crop[2],crop[3],dw,dh)){g_h5750vCaptureRejects++;return 0;}g_h5750xCropFrames[eye]++;if(yDirect)g_h5750yResolveFrames[eye]++;}
+        else{if(!s26ee_copy_eye(eye,dst,sw,sh,0,0,sw,sh,dw,dh)){g_h5750vCaptureRejects++;return 0;}g_h5750xCropRejects[eye]++;}
     }
     bind(0x8D40u,0u);
     g_h5750vCaptures[eye]++;
@@ -9824,20 +9825,129 @@ typedef struct {
 
 /* Copy at entry to P2 d_Swap, BEFORE its CompositeMirror clears GL_BACK.
    glBlitFramebuffer obeys scissor state even though it ignores the viewport. */
+/* EC: resolve desktop samples at native size BEFORE scaling. Never advertise
+   success merely because glBlitFramebuffer was called. */
+typedef u32 (__attribute__((ms_abi)) *S26ECGetError)(void);
+static S26ECGetError s26ec_error;
+static PFN_H5754AQ_DrawBuffer s26ec_draw;
+static u32 s26ec_fbo,s26ec_tex;
+static i32 s26ec_w,s26ec_h;
+static u32 s26ec_logs;
+static PFN_BindBufferH9 s26ed_bind_buffer;
+static u32 s26ed_setup_logs;
+static i32 s26ed_setup_fail(const char* reason,u32 detail){
+    if(s26ed_setup_logs++<8u)ext_Log(">>> S26ED MENU SETUP FAILED: %s detail 0x%x",reason,detail);
+    return 0;
+}
+static i32 s26ec_ready(i32 w,i32 h){
+    void* ogl=ext_GetModuleHandleA("opengl32.dll");
+    if(!s26ec_error)s26ec_error=(S26ECGetError)ext_GetProcAddress(ogl,"glGetError");
+    if(!s26ec_draw)s26ec_draw=(PFN_H5754AQ_DrawBuffer)ext_GetProcAddress(ogl,"glDrawBuffer");
+    if(!s26ec_error||!s26ec_draw||!h5750y_resolve_gl_ready()||!s26_resolve_validation_ready())return s26ed_setup_fail("OpenGL entry points",0);
+    if(s26ec_fbo&&s26ec_w==w&&s26ec_h==h)return 1;
+    PFN_H5750V_BindFramebuffer bind=h5750v_bind_fbo();
+    /* Menus must not depend on lazy hand-renderer VBO initialization. */
+    if(!s26ed_bind_buffer){
+        PFN_H5750A_WglGetProcAddress wg=(PFN_H5750A_WglGetProcAddress)ext_GetProcAddress(ogl,"wglGetProcAddress");
+        if(wg)s26ed_bind_buffer=(PFN_BindBufferH9)s26_gl_proc(ogl,wg,"glBindBuffer");
+    }
+    PFN_BindBufferH9 bindBuffer=s26ed_bind_buffer;
+    if(!bindBuffer)return s26ed_setup_fail("glBindBuffer",0);
+    u32 priorError=0;for(u32 n=0;n<16u;++n){u32 err=s26ec_error();if(!err)break;priorError=err;}
+    if(s26ec_fbo)h5750y_delete_fbo()(1,&s26ec_fbo);
+    if(s26ec_tex)p_h5750yDeleteTextures(1,&s26ec_tex);
+    s26ec_fbo=s26ec_tex=0;s26ec_w=s26ec_h=0;
+    i32 rd,dr,tex,unpack;
+    ext_glGetIntegerv(0x8CAAu,&rd);ext_glGetIntegerv(0x8CA6u,&dr);
+    ext_glGetIntegerv(0x8069u,&tex);ext_glGetIntegerv(0x88EFu,&unpack);
+    bindBuffer(0x88ECu,0);
+    h5750y_gen_fbo()(1,&s26ec_fbo);p_h5750yGenTextures(1,&s26ec_tex);
+    ext_glBindTexture(0x0DE1u,s26ec_tex);
+    p_h5750yTexImage2D(0x0DE1u,0,0x8058,w,h,0,0x1908,0x1401,0);
+    p_h5750yTexParameteri(0x0DE1u,0x2801u,0x2601);
+    p_h5750yTexParameteri(0x0DE1u,0x2800u,0x2601);
+    bind(0x8D40u,s26ec_fbo);h5750y_fbo_tex2d()(0x8D40u,0x8CE0u,0x0DE1u,s26ec_tex,0);
+    s26ec_draw(0x8CE0u);
+    u32 status=p_s26CheckResolveFbo(0x8D40u),error=s26ec_error();
+    i32 ok=s26ec_fbo&&s26ec_tex&&status==0x8CD5u&&!error;
+    bind(0x8CA8u,(u32)rd);bind(0x8CA9u,(u32)dr);
+    ext_glBindTexture(0x0DE1u,(u32)tex);bindBuffer(0x88ECu,(u32)unpack);
+    if(ok){s26ec_w=w;s26ec_h=h;
+        if(s26ed_setup_logs++<8u)ext_Log(">>> S26ED MENU SETUP READY: %dx%d framebuffer %u texture %u priorError 0x%x; GL entry points independent of hand renderer",w,h,s26ec_fbo,s26ec_tex,priorError);
+    }else s26ed_setup_fail("native-size framebuffer",error?error:status);
+    return ok;
+}
 static i32 s26cq_copy_menu_backbuffer(u32 dst,i32 sw,i32 sh,i32 dw,i32 dh){
     PFN_H5750V_BindFramebuffer bind=h5750v_bind_fbo();
     PFN_H5750V_BlitFramebuffer blit=h5750v_blit();
     h5750v_resolve_read_buffer();
-    if(!dst||sw<1||sh<1||dw<1||dh<1||!bind||!blit||!p_h5750vReadBuffer)return 0;
-    i32 read=0,draw=0,backRead=0;
-    ext_glGetIntegerv(0x8CAAu,&read);ext_glGetIntegerv(0x8CA6u,&draw);
-    u8 scissor=ext_glIsEnabled(0x0C11u);
-    bind(0x8CA8u,0);ext_glGetIntegerv(0x0C02u,&backRead);p_h5750vReadBuffer(0x0405u);
-    bind(0x8CA9u,dst);if(scissor)ext_glDisable(0x0C11u);
-    blit(0,0,sw,sh,0,0,dw,dh,0x4000u,0x2601u);
+    if(!dst||sw<1||sh<1||dw<1||dh<1||!bind||!blit||!p_h5750vReadBuffer)return s26ed_setup_fail("copy arguments/entry points",dst);
+    if(!s26ec_ready(sw,sh))return 0;
+    /* Drain pre-existing errors separately so they are not blamed on this copy. */
+    u32 prior=0,e=0;for(u32 n=0;n<16u;++n){e=s26ec_error();if(!e)break;prior=e;}
+    i32 rd=0,dr=0,back=0,drawBuffer=0,samples=0;
+    ext_glGetIntegerv(0x8CAAu,&rd);ext_glGetIntegerv(0x8CA6u,&dr);
+    u8 scissor=ext_glIsEnabled(0x0C11u);if(scissor)ext_glDisable(0x0C11u);
+    bind(0x8D40u,0);ext_glGetIntegerv(0x80A9u,&samples);
+    ext_glGetIntegerv(0x0C02u,&back);p_h5750vReadBuffer(0x0405u);
+    bind(0x8CA9u,s26ec_fbo);s26ec_draw(0x8CE0u);
+    blit(0,0,sw,sh,0,0,sw,sh,0x4000u,0x2600u);
+    u32 resolveError=s26ec_error();
+    p_h5750vReadBuffer((u32)back);
+    bind(0x8CA8u,s26ec_fbo);p_h5750vReadBuffer(0x8CE0u);
+    bind(0x8CA9u,dst);ext_glGetIntegerv(0x0C01u,&drawBuffer);s26ec_draw(0x8CE0u);
+    if(!resolveError)blit(0,0,sw,sh,0,0,dw,dh,0x4000u,0x2601u);
+    u32 scaleError=s26ec_error();
+    s26ec_draw((u32)drawBuffer);bind(0x8CA8u,(u32)rd);bind(0x8CA9u,(u32)dr);
     if(scissor)ext_glEnable(0x0C11u);
-    p_h5750vReadBuffer((u32)backRead);bind(0x8CA8u,(u32)read);bind(0x8CA9u,(u32)draw);
-    return 1;
+    i32 ok=!resolveError&&!scaleError;
+    if(s26ec_logs<8u||(!ok&&s26ec_logs<24u)){
+        ++s26ec_logs;ext_Log(">>> S26EC MENU COPY: native %dx%d samples %d -> stage %dx%d | prior 0x%x resolve 0x%x scale 0x%x ready %d",sw,sh,samples,dw,dh,prior,resolveError,scaleError,ok);
+    }
+    return ok;
+}
+/* EE: both finished eyes resolve MSAA at source size, then apply the existing
+   asymmetric crop. Single-sample rendering keeps a single copy. No eye cache. */
+static i32 s26ee_copy_eye(i32 eye,u32 dst,i32 sw,i32 sh,i32 x0,i32 y0,i32 x1,i32 y1,i32 dw,i32 dh){
+    PFN_H5750V_BindFramebuffer bind=h5750v_bind_fbo();
+    PFN_H5750V_BlitFramebuffer blit=h5750v_blit();
+    if(!dst||sw<1||sh<1||dw<1||dh<1||x0<0||y0<0||x1>sw||y1>sh||x1<=x0||y1<=y0||!bind||!blit)return 0;
+    void* ogl=ext_GetModuleHandleA("opengl32.dll");
+    if(!s26ec_error)s26ec_error=(S26ECGetError)ext_GetProcAddress(ogl,"glGetError");
+    if(!s26ec_draw)s26ec_draw=(PFN_H5754AQ_DrawBuffer)ext_GetProcAddress(ogl,"glDrawBuffer");
+    h5750v_resolve_read_buffer();
+    if(!s26ec_error||!s26ec_draw||!p_h5750vReadBuffer)return 0;
+    i32 rd=0,dr=0,back=0,db=0,samples=0;
+    ext_glGetIntegerv(0x8CAAu,&rd);ext_glGetIntegerv(0x8CA6u,&dr);
+    u8 scissor=ext_glIsEnabled(0x0C11u);
+    u32 prior=0;for(u32 n=0;n<16u;++n){u32 e=s26ec_error();if(!e)break;prior=e;}
+    bind(0x8D40u,0);ext_glGetIntegerv(0x80A9u,&samples);
+    ext_glGetIntegerv(0x0C02u,&back);p_h5750vReadBuffer(0x0405u);
+    if(scissor)ext_glDisable(0x0C11u);
+    u32 error=0;
+    if(samples>0){
+        if(!s26ec_ready(sw,sh))error=0xFFFFFFFFu;
+        else{
+            bind(0x8CA8u,0);p_h5750vReadBuffer(0x0405u);
+            bind(0x8CA9u,s26ec_fbo);s26ec_draw(0x8CE0u);
+            blit(0,0,sw,sh,0,0,sw,sh,0x4000u,0x2600u);
+            error=s26ec_error();
+        }
+    }
+    if(!error){
+        bind(0x8CA8u,samples>0?s26ec_fbo:0);
+        p_h5750vReadBuffer(samples>0?0x8CE0u:0x0405u);
+        bind(0x8CA9u,dst);ext_glGetIntegerv(0x0C01u,&db);s26ec_draw(0x8CE0u);
+        blit(x0,y0,x1,y1,0,0,dw,dh,0x4000u,0x2601u);
+        error=s26ec_error();s26ec_draw((u32)db);
+    }
+    bind(0x8CA8u,0);p_h5750vReadBuffer((u32)back);
+    bind(0x8CA8u,(u32)rd);bind(0x8CA9u,(u32)dr);
+    if(scissor)ext_glEnable(0x0C11u);
+    static u32 logs; if(logs<8u||(error&&logs<24u)){
+        ++logs;ext_Log(">>> S26EE EYE COPY: eye %d samples %d source %dx%d crop %d,%d-%d,%d destination %dx%d prior 0x%x error 0x%x ready %d",eye,samples,sw,sh,x0,y0,x1,y1,dw,dh,prior,error,!error);
+    }
+    return !error;
 }
 /* P2 mirrors its gameplay eye targets, which are deliberately not the native
    title GUI. Restore the staged menu after both eye copies, before real SwapBuffers. */
@@ -9850,9 +9960,10 @@ static void s26cq_restore_desktop_menu(void){
     if(!bind||!blit||!drawBuffer)return;
     i32 read=0,draw=0,buffer=0;ext_glGetIntegerv(0x8CAAu,&read);ext_glGetIntegerv(0x8CA6u,&draw);
     u8 scissor=ext_glIsEnabled(0x0C11u);
-    bind(0x8CA8u,g_h5750yResolveFbo[0]);bind(0x8CA9u,0);ext_glGetIntegerv(0x0C01u,&buffer);drawBuffer(0x0405u);
+    if(!s26ec_fbo||s26ec_w!=w||s26ec_h!=h)return;
+    bind(0x8CA8u,s26ec_fbo);bind(0x8CA9u,0);ext_glGetIntegerv(0x0C01u,&buffer);drawBuffer(0x0405u);
     if(scissor)ext_glDisable(0x0C11u);
-    blit(0,0,g_h5750yResolveW,g_h5750yResolveH,0,0,w,h,0x4000u,0x2601u);
+    blit(0,0,w,h,0,0,w,h,0x4000u,0x2600u);
     if(scissor)ext_glEnable(0x0C11u);
     drawBuffer((u32)buffer);bind(0x8CA8u,(u32)read);bind(0x8CA9u,(u32)draw);
 }
