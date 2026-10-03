@@ -10,7 +10,13 @@
 #define S26EC_SET_ANY_FINGER 8u
 #define S26EC_SET_CREATURE   16u
 #define S26EC_SET_HINTS      32u
-static u32 g_s26ecSettings=S26EC_SET_SMART_GRIP|S26EC_SET_PRESSURE|S26EC_SET_POINT|S26EC_SET_CREATURE|S26EC_SET_HINTS;
+/* S26ED options share this word: VRCOMFORT H (head tap flashlight), L (ladder
+   hands), Q (depth for reprojection), Y (texture budget boost). */
+#define S26EC_SET_HEAD_TAP   64u
+#define S26EC_SET_LADDER     128u
+#define S26EC_SET_DEPTH      256u
+#define S26EC_SET_TEXTURE    512u
+static u32 g_s26ecSettings=S26EC_SET_SMART_GRIP|S26EC_SET_PRESSURE|S26EC_SET_POINT|S26EC_SET_CREATURE|S26EC_SET_HINTS|S26EC_SET_HEAD_TAP|S26EC_SET_LADDER;
 static void s26ec_set_option(u32 bit,u32 enabled){
     if(enabled)__atomic_fetch_or(&g_s26ecSettings,bit,__ATOMIC_ACQ_REL);
     else __atomic_fetch_and(&g_s26ecSettings,~bit,__ATOMIC_ACQ_REL);

@@ -30,6 +30,7 @@ static void __attribute__((ms_abi)) s26do_light_setup(void* renderer){
        !h20_mem_readable(r+0x40u,8u)||!h20_mem_readable(r+0xaa4u,64u)||
        !h20_mem_readable(r+0xbe4u,4u)||!h20_mem_writable(r+0xbf4u,16u)||!h20_mem_writable(r+0x95cu,16u))return;
     ++g_s26doLightCalls;
+    s26ed_depth_observe(r,(*p2_frame_ptr())&1);
     float values[4];const float* old=(const float*)(r+0xbf4u);
     if(!s26do_light_coefficients((const float*)(r+0xaa4u),*(float*)(r+0xbe4u),*(i32*)(r+0x40u),*(i32*)(r+0x44u),old,values)){++g_s26doLightRejected;return;}
     ++g_s26doLightApplied;

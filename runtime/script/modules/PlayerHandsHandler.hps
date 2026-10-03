@@ -72,14 +72,16 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 	{
 		mlHandNum=0;
 		mlVRScenePublished=-1;
+		msVRBodyFailedFile="";
 		HPL3VR_PublishSceneHands();
 	}
 	
 	void OnMapLeave(cLuxMap @apMap)
 	{
 		mlVRSceneOverride=-1; mbVRSeatSequence=false;
-		if (_HPL3VR_RuntimeActive_PlayerHands()) cScript_RunGlobalFunc("VRSCENE", "", "S");
+		if (_HPL3VR_RuntimeActive_PlayerHands()) { cScript_RunGlobalFunc("VRSCENE", "", "S"); cScript_RunGlobalFunc("VRLADDER", "", "0"); }
 		mlVRScenePublished=-1;
+		mbVRLadderPublished=false;
 		m_idCurrentAttachProp = tID_Invalid;
 	}
 	
@@ -96,6 +98,7 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 	void DestroyWorldEntities(cLuxMap @apMap)
 	{
         HPL3VR_DestroyNativeHands(apMap);
+        HPL3VR_DestroyBody(apMap);
 		DestroyHandModel(apMap);
 	}
 	
@@ -231,10 +234,125 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
         }
     }
 
+    // S26ED SHOW BODY (experimental, VR SETTINGS > HANDS AND HAPTICS). A VR-only
+    // copy of Simon's authored diving-suit body (the one the Omicron mirror uses)
+    // stands at the player's feet in its first standing frame. It turns with the
+    // head once the head is more than 45 degrees away and settles behind it, and
+    // is hidden whenever that pose would not fit: crouching, low camera, ladders,
+    // seats, cutscenes, hidden hands, or a suit without a known body asset.
+    [nosave] tID m_idVRBody = tID_Invalid;
+    [nosave] tString msVRBodyFile = "";
+    [nosave] tString msVRBodyFailedFile = "";
+    [nosave] float mfVRBodyYaw = 0;
+    [nosave] bool mbVRBodyYawValid = false;
+
+    bool HPL3VR_ShowBodyWanted()
+    {
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetShowBody");
+        return cScript_GetGlobalReturnBool();
+    }
+
+    tString HPL3VR_BodyFile()
+    {
+        if (msHandModel=="character/player/hands/hands_diving.ent") return "entities/character/player/body/body_divingsuit_mirror.ent";
+        return "";
+    }
+
+    void HPL3VR_DestroyBody(cLuxMap@ apMap)
+    {
+        if (m_idVRBody==tID_Invalid) return;
+        iLuxEntity@ pEnt = cLux_ID_Entity(m_idVRBody);
+        if (pEnt !is null && apMap !is null) apMap.DestroyEntity(pEnt);
+        m_idVRBody = tID_Invalid;
+        msVRBodyFile = "";
+        mbVRBodyYawValid = false;
+    }
+
+    bool HPL3VR_CreateBody(cLuxMap@ apMap, const tString &in asFile)
+    {
+        // A body restored from a save would otherwise stay frozen where it was saved.
+        iLuxEntity@ pOld = apMap.GetEntityByName("VR_PlayerBody", eLuxEntityType_LastEnum, "");
+        if (pOld !is null) apMap.DestroyEntity(pOld);
+        apMap.CreateEntity("VR_PlayerBody", asFile, cMatrixf_Identity, cVector3f(1));
+        iLuxEntity@ pEnt = apMap.GetLatestEntity();
+        if (pEnt is null || pEnt.GetName()!="VR_PlayerBody") return false;
+        cMeshEntity@ pMesh = pEnt.GetMeshEntity();
+        cAnimationState@ pAnim = null;
+        if (pMesh !is null)
+        {
+            int lAnim = pEnt.PlayAnimation("event_look_in_mirror_long_body", 0.0f, false);
+            if (lAnim>=0) @pAnim = pMesh.GetAnimationState(lAnim);
+        }
+        if (pAnim is null) { apMap.DestroyEntity(pEnt); return false; }
+        pAnim.SetRelativeTimePosition(0);
+        pAnim.SetPaused(true);
+        cLuxProp@ pProp = cLux_ToProp(pEnt);
+        if (pProp !is null) pProp.SetAllowMapTransfer(false);
+        for (int i=0; i<pEnt.GetBodyNum(); ++i)
+        {
+            iPhysicsBody@ pBody = pEnt.GetBody(i);
+            if (pBody !is null) { pBody.SetCollideCharacter(false); pBody.SetCollide(false); }
+        }
+        pMesh.SetRenderFlagBit(eRenderableFlag_ShadowCaster, false);
+        pMesh.SetRenderFlagBit(eRenderableFlag_VisibleInReflection, false);
+        pMesh.SetRenderFlagBit(eRenderableFlag_VisibleInNonReflection, true);
+        pMesh.SetIsOccluder(false);
+        pMesh.SetDisableSleep(true);
+        pMesh.SetVisible(false);
+        m_idVRBody = pEnt.GetID();
+        msVRBodyFile = asFile;
+        mbVRBodyYawValid = false;
+        return true;
+    }
+
+    void HPL3VR_UpdateBody(float afTimeStep)
+    {
+        cLuxMap@ pMap = cLux_GetCurrentMap();
+        tString sFile = "";
+        if (pMap !is null && _HPL3VR_RuntimeActive_PlayerHands() && HPL3VR_ShowBodyWanted()) sFile = HPL3VR_BodyFile();
+        if (sFile=="" || sFile==msVRBodyFailedFile) { HPL3VR_DestroyBody(pMap); return; }
+        if (m_idVRBody!=tID_Invalid && sFile!=msVRBodyFile) HPL3VR_DestroyBody(pMap);
+        if (m_idVRBody==tID_Invalid && !HPL3VR_CreateBody(pMap, sFile)) { msVRBodyFailedFile = sFile; return; }
+        iLuxEntity@ pBody = cLux_ID_Entity(m_idVRBody);
+        if (pBody is null || pBody.GetMeshEntity() is null) { m_idVRBody = tID_Invalid; return; }
+
+        iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+        cCamera@ pCam = cLux_GetPlayer().GetCamera();
+        int lState = cLux_GetPlayer().GetCurrentStateId();
+        cVector3f vFeet = pCharBody.GetFeetPosition();
+        cVector3f vFwd = pCam.GetForward();
+        float fFlat = cMath_Sqrt(vFwd.x*vFwd.x + vFwd.z*vFwd.z);
+        if (fFlat>0.2f)
+        {
+            // Same yaw convention SOMA uses to turn a camera forward into a body yaw.
+            float fHeadYaw = -cMath_ATan2(vFwd.x, -vFwd.z);
+            if (!mbVRBodyYawValid) { mfVRBodyYaw = fHeadYaw; mbVRBodyYawValid = true; }
+            float fLimit = cMath_Pi*0.25f;
+            float fDelta = cMath_GetAngleDistance(mfVRBodyYaw, fHeadYaw, cMath_PiMul2);
+            if (fDelta>fLimit) mfVRBodyYaw += fDelta-fLimit;
+            else if (fDelta<-fLimit) mfVRBodyYaw += fDelta+fLimit;
+            fDelta = cMath_GetAngleDistance(mfVRBodyYaw, fHeadYaw, cMath_PiMul2);
+            mfVRBodyYaw += fDelta*cMath_Min(1.0f, afTimeStep*1.5f);
+            while (mfVRBodyYaw>cMath_Pi) mfVRBodyYaw -= cMath_PiMul2;
+            while (mfVRBodyYaw<-cMath_Pi) mfVRBodyYaw += cMath_PiMul2;
+        }
+        bool bShow = mbVRBodyYawValid && (lState==ePlayerState_Normal || lState==ePlayerState_Grab) &&
+            mlVRScenePublished!=1 && !Player_GetCrouching() && pCam.GetPosition().y-vFeet.y>1.2f;
+        pBody.GetMeshEntity().SetVisible(bShow);
+        if (!bShow) return;
+        // The authored model faces +Z like the hands; the neck sits behind the eyes.
+        cMatrixf mtxBody = cMath_MatrixRotateY(mfVRBodyYaw + cMath_Pi);
+        cVector3f vBack = cMath_MatrixMul(cMath_MatrixRotateY(mfVRBodyYaw).GetRotation(), cVector3f(0, 0, 0.12f));
+        mtxBody.SetTranslation(vFeet + vBack);
+        pBody.SetMatrix(mtxBody);
+    }
+
 	void PostUpdate(float afTimeStep)
 	{
 		HPL3VR_PublishSceneHands();
         HPL3VR_UpdateNativeHands();
+        HPL3VR_UpdateBody(afTimeStep);
 		/////////////////////////
 		// Setup Properties
 		cCamera @pCam = cLux_GetPlayer().GetCamera();
@@ -611,15 +729,22 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 		HPL3VR_PublishSceneHands();
 	}
 	[nosave] int mlVRScenePublished = -1;
+	[nosave] bool mbVRLadderPublished = false;
 	void HPL3VR_PublishSceneHands()
 	{
 		if (!_HPL3VR_RuntimeActive_PlayerHands())
 		{
 			mlVRScenePublished = -1;
+			mbVRLadderPublished = false;
 			return;
 		}
 		int lPlayerState = cLux_GetPlayer().GetCurrentStateId();
-		bool bStateHide = lPlayerState==ePlayerState_Sit || lPlayerState==ePlayerState_Ladder ||
+		// S26ED: the DLL turns hand pulls into ladder climbing while this is set,
+		// and ladder hands stay visible when CLIMB LADDERS WITH HANDS is on.
+		bool bLadder = lPlayerState==ePlayerState_Ladder;
+		if (bLadder!=mbVRLadderPublished) { mbVRLadderPublished=bLadder; cScript_RunGlobalFunc("VRLADDER", "", bLadder ? "1" : "0"); }
+		bool bLadderHands = bLadder && cScript_RunGlobalFunc("VRLADDER", "", "Q");
+		bool bStateHide = lPlayerState==ePlayerState_Sit || (bLadder && !bLadderHands) ||
 			lPlayerState==ePlayerState_ClimbLedge || lPlayerState==ePlayerState_InteractiveCameraAnimation;
 		if(lPlayerState==ePlayerState_Sit || lPlayerState==ePlayerState_InteractiveCameraAnimation) mbVRSeatSequence=true;
 		if(lPlayerState==ePlayerState_Normal || lPlayerState==ePlayerState_Grab) mbVRSeatSequence=false;

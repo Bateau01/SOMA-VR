@@ -71,14 +71,17 @@ static void resetGrip(void){for(int h=0;h<2;h++){s26ec_grip_reset(h);g_lastSquee
 static float tick(int h,float squeeze,i64 t){g_lastSqueeze[h]=squeeze;s26ec_grip_tick(h,t);return g_lastSqueeze[h];}
 int main(void){
  const i64 ms=1000000LL;Handle sess=(Handle)7;
- /* ---- settings bridge: VRCOMFORT U/Z/P/K/X/I ---- */
- const char* cls="UZPKXI";unsigned bits[6]={1,2,4,8,16,32};
+ /* ---- settings bridge: VRCOMFORT U/Z/P/K/X/I and S26ED H/L/Q/Y ---- */
+ CHECK(g_s26ecSettings==(1u|2u|4u|16u|32u|64u|128u)); /* defaults: any-finger, depth layer and texture boost off */
+ const char* cls="UZPKXIHLQY";unsigned bits[10]={1,2,4,8,16,32,64,128,256,512};
  g_s26ecSettings=0;
- for(int k=0;k<6;k++){char c[2]={cls[k],0};H5730TString a=T(c),one=T("1"),zero=T("0"),bad=T("2");
+ for(int k=0;k<10;k++){char c[2]={cls[k],0};H5730TString a=T(c),one=T("1"),zero=T("0"),bad=T("2");
   CHECK(s26ec_comfort_option(&a,&one)==1&&s26ec_option(bits[k]));CHECK(s26ec_comfort_option(&a,&bad)==0&&s26ec_option(bits[k]));
   CHECK(s26ec_comfort_option(&a,&zero)==1&&!s26ec_option(bits[k]));CHECK(s26ec_comfort_option(&a,&one)==1);}
  {H5730TString f=T("F"),one=T("1");CHECK(s26ec_comfort_option(&f,&one)==-1);}
- CHECK(g_s26ecSettings==63u);s26ec_set_option(S26EC_SET_ANY_FINGER,0);
+ CHECK(g_s26ecSettings==1023u);s26ec_set_option(S26EC_SET_HEAD_TAP|S26EC_SET_LADDER|S26EC_SET_DEPTH|S26EC_SET_TEXTURE,0);CHECK(g_s26ecSettings==63u);
+ {H5730TString o=T("O"),one=T("1");CHECK(s26ec_comfort_option(&o,&one)==-1);} /* render scale is not a bit option */
+ s26ec_set_option(S26EC_SET_ANY_FINGER,0);
  /* ---- finger normalisation ---- */
  S26ECFingers F;setHand(0,1,0.25f,0.5f,0.75f,1);CHECK(s26ec_fingers(0,&F)&&fabsf(F.thumb-1)<1e-5f&&fabsf(F.index-.25f)<1e-5f&&fabsf(s26ec_lower_three(&F)-.75f)<1e-5f);
  g_s26diFrameHand[0]=0;CHECK(!s26ec_fingers(0,&F));g_s26diFrameHand[0]=1;fingersValid[0]=0;CHECK(!s26ec_fingers(0,&F));fingersValid[0]=1;

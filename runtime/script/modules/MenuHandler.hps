@@ -1010,6 +1010,13 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] bool mbVRAnyFingerKeypads=false;
     [nosave] bool mbVRCreatureHaptics=true;
     [nosave] bool mbVRButtonHints=true;
+    // S26ED presence and performance options.
+    [nosave] bool mbVRHeadTapFlashlight=true;
+    [nosave] bool mbVRLadderClimb=true;
+    [nosave] bool mbVRShowBody=false;
+    [nosave] int mlVRRenderScale=8;
+    [nosave] bool mbVRDepthLayer=false;
+    [nosave] bool mbVRTextureBudget=false;
     [nosave] bool mbVRFingerResetPending=false;
     [nosave] bool mbVREyeEnvironment=true;
     [nosave] bool mbVREyeAI=true;
@@ -1094,6 +1101,12 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             mbVRAnyFingerKeypads=p.GetBool("SOMA_VR_Hands","AnyFingerKeypads",false);
             mbVRCreatureHaptics=p.GetBool("SOMA_VR_Hands","CreatureHaptics",true);
             mbVRButtonHints=p.GetBool("SOMA_VR_Hands","ButtonHints",true);
+            mbVRHeadTapFlashlight=p.GetBool("SOMA_VR_Hands","HeadTapFlashlight",true);
+            mbVRLadderClimb=p.GetBool("SOMA_VR_Hands","LadderClimb",true);
+            mbVRShowBody=p.GetBool("SOMA_VR_Hands","ShowBody",false);
+            mlVRRenderScale=p.GetInt("SOMA_VR_Video","RenderScaleIndex",8);if(mlVRRenderScale<0 || mlVRRenderScale>18) mlVRRenderScale=8;
+            mbVRDepthLayer=p.GetBool("SOMA_VR_Video","DepthLayer",false);
+            mbVRTextureBudget=p.GetBool("SOMA_VR_Video","TextureBudget",false);
             mbVREyeEnvironment=p.GetBool("SOMA_VR_Eyes","Environment",true);
             mbVREyeAI=p.GetBool("SOMA_VR_Eyes","AI",true);
             mbVREyeFlashlight=p.GetBool("SOMA_VR_Eyes","Flashlight",false);
@@ -1118,6 +1131,11 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         cScript_RunGlobalFunc("VRCOMFORT","K",mbVRAnyFingerKeypads ? "1" : "0");
         cScript_RunGlobalFunc("VRCOMFORT","X",mbVRCreatureHaptics ? "1" : "0");
         cScript_RunGlobalFunc("VRCOMFORT","I",mbVRButtonHints ? "1" : "0");
+        cScript_RunGlobalFunc("VRCOMFORT","H",mbVRHeadTapFlashlight ? "1" : "0");
+        cScript_RunGlobalFunc("VRCOMFORT","L",mbVRLadderClimb ? "1" : "0");
+        cScript_RunGlobalFunc("VRCOMFORT","Q",mbVRDepthLayer ? "1" : "0");
+        cScript_RunGlobalFunc("VRCOMFORT","Y",mbVRTextureBudget ? "1" : "0");
+        cScript_RunGlobalFunc("VRCOMFORT","O",""+mlVRRenderScale);
         cScript_RunGlobalFunc("VREYES","0",mbVREyeEnvironment?"1":"0");
         cScript_RunGlobalFunc("VREYES","1",mbVREyeAI?"1":"0");
         cScript_RunGlobalFunc("VREYES","2",mbVREyeFlashlight?"1":"0");
@@ -1151,6 +1169,12 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         p.SetBool("SOMA_VR_Hands","AnyFingerKeypads",mbVRAnyFingerKeypads);
         p.SetBool("SOMA_VR_Hands","CreatureHaptics",mbVRCreatureHaptics);
         p.SetBool("SOMA_VR_Hands","ButtonHints",mbVRButtonHints);
+        p.SetBool("SOMA_VR_Hands","HeadTapFlashlight",mbVRHeadTapFlashlight);
+        p.SetBool("SOMA_VR_Hands","LadderClimb",mbVRLadderClimb);
+        p.SetBool("SOMA_VR_Hands","ShowBody",mbVRShowBody);
+        p.SetInt("SOMA_VR_Video","RenderScaleIndex",mlVRRenderScale);
+        p.SetBool("SOMA_VR_Video","DepthLayer",mbVRDepthLayer);
+        p.SetBool("SOMA_VR_Video","TextureBudget",mbVRTextureBudget);
         for(int i=0;i<6;i++) p.SetInt("SOMA_VR_Buttons","Role"+i,mvVRButtonMap[i]);
         p.SetInt("SOMA_VR_Comfort","TurnMode",mlVRTurnMode);
         p.SetBool("SOMA_VR_Comfort","HideDistortion",mbVRHideDistortion);
@@ -1295,11 +1319,11 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             OptionMenu_UpdateExtraWidth("CALIBRATE STANDING HEIGHT",true);
             OptionMenu_UpdateExtraWidth("CENTER CAMERA",true);
         }
-        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); size.y=430; }
+        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); OptionMenu_UpdateExtraWidth("DEPTH FOR REPROJECTION",true); OptionMenu_UpdateExtraWidth("TEXTURE BUDGET BOOST",true); size.y=450; }
         if(mlVRComfortCategory==3) { size.y=430;for(int i=0;i<6;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
         if(mlVRComfortCategory==4) size.y=360;
         if(mlVRComfortCategory<0) size.y=400;
-        if(mlVRComfortCategory==7) { size.y=400;OptionMenu_UpdateExtraWidth("ANY FINGER ON KEYPADS",true);OptionMenu_UpdateExtraWidth("CREATURE HAPTICS",true); }
+        if(mlVRComfortCategory==7) { size.y=430;OptionMenu_UpdateExtraWidth("ANY FINGER ON KEYPADS",true);OptionMenu_UpdateExtraWidth("CREATURE HAPTICS",true);OptionMenu_UpdateExtraWidth("CLIMB LADDERS WITH HANDS",true);OptionMenu_UpdateExtraWidth("SHOW BODY (EXPERIMENTAL)",true); }
         if(mlVRComfortCategory==0) size.y=430;
         if(mlVRComfortCategory==6) { size.y=360;size.x=600; }
         if(mlVRComfortCategory==4) OptionMenu_UpdateExtraWidth("GAZE-DIRECTED FLASHLIGHT",true);
@@ -1416,6 +1440,13 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             changed=changed || bob!=mbVRHideMovementBob;mbVRHideMovementBob=bob;
             mbVRHideShake=shake;
             mbVRHideDistortion=distortion; mbVRHideChromatic=chromatic; mbVRHideTrails=trails;mbVRHideBlur=blur;mlVRVignette=vignette;
+            // S26ED: render scale applies at the next launch (swapchains are fixed per session).
+            bool scaleActive=cScript_RunGlobalFunc("VRCOMFORT","O","A"+mlVRRenderScale);
+            int renderScale=HPL3VR_Slider("RENDER SCALE",7,mlVRRenderScale,18,""+(60+5*mlVRRenderScale)+"%"+(scaleActive ? "" : " (RESTART)"));
+            bool depth=HPL3VR_Toggle("DEPTH FOR REPROJECTION",8,mbVRDepthLayer);
+            bool texture=HPL3VR_Toggle("TEXTURE BUDGET BOOST",9,mbVRTextureBudget);
+            changed=changed || renderScale!=mlVRRenderScale || depth!=mbVRDepthLayer || texture!=mbVRTextureBudget;
+            mlVRRenderScale=renderScale;mbVRDepthLayer=depth;mbVRTextureBudget=texture;
         }
         else if(mlVRComfortCategory==4)
         {
@@ -1445,8 +1476,13 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             bool anyFinger=HPL3VR_Toggle("ANY FINGER ON KEYPADS",3,mbVRAnyFingerKeypads);
             bool creature=HPL3VR_Toggle("CREATURE HAPTICS",4,mbVRCreatureHaptics);
             bool hints=HPL3VR_Toggle("BUTTON HINTS",5,mbVRButtonHints);
+            bool headTap=HPL3VR_Toggle("HEAD TAP FLASHLIGHT",6,mbVRHeadTapFlashlight);
+            bool ladder=HPL3VR_Toggle("CLIMB LADDERS WITH HANDS",7,mbVRLadderClimb);
+            bool body=HPL3VR_Toggle("SHOW BODY (EXPERIMENTAL)",8,mbVRShowBody);
             changed=smart!=mbVRSmartGrip || pressure!=mbVRGripPressure || point!=mbVRPointToPress || anyFinger!=mbVRAnyFingerKeypads || creature!=mbVRCreatureHaptics || hints!=mbVRButtonHints;
+            changed=changed || headTap!=mbVRHeadTapFlashlight || ladder!=mbVRLadderClimb || body!=mbVRShowBody;
             mbVRSmartGrip=smart;mbVRGripPressure=pressure;mbVRPointToPress=point;mbVRAnyFingerKeypads=anyFinger;mbVRCreatureHaptics=creature;mbVRButtonHints=hints;
+            mbVRHeadTapFlashlight=headTap;mbVRLadderClimb=ladder;mbVRShowBody=body;
         }
         else if(mlVRComfortCategory==6)
         {
@@ -1467,7 +1503,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             if(!waiting && !sampling && HPL3VR_Option("START RESET",3)) mbVRFingerResetPending=cScript_RunGlobalFunc("VRCOMFORT","FTRESET","BEGIN");
         }
         if(changed) HPL3VR_SaveComfort();
-        if(HPL3VR_Option("BACK",(mlVRComfortCategory==0 || mlVRComfortCategory==2) ? 7 : (mlVRComfortCategory==3 ? 9 : (mlVRComfortCategory==1 ? 8 : ((mlVRComfortCategory<0 || mlVRComfortCategory==7) ? 6 : 5)))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
+        if(HPL3VR_Option("BACK",mlVRComfortCategory==0 ? 7 : (mlVRComfortCategory==2 ? 10 : ((mlVRComfortCategory==3 || mlVRComfortCategory==7) ? 9 : (mlVRComfortCategory==1 ? 8 : (mlVRComfortCategory<0 ? 6 : 5))))) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
         {
             if(mlVRComfortCategory==6)
             {
@@ -1494,6 +1530,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     }
 
 	void HPL3VR_GetRuntimeActive() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive); }
+	void HPL3VR_GetShowBody() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive && mbVRShowBody); }
 
     void HPL3VR_GetBobMask()
     {

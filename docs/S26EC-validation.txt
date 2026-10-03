@@ -27,3 +27,29 @@ defaults/hpl3vr_vr_settings.ini, which are gitignored and absent from the reposi
 
 No headset or controller hardware test was performed. The wrist label uses the existing VR_Subtitles native 3D route with its own
 panel; its on-screen size and placement are unverified.
+
+S26ED development build (presence and performance additions; package version still 1.05-S26EC, not released)
+
+Build: python -X utf8 scripts/build.py --zig <zig 0.13.0>  (x86_64 Linux host, deterministic)
+hpl3vr.dll SHA256: f7845cb5fb58fafc2777fb563185e125c5ad9e9aeb4c9658ac0627e83e75993e  (supersedes the S26EC hash above in
+PACKAGE_VERIFICATION.json and both manifests)
+
+New: tests/test_vr_presence.py - PASS 6545 production checks: head-tap crown zone against an independent quaternion oracle over
+180 head orientations, tap arming/hysteresis/cooldown/busy hands/tracking dropout; ladder pull to Move input at 90 Hz with
+deadzone, decay, hitch and two hands; VRLADDER; render scale parse/persist/VRCOMFORT O; texture budget toggle ownership; depth
+format/near-far/layer chaining; and the depth pipeline against mocked OpenGL and OpenXR (GL state restore, swapchain lifecycle,
+readiness consumption, image release, every fail-closed path).
+Mutation checks: breaking the crown zone front limit, the tap hysteresis, the quaternion axes, the chain next-pointer guard, the GL
+state restore, the depth attachment size check, readiness consumption, swapchain image release, the ladder direction, or the even
+render-size rounding each fails tests/test_vr_presence.py.
+Extended: tests/test_tracking_extensions.py (523 checks; depth extension option and rejections), tests/test_hands_haptics.py
+(214 checks; new comfort classes H/L/Q/Y and O), tests/test_tracking_menu.py (VIDEO and HANDS AND HAPTICS rows, BACK placement,
+panel bounds, ladder publish and body hooks), tests/test_light_projection.py (depth observation scoped to the main VR eye),
+tests/test_readable_contact.py (include anchor moved).
+
+Unchanged and passing: the same groups listed above. Not run on this host, same status as before the change: ark_native,
+desktop_settings, launcher_compatibility (Soma.exe), human_mesh (numpy), desktop_window, menu_auto, native_gui (Windows
+executables); small_lever fails the same assertion on the unmodified main source.
+
+No headset test was performed. Tap feel, ladder feel (assumes SOMA's ladder state reads the Move input), the body's pose and
+facing, and whether a runtime uses submitted depth need confirmation on hardware.

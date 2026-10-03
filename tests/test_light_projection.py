@@ -16,6 +16,8 @@ static void ext_Log(const char*f,...){(void)f;}
 static void* ext_GetModuleHandleA(void*p){return 0;}
 static int ext_MH_CreateHook(void*a,void*b,void**c){return -1;}static int ext_MH_EnableHook(void*a){return -1;}
 static void __attribute__((ms_abi)) native(void*p){nativeCalls++;}
+static volatile i32 p2Frame;static volatile i32* p2_frame_ptr(void){return &p2Frame;}
+static int depthObserves,depthEye=-1;static void s26ed_depth_observe(const u8*q,i32 eye){(void)q;depthObserves++;depthEye=eye;}
 #define CHECK(x) do{++checks;if(!(x)){printf("FAIL %d: %s\n",__LINE__,#x);return 1;}}while(0)
 '''
 main=r'''
@@ -46,9 +48,10 @@ int main(void){
  memset(r,0,sizeof(r));memcpy(r+0xaa4,good,64);*(void**)(r+0x20)=frustum;*(i32*)(r+0x40)=2048;*(i32*)(r+0x44)=2048;*(float*)(r+0xbe4)=1000;
  old[0]=1;old[1]=1;old[2]=-1024;old[3]=-1024;memcpy(r+0xbf4,old,16);
  o_s26doLightSetup=native;u8 before[sizeof(r)];memcpy(before,r,sizeof(r));
- s26do_light_setup(r);CHECK(nativeCalls==1&&!memcmp(r,before,sizeof(r))); // No VR scope.
- g_s26doLightRenderer=r;g_s26doLightFrustum=(void*)999;s26do_light_setup(r);CHECK(nativeCalls==2&&!memcmp(r,before,sizeof(r))); // Reflection/other frustum.
- g_s26doLightFrustum=frustum;s26do_light_setup(r);CHECK(nativeCalls==3&&memcmp(r,before,sizeof(r)));
+ s26do_light_setup(r);CHECK(nativeCalls==1&&!memcmp(r,before,sizeof(r))&&depthObserves==0); // No VR scope.
+ g_s26doLightRenderer=r;g_s26doLightFrustum=(void*)999;s26do_light_setup(r);CHECK(nativeCalls==2&&!memcmp(r,before,sizeof(r))&&depthObserves==0); // Reflection/other frustum.
+ p2Frame=7;g_s26doLightFrustum=frustum;s26do_light_setup(r);CHECK(nativeCalls==3&&memcmp(r,before,sizeof(r)));
+ CHECK(depthObserves==1&&depthEye==1); // Depth layer observes only the scoped main eye.
  CHECK(s26do_light_coefficients(good,1000,2048,2048,old,q));CHECK(!memcmp(r+0xbf4,q,16));
  CHECK(*(float*)(r+0x95c)==q[2]&&*(float*)(r+0x960)==q[3]&&*(float*)(r+0x964)==q[0]&&*(float*)(r+0x968)==q[1]);
  for(int n=0;n<sizeof(r);n++)if(!(n>=0x95c&&n<0x96c)&&!(n>=0xbf4&&n<0xc04))CHECK(r[n]==before[n]);
