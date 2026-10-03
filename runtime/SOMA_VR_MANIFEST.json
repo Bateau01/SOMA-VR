@@ -1,5 +1,5 @@
 {
-  "version": "1.05-S26EC",
+  "version": "2.0-S26ED",
   "files": {
     "Check-SOMA-VR-Compatibility.cmd": {
       "sha256": "1c9186797da4dd711fd91b1f487fb2647ddbf05f172a284b727be2d13983833b",
@@ -10,8 +10,8 @@
       "bytes": 5424
     },
     "defaults/hpl3vr_vr_settings.ini": {
-      "sha256": "dbbab4dd40d76286f6ff18bf132dd3cfa00f987f16212124b1aea93038abb3fd",
-      "bytes": 192
+      "sha256": "b0fb7d69b0d759179f56562ca10eda669e1d78ba7af85f3a324a11cb124bae78",
+      "bytes": 136
     },
     "entities/oceanbottom/tech/02_04_computer_relaystation/02_04_computer_relaystation_screen.ent": {
       "sha256": "b9672a3563e67b0c4ffbae1364f4bd2f9af89dc0057c8673f12ac444a4340085",
@@ -354,8 +354,8 @@
       "bytes": 267851
     },
     "hpl3vr_vr_settings.ini": {
-      "sha256": "dbbab4dd40d76286f6ff18bf132dd3cfa00f987f16212124b1aea93038abb3fd",
-      "bytes": 192
+      "sha256": "b0fb7d69b0d759179f56562ca10eda669e1d78ba7af85f3a324a11cb124bae78",
+      "bytes": 136
     },
     "Launch-SOMA-VR.cmd": {
       "sha256": "69f48d88aaceb26122cffd4a1ee20f5a771c1602e498e8d1feb233e4c563a47e",
@@ -466,8 +466,8 @@
       "bytes": 422552
     },
     "PACKAGE_VERIFICATION.json": {
-      "sha256": "ed7a3ec92a5d80cce3aafc780ca296dad187df78e74f991ff76ae7c17fdc52e3",
-      "bytes": 297
+      "sha256": "742b9303b31e2efadb9d91827a14ddc5973b816426c7f1624f30ec3c0553b930",
+      "bytes": 296
     },
     "script/areas/Area_InteractAux.hps": {
       "sha256": "4642a496e00bee5b068ae972f37a433622b90a6b337c1e6ef0dc675b3f0b5baf",
