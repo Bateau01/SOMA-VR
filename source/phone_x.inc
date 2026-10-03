@@ -88,7 +88,7 @@ static void s26x_phone_step(float dt){
     if(g_s26xPhoneAnswered||g_s26xPhoneTap||!s26x_phone_body_valid()||!p_h14GetMatrix)return;
     float bm[16];p_h14GetMatrix(g_s26xPhoneRaw,bm);
     for(i32 h=0;h<2;++h){
-        if(g_h14GripBody[h]||!visual_pose_valid(h)||h10_raw_finger_input(h,1)>H48_POKE_INDEX_CURL_MAX){g_s26xPhoneTapArmed[h]=0;continue;}
+        if(g_h14GripBody[h]||!visual_pose_valid(h)||!(s26ec_poke_mask(h,0)&2u)){g_s26xPhoneTapArmed[h]=0;continue;}
         float visible[16],c[4],pts[5][3];i32 len=0;
         if(!h5755cu_render_hand_model(h,visible)){g_s26xPhoneTapArmed[h]=0;continue;}
         for(i32 j=0;j<4;++j)c[j]=h18_joint_input(h,1,j);

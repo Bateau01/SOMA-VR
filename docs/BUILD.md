@@ -11,7 +11,7 @@ python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
 Output: `build/hpl3vr.dll`. The checked release hash is:
 
 ```text
-974237615afe8ffc36ed6badcc303f864259910c2413a58a0b670c92a98810bc
+5088872b2d752d67968e42c69dcc5c804babe3ed182436723112c02412001d49
 ```
 
 The 1.05-S26EC DLL was built with this script and Zig 0.13.0 on x86_64 Linux; the build is deterministic, and the same script reproduces the 1.04-S26EB hash (`a989e9ca...`) from that release's unchanged source, so the host OS does not affect the output. The 1.03-S26DF package was also rebuilt using this portable script and matched its hash. The extracted native-rendering regression test reproduces the pre-fix failure and passes after the fix. It mocks engine calls and a small rig; it is not a test of all live controller interactions.
@@ -49,10 +49,11 @@ python -X utf8 tests/test_transition_height.py "C:\Tools\zig\zig.exe"
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/test_launcher_cleanup.ps1
 ```
 
-Valve Index binding, shared-action and capacitive-contact checks (mocked OpenXR runtime):
+Valve Index binding, HANDS AND HAPTICS (smart grip, grip pressure, point to press, creature haptics, button hints) checks (mocked OpenXR runtime and engine state):
 
 ```powershell
 python -X utf8 tests/test_index_bindings.py "C:\Tools\zig\zig.exe"
+python -X utf8 tests/test_hands_haptics.py "C:\Tools\zig\zig.exe"
 ```
 
 Menu-state regression checks (mocked engine state):

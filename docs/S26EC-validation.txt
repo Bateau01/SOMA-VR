@@ -1,11 +1,17 @@
 SOMA VR 1.05-S26EC validation record
 
 Build: python -X utf8 scripts/build.py --zig <zig 0.13.0>  (x86_64 Linux host, deterministic)
-hpl3vr.dll SHA256: 974237615afe8ffc36ed6badcc303f864259910c2413a58a0b670c92a98810bc
+hpl3vr.dll SHA256: 5088872b2d752d67968e42c69dcc5c804babe3ed182436723112c02412001d49
 Build reproducibility: unchanged 1.04-S26EB source rebuilt on the same host matched a989e9ca75b1f1c7e7c4c6ff1d8b4781b8be82a1b7b1d4b5b2af0e78842497f7.
 
-New: tests/test_index_bindings.py - PASS 252 production Valve Index binding/policy/contact checks; menu labels and setup wiring.
-Mutation checks: removing the Index profile from the controller policy, or making shared action creation non-idempotent, fails this test.
+New: tests/test_index_bindings.py - PASS 277 production Valve Index binding/policy/contact/feel-layer checks; menu labels and setup wiring.
+New: tests/test_hands_haptics.py - PASS 195 production HANDS AND HAPTICS checks (settings bridge, point/any-finger masks, pinch,
+closure-only grip, finger-open release at 72-144 Hz, pinch seating, heavy slip, tear/wheel pressure, creature haptics, button hints)
+and production wiring checks for every call site and script producer.
+Mutation checks: removing the Index profile from the controller policy, non-idempotent shared actions, a regrab-allowing release cap,
+removing the closure-only cap, removing the creature-haptic hold-off after semantic pulses, or dropping the point requirement each
+fails the corresponding test.
+tests/test_tracking_menu.py extended for the HANDS AND HAPTICS page (load/save/publish wiring, rows, BACK placement, panel bounds).
 
 Unchanged and passing: apartment, auto_load, bob, cable_handoff, extra_buttons, finger_reset, frame_gaze, frame_mapping, frame_rest,
 handheld, light_evidence, light_projection, menu_capture, menu_checkpoint, menu_gl_state, menu_recovery, menu_resize,
@@ -19,4 +25,5 @@ its assertion on the unmodified 1.04-S26EB source.
 scripts/verify_package.py: every shipped overlay file matches the manifest except hpl3vr_vr_settings.ini and
 defaults/hpl3vr_vr_settings.ini, which are gitignored and absent from the repository (also true for 1.04-S26EB).
 
-No headset or controller hardware test was performed.
+No headset or controller hardware test was performed. The wrist label uses the existing VR_Subtitles native 3D route with its own
+panel; its on-screen size and placement are unverified.

@@ -346,8 +346,8 @@
       "bytes": 22369776
     },
     "hpl3vr.dll": {
-      "sha256": "974237615afe8ffc36ed6badcc303f864259910c2413a58a0b670c92a98810bc",
-      "bytes": 1978368
+      "sha256": "5088872b2d752d67968e42c69dcc5c804babe3ed182436723112c02412001d49",
+      "bytes": 1998336
     },
     "hpl3vr_inject.exe": {
       "sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
@@ -466,7 +466,7 @@
       "bytes": 422552
     },
     "PACKAGE_VERIFICATION.json": {
-      "sha256": "b5d35ed90220a2e658e27d0487c2bf7d0bf049ac60e7a8b95e99f51dadf68cac",
+      "sha256": "eaf2e6244cb13e70994621659e480e6b5ebb680a17f5bf10f2648238a97773c9",
       "bytes": 297
     },
     "script/areas/Area_InteractAux.hps": {
@@ -542,8 +542,8 @@
       "bytes": 11708
     },
     "script/modules/DistortionEffectsHandler.hps": {
-      "sha256": "c77c3abfc068ac7ee04baf517f48435496a6099bf5b79210f4f2e1ea71abe872",
-      "bytes": 8790
+      "sha256": "24d6168d50110e7172ecfe6cffe31477cc80664cd7da8ce9be9b2a6a062b1112",
+      "bytes": 9644
     },
     "script/modules/EyeTrackingHandler.hps": {
       "sha256": "0166177d06134c3941ac5451e5f131354f5b54db75022eae4cf7e4b85944c4ee",
@@ -558,12 +558,12 @@
       "bytes": 11018
     },
     "script/modules/HintHandler.hps": {
-      "sha256": "a3cc5952e176d7f31d37cdb1de405356df52bda7208d50dfcd10ca36a8009072",
-      "bytes": 20478
+      "sha256": "85ac943a01679f2fbfa666f2cf3d22cf5d8e302c8b18b3ed21b4c63e3fd2dbed",
+      "bytes": 21637
     },
     "script/modules/MenuHandler.hps": {
-      "sha256": "0a6cb521b12a51a8ef375d5ee473fe6b52c842f377ab9f76f68d82db00e0ffd9",
-      "bytes": 292452
+      "sha256": "ee8686c7614bf442a06aecccf0d7d5556a9e89dbe49c3fd7abe1485423e0a929",
+      "bytes": 295504
     },
     "script/modules/PlayerEnergyHandler.hps": {
       "sha256": "42fe650394f5ed450dfc817ec345ca9c8d7678007af973d84e9b41eaefdcf39b",
@@ -694,8 +694,8 @@
       "bytes": 2761
     },
     "SOMA_VR_FEATURES.md": {
-      "sha256": "25130a21ddca6e239939b838888fe38d491748d83d53b8d6bccee7431f470284",
-      "bytes": 5213
+      "sha256": "83dbe47f388085456ea726062dc880784346026cac8069f5e0a90e8addc4a713",
+      "bytes": 5399
     },
     "SOMA_VR_INSTALLATION.md": {
       "sha256": "a6688b627211b4a75697f727c8cc4a4bae572625b50a6b16be965b3171e3ee22",

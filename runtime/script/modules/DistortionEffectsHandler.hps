@@ -14,6 +14,14 @@ bool _VREyeDistortionActiveS()
 
 const float gfEyeTrackingAddDistortionAmount = 0.5f;
 
+// S26EC: publish the creature "static" to the VR controllers (VRHAPT). Only
+// while the VR runtime is active; native ignores stale or disabled input.
+bool _VRCreatureHapticsActive()
+{
+    cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    return cScript_GetGlobalReturnBool();
+}
+
 //------------------------------------------------------------
 
 class cScrDistortionInstance
@@ -211,6 +219,7 @@ class cScrDistortionEffectsHandler : iScrUserModule, iScrDistortionEffectsHandle
 		
 		cVector3f vPlayerPos = cLux_GetPlayer().GetCharacterBody().GetPosition();
 		float fFinalAmount =0;
+		bool bVRLookedAt = false;
 		
 		if(cLux_GetPlayer().IsDead()==false)
 		{
@@ -232,6 +241,7 @@ class cScrDistortionEffectsHandler : iScrUserModule, iScrDistortionEffectsHandle
 				fX *= pInstance.mfMaxAmount;
 				
 				if(fX > fFinalAmount) fFinalAmount = fX;
+				if(EyeTracking_IsAiReactive() && EyeTracking_IsEntityBeingLookedAt(pEntity.GetID()) == true) bVRLookedAt = true;
 				if(_VREyeDistortionActiveS() && EyeTracking_IsAiReactive() && EyeTracking_IsEntityBeingLookedAt(pEntity.GetID()) == true) fFinalAmount += gfEyeTrackingAddDistortionAmount;
 			}
 			
@@ -243,6 +253,11 @@ class cScrDistortionEffectsHandler : iScrUserModule, iScrDistortionEffectsHandle
 		if(fFinalAmount>0)
 		{
 			fFinalAmount = 0.1 + fFinalAmount*0.9;
+			if(_VRCreatureHapticsActive())
+			{
+				cScript_RunGlobalFunc("VRHAPT",bVRLookedAt ? "L" : "S",""+int(cMath_Clamp(fFinalAmount,0.0f,1.0f)*1000.0f));
+				mbVRHapticSent=true;
+			}
 			
 			if(mlEffectId<0)
 				mlEffectId = Effect_VideoDistortion_Start(fFinalAmount, -1, 1,0);
@@ -252,6 +267,11 @@ class cScrDistortionEffectsHandler : iScrUserModule, iScrDistortionEffectsHandle
 		{
 			Effect_VideoDistortion_FadeOut(mlEffectId,1);
 			mlEffectId =-1;
+		}
+		if(fFinalAmount<=0 && mbVRHapticSent)
+		{
+			cScript_RunGlobalFunc("VRHAPT","S","0");
+			mbVRHapticSent=false;
 		}
 	}
 	
@@ -327,6 +347,7 @@ class cScrDistortionEffectsHandler : iScrUserModule, iScrDistortionEffectsHandle
 	array<cScrDistortionInstance> mvInstances;
 	
 	int mlEffectId=-1;
+	[nosave] bool mbVRHapticSent=false;
 	
 	float mfDirectAmount=0;
 	float mfDirectAmountGoal=0;
