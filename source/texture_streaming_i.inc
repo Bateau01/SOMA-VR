@@ -1,8 +1,12 @@
 /* Optional S26I experiment for the verified Steam Soma.exe.
    FUN_1402de9c0 gates ready texture uploads at DAT_14080cca8 (1 GiB).
    Keep the 60 MiB/s rate and map-preload priority untouched. */
-static i32 g_s26TextureSetting=-1,g_s26TextureVerified,g_s26TextureOwned;
+static i32 g_s26TextureSetting=0,g_s26TextureVerified,g_s26TextureOwned;
 static u64* g_s26TextureBudget;
+static void s26ef_set_texture_budget(i32 enabled){
+    __atomic_store_n(&g_s26TextureSetting,enabled?1:0,__ATOMIC_RELEASE);
+}
+
 static void s26_texture_budget_policy(i32 active,u64* budget,i32* owned){
     if(!budget||!owned)return;
     if(active){
@@ -13,12 +17,12 @@ static void s26_texture_budget_policy(i32 active,u64* budget,i32* owned){
     }
 }
 static void s26_texture_streaming_step(void){
-    if(g_s26TextureSetting<0){
-        g_s26TextureSetting=0;
-        void* f=ext_fopen("hpl3vr_texture_streaming.txt","rb");
-        if(f){char c=0;if(ext_fread(&c,1,1,f)==1&&c=='1')g_s26TextureSetting=1;ext_fclose(f);}
+    /* The profile menu owns this setting. No hidden flag-file override. */
+    i32 enabled=__atomic_load_n(&g_s26TextureSetting,__ATOMIC_ACQUIRE)>0;
+    if(!enabled){
+        s26_texture_budget_policy(0,g_s26TextureBudget,&g_s26TextureOwned);
+        return;
     }
-    if(!g_s26TextureSetting)return;
     if(!g_s26TextureVerified){
         g_s26TextureVerified=1;
         u8* base=(u8*)ext_GetModuleHandleA(0);

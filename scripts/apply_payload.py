@@ -465,6 +465,22 @@ def main(inp,objp,outp):
   qoff=rva_to_file(data,qrva)
   if data[qoff:qoff+len(qexpected)]!=qexpected: raise SystemExit(f'unexpected QueryCounter call at {qrva:#x}: {data[qoff:qoff+len(qexpected)].hex()} expected {qexpected.hex()}')
   data[qoff:qoff+len(qexpected)]=b'\x90'*len(qexpected)
+ # S26EK: retire legacy hardware write-watch diagnostics. Startup must skip
+ # BOTH cross-thread arming and the current-thread DR0 self-test. The dormant
+ # frustum-watch hotkey must also bypass its entire arming path. Resolution
+ # normalization before this block and all rendering hooks remain unchanged.
+ # The periodic watch otherwise suspends every game thread every 300 XR frames.
+ watch_patches = [
+  (0xA386, bytes.fromhex('7418'), b'\x90\x90', 'startup watch branch'),
+  (0xB6F8, bytes.fromhex('488b0549590300'), rel32(0xB6F8,0xB722,0xE9)+b'\x90\x90', 'periodic watch bypass'),
+  (0xBED0, bytes.fromhex('803d7601030000'), rel32(0xBED0,0xB063,0xE9)+b'\x90\x90', 'frustum watch hotkey bypass'),
+  (0x1990, bytes.fromhex('41574156'), bytes.fromhex('31c0c390'), 'retired ArmWatchAllThreads'),
+ ]
+ for wrva, expected, replacement, label in watch_patches:
+  woff=rva_to_file(data,wrva)
+  if data[woff:woff+len(expected)]!=expected: raise SystemExit(f'unexpected {label} at {wrva:#x}: {data[woff:woff+len(expected)].hex()}')
+  assert len(expected)==len(replacement)
+  data[woff:woff+len(expected)]=replacement
  # H15 tracked-hand calibration defaults. These are original P2 data values, not code.
  # g_handSpread: 0.18 -> 0.20. H10 interprets (spread-0.18) as tracked-hand outward offset.
  spoff=rva_to_file(data,0x2A218)

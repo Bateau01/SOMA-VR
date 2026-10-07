@@ -6,4 +6,4 @@
 - **MinHook:** Tsuda Kageyu and contributors, including the disassembler notices. Used by the native hook implementation. See `runtime/licenses/MinHook-LICENSE.txt` and https://github.com/TsudaKageyu/minhook.
 - **FMOD Ex:** Firelight Technologies. The adapter uses the runtime from the user's SOMA installation. The proprietary runtime and development SDK are not included.
 
-The mod's legacy base DLL and injector are supplied from the existing project. Available historical C++ snapshots are included separately. Their exact build provenance is described in `docs/PROVENANCE.json` and `docs/BUILD.md`.
+The mod's legacy base DLL and injector are supplied from the existing project. Historical C++ snapshots are not included in this archive. Their exact build provenance is described in `docs/PROVENANCE.json` and `docs/BUILD.md`.

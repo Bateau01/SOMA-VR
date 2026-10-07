@@ -283,9 +283,16 @@ class cScrPropTool : iScrProp, iScrProp_Interface
 		mBaseObj.SetStaticPhysics(false);
 
 		tString sToolName = mBaseObj.GetName();
+        tString gripProfile=sToolName;
+        cVector3f gripScale=mBaseObj.GetOnLoadScale();
+        if(sToolName=="ARK" && cMath_Abs(gripScale.x-0.804669f)<0.0001f &&
+           cMath_Abs(gripScale.y-0.804669f)<0.0001f && cMath_Abs(gripScale.z-0.804669f)<0.0001f)
+            gripProfile="ARK@Phi";
+        cScript_RunGlobalFunc("VRCOMFORT","GRIPMODEL",gripProfile);
 		cScript_RunGlobalFunc("VROMNICHIP", sToolName, "B");
 		iPhysicsBody@ pBody = mBaseObj.GetMainBody();
 		cScript_RunGlobalFunc("VROMNICHIP", sToolName, "E");
+        cScript_RunGlobalFunc("VRCOMFORT","GRIPMODEL","END");
 		if (pBody is null) return false;
 
 		pBody.SetCollide(true);

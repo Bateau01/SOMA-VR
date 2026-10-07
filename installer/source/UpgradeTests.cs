@@ -1,4 +1,4 @@
-using System;using System.IO;using System.Linq;
+﻿using System;using System.IO;using System.Linq;
 public static class UpgradeTests {
  public static int Main(string[] a){try{
  string root=Path.GetFullPath(a[0]);Directory.CreateDirectory(root);
@@ -10,8 +10,8 @@ public static class UpgradeTests {
  foreach(string name in retired)if(File.Exists(Path.Combine(root,name)))throw new Exception("Obsolete release notes retained: "+name);
  if(File.ReadAllText(Path.Combine(root,"hpl3vr_frame_finger_rest.dat"))!="personal calibration")throw new Exception("Calibration overwritten");
  if(!File.Exists(Path.Combine(root,"hpl3vr_vr_settings.ini")))throw new Exception("Missing settings");
- if(Engine.Load(root).Version!="1.04-S26EE")throw new Exception("Wrong version");
- Console.WriteLine("PASS: S26DD to 1.04-S26EE removes all "+retired.Length+" unchanged managed release documents; settings remain.");
+ if(Engine.Load(root).Version!="1.05-S26EM")throw new Exception("Wrong version");
+ Console.WriteLine("PASS: S26DD to 1.05-S26EM removes all "+retired.Length+" unchanged managed release documents; settings remain.");
  return 0;}catch(Exception e){Console.WriteLine(e);return 1;}}
 }
 

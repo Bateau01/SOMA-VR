@@ -1,4 +1,21 @@
-# Read-only PE comparison. No signature scanning, address guessing, or game mutation.
+﻿# Read-only PE comparison. No signature scanning, address guessing, or game mutation.
+function Get-SomaLaunchReport([string]$Path, [string]$ReferencePath) {
+    $report = Get-SomaExecutableReport $Path $ReferencePath
+    $dllName = 'hpl3vr.dll'
+    $edition = 'Steam engine layout'
+    if ($report.sha256 -eq '395cd54830c8e66e22166e71ac6fe95fd3bb5433b898737836744a6d178a0a6a') {
+        # Exact executable identity selects a separately compiled native port.
+        # Do not accept a merely similar layout against the Steam reference.
+        $report.status = 'VerifiedExecutable'
+        $report.differences = @()
+        $report.scope = 'Exact Epic/GOG executable identity. Runtime validation is separate from this check.'
+        $dllName = 'hpl3vr-store.dll'
+        $edition = 'Epic / GOG engine layout'
+    }
+    $report | Add-Member -NotePropertyName runtime_dll -NotePropertyValue $dllName
+    $report | Add-Member -NotePropertyName edition -NotePropertyValue $edition
+    return $report
+}
 function Get-SomaSha256([byte[]]$Bytes) {
     $sha = [Security.Cryptography.SHA256]::Create()
     try { return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','').ToLowerInvariant() }

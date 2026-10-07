@@ -2073,6 +2073,7 @@ static void h5755gh_apply_raw_head_translation(u8* C,const float* q){
 static u8 g_s26nPhiRemote,g_s26nPhiArmed[2],g_s26nPhiPressed[2];
 static void s26_refresh_native_held_pose(void);
 static void s26_texture_streaming_step(void);
+static void s26ef_set_texture_budget(i32 enabled);
 void __attribute__((ms_abi,noinline,used)) h5753h_update_view_detour(void* camera){
     g_h5753hDetourCalls++;
     s26_texture_streaming_step();
@@ -6521,13 +6522,24 @@ static i32 h557_ensure_guard_shapes(i32 hand);
 static u32 g_h545VisualProxyFrames[2];
 #include "controller_policy_u.inc"
 #include "skeletal_q.inc"
+static u8 g_s26efHolsterLatch[2];
+static u32 g_s26efHolsterSeed[2];
+static u32 (__attribute__((ms_abi)) *p_s26efGripThread)(void);
+static i32 s26ef_holster_seed_active(i32 hand){
+    u32 owner=__atomic_load_n(&g_s26efHolsterSeed[hand],__ATOMIC_ACQUIRE);
+    return owner&&p_s26efGripThread&&owner==p_s26efGripThread();
+}
+static float g_s26efHolsterCurl[2][5];
+static float g_s26ejHolsterJoint[2][5][4];static u8 g_s26ejHolsterJointValid[2];
 static float h10_raw_finger_input(i32 hand,i32 finger){
     if(hand<0||hand>1||finger<0||finger>4)return 0.0f;
+    if(s26ef_holster_seed_active(hand))return g_s26efHolsterCurl[hand][finger];
     float cv[4];if(s26q_finger_values(hand,finger,cv))return finger==0?(cv[1]+cv[2])*0.5f:(cv[1]+cv[2]+cv[3])/3.0f;
     float squeeze=g_lastSqueezeActive[hand]?clamp01(g_lastSqueeze[hand]):0.0f;float trigger=g_lastTriggerActive[hand]?clamp01(g_lastTrigger[hand]):0.0f;u32 touch=g_lastTouchActive[hand]?g_lastTriggerTouch[hand]:(trigger>0.01f);
     if(finger==0)return squeeze*0.55f;if(finger==1){if(touch&&trigger<0.08f)trigger=0.08f;return trigger;}return squeeze;
 }
 static float s26q_raw_joint(i32 hand,i32 finger,i32 depth){
+    if(hand>=0&&hand<2&&finger>=0&&finger<5&&s26ef_holster_seed_active(hand))return g_s26ejHolsterJointValid[hand]?g_s26ejHolsterJoint[hand][finger][depth<0?0:(depth>3?3:depth)]:g_s26efHolsterCurl[hand][finger];
     float cv[4];if(!s26q_finger_values(hand,finger,cv))return h10_raw_finger_input(hand,finger);
     i32 chain=h10_chain_for_finger(hand,finger),len=chain>=0?g_chainLen[hand][chain]:4;
     i32 d=depth;if(finger!=0&&len<4)d+=4-len;if(d<0)d=0;if(d>3)d=3;return cv[d];
@@ -7389,7 +7401,11 @@ static void controller_setup(void* self) {
         if(i==0&&!ok(suggestRes[i])&&hapticActionsCreated){sb.countSuggestedBindings=21u;sb.suggestedBindings=oculusBinds;suggestRes[i]=pSuggestBindings(inst,&sb);if(ok(suggestRes[i])){hapticActionsCreated=0;ext_Log(">>> S6-HANDS5756AC HAPTIC BINDING FALLBACK: 23-binding Oculus suggestion rejected, exact pre-haptics 21-input suggestion accepted; haptics disabled without changing controller input");}}
     }
     ext_Log(">>> S6-HANDS5756AC BINDING SUGGESTIONS: Oculus pose+squeeze+trigger+touch+sticks+clicks + face controls%s %d | Index gameplay bindings %d | Vive gameplay %d | WMR gameplay %d | Simple limited grab/menu %d",hapticActionsCreated?" + per-hand haptic output":"",suggestRes[0],suggestRes[1],suggestRes[2],suggestRes[3],suggestRes[4]);
+    /* New action setup: do not reuse handles from a destroyed XR instance. */
+    zero_bytes(g_s26dlRestTouchAction,sizeof(g_s26dlRestTouchAction));
+    g_s26dlRestBindings=0;
     s26dg_frame_binding(inst,oculusBinds,oculusBindCount);
+    if(indexPaths&&ok(suggestRes[1]))suggestRes[1]=s26ee_index_rest_binding(inst,indexBinds,oculusBindCount);
     if (!g_s26nProfiles[5]&&!ok(suggestRes[0])&&!(indexPaths&&ok(suggestRes[1]))&&!coreAccepted[0]&&!coreAccepted[1]&&!coreAccepted[2]) { ext_Log(">>> S26N: no supported input profile accepted; input setup disabled"); return; }
     s26s_eye_binding(self,inst,sess);
     s26q_tracker_binding(self,inst,sess);
@@ -10066,77 +10082,27 @@ static const void* g_h5755egProfileWorld;
 static u64 g_h5755egRenderTotalSum,g_h5755egRenderTotalMax,g_h5755egRenderSceneSum,g_h5755egRenderSceneMax,g_h5755egRenderXrSum,g_h5755egRenderXrMax;
 static u32 g_h5755egRenderSamples;
 
+static void h5755eg_prof_try_init(void);
+
 static void h5755eg_prof_try_init(void){
-    /* H57.55EM: EG/EI QPC attribution was diagnostic scaffolding.  Leaving a
-       QueryPerformanceCounter call around nearly every 60-Hz subsystem and
-       120-Hz render boundary is inappropriate in production. */
-    g_h5755egProfInitAttempted=1;g_h5755egQpcFreq=0;p_h5755egQpc=0;p_h5755egQpf=0;p_h5755egGetCurrentThreadId=0;
+    if(g_h5755egProfInitAttempted)return;g_h5755egProfInitAttempted=1;
+    void* k=ext_GetModuleHandleA("kernel32.dll");if(!k)return;
+    p_h5755egQpc=(PFN_H5755EG_QPC)ext_GetProcAddress(k,"QueryPerformanceCounter");
+    p_h5755egQpf=(PFN_H5755EG_QPC)ext_GetProcAddress(k,"QueryPerformanceFrequency");
+    p_h5755egGetCurrentThreadId=(PFN_H5755EG_GetCurrentThreadId)ext_GetProcAddress(k,"GetCurrentThreadId");
+    if(!p_h5755egQpc||!p_h5755egQpf||!p_h5755egQpf(&g_h5755egQpcFreq)||g_h5755egQpcFreq<=0)g_h5755egQpcFreq=0;
 }
 static u64 h5755eg_tick(void){return 0;}
-
-/* H57.55EM: residual Theta CPU attribution is deliberately coarse: six QPC
-   calls per stereoscopic frame around only the three P2 wrapper passes.  This
-   distinguishes discarded-prime cost from real right/left native rendering
-   without restoring EG's dozens of hot-path timers. */
-
 static u64 h5755em_outer_tick(void){return 0;}
 static void h5755em_outer_add(i32 pass,u64 t0){(void)pass;(void)t0;}
-static double h5755eg_ms(u64 t);
-static void h5755eg_phys_add_ticks(i32 b,u64 d){if(b<0||b>=H5755EG_P_COUNT||!d)return;g_h5755egPhysSum[b]+=d;g_h5755egPhysCalls[b]++;if(d>g_h5755egPhysMax[b])g_h5755egPhysMax[b]=d;g_h5755eiPhysFrame[b]+=d;}
-static void h5755ei_phys_frame_begin(void){for(i32 i=0;i<H5755EG_P_COUNT;++i)g_h5755eiPhysFrame[i]=0;}
-static void h5755ei_phys_spike_finish(const void* world){
-    if(g_h5755egQpcFreq<=0||g_h5755eiPhysSpikeLogs>=32u)return;u64 pre=g_h5755eiPhysFrame[H5755EG_P_PRE],nat=g_h5755eiPhysFrame[H5755EG_P_NATIVE],post=g_h5755eiPhysFrame[H5755EG_P_POST],total=pre+nat+post;
-    if(h5755eg_ms(total)<4.0&&h5755eg_ms(pre)<4.0&&h5755eg_ms(nat)<4.0&&h5755eg_ms(post)<4.0)return;g_h5755eiPhysSpikeLogs++;
-    ext_Log(">>> S6-HANDS5755EI CPU SPIKE PHYS #%u: family %s world %p step %u TOTAL %.3f ms | pre %.3f nativeNewton %.3f post %.3f | rocker %.3f cavity %.3f root %.3f rig %.3f freeCurl %.3f AABB %.3f authored %.3f held %.3f | postLoose %.3f contact %.3f postHeld %.3f | pairQueries %u",g_h5755eiPhysSpikeLogs,h5748_family_name((i32)g_h5748Family),world,g_h14PhysicsSteps,h5755eg_ms(total),h5755eg_ms(pre),h5755eg_ms(nat),h5755eg_ms(post),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_ROCKER]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_CAVITY]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_ROOT]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_RIG]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_FREECURL]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_AABB]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_AUTH]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_HELD]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_POSTLOOSE]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_POSTCONTACT]),h5755eg_ms(g_h5755eiPhysFrame[H5755EG_P_POSTHELD]),g_h522PairUsed[0]+g_h522PairUsed[1]);
-}
+static void h5755eg_phys_add_ticks(i32 b,u64 d){if(b>=0&&b<H5755EG_P_COUNT&&d)g_h5755eiPhysFrame[b]+=d;}
+static void h5755ei_phys_frame_begin(void){}
+static void h5755ei_phys_spike_finish(const void* world){(void)world;}
 static void h5755eg_phys_add_since(i32 b,u64 t0){if(!t0)return;u64 t1=h5755eg_tick();if(t1>t0)h5755eg_phys_add_ticks(b,t1-t0);}
-static double h5755eg_ms(u64 t){return g_h5755egQpcFreq>0?((double)t*1000.0/(double)g_h5755egQpcFreq):0.0;}
-static double h5755eg_phys_avg_frame(i32 b){return g_h5755egPhysSamples?h5755eg_ms(g_h5755egPhysSum[b])/(double)g_h5755egPhysSamples:0.0;}
-static double h5755eg_phys_max_ms(i32 b){return h5755eg_ms(g_h5755egPhysMax[b]);}
-static void h5755eg_phys_reset(const void* world){
-    for(i32 i=0;i<H5755EG_P_COUNT;++i){g_h5755egPhysSum[i]=0;g_h5755egPhysMax[i]=0;g_h5755egPhysCalls[i]=0;}
-    g_h5755egPhysSamples=0;g_h5755egPairSum=0;g_h5755egPairMax=0;g_h5755egProfileWorld=world;
-}
-static void h5755eg_phys_finish_sample(const void* world){
-    if(g_h5755egQpcFreq<=0)return;
-    if(g_h5755egProfileWorld!=world){h5755eg_phys_reset(world);return;}
-    g_h5755egPhysSamples++;
-    u32 pairs=g_h522PairUsed[0]+g_h522PairUsed[1];g_h5755egPairSum+=pairs;if(pairs>g_h5755egPairMax)g_h5755egPairMax=pairs;
-    if(g_h5755egPhysSamples<240u)return;
-    u32 tid=p_h5755egGetCurrentThreadId?p_h5755egGetCurrentThreadId():0u;
-    double postOther=h5755eg_phys_avg_frame(H5755EG_P_POST)-h5755eg_phys_avg_frame(H5755EG_P_POSTLOOSE)-h5755eg_phys_avg_frame(H5755EG_P_POSTCONTACT)-h5755eg_phys_avg_frame(H5755EG_P_POSTHELD);if(postOther<0.0)postOther=0.0;
-    g_h5755egPhysReports++;
-    ext_Log(">>> S6-HANDS5755EG CPU PROFILE PHYS #%u: family %s world %p tid %u | TOTAL avg %.3f ms (pre %.3f + nativeNewton %.3f + post %.3f) | max pre/native/post %.3f/%.3f/%.3f ms | pairQueries avg %.1f max %u | idle L/R %u/%u grip L/R %u/%u",
-        g_h5755egPhysReports,h5748_family_name((i32)g_h5748Family),world,tid,
-        h5755eg_phys_avg_frame(H5755EG_P_PRE)+h5755eg_phys_avg_frame(H5755EG_P_NATIVE)+h5755eg_phys_avg_frame(H5755EG_P_POST),
-        h5755eg_phys_avg_frame(H5755EG_P_PRE),h5755eg_phys_avg_frame(H5755EG_P_NATIVE),h5755eg_phys_avg_frame(H5755EG_P_POST),
-        h5755eg_phys_max_ms(H5755EG_P_PRE),h5755eg_phys_max_ms(H5755EG_P_NATIVE),h5755eg_phys_max_ms(H5755EG_P_POST),
-        (double)g_h5755egPairSum/(double)g_h5755egPhysSamples,g_h5755egPairMax,
-        (u32)g_h5755efHandIdleParked[0],(u32)g_h5755efHandIdleParked[1],g_h14GripBody[0]?1u:0u,g_h14GripBody[1]?1u:0u);
-    ext_Log(">>> S6-HANDS5755EG CPU PROFILE MOD #%u: per-physics-frame avg rocker %.3f cavity %.3f rootServo %.3f rig %.3f freeCurl %.3f acquireAABB %.3f authoredScan %.3f heldTarget %.3f | post loose %.3f contact %.3f held %.3f other %.3f ms | max freeCurl/AABB/held %.3f/%.3f/%.3f",
-        g_h5755egPhysReports,
-        h5755eg_phys_avg_frame(H5755EG_P_ROCKER),h5755eg_phys_avg_frame(H5755EG_P_CAVITY),h5755eg_phys_avg_frame(H5755EG_P_ROOT),h5755eg_phys_avg_frame(H5755EG_P_RIG),h5755eg_phys_avg_frame(H5755EG_P_FREECURL),
-        h5755eg_phys_avg_frame(H5755EG_P_AABB),h5755eg_phys_avg_frame(H5755EG_P_AUTH),h5755eg_phys_avg_frame(H5755EG_P_HELD),
-        h5755eg_phys_avg_frame(H5755EG_P_POSTLOOSE),h5755eg_phys_avg_frame(H5755EG_P_POSTCONTACT),h5755eg_phys_avg_frame(H5755EG_P_POSTHELD),postOther,
-        h5755eg_phys_max_ms(H5755EG_P_FREECURL),h5755eg_phys_max_ms(H5755EG_P_AABB),h5755eg_phys_max_ms(H5755EG_P_HELD));
-    h5755eg_phys_reset(world);
-}
-static void h5755eg_render_finish(u64 t0,u64 xrTicks,u64 sceneTicks){
-    if(!t0||g_h5755egQpcFreq<=0)return;u64 t1=h5755eg_tick();if(t1<=t0)return;u64 total=t1-t0;
-    if(__atomic_load_n(&g_h5755bhPresentationState,__ATOMIC_ACQUIRE)!=H5755BH_GAMEPLAY_VR)return;
-    if(g_h5755eiRenderSpikeLogs<24u&&(h5755eg_ms(sceneTicks)>=4.0||h5755eg_ms(total)>=8.0)){g_h5755eiRenderSpikeLogs++;ext_Log(">>> S6-HANDS5755EI CPU SPIKE RENDER #%u: family %s frame %u totalWall %.3f ms | P2 d_Render %.3f ms | XR begin/wait/pose %.3f ms | XR component is wall time, not necessarily busy CPU",g_h5755eiRenderSpikeLogs,h5748_family_name((i32)g_h5748Family),g_frameCounter,h5755eg_ms(total),h5755eg_ms(sceneTicks),h5755eg_ms(xrTicks));}
-    g_h5755egRenderTotalSum+=total;if(total>g_h5755egRenderTotalMax)g_h5755egRenderTotalMax=total;
-    g_h5755egRenderXrSum+=xrTicks;if(xrTicks>g_h5755egRenderXrMax)g_h5755egRenderXrMax=xrTicks;
-    g_h5755egRenderSceneSum+=sceneTicks;if(sceneTicks>g_h5755egRenderSceneMax)g_h5755egRenderSceneMax=sceneTicks;
-    g_h5755egRenderSamples++;if(g_h5755egRenderSamples<240u)return;
-    u32 tid=p_h5755egGetCurrentThreadId?p_h5755egGetCurrentThreadId():0u;g_h5755egRenderReports++;
-    ext_Log(">>> S6-HANDS5755EG CPU PROFILE RENDER #%u: family %s tid %u calls %u | detour wall avg/max %.3f/%.3f ms | P2 d_Render avg/max %.3f/%.3f ms | XR begin/wait/pose avg/max %.3f/%.3f ms | comparison diagnostic; XR wait is wall time, not necessarily busy CPU",
-        g_h5755egRenderReports,h5748_family_name((i32)g_h5748Family),tid,g_h5755egRenderSamples,
-        h5755eg_ms(g_h5755egRenderTotalSum)/(double)g_h5755egRenderSamples,h5755eg_ms(g_h5755egRenderTotalMax),
-        h5755eg_ms(g_h5755egRenderSceneSum)/(double)g_h5755egRenderSamples,h5755eg_ms(g_h5755egRenderSceneMax),
-        h5755eg_ms(g_h5755egRenderXrSum)/(double)g_h5755egRenderSamples,h5755eg_ms(g_h5755egRenderXrMax));
-    g_h5755egRenderTotalSum=g_h5755egRenderTotalMax=g_h5755egRenderSceneSum=g_h5755egRenderSceneMax=g_h5755egRenderXrSum=g_h5755egRenderXrMax=0;g_h5755egRenderSamples=0;
-}
+static void h5755eg_phys_reset(const void* world){g_h5755egProfileWorld=world;}
+static void h5755eg_phys_finish_sample(const void* world){(void)world;}
+
+static void h5755eg_render_finish(u64 t0,u64 xrTicks,u64 sceneTicks){(void)t0;(void)xrTicks;(void)sceneTicks;}
 /* H57.55GL: hardware-proven cFrustum spatial-origin repair.
    GK hardware mapped +0x38 as the exact authored-camera vector at every 2.5 cm
    head-displacement bucket while +0x158's rigid view center followed the HMD,
@@ -10171,6 +10137,7 @@ static i32 h5755gl_view_is_rigid_enough(const u8* F){
 #include "shadow_leases_dm.inc"
 #include "light_evidence_dn.inc"
 #include "light_projection_do.inc"
+#include "foveation_ef.inc"
 void __attribute__((ms_abi,noinline,used)) s6_h5755gn_scene_entry_wrapper(void* a,float b,void* c,void* d,void* e,void* f,u8 g,void* h){
     PFN_H5750A_Render* slot=(PFN_H5750A_Render*)(p2_base()+H5750V_P2_ORIGINAL_RENDER_SLOT_RVA);PFN_H5750A_Render render=0;if(h20_mem_readable(slot,sizeof(*slot)))render=__atomic_load_n(slot,__ATOMIC_ACQUIRE);
     if(!render)return;
@@ -10206,7 +10173,7 @@ void __attribute__((ms_abi,noinline,used)) s6_h5755gn_scene_entry_wrapper(void* 
     i32 dmLive=live&&dmStamp&&c==__atomic_load_n(p2_main_frustum_ptr(),__ATOMIC_ACQUIRE);
     u32 dmLeases=s26dm_shadow_begin(dmLive,a,d,c,g_frameCounter,dmNative,dmEye);
     void* doPreviousRenderer=g_s26doLightRenderer;void* doPreviousFrustum=g_s26doLightFrustum;
-    if(dmLive){s26do_install_light_setup();g_s26doLightRenderer=a;g_s26doLightFrustum=c;}
+    if(dmLive){s26ef_install_foveation();s26do_install_light_setup();g_s26doLightRenderer=a;g_s26doLightFrustum=c;}
     render(a,b,c,d,e,f,g,h);
     g_s26doLightRenderer=doPreviousRenderer;g_s26doLightFrustum=doPreviousFrustum;
     s26dm_shadow_end(dmLive,a,d,c,g_frameCounter,dmNative,dmEye);
@@ -11365,6 +11332,7 @@ static void h576aa_inv_forget_body(const void* raw){
 }
 static void h576aa_inv_reset(void){zero_bytes(g_h576aaInv,sizeof(g_h576aaInv));g_h576aaInvCount=0;g_h576aaRetrievedRaw=0;g_h576aaRetrievedOwner=0;g_h576aaRetrievedLogical[0]=0;g_h576aaRetrievedCarrier[0]=0;g_h576aaRetrieveRequestedHand=-1;g_h576agSelectedLogical[0]=0;g_h576agPendingHand=-1;g_h576agPendingStartStep=g_h576agPendingLastStep=0;g_h576abShoulderInside[0]=g_h576abShoulderInside[1]=0;g_h576abShoulderConsumed[0]=g_h576abShoulderConsumed[1]=0;g_h576ahStowBodyInside[0]=g_h576ahStowBodyInside[1]=0;g_h576aoLeftStowArmedBody[0]=g_h576aoLeftStowArmedBody[1]=0;g_h576aoLeftStowLastInsideStep[0]=g_h576aoLeftStowLastInsideStep[1]=0;g_h576aiCortexStowPriorityBody=0;g_h576aiCortexStowPriorityHand=-1;g_h576alCortexExitOutsideSteps[0]=g_h576alCortexExitOutsideSteps[1]=0;__atomic_store_n(&g_h576alCortexReadyProtect[0],0u,__ATOMIC_RELEASE);__atomic_store_n(&g_h576alCortexReadyProtect[1],0u,__ATOMIC_RELEASE);}
 
+#include "grip_identity_el.inc"
 static const char* h576c_basename(const char* z){if(!z)return "";const char* b=z;for(const char* q=z;*q;++q)if(*q=='/'||*q=='\\')b=q+1;return b;}
 static i32 h576c_catherine_variant_file(const char* file){
     const char* b=h576c_basename(file);
@@ -11375,6 +11343,7 @@ static i32 h576c_catherine_variant_file(const char* file){
     return 0;
 }
 static void h576c_reset_created_catherine_candidates(const char* why){
+    s26el_grip_reset();
     if(g_h576cCreatedCathCount)ext_Log(">>> S6-HANDS5756T OMNITOOL ENTITY CENSUS RESET: %u Catherine creation candidate(s) retired | %s",g_h576cCreatedCathCount,why?why:"world detach");
     zero_bytes(g_h576cCreatedCath,sizeof(g_h576cCreatedCath));g_h576cCreatedCathCount=0;g_h576cCanonicalEntityName[0]=0;
 }
@@ -11709,6 +11678,8 @@ static float g_s26xPhonePulse;
 static const void *g_s26xPhoneRaw,*g_s26xPhoneCaptured,*g_s26xPhoneWorld;
 static void* g_s26xPhoneWrapper;
 static i32 s26x_phone_token(const H5730TString* command);
+
+static i32 s26el_grip_model_command(const H5730TString* command);
 static void s26x_phone_reset(void);
 
 static i32 h25_owner_kind(void* q,char* rtti,u32 cap);
@@ -11783,10 +11754,11 @@ static void s26n_mechanism_token(const H5730TString* cls,const H5730TString* fn)
 }
 static void* __attribute__((ms_abi)) h576f_get_main_body_detour(void* self){
     void* wrapper=o_h576fGetMainBodyThunk?o_h576fGetMainBodyThunk(self):0;
-    if(!wrapper||(!g_h576fCaptureScope&&!g_h576jPanelCaptureScope&&!g_h576kChipCaptureScope&&!g_h576qUpgradeOmniCaptureScope&&!g_s26HealCaptureScope&&!g_s26nMechanismCapture&&!g_s26xPhoneCapture&&!g_s26yCapture&&!g_s26ayAuxCapture))return wrapper;
+    if(!wrapper||(!g_h576fCaptureScope&&!g_h576jPanelCaptureScope&&!g_h576kChipCaptureScope&&!g_h576qUpgradeOmniCaptureScope&&!g_s26HealCaptureScope&&!g_s26nMechanismCapture&&!g_s26xPhoneCapture&&!g_s26yCapture&&!g_s26ayAuxCapture&&!g_s26elGripScope[0]))return wrapper;
     if(!p_h14GetUserData||!h20_mem_readable(wrapper,0x2f0u)){if(g_h576fCaptureScope)g_h576fCaptureRejects++;if(g_h576jPanelCaptureScope)g_h576jPanelCaptureRejects++;if(g_h576kChipCaptureScope)g_h576kChipCaptureRejects++;if(g_h576qUpgradeOmniCaptureScope)g_h576qUpgradeOmniCaptureRejects++;return wrapper;}
     const void* raw=*(const void**)((u8*)wrapper+0x2e8);void* owner=*(void**)((u8*)wrapper+0x2c0);
     if(!raw||!owner||!h20_mem_readable(owner,8u)||p_h14GetUserData(raw)!=wrapper){if(g_h576fCaptureScope)g_h576fCaptureRejects++;if(g_h576jPanelCaptureScope)g_h576jPanelCaptureRejects++;if(g_h576kChipCaptureScope)g_h576kChipCaptureRejects++;if(g_h576qUpgradeOmniCaptureScope)g_h576qUpgradeOmniCaptureRejects++;return wrapper;}
+    if(g_s26elGripScope[0])s26el_grip_body(raw,owner);
     if(g_s26yCapture){g_s26yMainRaw=raw;g_s26yMainWrapper=wrapper;g_s26yOwner=owner;}
     if(g_s26xPhoneCapture)g_s26xPhoneCaptured=raw;
     if(g_s26HealCaptureScope)g_s26HealCapturedBody=raw;
@@ -12936,6 +12908,9 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
         s26ch_bob_reset();return 0u;
     }
     if(h5748t_sso_eq(objectName,"VRCOMFORT",9u)){
+        if(h5748t_sso_eq(className,"GRIPMODEL",9u))return (u64)s26el_grip_model_command(functionName);
+
+
         if(h5748t_sso_eq(className,"FTRESET",7u)){
             if(h5748t_sso_eq(functionName,"CANCEL",6u)){__atomic_store_n(&g_s26eaResetRequest,2u,__ATOMIC_RELEASE);return 1u;}
             if(h5748t_sso_eq(functionName,"BEGIN",5u)){
@@ -12954,6 +12929,25 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
             if(g_h576mScriptRuntimePublished==1&&p2_xr_on())h5735_request_recenter("VR-settings-center");return 1u;
         }
         if(p2_xr_on()&&p2_xr_running()&&(g_h576mScriptRuntimePublished==1||(g_h576mScriptGatePublishActive&&g_h576mScriptGateAck==1))){
+            if(h5748t_sso_eq(className,"DFT",3u)){
+                if(h5748t_sso_eq(functionName,"0",1u)||h5748t_sso_eq(functionName,"1",1u)){
+                    u32 value=h5748t_sso_eq(functionName,"1",1u);
+                    if(__atomic_exchange_n(&g_s26eiDFRTiming,value,__ATOMIC_RELAXED)!=value)__atomic_fetch_add(&g_s26eiMeasureEpoch,1u,__ATOMIC_RELAXED);return 1u;
+                }return 0u;
+            }
+            if(h5748t_sso_eq(className,"DFCFG",5u)){
+                return functionName&&functionName->capacity<=15u?s26ei_dfr_config(functionName->storage,(u32)functionName->size):0u;
+            }
+            if(h5748t_sso_eq(className,"DF",2u)){
+                if(h5748t_sso_eq(functionName,"0",1u)||h5748t_sso_eq(functionName,"1",1u)){
+                    s26eg_set_foveation(h5748t_sso_eq(functionName,"1",1u));return 1u;
+                }return 0u;
+            }
+            if(h5748t_sso_eq(className,"TB",2u)){
+                if(h5748t_sso_eq(functionName,"0",1u)||h5748t_sso_eq(functionName,"1",1u)){
+                    s26ef_set_texture_budget(h5748t_sso_eq(functionName,"1",1u));return 1u;
+                }return 0u;
+            }
             if(h5748t_sso_eq(className,"F",1u)){
                 if(h5748t_sso_eq(functionName,"0",1u)||h5748t_sso_eq(functionName,"1",1u)){
                     s26dj_set_finger_tracking(h5748t_sso_eq(functionName,"1",1u));return 1u;
@@ -14241,8 +14235,12 @@ static i32 h5755hj_queue_current_zero_mass_contact(i32 hand,const float* handM){
 /* Optional S26K experiment for the verified Steam Soma.exe.
    FUN_1402de9c0 gates ready texture uploads at DAT_14080cca8 (1 GiB).
    Keep the 60 MiB/s rate and map-preload priority untouched. */
-static i32 g_s26TextureSetting=-1,g_s26TextureVerified,g_s26TextureOwned;
+static i32 g_s26TextureSetting=0,g_s26TextureVerified,g_s26TextureOwned;
 static u64* g_s26TextureBudget;
+static void s26ef_set_texture_budget(i32 enabled){
+    __atomic_store_n(&g_s26TextureSetting,enabled?1:0,__ATOMIC_RELEASE);
+}
+
 static void s26_texture_budget_policy(i32 active,u64* budget,i32* owned){
     if(!budget||!owned)return;
     if(active){
@@ -14253,12 +14251,12 @@ static void s26_texture_budget_policy(i32 active,u64* budget,i32* owned){
     }
 }
 static void s26_texture_streaming_step(void){
-    if(g_s26TextureSetting<0){
-        g_s26TextureSetting=0;
-        void* f=ext_fopen("hpl3vr_texture_streaming.txt","rb");
-        if(f){char c=0;if(ext_fread(&c,1,1,f)==1&&c=='1')g_s26TextureSetting=1;ext_fclose(f);}
+    /* The profile menu owns this setting. No hidden flag-file override. */
+    i32 enabled=__atomic_load_n(&g_s26TextureSetting,__ATOMIC_ACQUIRE)>0;
+    if(!enabled){
+        s26_texture_budget_policy(0,g_s26TextureBudget,&g_s26TextureOwned);
+        return;
     }
-    if(!g_s26TextureSetting)return;
     if(!g_s26TextureVerified){
         g_s26TextureVerified=1;
         u8* base=(u8*)ext_GetModuleHandleA(0);
@@ -14676,6 +14674,11 @@ static void h576an_restore_omni_shoulder_park(const char* why){
     if(!h576ao_hide_omni_shoulder_carrier(why)){if(g_h576bOmniWrapper&&p_h29SetGravity)p_h29SetGravity(g_h576bOmniWrapper,0);}
     g_h576anOmniShoulderRetrieveRejects++;if(g_h576anOmniShoulderRetrieveRejects<=12u)ext_Log(">>> S6-HANDS5756AQ OMNITOOL RIGHT-SHOULDER DRAW REJECT #%u: Catherine returned to hidden shoulder inventory | %s",g_h576anOmniShoulderRetrieveRejects,why?why:"draw failed");
 }
+#include "holster_grip_ef.inc"
+typedef void (__attribute__((ms_abi)) *S26EFBounds)(const void*,const float*,float*,float*);
+static S26EFBounds p_s26efBounds;
+#include "item_grips_ej.inc"
+#include "holster_runtime_ef.inc"
 static i32 h576an_try_omni_shoulder_retrieve(i32 hand){
     if(g_h576anOmniStorageMode!=H576AN_OMNI_STORAGE_RIGHT_SHOULDER||hand<0||hand>1||g_h576bOmniState!=H576B_OMNI_HOLSTER||g_h14GripBody[hand]||!g_h576cCanonicalEntityName[0])return 0;
     float gc[3],hm[16],dist=999.0f;if(!h576an_hand_near_omni_shoulder(hand,gc,hm,&dist))return 0;
@@ -14684,11 +14687,11 @@ static i32 h576an_try_omni_shoulder_retrieve(i32 hand){
     if(invoked&&g_h576anOmniShoulderRetrieveAcks!=before&&!g_h576bOmniBody)h576f_adopt_script_captured_body(g_h576cCanonicalEntityName);
     if(!invoked||g_h576anOmniShoulderRetrieveAcks==before||g_h576bOmniState!=H576B_OMNI_DRAWING||!g_h576bOmniBody){h576an_restore_omni_shoulder_park("owned/non-inserted rematerialize ACK/body capture missing");return 0;}
     const void* body=g_h576bOmniBody;if(!p_h14GetMatrix||!p_h34NewtonSetMatrix||!p_h536GetTransformCallback||!p_h14GetMass){h576an_restore_omni_shoulder_park("native transform/mass API unavailable");return 0;}
-    float bm[16];p_h14GetMatrix(body,bm);bm[12]=gc[0];bm[13]=gc[1];bm[14]=gc[2];PFN_H536_NewtonTransformCallback cb=p_h536GetTransformCallback(body);
+    float bm[16];if(!s26ef_prepare_holster(hand,1,"OmniTool",body,hm,gc,bm)){h576an_restore_omni_shoulder_park("canonical grip unavailable");return 0;}PFN_H536_NewtonTransformCallback cb=p_h536GetTransformCallback(body);
     if(!cb||!h20_mem_executable((void*)cb)){h576an_restore_omni_shoulder_park("HPL transform callback unavailable");return 0;}
     p_h34NewtonSetMatrix(body,bm);cb(body,bm,0);float z[4]={0,0,0,0};if(p_h14SetVelocity)p_h14SetVelocity(body,z);if(p_h14SetOmega)p_h14SetOmega(body,z);
     float mass=0,ix=0,iy=0,iz=0;p_h14GetMass(body,&mass,&ix,&iy,&iz);if(mass<=0.001f){h576an_restore_omni_shoulder_park("Catherine did not become dynamic positive-mass");return 0;}
-    u32 grabs=g_h14GrabCount[hand];g_h552ContactLatchBypass[hand]=1;h14_latch(hand,body,0.0f,mass,hm,gc,0.035f,gc,0,0,0);g_h552ContactLatchBypass[hand]=0;
+    u32 grabs=g_h14GrabCount[hand];s26ef_holster_latch_begin(hand);h14_latch(hand,body,0.0f,mass,hm,gc,0.035f,gc,0,0,0);s26ef_holster_latch_end(hand);
     if(g_h14GrabCount[hand]==grabs||g_h14GripBody[hand]!=body){h576an_restore_omni_shoulder_park("HQ latch rejected shoulder draw");return 0;}
     g_h576anOmniShoulderRetrieveCommits++;g_h576anOmniShoulderRetrieveArmed[hand]=0;
     ext_Log(">>> S6-HANDS5756AQ OMNITOOL RIGHT-SHOULDER RETRIEVE %s #%u: owned Catherine body %p rematerialized from hidden shoulder inventory -> dynamic -> HQ physical hold from fresh Grip | standard HQ latch CONFIRM haptic queued; no map/slot/story callback fired",hand==0?"L":"R",g_h576anOmniShoulderRetrieveCommits,body);return 1;
@@ -14751,19 +14754,20 @@ static void h576ag_cancel_pending_retrieve(const char* why){
     if(g_h576agPendingCancels<=24u)ext_Log(">>> S6-HANDS5756AG SHOULDER RETRIEVE CANCEL %s #%u: selected '%s' returned to logical stow | %s",hand==0?"L":"R",g_h576agPendingCancels,g_h576agSelectedLogical,why?why:"cancel");
     h576ag_clear_pending_native();
 }
-static i32 h576ag_finish_shoulder_retrieve(i32 hand,const float* gc,const float* hm,u32 beforeSerial){
+static i32 h576ag_finish_shoulder_retrieve(i32 hand,const float* gcIn,const float* hmIn,u32 beforeSerial){
     if(hand<0||hand>1||g_h576aaRetrievedSerial==beforeSerial||!g_h576aaRetrievedRaw)return 0;
+    float gc[3],hm[16];h10_copy_f(gc,gcIn,3);h10_copy_f(hm,hmIn,16);
     const void* body=g_h576aaRetrievedRaw;H576AAInvItem* it=h576aa_inv_find_body(body);
     if(!it||!h576c_ci_streq(it->logical,g_h576agSelectedLogical)){g_h576aaShoulderRetrieveMisses++;h576ag_clear_pending_native();return 0;}
     /* BW: another hand may have acquired the newly active body while this
        request was pending. A failed draw must not hide that legitimate hold. */
     if(g_h14GripBody[1-hand]==body){g_h576aaShoulderRetrieveMisses++;h576ag_clear_pending_native();return 0;}
     if(it->stowed||!p_h14GetMatrix||!p_h34NewtonSetMatrix||!p_h536GetTransformCallback||!p_h14GetMass){g_h576aaShoulderRetrieveMisses++;if(!it->stowed)h576aa_commit_stow(body,hand);h576ag_clear_pending_native();return 0;}
-    float bm[16];p_h14GetMatrix(body,bm);bm[12]=gc[0];bm[13]=gc[1];bm[14]=gc[2];PFN_H536_NewtonTransformCallback cb=p_h536GetTransformCallback(body);
+    float bm[16];if(!s26ef_prepare_holster(hand,0,it->logical,body,hm,gc,bm)){g_h576aaShoulderRetrieveMisses++;h576aa_commit_stow(body,hand);h576ag_clear_pending_native();return 0;}PFN_H536_NewtonTransformCallback cb=p_h536GetTransformCallback(body);
     if(!cb||!h20_mem_executable((void*)cb)){g_h576aaShoulderRetrieveMisses++;h576aa_commit_stow(body,hand);h576ag_clear_pending_native();return 0;}
     p_h34NewtonSetMatrix(body,bm);cb(body,bm,0);float z[4]={0,0,0,0};if(p_h14SetVelocity)p_h14SetVelocity(body,z);if(p_h14SetOmega)p_h14SetOmega(body,z);
     float mass=0,ix=0,iy=0,iz=0;p_h14GetMass(body,&mass,&ix,&iy,&iz);if(mass<=0.001f){g_h576aaShoulderRetrieveMisses++;h576aa_commit_stow(body,hand);h576ag_clear_pending_native();return 0;}
-    u32 grabs=g_h14GrabCount[hand];g_h552ContactLatchBypass[hand]=1;h14_latch(hand,body,0.0f,mass,hm,gc,0.035f,gc,0,0,0);g_h552ContactLatchBypass[hand]=0;
+    u32 grabs=g_h14GrabCount[hand];s26ef_holster_latch_begin(hand);h14_latch(hand,body,0.0f,mass,hm,gc,0.035f,gc,0,0,0);s26ef_holster_latch_end(hand);
     if(g_h14GrabCount[hand]==grabs||g_h14GripBody[hand]!=body){g_h576aaShoulderRetrieveMisses++;if(g_h576aaShoulderRetrieveMisses<=12u)ext_Log(">>> S6-HANDS5756AG SHOULDER RETRIEVE LATCH MISS #%u %s: logical '%s' carrier '%s' body %p matured but HQ latch rejected; returning item to shoulder",g_h576aaShoulderRetrieveMisses,hand==0?"L":"R",it->logical,it->carrier,body);h576aa_commit_stow(body,hand);h576ag_clear_pending_native();return 0;}
     it->stowed=0;g_h576aaShoulderRetrieveCommits++;g_h576agPendingBodyWins++;h576ac_queue_haptic(hand,H576AC_HAPTIC_CONFIRM);ext_Log(">>> S6-HANDS5756AG LEFT-SHOULDER RETRIEVE %s #%u: logical '%s' carrier '%s' exact body %p entered HQ physical hold after selected-carrier maturation | no map use callback fired",hand==0?"L":"R",g_h576aaShoulderRetrieveCommits,it->logical,it->carrier,body);h576ag_clear_pending_native();return 1;
 }
@@ -18885,6 +18889,10 @@ static void h14_latch(i32 hand,const void* body,float gap,float mass,const float
         // is H18's proxy-surface point (not H19's empty-space shared contact).
         float dir[3]={contact[0]-handPoint[0],contact[1]-handPoint[1],contact[2]-handPoint[2]},handSurface[3]={handPoint[0],handPoint[1],handPoint[2]};if(h10_norm3(dir)){handSurface[0]+=dir[0]*handRadius;handSurface[1]+=dir[1]*handRadius;handSurface[2]+=dir[2]*handRadius;}h14_transform_point(invH,handSurface,g_h15GripHandAnchor[hand]);float dx=contact[0]-handSurface[0],dy=contact[1]-handSurface[1],dz=contact[2]-handSurface[2];meshGap=h10_len3(dx,dy,dz);g_h20MeshFallback[hand]=1;g_h20MeshTriangle[hand]=-1;g_h20MeshBary[hand][0]=1;g_h20MeshBary[hand][1]=g_h20MeshBary[hand][2]=0;
     }
+    if(g_s26efHolsterLatch[hand]&&!jointed){
+        h10_copy_f(g_h15GripHandAnchor[hand],contactHL,3);
+        g_h20MeshFallback[hand]=1;g_h20MeshTriangle[hand]=-1;meshGap=0;
+    }
     // H35 grab intent is evaluated against the *tracked* posed mesh when a loose
     // prop is already touching the physical hand shell. This solves the H34 case
     // where the palm collider pushes a trophy 2-4 cm away and then the rendered
@@ -18976,7 +18984,7 @@ static void h14_latch(i32 hand,const void* body,float gap,float mass,const float
        latch. That is our known-clear starting state. Never reset to an invented
        all-open pose after pair filtering. */
     for(i32 ff=0;ff<5;++ff){i32 cc=h10_chain_for_finger(hand,ff),ll=(cc>=0)?g_chainLen[hand][cc]:0;if(ll>4)ll=4;float sum=0.0f;for(i32 dd=0;dd<4;++dd){float q=(g_h545PoseValid[hand]?g_h545AppliedCurl[hand][ff][dd]:h10_raw_finger_input(hand,ff));q=clamp01(q);g_h554HeldSafeCurl[hand][ff][dd]=q;g_h554HeldLatchCurl[hand][ff][dd]=q;g_h18JointCurl[hand][ff][dd]=q;g_h18JointBlockCurl[hand][ff][dd]=q;g_h18JointValid[hand][ff][dd]=(dd<ll)?1:0;g_h18JointBlocked[hand][ff][dd]=0;g_h558BlockedClear[hand][ff][dd]=0;if(dd<ll)sum+=q;}g_h554HeldSafeValid[hand][ff]=1;g_h14ContactValid[hand][ff]=1;g_h14ContactCurl[hand][ff]=ll?sum/(float)ll:0.0f;g_h17FingerBlocked[hand][ff]=0;g_h17FingerBlockCurl[hand][ff]=1.0f;}
-    if(!jointed||g_h484ClusterGrip[hand]){h5755do_capture_held_visual_handoff(hand,body);h5755dk_seed_held_articulation(hand,gripHand,body);h5755do_arm_held_visual_handoff(hand,body);}
+    if(!jointed||g_h484ClusterGrip[hand]){h5755do_capture_held_visual_handoff(hand,body);__atomic_store_n(&g_s26efHolsterSeed[hand],g_s26efHolsterLatch[hand]&&p_s26efGripThread?p_s26efGripThread():0,__ATOMIC_RELEASE);h5755dk_seed_held_articulation(hand,gripHand,body);__atomic_store_n(&g_s26efHolsterSeed[hand],0,__ATOMIC_RELEASE);h5755do_arm_held_visual_handoff(hand,body);}
     /* H57.55DA: stale latch-probe bookkeeping deleted with the already-retired RTTI diagnostic. */
     
 }
@@ -20469,6 +20477,7 @@ static void h14_physics_step(const void* world,float dt){
     }
     s26y_rearm();
     s26x_phone_step(dt);
+
     if(!__atomic_load_n(&g_s26CutsceneHandsHidden,__ATOMIC_ACQUIRE))h576bo_terminal_pointer_step();
     if(g_h576dDockReleasePending)h576d_process_dock_release();
     if(g_h576bOmniState==H576B_OMNI_HOLSTER){

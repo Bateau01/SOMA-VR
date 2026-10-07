@@ -1,32 +1,14 @@
-# Experimental executable compatibility
+# SOMA VR compatibility — 1.05-S26EM
 
-The storefront name alone does not establish compatibility. This mod uses native function/data addresses from a specific 64-bit SOMA executable. Changing the launch command cannot adapt those addresses to a different build.
+Use the same installer and Launch-SOMA-VR.cmd for Steam, Epic or GOG. The launcher prepares the selected user's settings, uses borderless windowed mode and selects the native DLL by exact executable identity.
 
-## For GOG/Epic testers
+| Executable | SHA256 | Native DLL |
+|---|---|---|
+| Steam Windows x64 | 7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113 | hpl3vr.dll |
+| Epic / GOG Windows x64 | 395cd54830c8e66e22166e71ac6fe95fd3bb5433b898737836744a6d178a0a6a | hpl3vr-store.dll |
 
-1. Back up your game files and install the full overlay into that installation's game folder. Do not copy the Steam game executable into another edition.
-2. Run `Check-SOMA-VR-Compatibility.cmd`. This checks the executable and produces `SOMA-VR-compatibility-report.json`; it does not start/stop SOMA or inject the DLL.
-3. Send that report with your storefront and game version. It contains a filename, hashes and PE layout, not game executable contents, saves or account information.
+The supplied Epic and GOG executables are identical. Selected dependent libraries, scripts and configuration also matched. Native script/interaction fixtures passed with this engine profile. Earlier VR startup reached the main menu and Upsilon; visual gameplay confirmation is pending. Other executable layouts are not supported by assuming their addresses match. Use Check-SOMA-VR-Compatibility.cmd for a report.
 
-Results:
+The executable is sufficient for initial address mapping, but the installation was used to check dependencies and scripts and run the game. Future compatibility validation needs the matching dependencies and content, not only an EXE.
 
-- `VerifiedExecutable`: exact executable hash already used for the mod. This is not a check of the installation's other assets or dependencies.
-- `EquivalentEngineUnverified`: all compared engine sections and mapped layout match. From a command prompt in the game folder, `Launch-SOMA-VR.cmd -Experimental` opts into testing. Gameplay and storefront-specific dependencies still need validation.
-- `Incompatible`: engine bytes/layout differ. The launcher will not inject, even with `-Experimental`. The actual executable needs native analysis and a compatibility port. A report helps identify the build but is not sufficient to derive new addresses by itself.
-
-If Soma.exe is absent, the launcher checks Soma_NoSteam.exe. To select explicitly:
-
-```bat
-Check-SOMA-VR-Compatibility.cmd -Executable Soma_NoSteam.exe
-Launch-SOMA-VR.cmd -Executable Soma_NoSteam.exe -Experimental
-```
-
-Do not rename an executable to bypass compatibility: its contents are checked. No storefront installation is considered supported merely because a process can be launched or a DLL loaded. The GOG and Epic builds have not been tested.
-
-## What the comparison does
-
-The tested full SHA256 is accepted. For experimental equivalents, the comparison requires the same architecture, PE characteristics, optional-header layout (except checksum and certificate-table location), section headers, and raw content of every non-resource section. Resource bytes are excluded but their section layout must match. This deliberately rejects builds with shifted native code/data rather than guessing addresses. Script/asset and dependency equivalence is not proved by this comparison.
-
-## Settings file
-
-`hpl3vr_vr_settings.ini` is shipped at the game root with clean defaults and in `defaults` for missing-file restoration. Keep your customized root copy when updating. Replacing it during extraction resets values contained there; user-profile menu preferences remain separate.
+DFR requires the NVIDIA OpenGL shading-rate extension plus usable eye gaze. Finger tracking accepts valid runtime joint data regardless of brand; automatic rest detection additionally needs known release signals. See SOMA_VR_FEATURES.md. Runtime motion smoothing is not controlled by this build. Linux/Proton is not validated or supported by this Windows installer.

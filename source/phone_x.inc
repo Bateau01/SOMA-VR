@@ -47,10 +47,10 @@ static i32 s26x_phone_token(const H5730TString* command){
     float pos[3],hm[16],gc[3],bm[16];if(!h14_hand_pose_raw(1,pos,hm))return 0;h15_grip_center_world(1,hm,gc);
     PFN_H536_NewtonTransformCallback cb=p_h536GetTransformCallback(g_s26xPhoneRaw);if(!cb||!h20_mem_executable((void*)cb))return 0;
     float mass=0,ix=0,iy=0,iz=0;p_h14GetMass(g_s26xPhoneRaw,&mass,&ix,&iy,&iz);if(!(mass>.001f&&mass<1.0f))return 0;
-    p_h14GetMatrix(g_s26xPhoneRaw,bm);bm[12]=gc[0];bm[13]=gc[1];bm[14]=gc[2];
+    if(!s26ef_prepare_holster(1,2,"Phone",g_s26xPhoneRaw,hm,gc,bm))return 0;
     p_h34NewtonSetMatrix(g_s26xPhoneRaw,bm);cb(g_s26xPhoneRaw,bm,0);
     float zero[4]={0,0,0,0};if(p_h14SetVelocity)p_h14SetVelocity(g_s26xPhoneRaw,zero);if(p_h14SetOmega)p_h14SetOmega(g_s26xPhoneRaw,zero);
-    g_h552ContactLatchBypass[1]=1;h14_latch(1,g_s26xPhoneRaw,0,mass,hm,gc,.035f,gc,0,0,0);g_h552ContactLatchBypass[1]=0;
+    s26ef_holster_latch_begin(1);h14_latch(1,g_s26xPhoneRaw,0,mass,hm,gc,.035f,gc,0,0,0);s26ef_holster_latch_end(1);
     if(g_h14GripBody[1]!=g_s26xPhoneRaw)return 0;
     g_s26xPhoneRequest=0;g_s26xPhonePending=0;g_s26xPhoneTapArmed[0]=g_s26xPhoneTapArmed[1]=0;
     h576ac_queue_haptic(1,H576AC_HAPTIC_CONFIRM);ext_Log(">>> S26X PHONE: right-hand retrieval committed; screen tap required to answer");return 1;
@@ -62,10 +62,11 @@ static i32 s26x_phone_hit(float x,float y,float z,float radius,i32* armed){
     float distance=y-.00689458f;
     if(distance>radius+.025f){*armed=1;return 0;}
     if(distance<-.004f){*armed=0;return 0;}
-    if(distance>radius+.003f)return 0;
-    i32 ready=*armed;*armed=0;
-    if(!ready||v<.6f||v>.775f)return 0;
-    return u>=.05f&&u<=.5f?1:(u>=.525f&&u<=.975f?2:0);
+    if(distance>radius+.012f)return 0;
+    /* Keep the approach armed when a light touch lands just outside a button.
+       Sliding onto Accept must not require pulling completely away first. */
+    i32 hit=v>=.6f&&v<=.775f?(u>=.05f&&u<=.5f?1:(u>=.525f&&u<=.975f?2:0)):0;
+    if(!hit||!*armed)return 0;*armed=0;return hit;
 }
 static void s26x_phone_grip(i32 valid,i32 occupied,i32 active,float squeeze){
     if(!valid||occupied||!active){g_s26xPhoneGripArmed=0;g_s26xPhoneRequest=0;return;}

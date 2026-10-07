@@ -1,15 +1,18 @@
 {
-  "version": "S26CM",
+  "version": "1.04-S26EE",
   "soma_exe_sha256": "7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113",
   "base_payload_sha256": "f17f2048c7625705e3867c7ca9e106c3c343053deefc716e67f210ca647f74ed",
-  "runtime_dll_sha256": "0f48045c9b6ecb1dae38043cbc911b9a6091e5474b8db1829231d838f4b715c9",
-  "runtime_origin": "S26CL DLL/injector/scripts unchanged; launcher compatibility preflight and packaged settings defaults",
+  "runtime_dll_sha256": "4c478d65089a676514d49c474308dc82f22bd92f426e69e20908f98e925352f0",
+  "runtime_origin": "Unchanged S26EE baseline; source-only controller changes are NOT in this DLL",
   "personal_settings_included": false,
   "reference_rig_calibration_included": true,
   "save_files_included": false,
   "base_rebuild_status": "Exact frozen binary supplied; legacy source snapshots are reference material, not a proven byte-identical base rebuild",
   "injector_source_status": "Existing injector binary supplied; matching source has not been located",
   "upstream_commit": "01c99209bbbb33a97ea46a8e4abe029ae69e46d1",
-  "documentation_commit": "edf17e518de480d8f034496ade12e8d4bfb74e56",
-  "root_vr_settings_defaults_included": true
+  "documentation_commit": "b14b3866bbda38978ff9ed5063097475fad9240f",
+  "root_vr_settings_defaults_included": true,
+  "source_revision": "2026-10-04-controller-generalisation",
+  "legacy_snapshots_included": false,
+  "new_binary_built": false
 }

@@ -1,0 +1,419 @@
+[
+  {
+    "profile": "powerpack_1",
+    "kind": 0,
+    "asset": "entities/station/tech/powerpack/powerpack.ent",
+    "scale": "1 1 1",
+    "label": "powerpack_1",
+    "index": 1,
+    "name": "GripLab_1",
+    "file": "entities/vr/grip_lab/item_01.ent",
+    "asset_sha256": "b7fc0ca4d9154dc8cd0495b807da3e5340e914fa081ab9182bb51f9d6fea502c",
+    "position": [
+      -5.0,
+      1.22,
+      -5.0
+    ]
+  },
+  {
+    "profile": "ARK",
+    "kind": 0,
+    "asset": "entities/station/tech/ark/ark_tool.ent",
+    "scale": "1 1 1",
+    "label": "ARK",
+    "index": 2,
+    "name": "GripLab_2",
+    "file": "entities/vr/grip_lab/item_02.ent",
+    "asset_sha256": "401b8825dbcc5c4379b98f41c98e1ec0166e5aae8f115dda0055a7c8087a4469",
+    "position": [
+      -3.0,
+      1.22,
+      -5.0
+    ]
+  },
+  {
+    "profile": "Tracer_Fluid",
+    "kind": 0,
+    "asset": "entities/urban/special/00_04_tracer_fluid/tracer_fluid.ent",
+    "scale": "0.726181 0.726181 0.726181",
+    "label": "Tracer_Fluid",
+    "index": 3,
+    "name": "GripLab_3",
+    "file": "entities/vr/grip_lab/item_03.ent",
+    "asset_sha256": "9b0db38e2d2b30211791380d8699bc9ac65abe85325dfbc20cbe6bb8142cbfab",
+    "position": [
+      -1.0,
+      1.22,
+      -5.0
+    ]
+  },
+  {
+    "profile": "StunRod",
+    "kind": 0,
+    "asset": "entities/oceanbottom/tools/stunrod/stunrod.ent",
+    "scale": "1.4 1.4 1.4",
+    "label": "StunRod",
+    "index": 4,
+    "name": "GripLab_4",
+    "file": "entities/vr/grip_lab/item_04.ent",
+    "asset_sha256": "2d2ca445777309fd030ca58aa9b40fa0b9419b4151bba6850b2ffa1045b57f8b",
+    "position": [
+      1.0,
+      1.22,
+      -5.0
+    ]
+  },
+  {
+    "profile": "CortexChipTool",
+    "kind": 0,
+    "asset": "entities/station/gameplay/omnitool/brainchip.ent",
+    "scale": "0.75 0.75 0.75",
+    "label": "CortexChipTool",
+    "index": 5,
+    "name": "GripLab_5",
+    "file": "entities/vr/grip_lab/item_05.ent",
+    "asset_sha256": "b3e048ba0d94fad0699b5efa9de09d48111cd39438dd81b8f87db46b4f2b293e",
+    "position": [
+      3.0,
+      1.22,
+      -5.0
+    ]
+  },
+  {
+    "profile": "ConfigChipTool",
+    "kind": 0,
+    "asset": "entities/station/gameplay/omnitool/securitychip.ent",
+    "scale": "1 1 1",
+    "label": "ConfigChipTool",
+    "index": 6,
+    "name": "GripLab_6",
+    "file": "entities/vr/grip_lab/item_06.ent",
+    "asset_sha256": "871c3aaf2b2aadad51a569ece75f70788239d8293b43dd21f33c8e20a84f8e3b",
+    "position": [
+      5.0,
+      1.22,
+      -5.0
+    ]
+  },
+  {
+    "profile": "KateChip",
+    "kind": 0,
+    "asset": "entities/oceanbottom/tech/chip_robot/chip_robot_tool.ent",
+    "scale": "1 1 1",
+    "label": "KateChip",
+    "index": 7,
+    "name": "GripLab_7",
+    "file": "entities/vr/grip_lab/item_07.ent",
+    "asset_sha256": "14b16bd9997b46aabfcb8d17c837e9f9806e9e5b1e7d0798e016dae722ab18d8",
+    "position": [
+      -5.0,
+      1.22,
+      -2.5
+    ]
+  },
+  {
+    "profile": "GoyaChip",
+    "kind": 0,
+    "asset": "entities/oceanbottom/tech/chip_robot/chip_robot_tool.ent",
+    "scale": "1 1 1",
+    "label": "GoyaChip",
+    "index": 8,
+    "name": "GripLab_8",
+    "file": "entities/vr/grip_lab/item_08.ent",
+    "asset_sha256": "14b16bd9997b46aabfcb8d17c837e9f9806e9e5b1e7d0798e016dae722ab18d8",
+    "position": [
+      -3.0,
+      1.22,
+      -2.5
+    ]
+  },
+  {
+    "profile": "BrainScanChip",
+    "kind": 0,
+    "asset": "entities/station/special/02_05_computer_scan_storage/02_05_computer_scan_chip_tool.ent",
+    "scale": "1 1 1",
+    "label": "BrainScanChip",
+    "index": 9,
+    "name": "GripLab_9",
+    "file": "entities/vr/grip_lab/item_09.ent",
+    "asset_sha256": "72c145dc6878c15a9b62dd8c18dda77b637eb2fa022252dd5fd6b9e91b5c4788",
+    "position": [
+      -1.0,
+      1.22,
+      -2.5
+    ]
+  },
+  {
+    "profile": "EnvironmentChip",
+    "kind": 0,
+    "asset": "entities/station/gameplay/chip_environment_storage/chip_environment_storage.ent",
+    "scale": "1 1 1",
+    "label": "EnvironmentChip",
+    "index": 10,
+    "name": "GripLab_10",
+    "file": "entities/vr/grip_lab/item_10.ent",
+    "asset_sha256": "996a2a7cf8e9076a52e1c4a5c95e914eb2085e48b51ef61bec310a15bfedc431",
+    "position": [
+      1.0,
+      1.22,
+      -2.5
+    ]
+  },
+  {
+    "profile": "chip_unformatted",
+    "kind": 0,
+    "asset": "entities/station/gameplay/02_06_PanelChip/PanelChip.ent",
+    "scale": "0.75 0.75 0.75",
+    "label": "chip_unformatted",
+    "index": 11,
+    "name": "GripLab_11",
+    "file": "entities/vr/grip_lab/item_11.ent",
+    "asset_sha256": "d5240b6c5aab0953de5f81ceae60c23a44f5f6b0242769092fa8f91e2297be0d",
+    "position": [
+      3.0,
+      1.22,
+      -2.5
+    ]
+  },
+  {
+    "profile": "door_panel_chip_formatted",
+    "kind": 0,
+    "asset": "entities/vr/PanelChip_Physical.ent",
+    "scale": "0.915082 0.935799 1",
+    "label": "door_panel_chip_formatted",
+    "index": 12,
+    "name": "GripLab_12",
+    "file": "entities/vr/grip_lab/item_12.ent",
+    "asset_sha256": "872ff61cce8e94d29eee20fcda5dcd4e99614d6f9864dd005a438e20ffe5771a",
+    "position": [
+      5.0,
+      1.22,
+      -2.5
+    ],
+    "scale_source": "Theta security_chip_formatted; matches PlayerToolHandler VR repair"
+  },
+  {
+    "profile": "ChipTool_Damaged",
+    "kind": 0,
+    "asset": "entities/station/gameplay/structure_gel_cabinet_chip/structure_gel_cabinet_chip_wau_clean.ent",
+    "scale": "1.2 1.2 1.2",
+    "label": "ChipTool_Damaged",
+    "index": 13,
+    "name": "GripLab_13",
+    "file": "entities/vr/grip_lab/item_13.ent",
+    "asset_sha256": "d917e6d1ea5c93c9897e29a6a4d1657f4b030ee443f0a4cd5063f223a49e7ef1",
+    "position": [
+      -5.0,
+      1.22,
+      0.0
+    ]
+  },
+  {
+    "profile": "ChipTool_Repaired",
+    "kind": 0,
+    "asset": "entities/station/gameplay/structure_gel_cabinet_chip/structure_gel_cabinet_chip_wau_covered.ent",
+    "scale": "1 1 1",
+    "label": "ChipTool_Repaired",
+    "index": 14,
+    "name": "GripLab_14",
+    "file": "entities/vr/grip_lab/item_14.ent",
+    "asset_sha256": "f37534f3712b54c2d2ce2c7a2e1ea78826984aca8c7be5244ddb237122296436",
+    "position": [
+      -3.0,
+      1.22,
+      0.0
+    ]
+  },
+  {
+    "profile": "StructureGelTool",
+    "kind": 0,
+    "asset": "entities/station/gameplay/structure_gel_sample/structure_gel_sample.ent",
+    "scale": "1 1 1",
+    "label": "StructureGelTool",
+    "index": 15,
+    "name": "GripLab_15",
+    "file": "entities/vr/grip_lab/item_15.ent",
+    "asset_sha256": "75eaa909e6db526a0921537053b43bad65b2d0bf995fdeabf7fd15d9e45d35dd",
+    "position": [
+      -1.0,
+      1.22,
+      0.0
+    ]
+  },
+  {
+    "profile": "BrokenRobotBrain",
+    "kind": 0,
+    "asset": "entities/station/special/03_02_worker_medium_maintenance/03_02_worker_medium_maintenance_brain02.ent",
+    "scale": "1.25 1.25 1.25",
+    "label": "BrokenRobotBrain",
+    "index": 16,
+    "name": "GripLab_16",
+    "file": "entities/vr/grip_lab/item_16.ent",
+    "asset_sha256": "6cb634295ede15549d13c519c80a9cad71502bf6d3c7298fcdbac522b5dad3fd",
+    "position": [
+      1.0,
+      1.22,
+      0.0
+    ]
+  },
+  {
+    "profile": "PowerCubeTool",
+    "kind": 0,
+    "asset": "entities/station/tech/powerpack/powerpack.ent",
+    "scale": "1.125 1.125 1.125",
+    "label": "PowerCubeTool",
+    "index": 17,
+    "name": "GripLab_17",
+    "file": "entities/vr/grip_lab/item_17.ent",
+    "asset_sha256": "b7fc0ca4d9154dc8cd0495b807da3e5340e914fa081ab9182bb51f9d6fea502c",
+    "position": [
+      3.0,
+      1.22,
+      0.0
+    ]
+  },
+  {
+    "profile": "PowerCube_Inserted",
+    "kind": 0,
+    "asset": "entities/station/tech/powerpack/powerpack.ent",
+    "scale": "1 1 1",
+    "label": "PowerCube_Inserted",
+    "index": 18,
+    "name": "GripLab_18",
+    "file": "entities/vr/grip_lab/item_18.ent",
+    "asset_sha256": "b7fc0ca4d9154dc8cd0495b807da3e5340e914fa081ab9182bb51f9d6fea502c",
+    "position": [
+      5.0,
+      1.22,
+      0.0
+    ]
+  },
+  {
+    "profile": "OmniTool",
+    "kind": 1,
+    "asset": "entities/station/gameplay/omnitool/omnitool_with_securitychip_cortexchip.ent",
+    "scale": "1 1 1",
+    "label": "OmniTool",
+    "index": 19,
+    "name": "GripLab_19",
+    "file": "entities/vr/grip_lab/item_19.ent",
+    "asset_sha256": "f90e9844ae74ed3f1706ff90b4bf6e32398673c2d388f9720deba06afa31d735",
+    "position": [
+      -5.0,
+      1.22,
+      2.5
+    ]
+  },
+  {
+    "profile": "OmniTool@base",
+    "kind": 1,
+    "asset": "entities/station/gameplay/omnitool/omnitool.ent",
+    "scale": "1 1 1",
+    "label": "OmniTool@base",
+    "index": 20,
+    "name": "GripLab_20",
+    "file": "entities/vr/grip_lab/item_20.ent",
+    "asset_sha256": "8b6492a24ab5963e49126bcd2a18aec1f65a2c7f1887fbc6e19665fbfebbf609",
+    "position": [
+      -3.0,
+      1.22,
+      2.5
+    ]
+  },
+  {
+    "profile": "OmniTool@security",
+    "kind": 1,
+    "asset": "entities/station/gameplay/omnitool/omnitool_with_securitychip.ent",
+    "scale": "1 1 1",
+    "label": "OmniTool@security",
+    "index": 21,
+    "name": "GripLab_21",
+    "file": "entities/vr/grip_lab/item_21.ent",
+    "asset_sha256": "9a2944420db5b530c99d5648042fa8e6388c9a3a972aa12978b05cd0a59e6d3f",
+    "position": [
+      -1.0,
+      1.22,
+      2.5
+    ]
+  },
+  {
+    "profile": "OmniTool@cortex",
+    "kind": 1,
+    "asset": "entities/station/gameplay/omnitool/omnitool_with_cortexchip.ent",
+    "scale": "1 1 1",
+    "label": "OmniTool@cortex",
+    "index": 22,
+    "name": "GripLab_22",
+    "file": "entities/vr/grip_lab/item_22.ent",
+    "asset_sha256": "e2284483bce779dcd77e42563b427c8a7a68630b342306f7356574f7f4ac5914",
+    "position": [
+      1.0,
+      1.22,
+      2.5
+    ]
+  },
+  {
+    "profile": "ARK@Phi",
+    "kind": 0,
+    "asset": "entities/station/tech/ark/ark_tool.ent",
+    "scale": "0.804669 0.804669 0.804669",
+    "label": "ARK - Phi scale",
+    "index": 23,
+    "name": "GripLab_23",
+    "file": "entities/vr/grip_lab/item_23.ent",
+    "asset_sha256": "401b8825dbcc5c4379b98f41c98e1ec0166e5aae8f115dda0055a7c8087a4469",
+    "position": [
+      3.0,
+      1.22,
+      2.5
+    ]
+  },
+  {
+    "profile": "security_chip_unformatted",
+    "kind": 0,
+    "asset": "entities/station/tech/audio_logger_flesher_mem_chip/audio_logger_flesher_mem_chip.ent",
+    "scale": "0.915082 0.935799 1",
+    "label": "security_chip_unformatted",
+    "index": 24,
+    "name": "GripLab_24",
+    "file": "entities/vr/grip_lab/item_24.ent",
+    "asset_sha256": "cc253b1930f9f7c8abd7875d038133538ab68c78499675b720ee5277b454f9f2",
+    "position": [
+      5.0,
+      1.22,
+      2.5
+    ]
+  },
+  {
+    "profile": "security_chip_formatted",
+    "kind": 0,
+    "asset": "entities/station/tech/audio_logger_flesher_mem_chip/audio_logger_flesher_mem_chip.ent",
+    "scale": "0.915082 0.935799 1",
+    "label": "security_chip_formatted",
+    "index": 25,
+    "name": "GripLab_25",
+    "file": "entities/vr/grip_lab/item_25.ent",
+    "asset_sha256": "cc253b1930f9f7c8abd7875d038133538ab68c78499675b720ee5277b454f9f2",
+    "position": [
+      -5.0,
+      1.22,
+      5.0
+    ]
+  },
+  {
+    "profile": "Phone",
+    "kind": 2,
+    "asset": "entities/vr/phone_q.ent",
+    "scale": "1 1 1",
+    "label": "Phone",
+    "index": 26,
+    "name": "GripLab_26",
+    "file": "entities/vr/grip_lab/item_26.ent",
+    "asset_sha256": "6a1985970596631e303a24eb2b3559f1b765df9eb6d4ee3ef2c1fc4fa441b971",
+    "position": [
+      -3.0,
+      1.22,
+      5.0
+    ]
+  }
+]

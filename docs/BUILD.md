@@ -8,13 +8,21 @@ From the repository root:
 python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
 ```
 
-Output: `build/hpl3vr.dll`. The checked release hash is:
+Output: `build/hpl3vr.dll` (1.05-S26EM). SHA256:
 
-```text
-4c478d65089a676514d49c474308dc82f22bd92f426e69e20908f98e925352f0
+`b7343e64fa30bbec8f6d30cac43206ef930d91d3dc31823ad1b4fde33e771dfc`
+
+Build the separately guarded Epic/GOG DLL with:
+
+```powershell
+python -X utf8 scripts/build_store.py --zig "C:\Tools\zig\zig.exe"
 ```
 
-The 1.03-S26DF package was rebuilt using this portable script and matched that hash. The extracted native-rendering regression test reproduces the pre-fix failure and passes after the fix. It mocks engine calls and a small rig; it is not a test of all live controller interactions.
+Output: `build/store/hpl3vr-store.dll`. SHA256:
+
+`82e875550a088dab1df60176ed3a0d7dd0165a515310625c61b3911ed7a7f674`
+
+The store build generates a mapped source copy using `reference/store-profile.json`, verifies signatures, and patches the frozen-base operands for that exact engine layout. Do not mix the DLLs manually; the normal launcher selects them by executable identity.
 
 ## How this code is built
 
@@ -53,18 +61,8 @@ Menu-state regression checks (mocked engine state):
 
 ```powershell
 python -X utf8 tests/test_menu_recovery.py "C:\Tools\zig\zig.exe"
+python -X utf8 tests/test_holster_native.py "C:\Tools\zig\zig.exe"
+python -X utf8 tests/test_foveation_scope.py "C:\Tools\zig\zig.exe"
 ```
 
-Menu-state regression checks (mocked engine state):
-
-```powershell
-python -X utf8 tests/test_menu_recovery.py "C:\Tools\zig\zig.exe"
-```
-
-Menu-state regression checks (mocked engine state):
-
-```powershell
-python -X utf8 tests/test_menu_recovery.py "C:\Tools\zig\zig.exe"
-```
-
-S26CM changes launcher/preflight scripts and packaging only. The native DLL and injector are byte-identical to S26CL. Run `python tests/test_launcher_compatibility.py --game-exe PATH/TO/Soma.exe` on Windows for read-only fixture tests. No mutated fixture is executed.
+The real OpenGL foveation test requires a GPU exposing GL_NV_shading_rate_image. It verifies state restoration and shading invocation counts, not headset image quality or whole-game performance. See the release notes for remaining hardware checks.

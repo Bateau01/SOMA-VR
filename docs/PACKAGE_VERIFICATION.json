@@ -3,6 +3,9 @@
   "base": "1.04-S26EB",
   "dll_sha256": "4c478d65089a676514d49c474308dc82f22bd92f426e69e20908f98e925352f0",
   "validation": "docs/S26EE-validation.txt",
-  "upstream_docs_commit": "802c6f39f61e77ce855bbb70fac06ea904f8b419",
-  "release_notes_installed": false
+  "upstream_docs_commit": "b14b3866bbda38978ff9ed5063097475fad9240f",
+  "release_notes_installed": false,
+  "source_revision": "2026-10-04-controller-generalisation",
+  "binary_matches_source": false,
+  "new_binary_built": false
 }

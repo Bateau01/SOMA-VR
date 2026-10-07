@@ -97,6 +97,29 @@ int main(void){
  for(int h=0;h<2;h++)for(int k=0;k<10;k++)CHECK(saved[31+h*10+k].action==g_s26dlRestTouchAction[h][k==0?2:k<=2?1:0]);
  groupBits=0;
  suggestError=-1;s26dg_frame_binding((Handle)1,binds,23);CHECK(!g_s26nProfiles[5]&&suggestCount==21);suggestError=0;
+
+ // Optional Index contacts preserve every original gameplay binding.
+ currentProfile=11;suggestError=0;groupBits=0;gripValue=triggerValue=0;
+ CHECK(s26ee_index_rest_binding((Handle)1,binds,23)==0);
+ CHECK(suggestCount==33&&(g_s26dlRestBindings&2));
+ for(int i=0;i<23;i++){CHECK(saved[i].action==binds[i].action);CHECK(saved[i].binding==binds[i].binding);}
+ s26dl_rest_tick(session,1);CHECK(g_s26dlReleased[0]&&g_s26dlReleased[1]);
+ gripValue=.021f;s26dl_rest_tick(session,1);CHECK(!g_s26dlReleased[0]);
+ gripValue=.02f;s26dl_rest_tick(session,1);CHECK(g_s26dlReleased[0]);
+ gripValue=NAN;s26dl_rest_tick(session,1);CHECK(!(g_s26dlTouchKnown[0]&28));
+ gripValue=0;floatActive=0;s26dl_rest_tick(session,1);CHECK(!g_s26dlReleased[0]);floatActive=1;
+ groupBits=1;s26dl_rest_tick(session,1);CHECK(!g_s26dlReleased[0]);groupBits=0;
+ currentProfile=99;s26dl_rest_tick(session,1);CHECK(!g_s26dlTouchKnown[0]&&!g_s26dmReleasedMask[0]);
+ currentProfile=11;profileError=-1;s26dl_rest_tick(session,1);CHECK(!g_s26dlTouchKnown[0]);profileError=0;
+ optionalReject=1;CHECK(s26ee_index_rest_binding((Handle)1,binds,23)==0);
+ CHECK(suggestCount==23&&!(g_s26dlRestBindings&2));
+ s26dl_rest_tick(session,1);CHECK(!g_s26dlReleased[0]);optionalReject=0;
+ CHECK(s26ee_index_rest_binding((Handle)1,binds,21)==0&&suggestCount==31);
+ // Frame's extension being absent must not prevent Index rest support.
+ g_s26dgFrameExtension=0;s26dg_frame_binding((Handle)1,binds,23);
+ CHECK(g_s26dlRestBindings&2);s26dl_rest_tick(session,1);CHECK(g_s26dlReleased[0]);
+ g_s26dgFrameExtension=1;currentProfile=15;s26dg_frame_binding((Handle)1,binds,23);
+ CHECK(g_s26dlRestBindings==3);s26dl_rest_tick(session,1);CHECK(g_s26dlReleased[0]);
  g_s26sEyeExtension=0;s26s_eye_binding(self,(Handle)1,session);CHECK(!g_s26sEyeAction);g_s26sEyeExtension=1;
  actionError=-1;s26s_eye_binding(self,(Handle)1,session);CHECK(!g_s26sEyeAction);actionError=0;
  s26s_eye_binding(self,(Handle)1,session);CHECK(g_s26sEyeAction&&!g_s26sEyeSpace);

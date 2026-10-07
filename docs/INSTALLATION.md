@@ -2,7 +2,7 @@
 
 ## What to download
 
-Download `SOMA-VR-1.04-S26EE-Installer.zip`, extract it, run `SOMA-VR-1.04-S26EE-Setup.exe`, and select **INSTALL / UPDATE / REPAIR**. The installer requests administrator access and preserves customized settings. The manual overlay instructions below apply to the `runtime` folder in the source archive. It contains the cumulative overlay: the DLL, injector, OpenXR loader, scripts, modified entity/map data, all current hand families, audio components and a launcher.
+Download `SOMA-VR-1.05-S26EM-Installer.zip`, extract it, run `SOMA-VR-1.05-S26EM-Setup.exe`, and select **INSTALL / UPDATE / REPAIR**. The installer requests administrator access and preserves customized settings. The manual overlay instructions below apply to the `runtime` folder in the source archive. It contains the cumulative overlay: the DLL, injector, OpenXR loader, scripts, modified entity/map data, all current hand families, audio components and a launcher.
 
 This is for an existing compatible SOMA installation. It does not contain `Soma.exe`, the full maps, game audio, or the other files needed to run the game independently.
 
@@ -37,7 +37,7 @@ Do not copy another player's saves or runtime FOV cache. Let the runtime create 
 
 ## If something goes wrong
 
-- **Other storefront or unsupported executable:** run `Check-SOMA-VR-Compatibility.cmd` and send `SOMA-VR-compatibility-report.json` with the storefront/version. An equivalent-engine result can be tried with `Launch-SOMA-VR.cmd -Experimental`; a different engine layout remains blocked and needs a native port. See the compatibility guide. GOG/Epic have not been validated.
+- **Storefront selection:** the same launcher automatically chooses the Steam or Epic/GOG native DLL for the verified executables. No extra command or experimental flag is needed for those profiles. For unknown builds, run `Check-SOMA-VR-Compatibility.cmd` and provide its report; a different engine layout remains blocked.
 - **SOMA remains running after quitting:** relaunch with Launch-SOMA-VR.cmd, or run Stop-SOMA-VR.cmd to close it without restarting. Both commands close all Soma.exe / Soma_NoSteam.exe instances, including active games; save progress first.
 - **VR initialization fails:** confirm the headset connection and active OpenXR runtime, then examine `hpl3vr.log` in the game directory.
 - **Missing hand family/material:** check that all `hand_*.skin`, `hands_*.dds` and `entities/soma_vr` files were copied, not only the DLL.
@@ -51,3 +51,5 @@ Launch the un-injected game normally for flatscreen. Script behavior is gated by
 To uninstall, close SOMA and restore your backed-up original files. A platform file verification can restore original game files, but it does not necessarily remove extra mod files. Remove only files identified as mod-added in your backup/install record. Do not delete your save directory as part of uninstalling.
 
 `SOMA_VR_MANIFEST.json` lists every shipped overlay file and SHA256. Keep it with the release for troubleshooting and comparing installations.
+
+S26EF: the desktop game is borderless windowed and may visually fill the monitor. DFR is under EYE TRACKING; texture-budget boost is under VIDEO. Both are disabled by default. See the features document for hardware requirements and validation limits.

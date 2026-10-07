@@ -28,14 +28,18 @@ for row in checks:assert row['status']==fixtures[row['name']][1],row
 f=out/'launcher';f.mkdir(exist_ok=True)
 for name in ['Launch-SOMA-VR.ps1','SOMA-VR-Compatibility.ps1','SOMA-VR-Executable.json']:
  shutil.copy2(r/'runtime'/name,f/name)
-for name in ['hpl3vr.dll','hpl3vr_inject.exe','openxr_loader.dll']:(f/name).write_bytes(b'CHECKONLY-MUST-NOT-LOAD')
+for name in ['hpl3vr.dll','hpl3vr-store.dll','hpl3vr_inject.exe','openxr_loader.dll']:(f/name).write_bytes(b'CHECKONLY-MUST-NOT-LOAD')
 cases=[('verified',[],True),('resource',[],True),('code',['-Experimental'],False),('verified',['-Executable','not-soma.exe'],False)]
+if a.alternate_exe:cases.append(('alternate',[],True))
 for source,extra,ok in cases:
  (f/'Soma.exe').write_bytes(fixtures[source][0])
  c=subprocess.run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(f/'Launch-SOMA-VR.ps1'),'-CheckOnly']+extra,capture_output=True,text=True)
  assert (c.returncode==0)==ok,(source,c.stdout,c.stderr)
  assert not (f/'hpl3vr_vr_settings.ini').exists()
  assert not (f/'hpl3vr_hand_calibration.ini').exists()
+ if source=='alternate':
+  report=json.loads((f/'SOMA-VR-compatibility-report.json').read_text(encoding='utf-8-sig'))
+  assert report['runtime_dll']=='hpl3vr-store.dll'
  checks.append({'name':'launcher_'+source+'_'+'_'.join(extra),'passed':True})
 result={'checks':len(checks),'passed':True,'cases':checks,'scope':'PE comparison and actual launcher CheckOnly. No mutated fixture, alternate storefront executable, injector or game was launched.'}
 (out/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))

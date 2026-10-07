@@ -29,8 +29,7 @@ This inventory describes included implementation, not a claim that every interac
 - Native-styled VR SETTINGS menus, including bindings and slider settings.
 - Analog grip/trigger finger animation, with additional tracked-finger paths gated by available hardware/runtime data.
 - Optional tracker and eye-gaze integration. Eye gaze is not a replacement for the rendered headset FOV.
-
-Quest Touch controllers do not provide independent full-finger tracking. A device claiming a tracking extension does not prove that it supplies complete, usable finger data. Broad compatibility with Valve Index, PSVR2, Pimax, gloves, etee or other devices is not asserted by this release.
+- Finger tracking for controllers that have finger tracking capabilities, like Valve Index Kunckles, Steam Frame controllers, etc.
 
 ## Physical interactions
 
@@ -71,7 +70,7 @@ Read [installation and troubleshooting](docs/INSTALLATION.md), [features and com
 
 ## Compatibility and status
 
-The supplied runtime targets one verified 64-bit Windows `Soma.exe`. Its SHA256 is `7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113`. The launcher checks this before injection. Other executable versions require testing and may need different native addresses.
+The Windows launcher selects native support for the verified Steam executable (`7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113`) or the identical Epic/GOG executable (`395cd54830c8e66e22166e71ac6fe95fd3bb5433b898737836744a6d178a0a6a`). Other engine layouts require a separate native port. See the test limits below.
 
 This mod was created using my existing hardware setup, which includes a Meta Quest 3S via Steam Link, with an RTX 5080. OpenXR runtime discovery, eye projections and render dimensions are dynamic; that does not establish compatibility with every headset, runtime or controller. Eye gaze, finger tracking and tracker support depend on both hardware and runtime exposure.
 
@@ -102,3 +101,27 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). GPL3.0 Licensed.
 
 This project was created with AI assistance. Despite that, I've already poured over 250 hours on this project. HPL3 is not an easy engine to work with, and this mod took a lot of iterating, testing, decompilation, fixing, and testing again. 
 
+
+
+## 1.05-S26EM additions and test status
+
+- One Windows installer and launcher select the appropriate native DLL for the verified Steam, Epic and GOG executables. Unknown engine layouts remain blocked.
+- **DYNAMIC FOVEATED RENDERING**, under EYE TRACKING, has Quality, Balanced, Performance and Custom settings in its own submenu. DFR remains experimental and off by default for new installations, requiring valid gaze and NVIDIA OpenGL `GL_NV_shading_rate_image`. Quality retains a 25-degree sharp radius and 2 x 2 peripheral shading; other presets add a 4 x 4 outer region. Optional gaze-motion protection and GPU performance measurements are available. Only the main opaque-material pass is foveated. Invalid tracking or unsupported hardware retains full quality. The user reported 10-15 FPS improvement under heavy GPU load with S26EH; further gains and visual quality from S26EI presets require headset testing.
+- **TEXTURE BUDGET BOOST**, under VIDEO, is off by default. It raises the owned texture budget from 1 GiB to 1.5 GiB without changing the streaming rate. Turning it off restores the prior budget when still owned by the mod. It consumes more memory and is not a guarantee against streaming hitches.
+- Initial shoulder retrieval uses consistent item-local grip anchors and initial finger-curl targets for key items, the Omni-Tool and phone. Subsequent grabs and reorientation retain the existing handling. Collision may limit finger closure. Visual grip fit still needs headset testing.
+- Valid finger-joint data, unobstructed motion requests and RESET FINGER TRACKING are available independent of controller brand. Automatic rest detection only uses release signals whose meaning is known for that controller profile; other profiles use manual reset. Runtime/controller data quality still determines independent finger motion.
+
+Reprojection/motion smoothing remains controlled by the active VR runtime. This update does not add a cross-runtime motion-smoothing switch or synthetic-frame bridge. Linux/Proton compatibility is deferred and is not claimed by this Windows package.
+
+Automated checks cover the native DLL build, storefront guards, controller mapping, texture-budget lifecycle, grip transforms against Newton collision shapes, and real OpenGL foveation/state restoration including MSAA. The isolated game completed script/interaction regression checks. Epic/GOG reached the normal VR menu and Upsilon in the earlier headset run; the user has not yet confirmed gameplay interactions. The new DFR presets require headset quality/performance validation; the latest holster-grip appearance has not been reconfirmed.
+
+S26EG corrects collision-hand rotation being retained in initial holster orientation and adds DFR application/fallback counts with separate prior-GL-error reporting. See the separate release notes for tests and remaining headset checks.
+
+S26EH aligns the Omni-Tool shaft with the OpenXR grip axis and matches DFR gaze acceptance to the existing bounded eye-tracking policy, with detailed fallback counters. See the separate release notes for tests and remaining headset checks.
+
+S26EI adds an EYE TRACKING > DYNAMIC FOVEATED RENDERING submenu with quality presets, custom radii and peripheral shading, optional gaze-motion protection and asynchronous GPU pass measurements. See the separate release notes for tests and remaining headset checks.
+
+
+
+
+S26EM uses 52 shared authored retrieval poses for both hands. Legacy capture files are ignored; pose and stutter recording tools have been retired.

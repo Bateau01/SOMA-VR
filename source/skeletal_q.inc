@@ -105,7 +105,7 @@ static void s26q_hands_tick(Handle session,Handle space,i64 time,i32 focused){
         S26QJoints out;zero_bytes(&out,sizeof(out));out.type=1000051003;out.count=26;out.joints=joints;
         S26QHandLocate li;zero_bytes(&li,sizeof(li));li.type=1000051002;li.baseSpace=space;li.time=time;
         u8 allowed=s26u_controller_fingers_allowed(session,h);
-        S26DNMotionRange range;s26dn_motion_range(&li,&range,g_s26dnMotionRangeEnabled&&g_s26diFrameHand[h]);
+        S26DNMotionRange range;s26dn_motion_range(&li,&range,g_s26dnMotionRangeEnabled&&allowed);
         u8 valid=allowed&&g_s26qHandTracker[h]&&p_s26qLocateHand&&p_s26qLocateHand(g_s26qHandTracker[h],&li,&out)==0&&out.active&&out.count==26;
         u8 any=0;
         /* Missing profile/tracking data must not erase a confirmed reference. */

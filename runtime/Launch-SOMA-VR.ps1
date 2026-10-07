@@ -1,4 +1,4 @@
-param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly, [string]$Executable = '', [switch]$Experimental, [switch]$SkipSettingsRepair, [switch]$KeepSSAO, [int]$MonitorIndex = -1, [string]$SettingsPath = '', [string]$SettingsDirectory = '')
+﻿param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly, [string]$Executable = '', [switch]$Experimental, [switch]$SkipSettingsRepair, [switch]$KeepSSAO, [int]$MonitorIndex = -1, [string]$SettingsPath = '', [string]$SettingsDirectory = '')
 $ErrorActionPreference = 'Stop'
 # Elevate before cleanup, config writes or injection. SOMA and the injector
 # inherit this token. Serialize arguments as data rather than executable text.
@@ -73,16 +73,19 @@ if (!$Executable) {
 }
 if ($Executable -notin @('Soma.exe','Soma_NoSteam.exe')) { throw 'Choose Soma.exe or Soma_NoSteam.exe in this game folder; do not rename another program.' }
 $exe = Join-Path $gameDir $Executable
-$dll = Join-Path $gameDir 'hpl3vr.dll'
 $injector = Join-Path $gameDir 'hpl3vr_inject.exe'
-foreach ($p in @($exe,$dll,$injector,(Join-Path $gameDir 'openxr_loader.dll'))) {
+foreach ($p in @($exe,$injector,(Join-Path $gameDir 'openxr_loader.dll'))) {
     if (!(Test-Path -LiteralPath $p -PathType Leaf)) { throw "Missing $p. Extract the full mod into the folder containing Soma.exe." }
 }
 . (Join-Path $gameDir 'SOMA-VR-Compatibility.ps1')
-$report = Get-SomaExecutableReport $exe (Join-Path $gameDir 'SOMA-VR-Executable.json')
+$report = Get-SomaLaunchReport $exe (Join-Path $gameDir 'SOMA-VR-Executable.json')
+$dllName = $report.runtime_dll
+$dll = Join-Path $gameDir $dllName
+if (!(Test-Path -LiteralPath $dll -PathType Leaf)) { throw "Missing $dll. Reinstall the complete VR mod for this edition." }
 $reportPath = Join-Path $gameDir 'SOMA-VR-compatibility-report.json'
 $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
 Write-Output ('Executable status: ' + $report.status)
+Write-Output ('Native runtime: ' + $report.edition + ' (' + $dllName + ')')
 Write-Output ('Compatibility report: ' + $reportPath)
 if ($report.status -eq 'Incompatible') {
     throw ('This executable needs a native VR port; its engine layout differs from the tested build. No injection attempted. Send SOMA-VR-compatibility-report.json with the storefront/version. Differences: ' + ($report.differences -join '; '))
@@ -145,7 +148,7 @@ $resumed = $false
 try {
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $injector
-    $info.Arguments = $Executable + ' hpl3vr.dll'
+    $info.Arguments = $Executable + ' ' + $dllName
     $info.WorkingDirectory = $gameDir
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true

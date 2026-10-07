@@ -1,8 +1,17 @@
 /* Explicit Frame bindings prevent SteamVR's Touch emulation from concealing
    the controller identity. Existing action names and remapping stay intact. */
+/* Shared contact actions are created once, before action sets are attached.
+   Keep existing action names for saved runtime bindings. */
+static i32 s26ee_rest_actions(void){
+    const char names[2][3][32]={{"left_frame_thumb_touch","left_frame_index_touch","left_frame_grip_touch"},{"right_frame_thumb_touch","right_frame_index_touch","right_frame_grip_touch"}};
+    i32 good=1;
+    for(i32 h=0;h<2;++h)for(i32 g=0;g<3;++g)
+        if(!g_s26dlRestTouchAction[h][g]&&create_action(names[h][g],names[h][g],XR_ACTION_TYPE_BOOLEAN_INPUT,&g_s26dlRestTouchAction[h][g])<0)good=0;
+    return good;
+}
 static void s26dg_frame_binding(Handle inst,const XrActionSuggestedBinding* base,u32 count){
     g_s26nProfiles[5]=0;
-    g_s26dlRestBindings=0;g_s26ebExtraBound=0;
+    g_s26dlRestBindings&=~1u;g_s26ebExtraBound=0;
     if(!g_s26dgFrameExtension)return;
     if(count<21u||count>23u)return;
     XrPath profile=0,center=0,menu=0;
@@ -31,10 +40,7 @@ static void s26dg_frame_binding(Handle inst,const XrActionSuggestedBinding* base
     const char touch[2][10][16]={
         {"squeeze","trigger","bumper","thumbstick","dpad_up","dpad_down","dpad_left","dpad_right","view","system"},
         {"squeeze","trigger","bumper","thumbstick","a","b","x","y","menu","system"}};
-    const char names[2][3][32]={{"left_frame_thumb_touch","left_frame_index_touch","left_frame_grip_touch"},{"right_frame_thumb_touch","right_frame_index_touch","right_frame_grip_touch"}};
-    i32 extraOk=1;
-    for(i32 h=0;h<2;++h)for(i32 group=0;group<3;++group)
-        if(create_action(names[h][group],names[h][group],XR_ACTION_TYPE_BOOLEAN_INPUT,&g_s26dlRestTouchAction[h][group])<0)extraOk=0;
+    i32 extraOk=s26ee_rest_actions();
     for(i32 hand=0;hand<2&&extraOk;++hand)for(i32 k=0;k<10;++k){
         char path[96];const char* prefix=hand?"/user/hand/right/input/":"/user/hand/left/input/";u32 at=0;
         for(u32 j=0;prefix[j];++j)path[at++]=prefix[j];
@@ -47,7 +53,7 @@ static void s26dg_frame_binding(Handle inst,const XrActionSuggestedBinding* base
     sb.type=XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING;sb.interactionProfile=profile;
     sb.countSuggestedBindings=count+buttonCount+(extraOk?20u:0u);sb.suggestedBindings=binds;
     r=pSuggestBindings(inst,&sb);
-    if(r>=0&&extraOk)g_s26dlRestBindings=1;
+    if(r>=0&&extraOk)g_s26dlRestBindings|=1u;
     if(r<0&&extraOk){sb.countSuggestedBindings=count+buttonCount;r=pSuggestBindings(inst,&sb);}
     if(r>=0&&buttonCount==8u)g_s26ebExtraBound=1;
     if(r<0&&buttonCount){sb.countSuggestedBindings=count;r=pSuggestBindings(inst,&sb);}
@@ -56,6 +62,7 @@ static void s26dg_frame_binding(Handle inst,const XrActionSuggestedBinding* base
     ext_Log(">>> S26DM Frame per-group capacitive release %s; unknown/inactive touch retains skeletal mapping",g_s26dlRestBindings?"bound":"unavailable");
     ext_Log(">>> S26DG Steam Frame bindings %s (%d): left D-pad left=menu, up=recenter; right A=jump, B=run/back; sticks/grip/trigger unchanged",r>=0?"accepted":"unavailable; existing profiles retained",r);
 }
+#include "controller_rest_ee.inc"
 #include "frame_rest_dl.inc"
 
 static void s26eb_extra_tick(Handle session,i32 focused){

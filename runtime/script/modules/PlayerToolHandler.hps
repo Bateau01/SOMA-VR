@@ -466,6 +466,20 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		return "";
 	}
 
+    void _Global_VRAuthoredOmniGrip()
+    {
+        tString name=cScript_GetGlobalArgString(0);
+        cScript_SetGlobalReturnString("OmniTool");
+        for(uint i=0;i<mvInventory.length();++i){
+            cToolData@ tool=mvInventory[i];if(tool.msPickedEntityName!=name)continue;
+            tString file=VR_GetPhysicalOmniWorldFile(tool);
+            if(file=="omnitool.ent")cScript_SetGlobalReturnString("OmniTool@base");
+            else if(file=="omnitool_with_securitychip.ent")cScript_SetGlobalReturnString("OmniTool@security");
+            else if(file=="omnitool_with_cortexchip.ent")cScript_SetGlobalReturnString("OmniTool@cortex");
+            return;
+        }
+    }
+
 	tString VR_GetPhysicalOmniWorldFile(cToolData@ apTool)
 	{
 		if (apTool is null) return "";
@@ -1070,9 +1084,11 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 			cLuxProp@ pProp = cast<cLuxProp>(pEntity);
 			if (pProp is null) return false;
 			pProp.SetStaticPhysics(false);
+			cScript_RunGlobalFunc("VRCOMFORT","GRIPMODEL",sName);
 			cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "B");
 			iPhysicsBody@ pBody = pProp.GetMainBody();
 			cScript_RunGlobalFunc("VROMNICHIP", sCarrier, "E");
+			cScript_RunGlobalFunc("VRCOMFORT","GRIPMODEL","END");
 			if (pBody is null) return false;
 			pBody.SetCollide(true);
 			pBody.SetCollideCharacter(false);

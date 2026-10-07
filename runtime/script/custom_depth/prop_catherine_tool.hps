@@ -821,9 +821,14 @@ class cScrPropCatherineTool : cScrPropTool
 		// H57.56F: bracket Catherine's own authored GetMainBody() call so native
 		// code captures the exact dynamic wrapper SOMA returns after the static
 		// transition above.  No entity-loader pointer reinterpretation is used.
+        cScript_SetGlobalArgString(0,mBaseObj.GetName());
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRAuthoredOmniGrip");
+        tString gripProfile=cScript_GetGlobalReturnString();
+        cScript_RunGlobalFunc("VRCOMFORT","GRIPMODEL",gripProfile);
 		cScript_RunGlobalFunc("VROMNIBIND", mBaseObj.GetName(), "B");
 		iPhysicsBody@ pBody = mBaseObj.GetMainBody();
 		cScript_RunGlobalFunc("VROMNIBIND", mBaseObj.GetName(), "E");
+        cScript_RunGlobalFunc("VRCOMFORT","GRIPMODEL","END");
 		if (pBody !is null)
 		{
 			pBody.SetCollide(true);

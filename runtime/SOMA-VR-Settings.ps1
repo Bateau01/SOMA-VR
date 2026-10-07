@@ -1,4 +1,4 @@
-function Get-SomaVrMonitorSize([int]$MonitorIndex = -1) {
+﻿function Get-SomaVrMonitorSize([int]$MonitorIndex = -1) {
     if (-not ('SomaVrDisplay' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;

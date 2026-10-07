@@ -60,9 +60,9 @@ int main(void){
    for(int f=0;f<5;f++){float v[4]={input[h][f],input[h][f],input[h][f],input[h][f]};CHECK(g_s26qFingerInput[h][f]==s26q_pack_finger(v));CHECK(g_s26qRootInput[h][f]==0);}
   }
  }
- // Non-Frame profiles retain their motion-range default and root mapping.
+ // All eligible profiles request full motion when the extension is enabled.
  frameProfile=0;s26q_hands_tick((Handle)10,(Handle)20,100,1);
- for(int h=0;h<2;h++){CHECK(chains[h]==0);for(int f=0;f<5;f++)CHECK(g_s26qRootInput[h][f]==0);}
+ for(int h=0;h<2;h++){CHECK(chains[h]==1);for(int f=0;f<5;f++)CHECK(g_s26qRootInput[h][f]==0);}
  frameProfile=1;g_s26dnMotionRangeEnabled=0;s26q_hands_tick((Handle)10,(Handle)20,100,1);CHECK(!chains[0]&&!chains[1]);
  g_s26dnMotionRangeEnabled=1;
  // Off, inactive, errors, bad joint count, loss of focus/session/space/time clear data.

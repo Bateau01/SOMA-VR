@@ -1,0 +1,29 @@
+    void CE_TestDFRSettings()
+    {
+        int failures=0;bool runtime=gbHPL3VRRuntimeActive;gbHPL3VRRuntimeActive=false;
+        for(int preset=0;preset<3;preset++)
+        {
+            HPL3VR_ApplyDFRPreset(preset);HPL3VR_ValidateDFR();
+            if(mlVRDFRInner!=15-preset*5 || mlVRDFROuter!=20-preset*5 || mlVRDFRRate!=(preset==0?0:1)) failures++;
+            tString packet=""+(10+mlVRDFRInner)+(25+mlVRDFROuter)+mlVRDFRRate+(mbVRDFRProtection?"1":"0");
+            if(preset==0 && packet!="254500") failures++;
+            if(preset==1 && packet!="204011") failures++;
+            if(preset==2 && packet!="153511") failures++;
+        }
+        mlVRDFRPreset=3;mlVRDFRInner=25;mlVRDFROuter=0;mlVRDFRRate=1;mbVRDFRProtection=false;mbVRDFRTiming=true;mbVRDynamicFoveation=true;
+        HPL3VR_SaveComfort();
+        if(mlVRDFROuter!=15) failures++;
+        mlVRDFRInner=0;mlVRDFROuter=0;mlVRDFRRate=0;mbVRDFRProtection=true;mbVRDFRTiming=false;mbVRDynamicFoveation=false;
+        mbVRComfortLoaded=false;HPL3VR_LoadComfort();
+        if(mlVRDFRPreset!=3 || mlVRDFRInner!=25 || mlVRDFROuter!=15 || mlVRDFRRate!=1 || mbVRDFRProtection || !mbVRDFRTiming || !mbVRDynamicFoveation) failures++;
+        mlVRDFRPreset=-2;mlVRDFRInner=-3;mlVRDFROuter=99;mlVRDFRRate=99;HPL3VR_ValidateDFR();
+        if(mlVRDFRPreset!=0 || mlVRDFRInner!=15 || mlVRDFROuter!=20 || mlVRDFRRate!=0) failures++;
+        mlVRComfortCategory=8;if(HPL3VR_BackRow()!=7)failures++;
+        HPL3VR_BackSettings();if(mlVRComfortCategory!=-1 || msVRSettingsSelected!="TEST TOOLS" || HPL3VR_BackRow()!=6)failures++;
+        mlVRComfortCategory=7;if(HPL3VR_BackRow()!=8)failures++;
+        HPL3VR_BackSettings();if(mlVRComfortCategory!=4 || msVRSettingsSelected!="DYNAMIC FOVEATED RENDERING")failures++;
+        HPL3VR_BackSettings();if(mlVRComfortCategory!=-1 || msVRSettingsSelected!="EYE TRACKING")failures++;
+        HPL3VR_BackSettings();if(mbVRComfortOpen)failures++;
+        mbVRDynamicFoveation=false;mbVRDFRTiming=false;HPL3VR_ApplyDFRPreset(0);HPL3VR_SaveComfort();gbHPL3VRRuntimeActive=runtime;
+        LogNewLine("CE_DFR_SETTINGS|failures="+failures);
+    }
