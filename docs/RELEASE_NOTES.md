@@ -1,4 +1,4 @@
-# SOMA VR 1.05-S26EM
+# SOMA VR 1.05-S26ER
 
 All 52 authored retrieval poses (26 profiles, both hands) are now shared defaults only. The runtime no longer reads personal item-grip files. Installing this update is sufficient, even if an older hpl3vr_item_grips.dat exists in the game folder. No separate pose file or manual replacement is required.
 
@@ -13,7 +13,7 @@ Validation covers all 52 shared poses with a conflicting legacy file present, na
 Release notes are separate from the installer payload. The root VR settings INI is included; existing settings are preserved. This is a cumulative 1.04 update.
 
 ---
-# SOMA VR 1.05-S26EM
+# SOMA VR 1.05-S26ER
 
 Includes all 52 authored retrieval poses: left and right hands for 26 item profiles, including the phone, all four Omni-Tool models, both ARK models and formatted/unformatted chips.
 
@@ -28,7 +28,7 @@ Validation includes compiled production grip tests, native Newton placement/rota
 The installer retains existing settings and includes the root VR settings INI. Release notes are supplied separately and are not installed in the game folder. Existing S26EK stutter improvements are retained.
 
 ---
-# SOMA VR 1.05-S26EM
+# SOMA VR 1.05-S26ER
 
 Removes an obsolete hardware write-watch diagnostic from the shared Steam/Epic/GOG base. It armed debug registers at startup, then enumerated, suspended and resumed game threads every 300 VR frames. The supplied S26EJ recording contains nine 60–68 ms frame intervals at exactly those 300-frame boundaries, in both gameplay and pause menus. The measured scene and physics work did not explain those delays.
 

@@ -1276,13 +1276,15 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     {
         if(mlVRComfortCategory<0) return 5;
         if(mlVRComfortCategory==7 || mlVRComfortCategory==2 || mlVRComfortCategory==1) return 8;
-        if(mlVRComfortCategory==0) return 7;
+        if(mlVRComfortCategory==0) return 8;
+        if(mlVRComfortCategory==8) return 2;
         if(mlVRComfortCategory==3) return 9;
         return 5;
     }
     void HPL3VR_BackSettings()
     {
-            if(mlVRComfortCategory==7)
+            if(mlVRComfortCategory==8){mlVRComfortCategory=0;msVRSettingsSelected="VR HINTS";msFocusNextFrame=msVRSettingsSelected;}
+            else if(mlVRComfortCategory==7)
             {
                 mlVRComfortCategory=4;msVRSettingsSelected="DYNAMIC FOVEATED RENDERING";msFocusNextFrame=msVRSettingsSelected;
             }
@@ -1318,6 +1320,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(mlVRComfortCategory==4) title="EYE TRACKING";
         if(mlVRComfortCategory==5) title="AUDIO";
         if(mlVRComfortCategory==6) title="RESET FINGER TRACKING";
+        if(mlVRComfortCategory==8) title="VR HINTS";
         if(mlVRComfortCategory==7) title="DYNAMIC FOVEATED RENDERING";
         cVector2f size=mlVRComfortCategory==3 ? kOptionsMappingBgSize : (mlVRComfortCategory==2 ? kOptionsVideoBgSize : kOptionsBgSize);
         OptionMenu_ResetExtraWidth();
@@ -1354,7 +1357,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         }
         if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); OptionMenu_UpdateExtraWidth("TEXTURE BUDGET BOOST",true); size.y=470; }
         if(mlVRComfortCategory==3) { size.y=430;for(int i=0;i<6;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
-        if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=390;
+        if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=440;
         if(mlVRComfortCategory==0) size.y=430;
         if(mlVRComfortCategory==6) { size.y=360;size.x=600; }
         if(mlVRComfortCategory==4) { OptionMenu_UpdateExtraWidth("DYNAMIC FOVEATED RENDERING",true);size.y=390; }
@@ -1405,6 +1408,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             int subtitle=HPL3VR_Slider("SUBTITLE DISTANCE",6,mlVRSubtitleDistance,65,cString_ToString(0.75f+0.05f*mlVRSubtitleDistance,2)+" m");
             changed=changed || scale!=mlVRWorldScale || panel!=mlVRPanelDistance || subtitle!=mlVRSubtitleDistance;
             mlVRWorldScale=scale;mlVRPanelDistance=panel;mlVRSubtitleDistance=subtitle;
+            if(HPL3VR_Option("VR HINTS",7)){mlVRComfortCategory=8;msVRSettingsSelected="VR HINTS";msFocusNextFrame=msVRSettingsSelected;ImGui_SetTransCategory(cat);return true;}
 
 
 
@@ -1521,6 +1525,16 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             changed=changed || timing!=mbVRDFRTiming;mbVRDFRTiming=timing;
             if(HPL3VR_Option("RESTORE DEFAULTS",7)) { HPL3VR_ApplyDFRPreset(0);mbVRDFRTiming=false;changed=true; }
         }
+        else if(mlVRComfortCategory==8)
+        {
+            array<tString> modes={"FULL","ESSENTIAL","OFF"};
+            OptionMenu_UpdateExtraButtonWidth_MultiSelection(modes,"");ImGui_SetTransCategory("");
+            int mode=cLux_GetUserConfig().GetInt("SOMA_VR_Hints","Mode",0);if(mode<0 || mode>2)mode=0;
+            int value=OptionMenu_ButtonOptionsMultiSelect("VR HINTS",kMainMenuButtonPos,0,msVRSettingsSelected,modes,mode,false,mlActionHorizontal,"");
+            ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("VR HINTS",msVRSettingsSelected);
+            if(value!=mode){cLux_GetUserConfig().SetInt("SOMA_VR_Hints","Mode",value);cLux_GetUserConfig().Save();}
+            if(HPL3VR_Option("RESET VR HINTS",1)){cScript_RunGlobalFunc("HintHandler","cScrHintHandler","ResetVRHints");cLux_GetUserConfig().Save();}
+        }
         else if(mlVRComfortCategory==5)
         {
             array<tString> modes={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};
@@ -1557,6 +1571,17 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         return true;
     }
 
+    void HPL3VR_GetHintBinding(){
+        int role=cScript_GetGlobalArgInt(0);
+        if(role==6){cScript_SetGlobalReturnString("LEFT: "+((mlVRGrabControls&1)!=0 ? "TRIGGER" : "GRIP")+" / RIGHT: "+((mlVRGrabControls&2)!=0 ? "TRIGGER" : "GRIP"));return;}
+        if(role<0 || role>=6)role=0;
+        HPL3VR_ReadBindings();
+        tString text=HPL3VR_BindingLabel(role);
+        if(role==1)text="Hold the run binding while moving. "+text;
+        if(role==0)text="Use your jump binding to jump. "+text;
+        if(role==4)text=mlVRCrouchMode==2 ? "Lower your body to crouch. Moving while crouched is quieter." : "Use your crouch binding to crouch. "+text;
+        cScript_SetGlobalReturnString(text);
+    }
 	void HPL3VR_GetRuntimeActive() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive); }
 
     void HPL3VR_GetBobMask()

@@ -95,7 +95,7 @@ static i32 s26ef_projection_valid(const u8* r){
     float reference[4]={1,1,-.5f*(float)w,-.5f*(float)h};
     return s26do_light_coefficients((const float*)(r+0xaa4),*(const float*)(r+0xbe4),w,h,reference,out);
 }
-static void __attribute__((ms_abi)) s26ef_gbuffer(void* renderer){
+static void __attribute__((ms_abi)) s26ef_gbuffer_impl(void* renderer){
     if(!o_s26efGbuffer)return;
     u8* r=(u8*)renderer;float gaze[3];i32 vp[4]={0},fb=0;
     if(!__atomic_load_n(&g_s26efFoveation,__ATOMIC_RELAXED)){s26ei_opaque_draw(renderer,0);return;}
@@ -138,6 +138,9 @@ static void __attribute__((ms_abi)) s26ef_gbuffer(void* renderer){
         if(g_s26efFoveationErrors++<4u)ext_Log(">>> S26EF DFR setup failed: GL error 0x%x; full-rate frame retained",err);
     }
     if(!err&&g_s26efFoveationCalls++<4u)ext_Log(">>> S26EF DFR applied: main GBuffer %dx%d gaze %.3f/%.3f/%.3f; shadow, lighting and UI passes remain full rate",w,h,gaze[0],gaze[1],gaze[2]);
+}
+static void __attribute__((ms_abi)) s26ef_gbuffer(void* renderer){
+ s26ef_gbuffer_impl(renderer);
 }
 static void s26ef_install_foveation(void){
     static u8 tried;if(tried||(!g_s26efFoveation&&!g_s26eiDFRTiming))return;tried=1;

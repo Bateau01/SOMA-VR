@@ -1,0 +1,221 @@
+[
+  {
+    "name": "visibility_dispatch",
+    "steam": "0x285740",
+    "store": "0x27f4a0",
+    "steam_signature": "48895c24184889742420574883ec4080",
+    "store_signature": "48895c24184889742420574883ec4080",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "render_list_prepare",
+    "steam": "0x2894a0",
+    "store": "0x2832a0",
+    "steam_signature": "40574883ec20488b8138040000488bf9",
+    "store_signature": "40574883ec20488b8138040000488bf9",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "queued_prepass",
+    "steam": "0x327460",
+    "store": "0x31e640",
+    "steam_signature": "40534883ec20488b81f0250000488bd9",
+    "store_signature": "40534883ec20488b81f0250000488bd9",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "terrain",
+    "steam": "0x31e4e0",
+    "store": "0x315ad0",
+    "steam_signature": "40564883ec40488b8138040000488bf1",
+    "store_signature": "40564883ec40488b8138040000488bf1",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "vegetation",
+    "steam": "0x31ece0",
+    "store": "0x3162d0",
+    "steam_signature": "40564883ec40488b8168260000488bf1",
+    "store_signature": "40564883ec40488b8168260000488bf1",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "decals",
+    "steam": "0x282f80",
+    "store": "0x27cce0",
+    "steam_signature": "4c8bdc49894b0853564881ec88000000",
+    "store_signature": "4c8bdc49894b0853564881ec88000000",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "depth_fullscreen_pass",
+    "steam": "0x283e60",
+    "store": "0x27dbc0",
+    "steam_signature": "405356574883ec60488bf133d24883c1",
+    "store_signature": "405356574883ec60488bf133d24883c1",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "ssao",
+    "steam": "0x3fa9c0",
+    "store": "0x3f2b50",
+    "steam_signature": "4c8bdc5556498dab38ffffff4881ecb8",
+    "store_signature": "4c8bdc5556498dab38ffffff4881ecb8",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "illumination",
+    "steam": "0x2853a0",
+    "store": "0x27f100",
+    "steam_signature": "488bc4488948084881ec980000004889",
+    "store_signature": "488bc4488948084881ec980000004889",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "fullscreen_fog",
+    "steam": "0x2838c0",
+    "store": "0x27d620",
+    "steam_signature": "4c8bdc49894b0841564883ec50488b81",
+    "store_signature": "4c8bdc49894b0841564883ec50488b81",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "fog_volumes",
+    "steam": "0x2887c0",
+    "store": "0x282520",
+    "steam_signature": "48894c240841574883ec60488b814004",
+    "store_signature": "48894c240841574883ec60488b814004",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "skybox",
+    "steam": "0x1f43d0",
+    "store": "0x1eddf0",
+    "steam_signature": "4c8bdc49897b1855498dab38ffffff48",
+    "store_signature": "4c8bdc49897b1855498dab38ffffff48",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "local_reflections",
+    "steam": "0x3fbf40",
+    "store": "0x3f40d0",
+    "steam_signature": "4c8bdc5557498d6ba14881ecb8000000",
+    "store_signature": "4c8bdc5557498d6ba14881ecb8000000",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "late_object_pass",
+    "steam": "0x3f8b40",
+    "store": "0x3f0cd0",
+    "steam_signature": "4c8bdc535557415441564883ec50488b",
+    "store_signature": "4c8bdc535557415441564883ec50488b",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "translucency",
+    "steam": "0x3f62f0",
+    "store": "0x3ee480",
+    "steam_signature": "488bc453555657415441554156415748",
+    "store_signature": "488bc453555657415441554156415748",
+    "caller": "0x289650",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "query_object_update_nested",
+    "steam": "0x1fe080",
+    "store": "0x1f7c20",
+    "steam_signature": "4c8bdc5641544883ec58488b91400400",
+    "store_signature": "4c8bdc5641544883ec58488b91400400",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "buffer_upload_nested",
+    "steam": "0x1f1360",
+    "store": "0x1ead80",
+    "steam_signature": "48895c24084889742410574883ec5048",
+    "store_signature": "48895c24084889742410574883ec5048",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "object_view_update_nested",
+    "steam": "0x1f1c40",
+    "store": "0x1eb660",
+    "steam_signature": "405541554883ec38488b914004000045",
+    "store_signature": "405541554883ec38488b914004000045",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "light_instancing_nested",
+    "steam": "0x406560",
+    "store": "0x3fe900",
+    "steam_signature": "4055415541564157488d6c24c14881ec",
+    "store_signature": "4055415541564157488d6c24c14881ec",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true,
+    "measured_target": "base mod wrapper RVA 0x7dc0",
+    "wrapper_signature": "4157415641554154555756534881ec08",
+    "reason": "Native entry already hooked by base; preserve it and time wrapper including original"
+  },
+  {
+    "name": "geometry_prepare_nested",
+    "steam": "0x323600",
+    "store": "0x31a7e0",
+    "steam_signature": "48894c2408555341554156488dac24d8",
+    "store_signature": "48894c2408555341554156488dac24d8",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "cached_geometry_prepare_nested",
+    "steam": "0x3275b0",
+    "store": "0x31e790",
+    "steam_signature": "4055574156488dac24b0fdffff4881ec",
+    "store_signature": "4055574156488dac24b0fdffff4881ec",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "shadow_list_prepare_nested",
+    "steam": "0x4020b0",
+    "store": "0x3fa1c0",
+    "steam_signature": "48894c24085355565741544155415641",
+    "store_signature": "48894c24085355565741544155415641",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "projected_effect_prepare_nested",
+    "steam": "0x2890e0",
+    "store": "0x282ee0",
+    "steam_signature": "488bc453555657415441574881ec8801",
+    "store_signature": "488bc453555657415441574881ec8801",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true
+  },
+  {
+    "name": "job_completion_nested",
+    "steam": "0x36b870",
+    "store": "0x363a60",
+    "steam_signature": "488bcae9d8c50100cccccccccccccccc",
+    "store_signature": "488bcae968c60100cccccccccccccccc",
+    "caller": "0x2894a0",
+    "caller_offset_verified": true
+  }
+]

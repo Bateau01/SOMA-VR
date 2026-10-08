@@ -57,7 +57,7 @@ static i32 s26y_near(i32 hand,void* wrapper,void* owner,const float* tip,const f
     float gap=999,cp[3],m[16];if(!h14_point_to_body(body,tip,&gap,cp))return 1;
     float normal[3]={tip[0]-cp[0],tip[1]-cp[1],tip[2]-cp[2]};if(!h10_norm3(normal))return 1;
     p_h14GetMatrix(body,m);float front[3]={m[8],m[9],m[10]};if(!h10_norm3(front))return 1;
-    float skin=h572_index_skin_gap(hand,len,gap);if(!s26y_near_gate(skin,h10_dot(normal,front),h10_dot(dir,normal)))return 1;
+    float skin=h572_index_skin_gap(hand,len,gap);if(!s26y_near_gate(skin,h10_dot(normal,front),h10_dot(dir,normal)))return 1;s26fc_hint_near(21);
     // Capture is the authored GetMainBody wrapper, even when the ray hits the moving paddle.
     if(!r->mainWrapper||!h20_mem_readable(r->mainWrapper,0x2f0u)||*(const void**)((u8*)r->mainWrapper+0x2e8)!=r->mainRaw||*(void**)((u8*)r->mainWrapper+0x2c0)!=owner)return 1;
     i32 icon=-1;const void* raw=0;void* can=0;void* on=0;

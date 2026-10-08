@@ -8,7 +8,7 @@ From the repository root:
 python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
 ```
 
-Output: `build/hpl3vr.dll` (1.05-S26EM). SHA256:
+Output: `build/hpl3vr.dll` (1.05-S26ER). SHA256:
 
 `b7343e64fa30bbec8f6d30cac43206ef930d91d3dc31823ad1b4fde33e771dfc`
 

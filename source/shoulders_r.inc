@@ -4,7 +4,7 @@ typedef struct {
     float yaw;
     i64 time;
     u32 epoch;
-    u8 valid, following, reach;
+    u8 valid, following, reach, trackerSeen;
 } S26RShoulders;
 static S26RShoulders g_s26rShoulders;
 static u32 g_s26rShoulderLogs;
@@ -37,6 +37,33 @@ static void s26r_shoulder_step(S26RShoulders* st,i64 now,u32 epoch,i32 valid,
         float remaining=a-0.087266463f;if(step>remaining)step=remaining;
         st->yaw=s26r_angle(st->yaw+(delta<0?-step:step));
     }
+}
+
+/* S26FG: tracker heading is a torso reference, independent of locomotion mode.
+   Preserve the existing reach latch; movement in Waist mode stays tracker-directed.
+   Rate limiting bridges tracker acquisition/loss without snapping slot targets. */
+static void s26fg_shoulder_step(S26RShoulders* st,i64 now,u32 epoch,i32 valid,
+                                float head,i32 reach,float hand,i32 hands,
+                                i32 tracked,float waist) {
+    if(!tracked){
+        if(st->trackerSeen&&st->valid&&st->epoch==epoch&&now-st->time>250000000LL)
+            st->time=now-50000000LL;
+        s26r_shoulder_step(st,now,epoch,valid,head,reach,hand,hands);return;
+    }
+    st->trackerSeen=1;
+    if(!valid||now<=0){s26r_shoulder_step(st,now,epoch,0,0,0,0,0);return;}
+    if(!st->valid||st->epoch!=epoch||now<st->time){
+        st->yaw=waist;st->valid=1;st->epoch=epoch;st->time=now;
+        st->following=0;st->reach=reach?1:0;return;
+    }
+    if(now==st->time)return;
+    float dt=(float)(now-st->time)*0.000000001f;st->time=now;
+    if(dt>0.05f)dt=0.05f;
+    st->reach=reach?1:0;st->following=0;
+    if(reach)return;
+    float delta=s26r_angle(waist-st->yaw),limit=2.094395102f*dt;
+    if(delta>limit)delta=limit;if(delta<-limit)delta=-limit;
+    st->yaw=s26r_angle(st->yaw+delta);
 }
 
 static void s26r_update_shoulders(void) {
@@ -83,7 +110,9 @@ static void s26r_update_shoulders(void) {
         if(hands)handYaw=p_h5755blAtan2f(-dz,dx);
     }
     u8 previous=g_s26rShoulders.reach;
-    s26r_shoulder_step(&g_s26rShoulders,now,g_h5745YawCaptures,1,head,reach,handYaw,hands);
+    i32 tracked=g_s26qWaistValid;
+    float waist=tracked?p_h5755blAtan2f(g_s26qWaistS,g_s26qWaistC):head;
+    s26fg_shoulder_step(&g_s26rShoulders,now,g_h5745YawCaptures,1,head,reach,handYaw,hands,tracked,waist);
     if((g_s26rShoulderLogs==0||previous!=g_s26rShoulders.reach)&&g_s26rShoulderLogs<24u){
         ++g_s26rShoulderLogs;
         ext_Log(">>> S26R SHOULDER FRAME #%u: raw head %.1f torso %.1f reach %u hands %d epoch %u | shared placement/admission; no body or camera writes",g_s26rShoulderLogs,head*57.2957795f,g_s26rShoulders.yaw*57.2957795f,(u32)g_s26rShoulders.reach,hands,g_h5745YawCaptures);

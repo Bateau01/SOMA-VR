@@ -1499,6 +1499,7 @@ if(cMath_Abs(avAmount.y) > 0.001f)
 	
 	//------------------------------------------------------------
 	
+	void HPL3VR_GetFlashlightHint(){cScript_SetGlobalReturnBool(!mbFlashlightDisabled && cLux_GetPlayer().IsActive());}
 	void FlashlightOnEnter()
 	{
 	}

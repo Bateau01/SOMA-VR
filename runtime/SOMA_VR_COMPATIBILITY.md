@@ -1,4 +1,4 @@
-# SOMA VR compatibility — 1.05-S26EM
+# SOMA VR compatibility — 1.05-S26ER
 
 Use the same installer and Launch-SOMA-VR.cmd for Steam, Epic or GOG. The launcher prepares the selected user's settings, uses borderless windowed mode and selects the native DLL by exact executable identity.
 

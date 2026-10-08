@@ -10,6 +10,14 @@ enum eMovingButtonTimer
 
 class cScrPropMovingButton : iScrProp, iScrProp_Interface
 {
+    // S26FB: only the authored pump handle is a VR interaction target.
+    bool VRPowerPump()
+    {
+        if(cString_GetFileName(mBaseObj.GetFileName()) != "02_07_power_pump_button.ent") return false;
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        return cScript_GetGlobalReturnBool();
+    }
     [nosave] bool mbVRRockerChecked=false;
     [nosave] bool mbVRRockerY=false;
     [nosave] bool mbVRRockerRegistered=false;
@@ -311,6 +319,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 		
 	bool CanInteract(int alType, iPhysicsBody@ apBody)
 	{
+        if(VRPowerPump() && (apBody is null || apBody !is mpMoveBody)) return false;
         VRRockerY_Update(0.5f); // Sleeping props must register before their first interaction.
 		if(mBaseObj.Timer_Exists(eMovingButtonTimer_InteractWait)) return false;
 		if(mbDisabled) return false;
@@ -327,6 +336,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 		
 	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
 	{
+        if(VRPowerPump() && (apBody is null || apBody !is mpMoveBody)) return false;
 		float fWaitTime =0.5f;
 		//////////////////////
 		// Disabled
@@ -375,8 +385,9 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 				{
 					cScript_RunGlobalFunc("VRMECH",mBaseObj.GetName(),"B");
 					iPhysicsBody@ pVRIdentity=mBaseObj.GetMainBody();
-					cScript_RunGlobalFunc("VRMECH",""+mpMoveBody.GetUniqueID(),"E");
+					cScript_RunGlobalFunc("VRMECH",""+mpMoveBody.GetUniqueID(),VRPowerPump() ? "P" : "E");
 				}
+				cScript_SetGlobalArgBool(13, VRPowerPump());
 				cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
 				cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
 				cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion

@@ -1,4 +1,4 @@
 {
-  "version": "1.05-S26EM",
-  "scope": "See separate validation report; complete hardware pose confirmation pending."
+  "version": "1.06-S26FH",
+  "scope": "Cumulative S26FG plus held-tracer hint precedence and native inventory hint replacement. Native script regression tests; headset confirmation pending. Windows only."
 }

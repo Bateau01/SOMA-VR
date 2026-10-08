@@ -59,7 +59,7 @@ S26CM adds an executable compatibility report and opt-in launch for engine-equiv
 
 
 
-## 1.05-S26EM additions and test status
+## 1.05-S26ER additions and test status
 
 - One Windows installer and launcher select the appropriate native DLL for the verified Steam, Epic and GOG executables. Unknown engine layouts remain blocked.
 - **DYNAMIC FOVEATED RENDERING**, under EYE TRACKING, has Quality, Balanced, Performance and Custom settings in its own submenu. DFR remains experimental and off by default for new installations, requiring valid gaze and NVIDIA OpenGL `GL_NV_shading_rate_image`. Quality retains a 25-degree sharp radius and 2 x 2 peripheral shading; other presets add a 4 x 4 outer region. Optional gaze-motion protection and GPU performance measurements are available. Only the main opaque-material pass is foveated. Invalid tracking or unsupported hardware retains full quality. The user reported 10-15 FPS improvement under heavy GPU load with S26EH; further gains and visual quality from S26EI presets require headset testing.
@@ -81,3 +81,14 @@ S26EI adds an EYE TRACKING > DYNAMIC FOVEATED RENDERING submenu with quality pre
 
 
 S26EM uses embedded shared retrieval poses only. No personal pose overrides are read. Pose capture and stutter recording controls are removed. World-scale placement retains controller-relative placement; anatomical finger fit is not dynamically adapted.
+
+
+## VR hints
+
+VR SETTINGS > GAMEPLAY > VR HINTS offers FULL, ESSENTIAL, OFF and RESET VR HINTS. Contextual guidance covers grabbing, mechanisms, readables, terminals, phone answering, shoulder holsters and the Theta pump. This first pass uses English text and respects the native Show Hints setting.
+
+Expanded hints cover phone retrieval, native ladder/seat/opening interactions, and stage-specific WAU touch/fist gestures, including the left-hand requirement at Site Alpha.
+
+Additional VR hints explain tracer fluid, connector removal, key-item retrieval, the head flashlight gesture, two-handed carrying, pushbuttons and Theta lock stages. Ladders, seats and climb openings each have their own remembered prompt.
+
+Waist tracking now supplies the shoulder/body heading when a valid OpenXR WAIST tracker is available. Reach stabilization remains active. This does not animate a tracked full-body skeleton. Physical waist-tracker testing is pending.

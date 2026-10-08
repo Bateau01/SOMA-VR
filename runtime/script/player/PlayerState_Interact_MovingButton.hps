@@ -1,0 +1,437 @@
+#include "player/PlayerState_Interact.hps"
+
+#include "helpers/helper_player.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+
+//------------------------------------------------------------
+
+class cScrPlayerState_Interact_MovingButton : iScrPlayerState_Interact, iScrPlayerState_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mvMoveDirs.resize(10);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+    bool mbVRPowerPump=false;
+	void SetupMovingButton()
+	{
+		//////////////////////////////// 
+		// Get basic params & setup
+		SetupInteractVars();
+        mbVRPowerPump=cScript_GetGlobalArgBool(13);
+		
+		mfMinSpeed =  cScript_GetGlobalArgFloat(3);
+		mfMaxSpeed =  cScript_GetGlobalArgFloat(4);
+		mfMinLength =  cScript_GetGlobalArgFloat(5);
+		mbCurrentState =  cScript_GetGlobalArgBool(6);
+		mbCanBeSwitchedOn =  cScript_GetGlobalArgBool(7);
+		mbCanBeSwitchedOff =  cScript_GetGlobalArgBool(8);
+		float fStateAmount =  cScript_GetGlobalArgFloat(9);
+		mbHasInputDirection =  cScript_GetGlobalArgBool(10);
+		mvInputDirection =  cScript_GetGlobalArgVector2f(11);
+		mfChangeStateAmount =  cScript_GetGlobalArgFloat(12);
+		
+		//In case on the way back, we want to set move sum up so there is no strangness
+		mfMoveSum = mfMinLength * fStateAmount;
+		if(mbCurrentState) mfMoveSum = mfMinLength - mfMoveSum;
+		
+		mbStartState = mbCurrentState;
+		
+		if(mbCurrentState==false) mvInputDirection = mvInputDirection*-1;
+		
+		////////////////////////////////
+		// Set the max distance allow
+		mfMaxDistance = cMath_Vector3Dist(mBaseObj.mpPlayer.GetCamera().GetPosition(), cLux_ID_Body(mBodyID).GetLocalPosition());
+		mfMaxDistance = mfMaxDistance*1.1 + 0.2;
+	}
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnEnterState(int alPrevStateId)
+	{
+		EnterInteractState(alPrevStateId);
+		
+		/////////////////////////
+		//Reset variables
+		
+		//Reset the array
+		for(uint i=0; i< mvMoveDirs.size(); ++i) mvMoveDirs[i] = cVector2f(0,0);
+		
+		//Reset the array variables
+		mlMoveAddInsertPos = 0;
+		mlMoveAddNum =0;
+		
+		mbIsStuckAtState = false;
+		mbReachedNewState = false;
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnLeaveState(int alNextStateId)
+	{
+		/////////////////////////////
+		//Resets some general stuff
+		ResetPropInteractVars();
+	}
+		
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+
+	void Update(float afTimeStep)
+	{
+		if(CheckShouldUpdate()==false) return;
+		
+		////////////////////////////
+		// Check so interact is still pressed.
+		if(cInput_IsTriggered(eAction_Interact)==false)
+		{
+			cLux_GetPlayer().ChangeState(mlPreviousState);
+			return;
+		}
+		
+		////////////////////////////
+		// Check if inside max distance
+		if(cMath_Vector3Dist(mBaseObj.mpPlayer.GetCamera().GetPosition(), cLux_ID_Body(mBodyID).GetLocalPosition()) > mfMaxDistance)
+		{
+			cLux_GetPlayer().ChangeState(mlPreviousState);
+			return;
+		}
+		
+		////////////////////////
+		//Show no crosshair!
+		Player_SetCrossHairState(eCrossHairState_None);
+		
+		
+		////////////////////////////
+		// Check the move amount
+		cLuxProp@ pProp = cLux_ID_Prop(mPropID);
+		if(mfMoveSum >= mfMinLength)
+		{
+			mfMoveSum =0;
+			
+			/////////////////////////
+			// State has changed, so make sure direction must be changed to toggle state.
+			if(mbHasInputDirection)
+			{
+				mvInputDirection = mvInputDirection*-1;
+			}
+			else
+			{
+				mbHasInputDirection = true;
+				mvInputDirection = mvAvgMoveDir;
+			}
+				
+			
+			/////////////////////////
+			// Make sure the state is changed
+			if(mbReachedNewState==false)
+			{
+				mbCurrentState = !mbCurrentState;
+				cScript_SetGlobalArgBool(0, mbCurrentState);
+				cScript_SetGlobalArgBool(1, true);
+				cScript_RunGlobalFunc(pProp.GetName(), "cScrPropMovingButton", "_Global_SetSwitchedOn");
+			}
+			mbReachedNewState = false;
+			mbStartState = mbCurrentState;
+							
+			//////////////////////////
+			// If not possible to go to next state, go out of interaction
+			// NOTE: This felt weird to skippi
+			if( (mbCanBeSwitchedOn==false && mbCurrentState==false) ||
+				(mbCanBeSwitchedOff==false && mbCurrentState) )
+			{
+				mbIsStuckAtState = true;
+				return;
+			}
+		}
+		else
+		{
+			float fT = mfMoveSum / mfMinLength;
+			float fAmount = mbStartState ? 1.0f - fT : fT; //Next state will be off, so need to invert
+			
+			cScript_SetGlobalArgFloat(0, fAmount);
+			cScript_RunGlobalFunc(pProp.GetName(), "cScrPropMovingButton", "_Global_SetStateAmount");
+			
+			if(fT > mfChangeStateAmount && mbReachedNewState==false)
+			{
+				mbReachedNewState = true;
+				mbCurrentState = !mbCurrentState;
+				cScript_SetGlobalArgBool(0, mbCurrentState);
+				cScript_SetGlobalArgBool(1, true);
+				cScript_RunGlobalFunc(pProp.GetName(), "cScrPropMovingButton", "_Global_SetSwitchedOn");
+			}
+		}
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+		if(CheckShouldUpdate()==false) return;
+	}
+	
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+		///////////////////////////////////
+		// Looking
+		if(alAnalogId == eAnalogType_Look)
+		{
+			if(mbIsStuckAtState) return false;
+            // S26FB: preserve stock state callbacks; use signed axial stroke input.
+            if(mbVRPowerPump)
+            {
+                mfMoveSum=cMath_Clamp(mfMoveSum-avAmount.x*mvInputDirection.x,0.0f,mfMinLength);
+                return false;
+            }
+
+			
+			////////////////////////
+			// Get the movement amount
+			cVector2f vAmount(avAmount.x, avAmount.y);
+			if(cLux_GetInputHandler().IsYAxisInverted()) vAmount.y = -vAmount.y;
+			
+			////////////////////////
+			// Get average move direciton
+			mvAvgMoveDir = cVector2f(0);
+			for(int i=0; i<mlMoveAddNum; ++i)
+			{
+				mvAvgMoveDir += mvMoveDirs[i];
+			}
+			if(mlMoveAddNum>0)
+				mvAvgMoveDir = mvAvgMoveDir / mlMoveAddNum;
+			
+			////////////////////////
+			//Increase move sum
+			float fLength = vAmount.Length();
+			if(fLength > mfMinSpeed)
+			{
+				if(fLength > mfMaxSpeed)
+				{
+					vAmount = (vAmount / fLength)*mfMaxSpeed;
+				}
+				
+				float fAdd = cMath_Vector2Dot(vAmount, mvAvgMoveDir);
+				
+				//If there has been a state change, the user must change direction of input to get a response
+				if(mbHasInputDirection)
+				{
+					float fMul = cMath_Vector2Dot(cMath_Vector2Normalize(vAmount), mvInputDirection*-1);
+					if(fMul>0.3f) fMul =1; //No need to be analog, just want to make same direction does not work again!
+					fAdd *= fMul;
+				}
+				
+				mfMoveSum += fAdd;
+				
+				if(mfMoveSum < 0) mfMoveSum =0;
+			}
+			
+			////////////////////////
+			//Add normalized amount to directions
+			mvMoveDirs[mlMoveAddInsertPos] = cMath_Vector2Normalize(vAmount);
+			mlMoveAddInsertPos++;
+			if(mlMoveAddNum < mvMoveDirs.size()) mlMoveAddNum++;
+			if(mlMoveAddInsertPos >= mvMoveDirs.size()) mlMoveAddInsertPos = 0;
+			
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// BODY CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool AllowBuoyancy(iPhysicsBody @apBody)
+	{
+		return true;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		apSet.DrawFont(tWString("MoveAmount:"+mfMoveSum), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		afStartY += 14;
+						
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+		
+	//------------------------------------------------------------
+	
+	float mfMinSpeed;
+	float mfMaxSpeed;
+	float mfMinLength;
+	bool mbStartState;
+	bool mbCanBeSwitchedOn;
+	bool mbCanBeSwitchedOff;
+	float mfChangeStateAmount;
+	
+	//------------------------------------------------------------
+	
+	bool mbCurrentState;
+	bool mbReachedNewState;
+	bool mbIsStuckAtState;
+	float mfMaxDistance;
+	float mfMoveSum;
+	array<cVector2f> mvMoveDirs;
+	int mlMoveAddInsertPos;
+	int mlMoveAddNum;
+	bool mbHasInputDirection;
+	cVector2f mvInputDirection;
+	cVector2f mvAvgMoveDir;
+			
+	//------------------------------------------------------------
+		
+}

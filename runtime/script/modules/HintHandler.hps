@@ -148,6 +148,97 @@ tString BuildHintName(const tString &in asTextCat, const tString &in asTextEntry
 
 class cScrHintHandler : iScrUserModule, iScrUserModule_Interface, iScrHintHandler_Interface
 {
+    [nosave] float mfVRHintPoll=0;
+    [nosave] int mlVRContext=-1;
+    tWString VRText(const tString &in entry)
+    {
+        if(entry=="HintInventory" && cScript_RunGlobalFunc("VRHINT","16","NEAR"))
+            return tWString("Hold the tracer-fluid bottle near your mouth for a moment to drink.");
+        if(entry=="0" || entry=="HintPickUpItem") {
+            cScript_SetGlobalArgInt(0,6);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetHintBinding");
+            return tWString("Hold the grab control to pick up an object. Release it to let go. "+cScript_GetGlobalReturnString());
+        }
+        if(entry=="1" || entry=="HintDoors" || entry=="HintSlider") return tWString("Hold the grab control at the handle or surface, then move your hand to open it.");
+        if(entry=="2") return tWString("Touch the screen with your index finger to select an option.");
+        if(entry=="3" || entry=="ReadablePropAdditionalHint" || entry=="ReadableGrabAdditionalHint") return tWString("Use the grab control to hold the document or picture. Move your hand to examine it.");
+        if(entry=="4") return tWString("Release your grab control with the Omni-Tool over your right shoulder to stow it. Use the grab control there to retrieve it. Bring it to a compatible reader or slot to use it.");
+        if(entry=="5" || entry=="HintInventory") return tWString("Release your grab control with a key item over your left shoulder to stow it. Use the grab control there to retrieve it. Bring it to its matching target to use it.");
+        if(entry=="6" || entry=="HintPhone") return tWString("Pick up the phone, then touch Accept on its screen to answer.");
+        if(entry=="8") return tWString("Reach towards the ladder, seat or opening. When your controller vibrates, press your grab control to interact.");
+        if(entry=="9") return tWString("Reach out and touch the glowing centre of the WAU flower. Keep your hand there to heal.");
+        if(entry=="10") return tWString("Make a fist and push it into the WAU flower's opening. Hold it there to begin healing.");
+        if(entry=="11") return tWString("Make a fist with your LEFT hand and push it into the WAU's mouth. Hold it there to begin the interaction.");
+        if(entry=="12") return tWString("Reach towards your right hip with your right hand. Feel the vibration, then press grip to take out the phone. Touch Accept to answer.");
+        if(entry=="13") return tWString("Reach towards the ladder. When your controller vibrates, press your grab control to climb.");
+        if(entry=="14") return tWString("Reach towards the seat. When your controller vibrates, press your grab control to sit down.");
+        if(entry=="15") return tWString("Reach towards the opening or ledge. When your controller vibrates, press your grab control to climb through.");
+        if(entry=="16") return tWString("Hold the tracer-fluid bottle near your mouth for a moment to drink.");
+        if(entry=="17") return tWString("Grip the connector itself and pull it out of the socket.");
+        if(entry=="18") return tWString("Grip the item to retrieve it. Keep holding your grab control as it comes free to carry it.");
+        if(entry=="19") return tWString("Bring an empty hand beside your headset, then press grip or trigger to toggle the flashlight.");
+        if(entry=="20") return tWString("Keep holding with one hand, then grip the object with your other hand to carry it with both hands.");
+        if(entry=="21") return tWString("Bring your index fingertip close to the button to press it.");
+        if(entry=="22") return tWString("Grip the cylinder handle and turn it to unlock the slide.");
+        if(entry=="23") return tWString("Keep gripping the handle and pull the cylinder out.");
+        if(entry=="24") return tWString("Grip the handle and turn the extended cylinder.");
+        if(entry=="25") return tWString("Keep gripping the handle and push the cylinder back in.");
+        if(entry=="26") return tWString("Grip the lever and pull it to open the gate.");
+        if(entry=="7") return tWString("Keep holding the handle and pump back and forth to build charge.");
+        if(entry=="HintTools") return tWString("Hold the item and bring it to its matching target to use it.");
+        if(entry=="HintLookAround") return tWString("Turn your head to look around. Use your configured turning control to turn Simon.");
+        if(entry=="HintMoveAround") return tWString("Use the movement stick to walk. Change movement direction and turning in VR SETTINGS.");
+        if(entry=="HintGrab_1") return tWString("Move your hand and release the grab control to throw the object.");
+        if(entry=="HintGrab_2" || entry=="HintGrab_3") return tWString("Move and rotate your hand to position the object.");
+        if(entry=="HintWheel") return tWString("Hold the grab control at the wheel and move your hand around its rim to turn it.");
+        if(entry=="HintLean") return tWString("Lean your head and body to look around a corner.");
+        if(entry=="HintRun" || entry=="HintJump" || entry=="HintSneak") {
+            int role=entry=="HintRun" ? 1 : (entry=="HintJump" ? 0 : 4);
+            cScript_SetGlobalArgInt(0,role);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetHintBinding");
+            return tWString(cScript_GetGlobalReturnString());
+        }
+        return tWString("");
+    }
+    bool VRMapped(const cHint &in hint){return (hint.msTextCat=="Hints" || hint.msTextCat=="HintsGamepad" || hint.msTextCat=="VRHints") && VRText(hint.msTextEntry)!=tWString("");}
+    int VRHintMode(){int mode=cLux_GetUserConfig().GetInt("SOMA_VR_Hints","Mode",0);return mode<0 || mode>2 ? 0 : mode;}
+    bool VRHintNear(int id){
+        if(id==19){cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("LuxPlayer","","HPL3VR_GetFlashlightHint");return cScript_GetGlobalReturnBool();}
+        return cScript_RunGlobalFunc("VRHINT",""+id,"NEAR");
+    }
+    void VRHintsUpdate(float dt)
+    {
+        if(!_HPL3VR_RuntimeActive_Hint())return;
+        if(!cScript_RunGlobalFunc("VRHINT","","LIVE"))return;
+        mfVRHintPoll-=dt;if(mfVRHintPoll>0)return;mfVRHintPoll=0.25f;
+        int mode=VRHintMode();
+        if(mode==2){if(!mCurrentHint.IsEmpty() && VRMapped(mCurrentHint))StopHint();return;}
+        cConfigFile@ cfg=cLux_GetUserConfig();
+        for(int i=0;i<27;i++)if(cScript_RunGlobalFunc("VRHINT",""+i,"DONE")){
+            cfg.SetBool("SOMA_VR_Hints","Done"+i,true);
+            if(mlVRContext==i){if(mCurrentHint.msTextCat=="VRHints")StopHint();mlVRContext=-1;}
+        }
+        if(mCurrentHint.msTextCat=="VRHints" && mlVRContext>=22 && mlVRContext<=26 && !VRHintNear(mlVRContext))StopHint();
+          // Replace only the generic inventory guidance when tracer becomes held.
+          // Preserve unrelated story hints and the once-per-hint/reset policy.
+          if(!mCurrentHint.IsEmpty() && VRHintNear(16) &&
+             !cfg.GetBool("SOMA_VR_Hints","Seen16",false) && !cfg.GetBool("SOMA_VR_Hints","Done16",false) &&
+             ((mCurrentHint.msTextCat=="VRHints" && mCurrentHint.msTextEntry=="5") ||
+              ((mCurrentHint.msTextCat=="Hints" || mCurrentHint.msTextCat=="HintsGamepad") && mCurrentHint.msTextEntry=="HintInventory")))StopHint();
+        if(!mbHintsEnabled || !mCurrentHint.IsEmpty())return;
+        array<int> order={22,23,24,25,26,16,17,18,13,14,15,9,10,11,12,6,7,2,21,20,4,5,0,1,3,8,19};
+        for(int k=0;k<int(order.length());k++){int i=order[k];
+            if(mode==1 && (i==0 || i==1 || i==3))continue;
+            if(cfg.GetBool("SOMA_VR_Hints","Seen"+i,false)||cfg.GetBool("SOMA_VR_Hints","Done"+i,false))continue;
+            if(!VRHintNear(i))continue;
+            int added=AddHintCandidate("HintHeaders","Hint","VRHints",""+i,false,cColor(1,1),1.5f,false);
+            if(added>=0){cfg.SetBool("SOMA_VR_Hints","Seen"+i,true);mlVRContext=i;}
+            break;
+        }
+    }
+    void ResetVRHints(){
+        for(int i=0;i<27;i++){cScript_RunGlobalFunc("VRHINT",""+i,"DONE");cLux_GetUserConfig().SetBool("SOMA_VR_Hints","Seen"+i,false);cLux_GetUserConfig().SetBool("SOMA_VR_Hints","Done"+i,false);}
+        if(!mCurrentHint.IsEmpty() && mCurrentHint.msTextCat=="VRHints")StopHint();mlVRContext=-1;
+    }
+
 	
 	//------------------------------------------------------------
 	
@@ -281,6 +372,7 @@ class cScrHintHandler : iScrUserModule, iScrUserModule_Interface, iScrHintHandle
 	
 	void Update(float afTimeStep)
 	{
+        VRHintsUpdate(afTimeStep);
 		if(mbHintsEnabled==false) return;
 		
 		//cLux_AddDebugMessage("HintHandler::Update");
@@ -560,6 +652,7 @@ class cScrHintHandler : iScrUserModule, iScrUserModule_Interface, iScrHintHandle
 			return -1;
 		
 		cHint hint(asHeaderCat, asHeaderEntry, asTextCat, asTextEntry, abIsInputHint, aColor, afTimeMul, abAddAsGiven);
+        if(_HPL3VR_RuntimeActive_Hint() && VRMapped(hint) && (VRHintMode()==2 || (VRHintMode()==1 && asTextCat!="VRHints")))return -1;
 		//////////////////////////////////////////////////////
 		// Check so hint is not blocked or already given
 		if(m_setHintsBlocked.Count(hint.msName)>0)
@@ -707,7 +800,16 @@ class cScrHintHandler : iScrUserModule, iScrUserModule_Interface, iScrHintHandle
 		mvCurrentHintIconsPerLine.resize(0);
 		
 		float fStringDuration;
-		cLux_ParseStringIntoScreenText(cLux_Translate(aHint.msTextCat,aHint.msTextEntry), cLux_GetGameHudImGui(), mFormatParamsHint, 
+		tWString hintText;
+        if(_HPL3VR_RuntimeActive_Hint() && VRMapped(aHint)){
+            hintText=VRText(aHint.msTextEntry);
+            if(mpVRFont is null) @mpVRFont=cResources_CreateFontData(Helper_Font_GetFontName(eLuxFontType_Default_Medium_Outline));
+            mvCurrentHintLines.resize(0);
+            if(mpVRFont !is null)mpVRFont.GetWordWrapRows(gfMaxTextWidth,cVector2f(gfFontSize),hintText,mvCurrentHintLines);
+            mfLineHeight=gfFontSize*1.15f;mlNumParsedHintIcons=0;return 6.0f;
+        }
+        hintText=cLux_Translate(aHint.msTextCat,aHint.msTextEntry);
+        cLux_ParseStringIntoScreenText(hintText, cLux_GetGameHudImGui(), mFormatParamsHint, 
 										mvCurrentHintLines, mvCurrentHintIcons, mvCurrentHintIconsPerLine, mfLineHeight, fStringDuration, aHint.mbTriggeredByGamepad);
 				
 		mlNumParsedHintIcons = mvCurrentHintIcons.length();
@@ -774,3 +876,6 @@ class cScrHintHandler : iScrUserModule, iScrUserModule_Interface, iScrHintHandle
 		
 	//------------------------------------------------------------
 }
+
+
+
