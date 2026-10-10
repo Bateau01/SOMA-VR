@@ -998,6 +998,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] bool mbVRHideShake=false;
     [nosave] bool mbVRHideMovementBob=false;
     [nosave] bool mbVRTextureBudget=false;
+    [nosave] bool mbVRDesktopMirror=true;
     [nosave] bool mbVRDynamicFoveation=false;
     [nosave] int mlVRDFRPreset=0;
     [nosave] int mlVRDFRInner=15; // 10 + index degrees
@@ -1089,6 +1090,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             for(int i=0;i<6;i++) { int v=p.GetInt("SOMA_VR_Buttons","Role"+i,i);if(v<0 || v>=14 || seen[v]) { valid=false;break; }mvVRButtonMap[i]=v;seen[v]=true; }
             if(!valid) for(int i=0;i<6;i++) mvVRButtonMap[i]=i;
             mbVRFingerTracking=p.GetBool("SOMA_VR_Comfort","FingerTrackingEnabled",true);
+            mbVRDesktopMirror=p.GetBool("SOMA_VR_Comfort","DesktopMirror",true);
             mbVRTextureBudget=p.GetBool("SOMA_VR_Comfort","TextureBudgetBoost",false);
             mbVRDynamicFoveation=p.GetBool("SOMA_VR_Comfort","DynamicFoveation",false);
             mlVRDFRPreset=p.GetInt("SOMA_VR_DFR","Preset",0);
@@ -1116,6 +1118,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         cScript_RunGlobalFunc("VRCOMFORT","S",""+mlVRSubtitleDistance);
         cScript_RunGlobalFunc("VRCOMFORT","A",""+mlVRMoveHand);
         cScript_RunGlobalFunc("VRCOMFORT","F",mbVRFingerTracking ? "1" : "0");
+        cScript_RunGlobalFunc("VRCOMFORT","MIRROR",mbVRDesktopMirror ? "1" : "0");
         cScript_RunGlobalFunc("VRCOMFORT","TB",mbVRTextureBudget ? "1" : "0");
         HPL3VR_ValidateDFR();
         cScript_RunGlobalFunc("VRCOMFORT","DFCFG",""+(10+mlVRDFRInner)+(25+mlVRDFROuter)+mlVRDFRRate+(mbVRDFRProtection?"1":"0"));
@@ -1149,6 +1152,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         p.SetInt("SOMA_VR_Comfort","CrouchMode",mlVRCrouchMode);
         p.SetBool("SOMA_VR_Comfort","DoubleTapSprint",mbVRDoubleTapSprint);
         p.SetBool("SOMA_VR_Comfort","FingerTrackingEnabled",mbVRFingerTracking);
+        p.SetBool("SOMA_VR_Comfort","DesktopMirror",mbVRDesktopMirror);
         p.SetBool("SOMA_VR_Comfort","TextureBudgetBoost",mbVRTextureBudget);
         p.SetBool("SOMA_VR_Comfort","DynamicFoveation",mbVRDynamicFoveation);
         p.SetInt("SOMA_VR_DFR","Preset",mlVRDFRPreset);
@@ -1275,7 +1279,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     int HPL3VR_BackRow()
     {
         if(mlVRComfortCategory<0) return 5;
-        if(mlVRComfortCategory==7 || mlVRComfortCategory==2 || mlVRComfortCategory==1) return 8;
+        if(mlVRComfortCategory==2) return 9;
+        if(mlVRComfortCategory==7 || mlVRComfortCategory==1) return 8;
         if(mlVRComfortCategory==0) return 8;
         if(mlVRComfortCategory==8) return 2;
         if(mlVRComfortCategory==3) return 9;
@@ -1355,7 +1360,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             OptionMenu_UpdateExtraWidth("CALIBRATE STANDING HEIGHT",true);
             OptionMenu_UpdateExtraWidth("CENTER CAMERA",true);
         }
-        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); OptionMenu_UpdateExtraWidth("TEXTURE BUDGET BOOST",true); size.y=470; }
+        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); OptionMenu_UpdateExtraWidth("TEXTURE BUDGET BOOST",true); size.y=510; }
         if(mlVRComfortCategory==3) { size.y=430;for(int i=0;i<6;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
         if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=440;
         if(mlVRComfortCategory==0) size.y=430;
@@ -1366,7 +1371,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             array<tString> presets={"QUALITY","BALANCED","PERFORMANCE","CUSTOM"};
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(presets,"");ImGui_SetTransCategory("");
             OptionMenu_UpdateExtraWidth("PERFORMANCE MEASUREMENTS",true);
-            size.y=470;size.x=650;
+            size.y=510;size.x=650;
         }
         if(mlVRComfortCategory==5) { array<tString> audio={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};OptionMenu_UpdateExtraButtonWidth_MultiSelection(audio,"");ImGui_SetTransCategory(""); }
         size.x+=OptionMenu_GetExtraWidth();
@@ -1481,6 +1486,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             changed=changed || bob!=mbVRHideMovementBob;mbVRHideMovementBob=bob;
             bool budget=HPL3VR_Toggle("TEXTURE BUDGET BOOST",7,mbVRTextureBudget);
             changed=changed || budget!=mbVRTextureBudget;mbVRTextureBudget=budget;
+            bool mirror=HPL3VR_Toggle("DESKTOP MIRROR",8,mbVRDesktopMirror);
+            changed=changed || mirror!=mbVRDesktopMirror;mbVRDesktopMirror=mirror;
             mbVRHideShake=shake;
             mbVRHideDistortion=distortion; mbVRHideChromatic=chromatic; mbVRHideTrails=trails;mbVRHideBlur=blur;mlVRVignette=vignette;
         }

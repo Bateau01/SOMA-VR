@@ -19,7 +19,7 @@ public class Options { public string SettingsDirectory; public string OwnerSid; 
 public static class Engine {
  static Engine() { AppContext.SetSwitch("Switch.System.IO.UseLegacyPathHandling",false); AppContext.SetSwitch("Switch.System.IO.BlockLongPaths",false); }
  public static void Initialize() {}
- public const string Version="1.06-S26FH";
+ public const string Version="1.06-S26FK";
  public const string Meta=".soma-vr-installer";
  public static JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path) { using(var s=File.OpenRead(path)) using(var sha=SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(s)).Replace("-","").ToLowerInvariant(); }
@@ -214,7 +214,7 @@ public class SetupWindow:Form {
  }
  Button Browse(Control target,int y){var b=new Button {Text="BROWSE",Left=895,Top=y,Width=105,Height=33};StyleButton(b,false);b.Click+=(s,e)=>{using(var d=new FolderBrowserDialog()){d.Description="Select the folder";d.SelectedPath=target.Text;if(d.ShowDialog()==DialogResult.OK)target.Text=d.SelectedPath;}};Controls.Add(b);return b;}
  public SetupWindow(string payload) {
-  source=payload;Text="SOMA VR | 1.06-S26FH"; Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);AutoScaleMode=AutoScaleMode.Dpi;ClientSize=new System.Drawing.Size(1032,690);MinimumSize=new System.Drawing.Size(700,500);MaximizeBox=true;StartPosition=FormStartPosition.CenterScreen;AutoScroll=true;
+  source=payload;Text="SOMA VR | 1.06-S26FK"; Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);AutoScaleMode=AutoScaleMode.Dpi;ClientSize=new System.Drawing.Size(1032,690);MinimumSize=new System.Drawing.Size(700,500);MaximizeBox=true;StartPosition=FormStartPosition.CenterScreen;AutoScroll=true;
   BackColor=System.Drawing.Color.FromArgb(8,18,23);ForeColor=ink;Font=new System.Drawing.Font("Segoe UI",10);DoubleBuffered=true;
   var artwork=Art("background");var title=Art("title");
   Paint+=(s,e)=>{
@@ -236,7 +236,7 @@ public class SetupWindow:Form {
   Caption("V R   M O D",0,120,320,30,17,ink).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
   Caption("INSTALLATION / MAINTENANCE",0,159,320,35,9,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
 
-  Caption("1.06-S26FH",0,568,320,28,10,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
+  Caption("1.06-S26FK",0,568,320,28,10,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
   Caption("SOMA VR Mod created by Bateau1\nUNOFFICIAL COMMUNITY MOD\nSOMA artwork © Frictional Games",0,611,320,60,8,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
   Caption("SOMA VR SETUP",355,31,600,40,24,ink);
   Caption("Install, update or repair your VR installation.",357,80,610,28,11,muted);

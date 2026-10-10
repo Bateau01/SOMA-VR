@@ -922,6 +922,33 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		return true;
 	}
 
+    // S26FJ: publish the visible Upsilon tray chip in the successful pickup
+    // transaction, rather than waiting for later inventory reconciliation.
+    void _Global_VRPublishUpsilonChipCarrier()
+    {
+        if(!_HPL3VR_RuntimeActive_ToolHandler()) return;
+        tString carrier=cScript_GetGlobalArgString(0);
+        if(carrier=="" || carrier!=msVRUpsilonToolChipCarrierName) return;
+        cToolData@ owned=null;
+        for(uint i=0;i<mvInventory.length();++i)
+            if(mvInventory[i].msPickedEntityName=="ConfigChipTool"){@owned=mvInventory[i];break;}
+        if(owned is null || owned.mbVRShoulderStowed || VR_GetPhysicalCarrierName(owned)!=carrier) return;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null) return;
+        cLuxProp@ prop=cast<cLuxProp>(map.GetEntityByName(carrier,eLuxEntityType_Prop,""));
+        if(prop is null || !prop.IsActive()) return;
+        prop.SetStaticPhysics(false);
+        cScript_RunGlobalFunc("VRCOMFORT","GRIPMODEL","ConfigChipTool");
+        cScript_RunGlobalFunc("VROMNICHIP",carrier,"B");
+        iPhysicsBody@ body=prop.GetMainBody();
+        cScript_RunGlobalFunc("VROMNICHIP",carrier,"E");
+        cScript_RunGlobalFunc("VRCOMFORT","GRIPMODEL","END");
+        if(body is null) return;
+        body.SetCollide(true);body.SetCollideCharacter(false);
+        if(body.GetMass()<0.05f) body.SetMass(0.50f);
+        body.SetGravity(true);body.SetAutoDisable(true);prop.WakeUp();
+        cScript_RunGlobalFunc("VROMNICHIP",carrier,"I");
+    }
+
 	void _Global_VRRegisterShoulderKeyItem()
     {
         bool committed=VR_Try_RegisterShoulderKeyItem();

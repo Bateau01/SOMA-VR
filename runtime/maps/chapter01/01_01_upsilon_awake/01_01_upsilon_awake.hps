@@ -3182,6 +3182,8 @@ class cScrMap : iScrMap
 		// the selected visible prop stays active because it is the object in the VR hand.
 		Entity_CallEntityInteract("ConfigChipTool");
 		Entity_SetActive("ConfigChipTool", false);
+        cScript_SetGlobalArgString(0,asEntity);
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRPublishUpsilonChipCarrier");
 		Entity_SetInteractionDisabled("securitychip_broken_*", false);
 		Entity_SetActive("AreaGetToolChip*", false);
 		mbRealChipTaken = true;

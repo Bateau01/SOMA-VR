@@ -109,6 +109,13 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 	{
 		VR_RestoreSavedPhysicalRead();
 		if (mbVRReading && mpOpenEntity !is null) mpOpenEntity.SetMatrix(mBaseObj.GetMatrix());
+        if(mbVRReading && mbVRIndependentRead && _HPL3VR_ReadableActive())
+        {
+            iPhysicsBody@ body=mBaseObj.GetMainBody();
+            if(body !is null &&
+               !cScript_RunGlobalFunc("VRSOCKETHELD",""+body.GetUniqueID(),"H"))
+                _Global_VRClosePhysicalRead();
+        }
 	}
 	
 	//------------------------------------------------------------
@@ -186,6 +193,7 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 		
 
 	bool mbVRReading = false;
+    [nosave] bool mbVRIndependentRead=false;
 	[nosave] bool mbVRReadRestoreDone = false;
 	void VR_RestoreSavedPhysicalRead()
 	{
@@ -241,6 +249,8 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 		apBody.SetCollideCharacter(false); apBody.SetGravity(true);
         apBody.SetUseSurfaceEffects(false); // Paper physics events are absent; retain scripted open/close sounds.
 		mBaseObj.SetSaveDataIsUpdated(true);
+        mbVRIndependentRead=cScript_RunGlobalFunc("VRREAD","","S");
+        if(!mbVRIndependentRead){
 		cScript_SetGlobalArgID(0,mBaseObj.GetID());
 		cScript_SetGlobalArgInt(1,apBody.GetUniqueID());
 		cScript_SetGlobalArgVector3f(2,avFocusPos);
@@ -266,6 +276,7 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 		cLux_GetPlayer().ChangeState(ePlayerState_Grab);
 		cScript_SetGlobalArgString(0,GetBase().GetName());
 		cScript_RunGlobalFunc("State_Interact_Grab","","_Global_VRSetReadableOwner");
+        }
 		mbVRReading = true;
 		if (mpOpenEntity !is null)
 		{
@@ -274,12 +285,13 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 		}
 		if (!mbIsRead) HeroStat_IncreaseAmount(eHeroStats_ReadDocuments,1);
 		if (msOpenSound != "") Sound_PlayGui(msOpenSound,1.0f);
-        cScript_RunGlobalFunc("VRREAD","","P"); // Suppress this exact grip's redundant gaze click.
+        cScript_RunGlobalFunc("VRREAD",mbVRIndependentRead ? "I" : "","P"); // Suppress this exact grip's redundant gaze click.
 		return true;
 	}
 	void _Global_VRClosePhysicalRead()
 	{
 		if (!mbVRReading) return;
+		mbVRIndependentRead=false;
 		mbVRReading = false; // clear before a callback that may change maps
 		mbIsRead = true;
 		mBaseObj.GetMeshEntity().SetVisible(true);

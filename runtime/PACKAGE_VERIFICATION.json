@@ -1,4 +1,4 @@
 {
-  "version": "1.06-S26FH",
-  "scope": "Cumulative S26FG plus held-tracer hint precedence and native inventory hint replacement. Native script regression tests; headset confirmation pending. Windows only."
+  "version": "1.06-S26FK",
+  "scope": "Cumulative S26FJ with independent second-hand readable transfer and early WAU upper-surface touch. Native script lifecycle and geometry checks, before/after handoff guards, healing-boundary and socket-query regressions passed. Headset confirmation pending. Windows only."
 }

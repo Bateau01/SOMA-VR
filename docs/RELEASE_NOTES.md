@@ -1,3 +1,30 @@
+# SOMA VR 1.06-S26FK
+
+This cumulative update includes S26FJ and earlier 1.06 changes.
+
+- Second-hand readables: picking up a document or picture while the other hand holds a drawer or another object now transfers it on the same accepted grip. The second readable keeps its own open/close lifetime instead of replacing the first hand's native interaction. Releasing, regrabbing and world-load restoration retain the original readable callbacks and presentation.
+- Early WAU flowers: an extended index remains the touch point when the other fingers are curled. Healing accepts contact with the upper/front collision surface, including slight fingertip penetration, rather than requiring a 25mm target around the animated petal centre. Native story/energy eligibility still controls healing. Later fist-insertion flowers and Site Alpha retain their insertion behavior.
+
+Validation: Steam and Epic/GOG runtimes compile. The old second-hand rejection reproduces in a compiled transaction test and the new path passes. SOMA's native script engine passes readable open, release, regrab and world-load tests with controlled bridge inputs. Contact tests cover distance, penetration, rear-surface rejection, stage separation and world-scale conversion. Existing chip, mounted-prop, menu and hint tests pass. These are automated/isolated checks; the two reported gestures still need headset confirmation.
+
+Install using INSTALL / UPDATE / REPAIR. Personal settings are preserved. Release notes remain separate from the installed game payload. Linux remains experimental and is not included as playable support.
+
+---
+
+# SOMA VR 1.06-S26FJ
+
+This cumulative update includes the S26FI left-eye desktop mirror and earlier 1.06 changes.
+
+- Upsilon tool-chip bin: publish the selected visible tray chip immediately after the successful native pickup. Previously, the handoff waited for the hidden logical ConfigChipTool, outside the handoff distance, and the visible chip fell free. Story callbacks and one-pickup ownership remain unchanged.
+- First Omni-Tool pickup: exact physical contact on a pickup-icon prop now receives the same contact admission as readables. Native CanInteract and OnInteract still control whether acquisition is allowed. Mechanisms, terminals, ambiguous owners and stale contacts are excluded.
+- Mounted-prop turning: adopt an already-active, same-owner native Grab when a physical latch arrives before semantic dispatch. This detaches the mouse input hold without repeating pickup or forcing a player state. The reported extinguisher incident was not recorded in the available log, so this is a candidate correction requiring headset confirmation.
+
+Validation: both Windows runtimes compile; the old Upsilon carrier-selection test fails and the corrected path passes. Native SOMA loads the changed scripts and validates visible chip preparation; menu and VR hint regression checks pass. Installer install/update/uninstall and payload verification are recorded in the accompanying validation file. These checks do not replace a physical playthrough.
+
+Install using INSTALL / UPDATE / REPAIR. Personal settings are preserved. Release notes remain separate from the installed game payload. Linux remains experimental and is not included as playable support.
+
+---
+
 # SOMA VR 1.05-S26ER
 
 All 52 authored retrieval poses (26 profiles, both hands) are now shared defaults only. The runtime no longer reads personal item-grip files. Installing this update is sufficient, even if an older hpl3vr_item_grips.dat exists in the game folder. No separate pose file or manual replacement is required.

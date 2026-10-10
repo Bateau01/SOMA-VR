@@ -2,7 +2,7 @@
 
 ## What to download
 
-Download `SOMA-VR-1.05-S26ER-Installer.zip`, extract it, run `SOMA-VR-1.05-S26ER-Setup.exe`, and select **INSTALL / UPDATE / REPAIR**. The installer requests administrator access and preserves customized settings. The manual overlay instructions below apply to the `runtime` folder in the source archive. It contains the cumulative overlay: the DLL, injector, OpenXR loader, scripts, modified entity/map data, all current hand families, audio components and a launcher.
+Download `SOMA-VR-1.06-S26FK-Installer.zip`, extract it, run `SOMA-VR-1.06-S26FK-Setup.exe`, and select **INSTALL / UPDATE / REPAIR**. The installer requests administrator access and preserves customized settings. The manual overlay instructions below apply to the `runtime` folder in the source archive. It contains the cumulative overlay: the DLL, injector, OpenXR loader, scripts, modified entity/map data, all current hand families, audio components and a launcher.
 
 This is for an existing compatible SOMA installation. It does not contain `Soma.exe`, the full maps, game audio, or the other files needed to run the game independently.
 

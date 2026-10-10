@@ -92,3 +92,5 @@ Expanded hints cover phone retrieval, native ladder/seat/opening interactions, a
 Additional VR hints explain tracer fluid, connector removal, key-item retrieval, the head flashlight gesture, two-handed carrying, pushbuttons and Theta lock stages. Ladders, seats and climb openings each have their own remembered prompt.
 
 Waist tracking now supplies the shoulder/body heading when a valid OpenXR WAIST tracker is available. Reach stabilization remains active. This does not animate a tracked full-body skeleton. Physical waist-tracker testing is pending.
+
+Desktop mirror: VR SETTINGS > VIDEO > DESKTOP MIRROR displays the left-eye gameplay image in the SOMA window. Enabled by default; saved per profile. Preserves the eye image aspect ratio with black bars as needed. Flat menus retain their existing presentation. Reuses the completed eye image rather than rendering another camera. Two GPU copies add some cost; full-game performance has not yet been measured.
