@@ -2961,6 +2961,8 @@ class cScrMap : iScrMap
 	bool mbOmniToolPickedUp = false;
 	bool OmniTool_OnPickUp(const tString &in asTool)
 	{
+        cScript_SetGlobalArgInt(0,4);cScript_SetGlobalArgFloat(1,0.0f);
+        cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRQueueStoryHint");
 		cLux_AddTodoMessage("SCRIPT: Anything to happen when Omnitool is picked up");
 		
 		if(mbOmniToolPickUpMusic == false)
@@ -3025,7 +3027,10 @@ class cScrMap : iScrMap
 	//-------------------------------------------------------
 	
 	void Timer_ShowInventoryHint(const tString &in asTimer)
-	{
+    {
+        cScript_SetGlobalArgInt(0,4);cScript_SetGlobalArgFloat(1,0.0f);
+        cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRQueueStoryHint");
+        if(cScript_GetGlobalReturnBool())return;
 		Hint_ShowHint("Hints", "HintInventory", true);
 	}
 		

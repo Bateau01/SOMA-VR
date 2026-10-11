@@ -1,5 +1,5 @@
 {
-  "version": "1.06-S26FK",
+  "version": "1.06-S26FM",
   "files": {
     "Check-SOMA-VR-Compatibility.cmd": {
       "sha256": "1c9186797da4dd711fd91b1f487fb2647ddbf05f172a284b727be2d13983833b",
@@ -346,12 +346,12 @@
       "bytes": 22369776
     },
     "hpl3vr-store.dll": {
-      "sha256": "d6d126cf282d96b3717fecba09a03b86767a00feb4b74ed31578d0538d9401c4",
-      "bytes": 2306560
+      "sha256": "135ea378ea2c9149533a143ef2ff0c77e2443bbd6d528bb6c859d3fbc9a73fba",
+      "bytes": 2307072
     },
     "hpl3vr.dll": {
-      "sha256": "de0a22bee6f53c7ebb66feac6b86dda4499686e6f46610854c6f4001cd1d0209",
-      "bytes": 2294272
+      "sha256": "40ce70f5f7c0e949c0ee384c42dd9c27ea15a1d3fd2c2fd1cc79b20fdbc64de9",
+      "bytes": 2294784
     },
     "hpl3vr_inject.exe": {
       "sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
@@ -390,16 +390,16 @@
       "bytes": 42629
     },
     "maps/chapter00/00_03_laboratory/00_03_laboratory.hps": {
-      "sha256": "d6b0d979b83e65f509db4ef9f98f135f39291830dbf6f2846031d656361698fd",
-      "bytes": 75320
+      "sha256": "57ded792eb9e797036323889c8896dd005799f17201e10e1ff133a467dcf2d73",
+      "bytes": 75642
     },
     "maps/chapter01/01_01_upsilon_awake/01_01_upsilon_awake.hps": {
-      "sha256": "133ac972244cd77c43b5d3212ec659ba5fa7f6f33a428243f30b5750a8641c64",
-      "bytes": 182571
+      "sha256": "800799ea13adf5745e42c926cd9e45352138d7fc7f9360dacdd12004cf915594",
+      "bytes": 182954
     },
     "maps/chapter01/01_03_upsilon_outside/01_03_upsilon_outside.hps": {
-      "sha256": "dcc8b92d601a73c0110dc19c5c3a44ffc14d1eda5a8ed0e0d8c651a9d316cdbd",
-      "bytes": 71475
+      "sha256": "e17db08924d1afd893a41cfa28c66446f05d2c7008d597472d6b71af686a1474",
+      "bytes": 71766
     },
     "maps/chapter02/02_02_ms_curie_inside/02_02_ms_curie_inside.hps": {
       "sha256": "46ca418671b041aa3c9ebd3e740befd739269248bd88d6fa0749975173488b89",
@@ -434,8 +434,8 @@
       "bytes": 11453877
     },
     "maps/chapter03/03_02_omicron_inside/03_02_omicron_inside.hps": {
-      "sha256": "a7ab2ef740038699dc84d15aa413b90b277284e241c7006fa3a1d2fd750a6fc5",
-      "bytes": 436176
+      "sha256": "617fb5f0f6a047caf22af4611e0b98fb975b5dd0308de447b335cf046e057c94",
+      "bytes": 436637
     },
     "maps/chapter03/03_03_omicron_descent/03_03_omicron_descent.hps": {
       "sha256": "9a44da8e96a6fc02be2c41f3ac9f808024c97e2bb392e5fee6c3a63709ba4561",
@@ -558,20 +558,20 @@
       "bytes": 11018
     },
     "script/modules/HintHandler.hps": {
-      "sha256": "cc84d857d3f8a013b36d891dc946ac8deb242bd10c762e09dc2706c4765d05a6",
-      "bytes": 29574
+      "sha256": "9f15426c59402719957cf3b911071464d84dc52754de51c7ed584f35520d45ca",
+      "bytes": 32015
     },
     "script/modules/MenuHandler.hps": {
-      "sha256": "4a0e7a34c611dcba7cfc3c2168d3dfc15f6faeb267c20efe5f8037b6ef1c41fc",
-      "bytes": 300953
+      "sha256": "8ebaa5224a0521e5bce2f4e30077ffe833c4ff75b06b300a8f13ab0907c5d8e7",
+      "bytes": 301114
     },
     "script/modules/PlayerEnergyHandler.hps": {
       "sha256": "42fe650394f5ed450dfc817ec345ca9c8d7678007af973d84e9b41eaefdcf39b",
       "bytes": 22577
     },
     "script/modules/PlayerHandsHandler.hps": {
-      "sha256": "49f38379c7ee75f2581a740997044629f3ace0c93c7a2f18de67daa1cc3bbabd",
-      "bytes": 41514
+      "sha256": "ce848e99278f99aa3cc447eae85f33363a248ca5d1ad4600a87ffe3ae1c802c0",
+      "bytes": 41464
     },
     "script/modules/PlayerToolHandler.hps": {
       "sha256": "6a54944c7dafde0c1f08a4a9af466db13b7b1e453e0f48fd66e7e8d96b558c9d",
@@ -582,8 +582,8 @@
       "bytes": 46067
     },
     "script/player/Player.hps": {
-      "sha256": "bada559e218f311944acbe1e0cf839e896e688356b11cec75552fcb1753947a4",
-      "bytes": 67565
+      "sha256": "3a24696f954f2a0b5f2aa6f423de8361cca521fedd946ed7eb80fb7c5f13ee2e",
+      "bytes": 68018
     },
     "script/player/PlayerState_CustomControls.hps": {
       "sha256": "b2615d5213a8bd4d43f2c4a5025ae0456d721764eedd5a63c83796faf921968a",
@@ -744,6 +744,10 @@
     "maps/chapter02/02_04_theta_outside/02_04_theta_outside.hps": {
       "sha256": "8e61ad47537c44313548a74787c159972157661cdd927259c02388d7c61e6ecd",
       "bytes": 69180
+    },
+    "maps/chapter01/01_04_transport_station/01_04_transport_station.hps": {
+      "sha256": "20e25e696129f37e42a132ba08f80c12945cae5f7813fe13ba33e5febe3ffa95",
+      "bytes": 205632
     }
   },
   "excluded_self_metadata": [

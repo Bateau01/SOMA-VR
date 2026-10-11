@@ -8897,6 +8897,12 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 	
 	//------------------------------------------------------------
 	
+    // Use the same loading/disabled/menu rules as keyboard OpenMenu.
+    void HPL3VR_RequestPause()
+    {
+        OnAction(eAction_OpenMenu,true);
+    }
+
 	void OnAction(int alAction, bool abPressed)
 	{
 		if(abPressed)

@@ -725,12 +725,11 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 		HPL3VR_PhiRelease(); HPL3VR_PhiZoomRelease();
 		cScript_RunGlobalFunc("VRREMOTE","","S");
 	}
-	void HPL3VR_OpenPause()
-	{
-		if (!_HPL3VR_RuntimeActive_PlayerHands()) return;
-		iScrMenuHandler_Interface @pMenu = cast<iScrMenuHandler_Interface>(cLux_GetUserModuleFromID(eModuleType_MenuHandler));
-		pMenu.SetMenuActive(true);
-	}
+    void HPL3VR_OpenPause()
+    {
+        if (!_HPL3VR_RuntimeActive_PlayerHands()) return;
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_RequestPause");
+    }
 
 	// H57.55FZ: use SOMA/HPL's authored viewport camera setter so all
 	// dependent viewport/frustum/render bookkeeping follows the native path.

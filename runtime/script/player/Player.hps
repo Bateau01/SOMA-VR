@@ -585,6 +585,14 @@ if(cMath_Abs(avAmount.y) > 0.001f)
 	
 	//------------------------------------------------------------
 	
+    // B remains Run while walking; only the authored seated station state exits.
+    void HPL3VR_ExitStationSeat()
+    {
+        cLuxMap@ map=cLux_GetCurrentMap();
+        if(map is null || (map.GetName()!="01_04_transport_station" && map.GetName()!="01_04_transport_station.hpm"))return;
+        if(mBaseObj.GetCurrentStateId()!=ePlayerState_Normal)return;
+        if(map.ScriptPrepare("void VR_LeaveStationSeat()"))map.ScriptExecute();
+    }
 	void OnExitPressed()
 	{
 	

@@ -6654,7 +6654,7 @@ class cScrMap : iScrMap
 		Entity_SetActive("AreaTunnelScares_*",false);
 		
 		Dialog_Begin("EscapeDiveChase");
-			Dialog_AddBranchAndSubject("10_EscapeDiveHall","","");
+			Dialog_AddBranchAndSubject("10_EscapeDiveHall","","VR_SuitAssemblyDialogueOver");
 		Dialog_End();
 		
 		//Entity_SetActive("agent_robothead_tunnelchase",false);
@@ -6665,7 +6665,13 @@ class cScrMap : iScrMap
 		Entity_SetCollideCharacter("FinalDoorBlocker_2", true);
 	}
 	
-	void DoorBashSound(const tString &in asTimer)
+	void VR_SuitAssemblyDialogueOver(const tString &in asSubject,bool abStartOfSubject)
+    {
+        if(abStartOfSubject)return;
+        cScript_SetGlobalArgInt(0,29);cScript_SetGlobalArgFloat(1,0.75f);
+        cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRQueueStoryHint");
+    }
+    void DoorBashSound(const tString &in asTimer)
 	{
 		BarkMachine_SetActive("agent_robothead_tunnelchase", false);
 		Sound_CreateAtEntity("DoorBash", "03_02_omicron_inside/SFX/robothead_chase/pound_door", "diveroom_door");
@@ -7366,6 +7372,7 @@ class cScrMap : iScrMap
 	
 	void BrainInBody()
 	{
+        cScript_SetGlobalArgInt(0,29);cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRCompleteStoryHint");
 		Entity_SetActive("ToolArea_ComputerBrain",false);
 		
 		PlayingBuildingBodyMusic();

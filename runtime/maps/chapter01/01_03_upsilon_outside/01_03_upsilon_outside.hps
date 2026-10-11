@@ -583,6 +583,8 @@ class cScrMap : iScrMap
 		cScript_RunGlobalFunc("PlayerHandsHandler","","HPL3VR_SetSceneOverride");
 
 		Player_SetFlashlightDisabled(false);
+        cScript_SetGlobalArgInt(0,28);cScript_SetGlobalArgFloat(1,3.0f);
+        cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRQueueStoryHint");
 		return true;
 	}
 
@@ -598,7 +600,8 @@ class cScrMap : iScrMap
 	bool mbSimonObjectiveLineSaid =false;
 	
 	void AreaClimbHole_OnPlayerInteract(const tString &in asEntity)
-	{		
+	{
+        cScript_SetGlobalArgInt(0,28);cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRCompleteStoryHint");		
 		Entity_AttachToEntity("ExitStartAnimation_2", "ExitStartAnimation_1", "", true);
 		CameraAnimation_Begin("ExitStartAnimation", "", false);
 		//PlayerHands_PlayAnimation("event_climb_of_dome_start_1_3", false, false, 0,"", false,1,-1);

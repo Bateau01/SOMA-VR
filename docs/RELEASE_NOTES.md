@@ -1,3 +1,33 @@
+# SOMA VR 1.06-S26FM
+
+Cumulative update including S26FL.
+
+- The controller pause button no longer requires Normal, terminal or Phi remote-control state, or active VR camera authority. It can request Pause during conversations and scripted camera/hand sequences.
+- Requests now use the native MenuHandler OpenMenu action, preserving loading-screen and pause-disabled rules. The existing pause/resume presentation path and menu Back handling remain unchanged.
+
+Validation: before/after compiled dispatch tests reproduce the old rejection and pass the correction; loading/unknown UI, held-button and active-menu handling checked. Native SOMA script tests pass enabled/disabled pause and the cumulative hint, chair and pickup fixtures. Steam and Epic/GOG builds and installer checks pass. The Lambda Cortex Chip sequence has not been replayed in a headset for this revision.
+
+Install using INSTALL / UPDATE / REPAIR. Personal settings are preserved. Release notes remain separate from the installed payload.
+
+---
+
+# SOMA VR 1.06-S26FL
+
+Cumulative update including S26FK and earlier 1.06 changes.
+
+- Munchi scan-chair guidance is queued when the greeting conversation ends, then appears after normal control returns.
+- First Upsilon Omni-Tool pickup requests the right-shoulder Omni-Tool hint instead of generic left-shoulder inventory guidance. The original delayed inventory prompt now uses the same VR hint; flatscreen retains its original text.
+- The collapsed Upsilon comms-room escape hint appears after three seconds of restored normal control. It explains reaching towards the opening, feeling the vibration and pressing grab.
+- Added Omicron suit-assembly guidance after Catherine's post-chase dialogue: cortex chip, power pack, then structure gel. Bring each held item to the open suit and let each step finish. No extra suit grip is required at that stage.
+- Corrected turning permission for a physically held, detached native Grab transaction whose player state has already returned to Normal. This targets the mounted extinguisher's initial pickup without changing the physical hold or repeating the pickup callback.
+- B can leave Upsilon's shuttle chair before the destination terminal is active, through the existing stand-up sequence. Sitting early remains native behavior. Departure and travel still block exit.
+
+Validation: Steam and Epic/GOG runtimes built. SOMA's actual script engine compiled changed maps/modules and passed controlled hint timing/reset/OFF tests, readable-plus-initial-Omni pickup, and chair-exit guards. A compiled test reproduces the old turning rejection in Normal and passes the corrected predicate; Omni handoff preserves the other hand's object. These tests use controlled bridge/physics inputs and are not a headset replay of the full story sequences. Please confirm the extinguisher turning and early chair exit in VR.
+
+Install using INSTALL / UPDATE / REPAIR. Personalized settings are preserved. Release notes are a separate upload, not installed into the game. Linux remains experimental and is not included as playable support.
+
+---
+
 # SOMA VR 1.06-S26FK
 
 This cumulative update includes S26FJ and earlier 1.06 changes.

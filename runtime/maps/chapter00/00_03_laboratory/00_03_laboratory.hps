@@ -1559,6 +1559,8 @@ class cScrMap : iScrMap
 		if(abStartOfSubject) return;
 
 		cLux_AddDebugMessage("End David dialogue:"+mlCurrentDavidSubjectIndex);
+        if(asSubject=="7_GreetDavid"){cScript_SetGlobalArgInt(0,27);cScript_SetGlobalArgFloat(1,0.5f);
+        cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRQueueStoryHint");}
 		
 		Map_AddTimer("timer_reminder",cMath_RandRectf(gvDavidReminderTimeSpan.x,gvDavidReminderTimeSpan.y),"Timer_DavidRemindsPlayer");
 		David_SwitchToIdle();
@@ -1613,6 +1615,7 @@ class cScrMap : iScrMap
 		
 	void InteractScanChair(const tString &in asEntity)
 	{
+        cScript_SetGlobalArgInt(0,27);cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRCompleteStoryHint");
 		//////////////////////////////////////////////
 		// Player sits down after interacting with chair
 		CameraAnimation_Begin("IntroAnim", "", false);

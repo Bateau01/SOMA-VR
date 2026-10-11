@@ -4903,7 +4903,7 @@ static void h5710_update_controller_buttons(i64 displayTime){
     if(x&&!g_h5755djPrevXMenu){
         g_h5755djXMenuEdges++;
         if(menu){g_h5754dMenuBackEdges++;ext_Log(">>> S6-HANDS5755DJ MENU X TOGGLE: X/click closes the active authored menu through the existing SDL Escape path");}
-        else if(g_h5753cAuthorityEnabled&&(exactNormal||g_s26nPhiRemote||h5730_exact_terminal_state(0,0,0,0))){
+        else { /* Native menu eligibility, not camera authority or player-state whitelists. */
             i32 ui=h5754h_query_ui_state();
             if(ui==H5754H_UI_GAME){
                 if(h5754h_open_pause_authored()){
@@ -4920,6 +4920,7 @@ static void h5710_update_controller_buttons(i64 displayTime){
     if(b&&!g_h5710PrevB&&(menu||!g_s26nPhiRemote)){
         if(menu){g_h5754dMenuBackEdges++;g_h5754dMenuGameplayBackSuppress++;ext_Log(">>> S6-HANDS5755DJ MENU B BACK: B/click remains authored menu Back/Escape; it no longer owns Pause-open");}
         else if(!gameplayActions){g_h5710BackEdges++;g_h5711BackPending=1;ext_Log(">>> S6-HANDS5755DJ SPECIAL B BACK: B/click queued the frozen state-semantic Back path; ordinary gameplay uses this same physical button only for Run");}
+        else if(exactNormal){g_h5711BackPending=1;} // A seated train player can remain in Normal.
         else if(exactVrGrab){static u8 fmRunLog;if(!fmRunLog){fmRunLog=1;ext_Log(">>> S6-HANDS5755FM HELD-OBJECT RUN BRIDGE ACTIVE: exact committed VR PlayerState_Interact_Grab keeps B as native Run; Grab/Interact lifetime remains unchanged");}}
     }
 
@@ -18625,7 +18626,10 @@ static void h5747_dispatch_native_look(void){
     // Never allow ordinary turning to share the authored Interact hold or its
     // post-release quarantine. A single zero flush clears any stateful consumer.
     i32 stateKind=h5729_kind_names(g_h5729LastModuleName,g_h5729LastClassName);
-    i32 h5755cjGrabLookAllowed=(g_h30NativeMouseDown&&g_h5755chGrabStateActive&&g_h5755chGrabButtonDetached&&stateKind==7)?1:0;
+    // An extracted prop can return to Normal inside OnInteract before the next
+    // observer boundary. Its detached, exact-owner physical hold is still valid.
+    i32 h5755cjGrabLookAllowed=(g_h30NativeMouseDown&&g_h5755chGrabStateActive&&g_h5755chGrabButtonDetached&&
+        (stateKind==7 || (stateKind==4 && (h5755cj_hand_matches_grab_owner(0)||h5755cj_hand_matches_grab_owner(1)))))?1:0;
     i32 h5755dzSwingLookAllowed=0;{
         i32 hand=g_h30NativeUseHand;
         if(g_h30NativeMouseDown&&stateKind==6&&hand>=0&&hand<2&&g_h5755ceNativeSwingDoorActive[hand]&&g_h45NativeButtonReleased[hand])h5755dzSwingLookAllowed=1;
@@ -18809,6 +18813,9 @@ static void h5711_dispatch_semantic_actions(void){
         }
         g_h5719BackReadStateRejects++;
         if(h5730_exit_authored_terminal())return;
+        if(h5720_streq(g_h5729LastClassName,"cScrPlayerState_Normal")){
+            h576aa_run_global("LuxPlayer","","HPL3VR_ExitStationSeat");return;
+        }
         if(h5734_exit_authored_zoomarea())return;
         if(h5724_exit_proven_special_state())return;
         ext_Log(">>> S6-HANDS5734 BACK STATE REJECT: Back request arrived outside exact Read, Terminal, ZoomArea, MovingButton, and Slide state gates; no semantic action, guessed state call, touch fallback, or physical Back key binding emitted");
