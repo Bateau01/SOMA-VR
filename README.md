@@ -19,7 +19,7 @@ This inventory describes included implementation, not a claim that every interac
 - World-scale compensation for apparent hand size; S26BY adds the missing native mesh-update compensation; S26CC retains authored eye height without additional world-scale height compensation.
 - Spatial subtitles and hints, subtitle distance settings, and adjustable flat-panel presentation distance.
 - Presentation routes for menus, loading, startup sequences, pause and death/retry. These have received fixes but remain part of regression testing.
-- Comfort controls for selected post effects, distortion, vignette and camera shake.
+- Comfort controls for selected post effects, distortion, vignette, camera shake, and more.
 - Dynamic Foveated Rendering for performance improvement under heavy GPU loads.
 - Texture Budget Boost increase to have textures load in quicker.
 - Custom contextualised VR hints.
@@ -66,8 +66,6 @@ Download the latest `SOMA-VR-vx.xx.zip` from this repository's **Releases** sect
 3. Ensure that the path to your SOMA game directory, as well as the folder containing your user_settings.cfg folder are detected. If the setup isn't able to automatically detect those folders, you can manually search for them.
 4. Press "Install". If done correctly, you should receive a confirmation prompt stating that the VR mod was successfully installed.
 5. To launch SOMA VR, navigate to your SOMA game directory, and run the "LAUNCH-SOMA-VR.cmd" file. It should run as an administrator. Ensure that your VR headset and controllers are connected, and SteamVR or VD is running using the OpenXR or VDXR runtime.
-
-Existing `hpl3vr_vr_settings.ini` and root hand calibration files are preserved. For a new installation, the launcher seeds the included reference hand-rig calibration only if a calibration file does not already exist. The runtime supplies default comfort settings when no settings file exists. Manual injection users should also copy `defaults/hpl3vr_hand_calibration.ini` to the game root on a fresh install.
 
 Read [installation and troubleshooting](docs/INSTALLATION.md), [features and compatibility](docs/FEATURES.md), and [release notes](docs/RELEASE_NOTES.md).
 
