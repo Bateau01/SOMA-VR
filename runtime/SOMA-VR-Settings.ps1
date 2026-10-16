@@ -1,4 +1,4 @@
-﻿function Get-SomaVrMonitorSize([int]$MonitorIndex = -1) {
+function Get-SomaVrMonitorSize([int]$MonitorIndex = -1) {
     if (-not ('SomaVrDisplay' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
@@ -26,17 +26,20 @@ public static class SomaVrDisplay {
     $mode = New-Object SomaVrDisplay+Mode
     $mode.size = [Runtime.InteropServices.Marshal]::SizeOf($mode)
     if (![SomaVrDisplay]::EnumDisplaySettings($screen.DeviceName,-1,[ref]$mode) -or $mode.width -lt 640 -or $mode.height -lt 480) { throw 'Cannot determine the selected monitor pixel resolution. No settings changed.' }
-    [pscustomobject]@{ Width=[int]$mode.width; Height=[int]$mode.height; Device=$screen.DeviceName }
+    [pscustomobject]@{ Width=[int]$mode.width; Height=[int]$mode.height; Device=$screen.DeviceName; RefreshRate=[int]$mode.frequency }
 }
 
-function Convert-SomaVrSettings([string]$Text,[int]$Width,[int]$Height,[bool]$KeepSSAO) {
+function Convert-SomaVrSettings([string]$Text,[int]$Width,[int]$Height,[bool]$KeepSSAO,[int]$RefreshRate=0) {
     if ($Width -lt 640 -or $Height -lt 480 -or $Width -gt 32768 -or $Height -gt 32768) { throw 'Invalid monitor dimensions.' }
     # HPL configuration files are XML fragments, with multiple top-level elements.
     $xml = New-Object System.Xml.XmlDocument
     $xml.PreserveWhitespace = $true
     $xml.XmlResolver = $null
     $xml.LoadXml('<SomaSettings>' + $Text + '</SomaSettings>')
-    $changes = @{ Screen=@{Width="$Width";Height="$Height";FullScreen='false';Vsync='false'}; Engine=@{LimitFPS='false';SleepWhenOutOfFocus='false'} }
+    $changes = @{ Screen=@{Width="$Width";Height="$Height";FullScreen='false';Vsync='false'}; Engine=@{LimitFPS='false';SleepWhenOutOfFocus='false'}; Input=@{SmoothMouse='false'} }
+    # DEVMODE is the selected desktop mode, not the OpenXR headset rate.
+    # Windows can report 0/1 for unspecified/default; preserve the saved value then.
+    if ($RefreshRate -ge 20 -and $RefreshRate -le 1000) { $changes.Screen.RefreshRate = "$RefreshRate" }
     if (!$KeepSSAO) { $changes.Graphics = @{SSAOActive='false'} }
     foreach ($section in $changes.Keys) {
         $nodes = @($xml.DocumentElement.SelectNodes($section))
@@ -95,7 +98,7 @@ function Repair-SomaVrSettings([string]$GameDirectory,[string]$SettingsPath,[int
         $exists = Test-Path -LiteralPath $file -PathType Leaf
         $inputPath = if ($exists) { $file } else { Join-Path $GameDirectory 'config\default_user_settings.cfg' }
         $original = [IO.File]::ReadAllText($inputPath)
-        $updated = Convert-SomaVrSettings $original $display.Width $display.Height ([bool]$KeepSSAO)
+        $updated = Convert-SomaVrSettings $original $display.Width $display.Height ([bool]$KeepSSAO) $display.RefreshRate
         [pscustomobject]@{Path=$file;Exists=$exists;Original=$original;Updated=$updated}
     }
     foreach ($plan in $plans) {
@@ -105,11 +108,11 @@ function Repair-SomaVrSettings([string]$GameDirectory,[string]$SettingsPath,[int
     # Verify on disk, including files that already appeared prepared.
     foreach ($plan in $plans) {
         $actual = [IO.File]::ReadAllText($plan.Path)
-        if ((Convert-SomaVrSettings $actual $display.Width $display.Height ([bool]$KeepSSAO)) -cne $actual) {
+        if ((Convert-SomaVrSettings $actual $display.Width $display.Height ([bool]$KeepSSAO) $display.RefreshRate) -cne $actual) {
             throw ('Settings changed during launch preparation: ' + $plan.Path + '. Game startup stopped; retry the launcher.')
         }
     }
-    Write-Output ('VR desktop target: ' + $display.Device + ' ' + $display.Width + 'x' + $display.Height + ' physical pixels. Headset resolution unchanged.')
+    Write-Output ('VR desktop target: ' + $display.Device + ' ' + $display.Width + 'x' + $display.Height + ' physical pixels; desktop refresh ' + $display.RefreshRate + ' Hz (0/1 means unspecified, retained). Headset resolution/refresh unchanged.')
 }
 
 

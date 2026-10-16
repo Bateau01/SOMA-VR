@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.IO.Compression;
 using System.Collections.Generic;
@@ -19,7 +19,7 @@ public class Options { public string SettingsDirectory; public string OwnerSid; 
 public static class Engine {
  static Engine() { AppContext.SetSwitch("Switch.System.IO.UseLegacyPathHandling",false); AppContext.SetSwitch("Switch.System.IO.BlockLongPaths",false); }
  public static void Initialize() {}
- public const string Version="1.06-S26FM";
+ public const string Version="1.0.8-S26HO";
  public const string Meta=".soma-vr-installer";
  public static JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path) { using(var s=File.OpenRead(path)) using(var sha=SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(s)).Replace("-","").ToLowerInvariant(); }
@@ -41,7 +41,7 @@ public static class Engine {
   try { File.WriteAllBytes(temp,data); if(File.Exists(destination)) File.Replace(temp,destination,null); else File.Move(temp,destination); }
   finally { if(File.Exists(temp)) File.Delete(temp); }
  }
- public static bool Personal(string p) { return p.Equals("hpl3vr_vr_settings.ini",StringComparison.OrdinalIgnoreCase)||p.Equals("hpl3vr_hand_calibration.ini",StringComparison.OrdinalIgnoreCase); }
+ public static bool Personal(string p) { return p.Equals("hpl3vr_simulation_rate.txt",StringComparison.OrdinalIgnoreCase)||p.Equals("hpl3vr_vr_settings.ini",StringComparison.OrdinalIgnoreCase)||p.Equals("hpl3vr_hand_calibration.ini",StringComparison.OrdinalIgnoreCase); }
  public static Receipt Load(string root) {
   string path=Safe(root,Meta+"/receipt.json");
   if(!File.Exists(path)) return null;
@@ -106,6 +106,17 @@ public static class Engine {
   }
   CleanupTransaction(pending); log("Restored the pre-transaction files.");
  }
+ public static void UpdateFromLauncher(string root,string source,long expectedBuild,Action<string> log) {
+  root=Root(root);EnsureClosed();ValidateGame(root);
+  Payload manifest=Json.Deserialize<Payload>(File.ReadAllText(Path.Combine(source,"installer-manifest.json")));
+  if(manifest.Build!=expectedBuild)throw new IOException("Update payload does not match the approved release.");
+  string settings="";string options=Safe(root,"SOMA-VR-Install-Options.json");
+  if(File.Exists(options)) {
+   var saved=Json.Deserialize<Options>(File.ReadAllText(options));
+   if(saved.OwnerSid==WindowsIdentity.GetCurrent().User.Value)settings=saved.SettingsDirectory??"";
+  }
+  Install(root,source,settings,log,-1);
+ }
  public static void Install(string root,string source,string settingsFolder,Action<string> log,int failAfter) {
   root=Root(root); Safe(root,Meta+"/receipt.json");
   Payload manifest=Json.Deserialize<Payload>(File.ReadAllText(Path.Combine(source,"installer-manifest.json")));
@@ -154,6 +165,21 @@ public static class Engine {
   if(!File.Exists(backup)||Hash(backup)!=r.OriginalHash) throw new IOException("Original backup missing or damaged: "+r.Path);
   return File.ReadAllBytes(backup);
  }
+ static void RestoreOutlineIndex(string root,Dictionary<string,byte[]> changes,Action<string> log) {
+  const string index="_shadersource/shadercache.xml";
+  string receipt=Safe(root,index+".soma-vr-receipt.json"),original=Safe(root,index+".soma-vr-original"),current=Safe(root,index),bank=Safe(root,"_shadersource/shadersource.hpss");
+  if(!File.Exists(receipt))return;
+  try {
+   var info=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(receipt));
+   if(!File.Exists(original)||!File.Exists(current)||!File.Exists(bank)||Hash(original)!=Convert.ToString(info["IndexHash"])||Hash(current)!=Convert.ToString(info["PatchedHash"]))throw new IOException("Shader index changed since the outline update");
+   int length=Convert.ToInt32(info["BankLength"]);byte[] data=File.ReadAllBytes(bank);
+   if(length<0||length>data.Length)throw new IOException("Shader bank changed");
+   string hash;using(var sha=SHA256.Create())hash=BitConverter.ToString(sha.ComputeHash(data,0,length)).Replace("-","").ToLowerInvariant();
+   if(hash!=Convert.ToString(info["BankHash"]))throw new IOException("Shader bank changed since the outline update");
+   changes[index]=File.ReadAllBytes(original);changes[index+".soma-vr-original"]=null;changes[index+".soma-vr-receipt.json"]=null;
+   log("Restoring original shader-cache index. Unreferenced appended shader bytes are retained.");
+  } catch(Exception e) { log("Preserved changed shader cache: "+e.Message); }
+ }
  public static void Remove(string root,Action<string> log) {
   var r=Load(root); if(r==null) throw new IOException("No installer-managed installation at this location.");
   var changes=new Dictionary<string,byte[]>(StringComparer.OrdinalIgnoreCase);
@@ -164,6 +190,7 @@ public static class Engine {
    if(File.Exists(dest)&&Hash(dest)!=f.Hash) {keep.Files.Add(f);log("Preserved modified file and its backup: "+f.Path);continue;}
    changes[f.Path]=Original(root,f);
   }
+  RestoreOutlineIndex(root,changes,log);
   changes[Meta+"/receipt.json"]=keep.Files.Count==0?null:Encoding.UTF8.GetBytes(Json.Serialize(keep));
   Commit(root,changes,log,-1);
   log("Removed unchanged managed files and restored pre-installer originals. Preferences, saves and original backups retained. For a prior manual mod installation, this restores that manual installation, not vanilla SOMA.");
@@ -214,7 +241,7 @@ public class SetupWindow:Form {
  }
  Button Browse(Control target,int y){var b=new Button {Text="BROWSE",Left=895,Top=y,Width=105,Height=33};StyleButton(b,false);b.Click+=(s,e)=>{using(var d=new FolderBrowserDialog()){d.Description="Select the folder";d.SelectedPath=target.Text;if(d.ShowDialog()==DialogResult.OK)target.Text=d.SelectedPath;}};Controls.Add(b);return b;}
  public SetupWindow(string payload) {
-  source=payload;Text="SOMA VR | 1.06-S26FM"; Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);AutoScaleMode=AutoScaleMode.Dpi;ClientSize=new System.Drawing.Size(1032,690);MinimumSize=new System.Drawing.Size(700,500);MaximizeBox=true;StartPosition=FormStartPosition.CenterScreen;AutoScroll=true;
+  source=payload;Text="SOMA VR | 1.0.8-S26HO"; Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);AutoScaleMode=AutoScaleMode.Dpi;ClientSize=new System.Drawing.Size(1032,690);MinimumSize=new System.Drawing.Size(700,500);MaximizeBox=true;StartPosition=FormStartPosition.CenterScreen;AutoScroll=true;
   BackColor=System.Drawing.Color.FromArgb(8,18,23);ForeColor=ink;Font=new System.Drawing.Font("Segoe UI",10);DoubleBuffered=true;
   var artwork=Art("background");var title=Art("title");
   Paint+=(s,e)=>{
@@ -236,8 +263,8 @@ public class SetupWindow:Form {
   Caption("V R   M O D",0,120,320,30,17,ink).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
   Caption("INSTALLATION / MAINTENANCE",0,159,320,35,9,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
 
-  Caption("1.06-S26FM",0,568,320,28,10,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
-  Caption("SOMA VR Mod created by Bateau1\nUNOFFICIAL COMMUNITY MOD\nSOMA artwork © Frictional Games",0,611,320,60,8,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
+  Caption("1.0.8-S26HO",0,568,320,28,10,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
+  Caption("SOMA VR Mod created by Bateau1\nUNOFFICIAL COMMUNITY MOD\nSOMA artwork � Frictional Games",0,611,320,60,8,muted).TextAlign=System.Drawing.ContentAlignment.MiddleCenter;
   Caption("SOMA VR SETUP",355,31,600,40,24,ink);
   Caption("Install, update or repair your VR installation.",357,80,610,28,11,muted);
   Caption("01    GAME LOCATION",355,154,620,25,10,accent);
@@ -316,15 +343,25 @@ public class SetupWindow:Form {
 public static class Program {
  [STAThread] public static void Main(string[] args) {
   Engine.Initialize();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
+  bool update=args.Length>0;
+  var updateLog=new StringBuilder();
   string stage=Path.Combine(Path.GetTempPath(),"SOMA-VR-Setup-"+Guid.NewGuid().ToString("N"));
   try {
    Directory.CreateDirectory(stage);
    using(var stream=System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip")) using(var zip=new ZipArchive(stream,ZipArchiveMode.Read)) {
     foreach(var entry in zip.Entries) {if(String.IsNullOrEmpty(entry.Name))continue;string dest=Engine.Safe(stage,entry.FullName);Directory.CreateDirectory(Path.GetDirectoryName(dest));using(var input=entry.Open())using(var output=File.Create(dest))input.CopyTo(output);}
    }
-   Application.Run(new SetupWindow(stage));
-  } catch(Exception ex) {MessageBox.Show(ex.Message,"SOMA VR setup could not start");}
-  finally {try {if(Directory.Exists(stage))Directory.Delete(stage,true);}catch{}}
+   if(update) {
+    long expected;
+    if(args.Length!=4||args[0]!="--update"||args[2]!="--expected-build"||!Int64.TryParse(args[3],out expected))throw new IOException("Invalid update arguments.");
+    Engine.UpdateFromLauncher(args[1],stage,expected,line=>updateLog.AppendLine(line));
+    Environment.ExitCode=0;
+   } else Application.Run(new SetupWindow(stage));
+  } catch(Exception ex) {Environment.ExitCode=1;if(update)updateLog.AppendLine(ex.ToString());else MessageBox.Show(ex.Message,"SOMA VR setup could not start");}
+  finally {
+   if(update)try{string dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SOMA-VR-Installer","Logs");Directory.CreateDirectory(dir);File.WriteAllText(Path.Combine(dir,"update-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".log"),updateLog.ToString());}catch{}
+   try {if(Directory.Exists(stage))Directory.Delete(stage,true);}catch{}
+  }
  }
 }
 

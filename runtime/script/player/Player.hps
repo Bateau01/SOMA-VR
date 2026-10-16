@@ -548,8 +548,12 @@ class cScrPlayer : iScrPlayerBase, iScrPlayer_Interface
                             float x=avAmount.x/inputLength, y=avAmount.y/inputLength;
                             float maxForward=y>=0 ? pCharBody.GetMaxPositiveMoveSpeed(eCharDir_Forward) : cMath_Abs(pCharBody.GetMaxNegativeMoveSpeed(eCharDir_Forward));
                             float maxRight=x>=0 ? pCharBody.GetMaxPositiveMoveSpeed(eCharDir_Right) : cMath_Abs(pCharBody.GetMaxNegativeMoveSpeed(eCharDir_Right));
-                            if(cMath_Abs(y)>0.001f) speed=cMath_Min(speed,maxForward/cMath_Abs(y));
-                            if(cMath_Abs(x)>0.001f) speed=cMath_Min(speed,maxRight/cMath_Abs(x));
+                            // FR: bound total velocity, not each component independently.
+                            // The old box limit admitted sqrt(2) times the speed on diagonals.
+                            float limit=0;
+                            if(maxForward>0.0001f && maxRight>0.0001f)
+                                limit=1.0f/cMath_Sqrt(y*y/(maxForward*maxForward)+x*x/(maxRight*maxRight));
+                            speed=cMath_Min(speed,limit);
                             pCharBody.SetMoveSpeed(eCharDir_Forward,speed*y);
                             pCharBody.SetMoveSpeed(eCharDir_Right,speed*x);
                         }

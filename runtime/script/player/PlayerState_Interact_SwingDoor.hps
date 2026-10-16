@@ -1,0 +1,262 @@
+#include "player/PlayerState_Interact_RotateBase.hps"
+#include "helpers/helper_modules.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+
+
+//------------------------------------------------------------
+
+class cScrPlayerState_Interact_SwingDoor : iScrPlayerState_Interact_RotateBase, iScrPlayerState_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void InitRotateBase()
+	{
+		mfMovementToMoveAddFactor = 1;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL FUNCTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupSwingDoor()
+	{
+		////////////////////////////////
+		// Get basic params & setup
+		SetupInteractVars();
+		
+		////////////////////////////////
+		// Get the parameters
+		mfMoveMaxSpeed = cScript_GetGlobalArgFloat(3);
+		mfMoveSpeedFactor = cScript_GetGlobalArgFloat(4);
+		mfMoveSlowDownFactor = cScript_GetGlobalArgFloat(5);
+		mfStartPushSpeed = cScript_GetGlobalArgFloat(6);
+		msSwingDoorName = cScript_GetGlobalArgString(7);
+		
+		//If there is a start push thingie, make sure the reset of speed is turned off while the push happens.
+		if(mfStartPushSpeed != 0)
+		{
+			mfStartPushSpeedTime = 0.5f;
+			mbResetSpeedWhenNoMouseMovement = false;
+		}
+		else
+		{
+			mfStartPushSpeedTime = 0;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	int mlHintID;
+	
+	void EnterRotateBase(int alPrevStateId)
+	{
+		mfRotSpeed = mfStartPushSpeed; //Give a push at the start in the direction!
+		
+		// Attempt to show hint and hold in case it's blocked while in the state
+		mlHintID = Hint_ShowHint_Hold("Hints", "HintDoors", true);
+	}
+	
+	//------------------------------------------------------------
+	
+	void LeaveRotateBase(int alNextStateId)
+	{
+		mbResetSpeedWhenNoMouseMovement = true; //Make sure this is true (in case the start push speed was not up.
+		
+		Hint_Release(mlHintID);
+	}
+		
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+		if(mfStartPushSpeedTime<=0) return;
+		
+		mfStartPushSpeedTime -= afTimeStep;
+		if(mfStartPushSpeedTime<=0) mbResetSpeedWhenNoMouseMovement = true;
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// IMPLEMENTED
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+    void HPL3VR_OnSwingSpeed(float speed)
+    {
+        cScript_SetGlobalArgFloat(0,speed);
+        cScript_RunGlobalFunc(msSwingDoorName,"cScrPropSwingDoor","_Global_OnAddSpeed");
+    }
+
+	float GetSpeedAdd(cCamera @apCam)
+	{	
+		iPhysicsBody@ pBody = cLux_ID_Body(mBodyID);
+		iPhysicsJoint@ pJoint = cLux_ID_Joint(mJointID);
+		cVector3f vBodyCenter = cMath_MatrixMul(pBody.GetLocalMatrix(), pBody.GetMassCenter());
+		cVector3f vJointToBody =  cMath_Vector3Normalize(vBodyCenter - pJoint.GetPivotPoint());
+
+		cVector3f vUp = apCam.GetUp();
+		cVector3f vRight = apCam.GetRight();
+		cVector3f vForward = apCam.GetForward();
+
+		cVector3f vPushAmount = (vUp + vForward) * -mvMoveAdd.y + vRight * mvMoveAdd.x;
+		cVector3f vPushRotateDir = cMath_Vector3Cross(vJointToBody, vPushAmount);
+
+		float fSpeedAdd = cMath_Vector3Dot(vPushRotateDir, pJoint.GetPinDir());
+		
+		////////////////
+		// Call a function in swingdoor to play an effect
+		cScript_SetGlobalArgFloat(0, fSpeedAdd);
+		cScript_RunGlobalFunc(msSwingDoorName, "cScrPropSwingDoor", "_Global_OnAddSpeed");
+		
+		return fSpeedAdd;
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPER METHODS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		apSet.DrawFont(tWString("RotSpeed:"+mfRotSpeed), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		afStartY += 14;
+		
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	float mfStartPushSpeed;
+	float mfStartPushSpeedTime;
+	tString msSwingDoorName;
+	
+	//------------------------------------------------------------
+		
+}

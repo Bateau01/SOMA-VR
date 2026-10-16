@@ -1,0 +1,85 @@
+#include "props/Prop_Rigid.hps"
+#include "helpers/helper_map.hps"
+
+class cScrPropRigid_JellyFishDrift : cScrPropRigid, iScrProp_Interface
+{		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld,  cResourceVarsObject@ apVars,  cResourceVarsObject@ apInstanceVars)
+	{
+		mBaseObj.SetAutoSleep(false);
+		mfMaxSpeed = cMath_RandRectf(0.01f,0.1f);
+		mfAccel = cMath_RandRectf(0.005f,0.05f);
+		mfTimeMul = cMath_RandRectf(0.75f,2.5f);
+		mfSpeed = 0.0f;
+		mfTimer = 0.0f;
+		
+		mBaseObj.Timer_Add(1, cMath_RandRectf(0.1f,3.0f), "PickNewDest");
+	}
+	
+	//------------------------------------------------------------
+	
+	void PickNewDest(uint64 alTimerID)
+	{
+		tString sBase = cString_Sub(mBaseObj.GetName(), 0, cString_GetLastCharPos(mBaseObj.GetName(),'_'));
+		cBoundingVolume @pVolume = Map_GetEntity(sBase).GetMainBody().GetBoundingVolume();
+		
+		mvDest = cMath_RandRectVector3f(pVolume.GetMin(), pVolume.GetMax());
+	
+		cVector3f vDir = mvDest - mBaseObj.GetPosition();
+		cMatrixf mtxDir = cMatrixf_Identity;
+		mtxDir.SetForward(vDir);
+		mtxDir.SetUp(cVector3f_Up);
+		
+		mBaseObj.MoveAngularTo(mtxDir, mfAccel*5.0f, mfMaxSpeed*5.0f, 0.1f, true, false, cVector3f_Zero, cVector3f_Zero);
+		
+		mfSpeed = 0.0f;
+		mfTimer = 0.0f;
+		
+		mBaseObj.Timer_Add(alTimerID, cMath_RandRectf(8.0f,10.0f), "PickNewDest");
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimestep)
+	{
+		mfTimer+=afTimestep;
+		
+		cVector3f vDir = mvDest - mBaseObj.GetPosition();
+		vDir.Normalize();
+		cVector3f vPos = mBaseObj.GetPosition();
+		vPos += vDir*afTimestep*(mfSpeed*(0.5f+2.0f*cMath_Easing(eEasing_QuadInOut, cMath_Sin(mfTimer*mfTimeMul) )) );
+		mBaseObj.SetPosition(vPos);
+		
+		bool bPlayerNear = false;
+		
+		cVector3f vPlayerPos = cLux_GetPlayer().GetCamera().GetPosition();
+		cVector3f vPushDir = mBaseObj.GetPosition()-vPlayerPos;
+		bPlayerNear = (vPushDir.SqrLength()<5.0f);
+		
+		if (bPlayerNear)
+		{
+			vPushDir.Normalize();
+			vPushDir*=2.0f;
+			mvDest = vPlayerPos + vPushDir;
+		}
+		
+		mfSpeed = cMath_Min(mfSpeed+mfAccel*(afTimestep<0.012f ? afTimestep*60.0f : 1.0f), mfMaxSpeed*(bPlayerNear?5.0f:1.0f) );
+	}
+	
+	//------------------------------------------------------------
+	
+	float mfMaxSpeed;
+	float mfAccel;
+	
+	cVector3f mvDest;
+	float mfSpeed;
+	float mfTimer;
+	float mfTimeMul;
+}	

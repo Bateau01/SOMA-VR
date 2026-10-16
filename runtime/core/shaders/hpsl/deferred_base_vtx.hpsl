@@ -1,0 +1,992 @@
+////////////////////////////////////////////////////////
+// Deferred Base - Vertex Shader
+//
+//
+////////////////////////////////////////////////////////
+
+@ifdef UseTextureBuffer
+
+//---------------------------------------------
+
+@ifdef UseSway || UseScrollingNoise
+	@include helper_sway_offset.hpsl
+@endif
+
+@ifdef UseSkeleton || UseDetailMesh
+	@include helper_quaternion.hpsl
+@endif
+
+//---------------------------------------------
+
+//////////////////
+// Arguments
+
+// This contains all constant buffers and chooses the correct one based on MaterialType
+@include helper_type_arguments.hpsl
+
+@ifdef UseSway && UseSwayMap
+	//Use another texture unit if it is a transperant material
+	@ifdef IsTransperantMaterial	
+		uniform cTexture2D aHeightMap : 5;
+	@else
+		uniform cTexture2D aHeightMap : 3;
+	@endif
+@endif
+
+///////////////////////
+// Instancing
+uniform cTextureBuffer aInstanceBuffer : 15;
+
+//---------------------------------------------
+
+///////////////////////////////
+// Main program
+void main(in cVector4f vtx_vPosition,
+		  in cVector4f vtx_vTexCoord0,
+		  in cVector4f vtx_vTexCoord1,
+		  in cVector3f vtx_vNormal,
+		  in cVector4f vtx_vTangent,
+		  in cVector4f vtx_vColor,
+		  in cVector4f vtx_vBoneIndices,
+		  in cVector4f vtx_vBoneWeight,
+@ifdef UseUv
+		  out cVector4f px_vTexCoord0,
+@endif
+@ifdef UseUvCoord1
+		  out cVector4f px_vTexCoord1,
+@endif
+@ifdef UseNormals
+		  out cVector3f px_vNormal,
+@endif
+@ifdef UseNormalMapping || UseLiquid || UseScreenNormal
+		  out cVector3f px_vTangent,
+		  out cVector3f px_vBinormal,
+@endif
+@ifdef UseColor || UseAngleFade
+		  out cVector4f px_vColor,
+@endif
+@ifdef UseLinearDepth || UseSoftParticle || UseDetailMap || UseRefraction
+		  out float px_fLinearDepth,
+@elseif UseHalo && UseOccludeHalo && UseDepthOfField
+		  out float px_fLinearDepth,
+@endif
+@ifdef UseVertexPosition || UseEnvMap || UseFog || UseRefraction || UseDepthOfField
+		  out cVector3f px_vVertexPos,
+@endif
+@ifdef UseScrollingNoise
+		  out cVector3f px_vScrollingNoiseCoord,
+@endif
+@ifdef UseParallax
+		  out cVector3f px_vTangentEyePos,
+@endif
+@ifdef UseLiquid
+		  out cVector4f px_vLiquidFade,
+@endif
+@ifdef UseDissolve
+		  out float afDissolveAmount,
+@endif
+@ifdef MaterialType_Translucent
+		  out cVector4f px_vAlphaAndLight,
+	@ifdef UseFadeColor
+		  out cVector4f px_vFadeColor,
+	@endif
+	@ifdef UseFog
+		  out cVector4f px_vFogAreaColor,
+	@endif
+	@ifdef Lit
+		  out cMatrixf px_mtxLightProbe,
+	@endif
+@endif
+		  out cVector4f px_vPosition)
+{	
+	/////////////
+	// load instance data
+	int lBaseOffset = int(alInstanceOffset + vtx_lInstanceID * alInstanceStride);
+
+	@ifdef UseDetailMesh
+		/////////////
+		// Get instance data from instance buffer texture
+		cVector4f vInstancePositionScale = load(aInstanceBuffer, lBaseOffset);
+		cVector4f vInstanceRotation = load(aInstanceBuffer, lBaseOffset + 1);
+		cVector4f vInstanceColor = load(aInstanceBuffer, lBaseOffset + 2);
+
+		cMatrix3f mtxNormal = cMatrix3f(a_mtxView);
+	@else
+		//todo: load need what is needed
+		cMatrixf mtxModel = cMatrixf(load(aInstanceBuffer, lBaseOffset),
+									 load(aInstanceBuffer, lBaseOffset + 1),
+									 load(aInstanceBuffer, lBaseOffset + 2),
+									 load(aInstanceBuffer, lBaseOffset + 3));
+		lBaseOffset += 4;
+
+		@ifdef UseUv && UseUvAnimation
+			cMatrixf mtxUV = cMatrixf(load(aInstanceBuffer, lBaseOffset),
+									  load(aInstanceBuffer, lBaseOffset + 1),
+									  load(aInstanceBuffer, lBaseOffset + 2),
+									  load(aInstanceBuffer, lBaseOffset + 3));
+			lBaseOffset += 4;
+		@endif
+	
+		@ifdef UseNormalMapping || UseLiquid || UseParallax || UseNormals || UseAngleFade
+			cMatrix4f mtxTemp = cMatrix4f(load(aInstanceBuffer, lBaseOffset),
+										  load(aInstanceBuffer, lBaseOffset + 1),
+										  load(aInstanceBuffer, lBaseOffset + 2),
+										  cVector4f(0,0,0,1));
+			cMatrix3f mtxNormal = cMatrix3f(mul(a_mtxView, mtxTemp));
+			lBaseOffset += 4;
+		@endif
+		
+		@ifdef UseColorMul
+			cVector4f vInstanceColor = load(aInstanceBuffer, lBaseOffset);
+			lBaseOffset += 1;
+		@endif
+
+		@ifdef UseLiquid
+			px_vLiquidFade = load(aInstanceBuffer, lBaseOffset);
+			lBaseOffset = lBaseOffset + 1;
+		@endif
+		
+		@ifdef MaterialType_Translucent
+			px_vAlphaAndLight = load(aInstanceBuffer, lBaseOffset++);
+			@ifdef UseFadeColor
+				  px_vFadeColor = load(aInstanceBuffer, lBaseOffset++);
+			@endif
+			@ifdef UseFog
+				  px_vFogAreaColor = load(aInstanceBuffer, lBaseOffset++);
+			@endif
+			@ifdef Lit
+				px_mtxLightProbe = cMatrixf(load(aInstanceBuffer, lBaseOffset),
+									  load(aInstanceBuffer, lBaseOffset + 1),
+									  load(aInstanceBuffer, lBaseOffset + 2),
+									  load(aInstanceBuffer, lBaseOffset + 3));
+				lBaseOffset += 4;
+			@endif
+		@endif
+
+		@ifdef UseSway && UseFourForceFields
+			cVector4f avForceFieldForces = load(aInstanceBuffer, lBaseOffset);
+			cVector4f avForceFieldFadeStarts = load(aInstanceBuffer, lBaseOffset + 1);
+			cVector4f avForceFieldFadeLengths = load(aInstanceBuffer, lBaseOffset + 2);
+			cVector4f avForceFieldTs = load(aInstanceBuffer, lBaseOffset + 3); 
+			float afForceFieldMaxForce = load(aInstanceBuffer, lBaseOffset + 4).x;
+			cVector3f avForceFieldPos0 = load(aInstanceBuffer, lBaseOffset + 5).xyz;
+			cVector3f avForceFieldPos1 = load(aInstanceBuffer, lBaseOffset + 6).xyz;
+			cVector3f avForceFieldPos2 = load(aInstanceBuffer, lBaseOffset + 7).xyz;
+			cVector3f avForceFieldPos3 = load(aInstanceBuffer, lBaseOffset + 8).xyz;
+
+			lBaseOffset = lBaseOffset + 9;
+		@endif
+
+		@ifdef UseDissolve
+			afDissolveAmount = load(aInstanceBuffer, lBaseOffset).x;
+			lBaseOffset = lBaseOffset + 1;
+		@endif
+
+		int lBoneOffset = lBaseOffset;
+	@endif
+
+	//////////////////////
+	// Position - Skeleton
+	@ifdef UseSkeleton
+		cVector4l lvBoneIndices = max(cVector4l(vtx_vBoneIndices), cVector4l(0)) * 2;
+		cVector4f  vBoneWeight   = vtx_vBoneWeight;
+
+		cMatrix2x4f mtxBones[4];
+
+		for(int i = 0; i < 4; ++i)
+		{
+			mtxBones[i] = cMatrix2x4f(load(aInstanceBuffer, lBoneOffset + lvBoneIndices[i]), load(aInstanceBuffer, lBoneOffset + lvBoneIndices[i] + 1));
+		}
+
+		//Create bone matrix
+		cMatrix2x4f mtxDualQuat;
+		cMatrix2x4f mtxBase = mtxBones[0];
+
+		mtxDualQuat  = mtxBase * vBoneWeight.x;
+		mtxDualQuat += append(mtxBase, mtxBones[1], vBoneWeight.y);
+		mtxDualQuat += append(mtxBase, mtxBones[2], vBoneWeight.z);
+		mtxDualQuat += append(mtxBase, mtxBones[3], vBoneWeight.w);
+
+		//normalize both quaternions after adding the bones together
+		mtxDualQuat /= length(mtxDualQuat[0]);
+		
+		cVector4f qRotation = mtxDualQuat[0];
+		cVector4f vLocalVertexPos = cVector4f(dqmul(mtxDualQuat, vtx_vPosition.xyz), 1.0);
+		vLocalVertexPos = mul(mtxModel, vLocalVertexPos);
+
+		px_vPosition = mul(a_mtxViewProjection, vLocalVertexPos);
+	
+	//////////////////////
+	// Position - Sway
+	@elseif	UseSway
+		
+		////////////
+		// Instance + Sway support
+		@ifdef UseDetailMesh
+			///////////
+			// Apply instance rotation, scale and offset
+			cVector4f vWorldVtxPos = cVector4f(qmul(vInstanceRotation, vtx_vPosition.xyz) * vInstancePositionScale.w + vInstancePositionScale.xyz, 1.0);
+			cVector4f qRotation = vInstanceRotation;
+		@else
+			// Get the world postion of vertex
+			cVector4f vWorldVtxPos = mul(mtxModel, vtx_vPosition);
+		@endif
+
+		// Calculate the sway offset
+		@ifdef UseSwaySingleDir
+			cVector3f vOffset = GetSwaySingleDirectionOffset(afT, vWorldVtxPos, avSwayProperties, avSwayOctavesMul, avSwaySingleDirection, avSwaySingleSampleDirection);
+		@else
+			cVector3f vOffset = GetSwayOffset(afT, vWorldVtxPos, avSwayProperties, avSwayOctavesMul, afSwayYFreqMul);
+		@endif
+		
+		@ifdef UseDetailMesh
+		@elseif UseFourForceFields
+			//Add offset of four force fields
+			vOffset.xz += GetFourForceFieldsOffset(	afT, vWorldVtxPos, 
+													avForceFieldPos0, avForceFieldPos1, avForceFieldPos2, avForceFieldPos3,
+													avForceFieldFadeStarts, avForceFieldFadeLengths, avForceFieldForces,
+													avForceFieldTs, afForceFieldMaxForce);
+		@endif
+
+		///////////////////////////////////////////
+		// Calculate the final position
+		@ifdef UseSwayMap
+			vOffset *= sampleLod(aHeightMap, vtx_vTexCoord0.xy, 0).w;
+		@endif
+
+		cVector4f vLocalVertexPos = cVector4f(vWorldVtxPos.xyz + vOffset, 1.0);
+
+		px_vPosition =  mul(a_mtxViewProjection, vLocalVertexPos);
+	
+	//////////////////////
+	// Position - Soft Particle
+	@elseif UseSoftParticle
+		cVector4f vLocalVertexPos = mul(mtxModel,cVector4f(vtx_vPosition.xyz, 1.0));
+		cVector4f vViewPos = mul(a_mtxView, vLocalVertexPos);
+
+		@ifdef NegativeDepthBias
+			/////////
+			// Move the vertex closer to the camera but keep the same (x,y) screen coords
+			cVector3f vBiasOffset;
+
+			vBiasOffset.z = vViewPos.z - afSoftParticleDepthBias / afInvFarPlane;
+			vBiasOffset.xy = vViewPos.xy * vBiasOffset.z / min(vViewPos.z, -0.00001); // no div by zero
+
+			vViewPos.xyz = vBiasOffset;
+		@endif
+
+		px_vPosition = mul(a_mtxProjection, vViewPos);
+	/////////////////////
+	// Position - Instancing
+	@elseif UseDetailMesh
+		///////////
+		// Apply instance rotation, scale and offset
+		cVector4f vLocalVertexPos = cVector4f(qmul(vInstanceRotation, vtx_vPosition.xyz) * vInstancePositionScale.w + vInstancePositionScale.xyz, 1.0);
+
+		cVector4f qRotation = vInstanceRotation;
+		px_vPosition = mul(a_mtxViewProjection, vLocalVertexPos);
+	/////////////////////
+	// Position - Static Instancing
+	@else
+		///////////
+		// Apply model matrix for instance
+		cVector4f vLocalVertexPos = mul(mtxModel, cVector4f(vtx_vPosition.xyz, 1.0));
+		px_vPosition = mul(a_mtxViewProjection,vLocalVertexPos);
+	@endif
+	
+	//////////////////////
+	// Uv
+	@ifdef UseUv
+		@ifdef UseUvAnimation
+			px_vTexCoord0 = mul(mtxUV, vtx_vTexCoord0);
+		@else
+			px_vTexCoord0 = vtx_vTexCoord0;
+		@endif
+		@ifdef UseUvCoord1
+			px_vTexCoord1 = vtx_vTexCoord1;
+		@endif
+	@endif
+
+	//////////////////////
+	// Color
+	@ifdef UseColor
+		px_vColor = vtx_vColor;
+	@elseif UseAngleFade
+		px_vColor = cVector4f(1.0);
+	@endif
+	
+	@ifdef UseColorMul
+		px_vColor *= vInstanceColor;
+	@endif
+
+	//////////////////////
+	// Normals
+	@ifdef UseNormals || UseLiquid
+		@ifdef UseSkeleton || UseDetailMesh
+			px_vNormal = normalize(mul(mtxNormal, qmul(qRotation, vtx_vNormal)));
+		@else
+			px_vNormal = normalize(mul(mtxNormal, vtx_vNormal));
+		@endif
+	@elseif UseParallax
+		cVector3f px_vNormal = normalize(mul(mtxNormal, vtx_vNormal));
+	@endif
+
+	//////////////////////
+	// Normalmapping
+	@ifdef UseNormalMapping || UseLiquid
+		@ifdef UseSkeleton || UseDetailMesh
+			px_vTangent =  normalize(mul(mtxNormal, qmul(qRotation, vtx_vTangent.xyz)));
+			
+			///NOTE: normal are and tan are reveresed, because of OpenGL texture coord system
+			px_vBinormal = normalize(mul(mtxNormal, qmul(qRotation, cross(vtx_vTangent.xyz, vtx_vNormal) * vtx_vTangent.w)));
+		@else
+			px_vTangent = normalize(mul(mtxNormal, vtx_vTangent.xyz));
+		
+			//Need to do it in model space (and not view) because reflection normal mapping will fail otherwise!
+			//NOTE: normal are and tan are reveresed, because of OpenGL texture coord system
+			px_vBinormal = normalize(mul(mtxNormal, cross(vtx_vTangent.xyz, vtx_vNormal) * vtx_vTangent.w)); 
+		@endif
+	@endif
+	
+	//////////////////////
+	// Parallax
+	@ifdef UseParallax
+		cVector3f vViewEyeVec =  mul(a_mtxView, vLocalVertexPos).xyz;
+		
+		@ifdef UseNormalMapping || UseLiquid
+			px_vTangentEyePos.x = dot(vViewEyeVec, px_vTangent);
+			px_vTangentEyePos.y = -dot(vViewEyeVec, px_vBinormal); //Need to invert!
+			px_vTangentEyePos.z = abs(dot(vViewEyeVec, px_vNormal)); //use abs value so interpolation doesnt result in gimbal lock
+		@else
+			@ifdef UseSkeleton || UseDetailMesh
+				cVector3f vTangent =  normalize(mul(mtxNormal, qmul(qRotation, vtx_vTangent.xyz)));
+				cVector3f vBinormal = normalize(mul(mtxNormal, qmul(qRotation, cross(vtx_vTangent.xyz,vtx_vNormal) * vtx_vTangent.w)));
+			@else
+				cVector3f vTangent =  normalize(mul(mtxNormal, vtx_vTangent.xyz));
+				cVector3f vBinormal = normalize(mul(mtxNormal, cross(vtx_vTangent.xyz,vtx_vNormal) * vtx_vTangent.w)); 
+			@endif
+
+			px_vTangentEyePos.x = dot(vViewEyeVec, vTangent);
+			px_vTangentEyePos.y = -dot(vViewEyeVec, vBinormal);//Need to invert!
+			px_vTangentEyePos.z = abs(dot(vViewEyeVec, px_vNormal));//use abs value so interpolation doesnt result in gimbal lock
+		@endif
+		
+		//Do not normalize yet! Do that in the fragment shader.		
+	@endif
+	
+
+	/////////
+	// Angle fade
+	@ifdef UseAngleFade
+		@ifdef UseParallax
+			vViewEyeVec = normalize(vViewEyeVec);
+		@else
+			cVector3f vViewEyeVec =  normalize(mul(a_mtxView, vLocalVertexPos).xyz);
+		@endif
+
+		@ifdef UseNormals
+			cVector3f vNormal = px_vNormal;
+		@else
+			@ifdef UseSkeleton || UseDetailMesh
+				cVector3f vNormal = normalize(mul(mtxNormal, qmul(qRotation, vtx_vNormal)));
+			@else
+				cVector3f vNormal = normalize(mul(mtxNormal, vtx_vNormal));
+			@endif
+		@endif
+
+		/////////
+		// Fade vertices that are perpendicular to the eye vector
+		float fAngleFade = abs(dot(vNormal, vViewEyeVec));
+		px_vColor.a *= clamp((fAngleFade - 0.15) * 1.5, 0, 1.0);
+	@endif
+
+
+	//////////////////////
+	// Linear depth
+	@ifdef UseLinearDepth || UseSoftParticle || UseDetailMap || UseRefraction
+		px_fLinearDepth = -mul(a_mtxView, vLocalVertexPos).z * afInvFarPlane; //Do not use near plane! Doing like this will make the calcs simpler in the light shader.
+	@elseif  UseHalo && UseOccludeHalo && UseDepthOfField
+		px_fLinearDepth = -mul(a_mtxView, vLocalVertexPos).z * afInvFarPlane; //Do not use near plane! Doing like this will make the calcs simpler in the light shader.
+	@endif
+	
+	//////////////////////
+	// Vertex Position
+	@ifdef UseVertexPosition || UseEnvMap || UseFog || UseRefraction || UseDepthOfField
+		px_vVertexPos = mul(a_mtxView, vLocalVertexPos).xyz;
+	@endif
+
+	////////////////////
+	// Scrolling noise
+	@ifdef UseScrollingNoise
+		//////////
+		// Move the noise down and swirl it a bit
+		cVector4f vWorldVtxPos = mul(a_mtxModel, vtx_vPosition);
+		float fOffset = afT * afScrollingNoiseSpeed;
+		// Swirl the coordinates a bit, vtx_vTexCoord0.w stores a unique id to the billboard
+		cVector3f vSwirl = cos(cVector3f(0.3, 1.5, -1.0) + cVector3f(-1.9, 2.5, 3.1) * (fOffset + vtx_vTexCoord0.w));
+		px_vScrollingNoiseCoord = (vWorldVtxPos.xyz + vSwirl * 0.5 + cVector3f(0, fOffset, 0)) * afScrollingNoiseScale;
+	@endif
+    @ifdef MaterialType_EdgeGlow
+    // S26HM: only the selected remote target gets a 3 mm visual shell.
+    if(aColor.w > 1.5) {
+        cVector3f vrWorldNormal = mul(transpose(a_mtxView), cVector4f(normalize(px_vNormal),0.0)).xyz;
+        px_vPosition += mul(a_mtxViewProjection,cVector4f(vrWorldNormal * 0.003,0.0));
+    }
+    @endif
+}
+
+@else
+
+
+////////////////////////
+// TEMP BACKWARD COMBATABILITY BELOW;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//---------------------------------------------
+
+@ifdef UseSway || UseScrollingNoise
+	@include helper_sway_offset.hpsl
+@endif
+
+//---------------------------------------------
+
+//////////////////
+// Arguments
+cBuffer cVertexArguments //make sure the struct in c++ has the same layout!
+{
+	//////////////
+	// Default input
+	cMatrixf a_mtxProjection;
+	cMatrixf a_mtxModelViewProjection;
+	cMatrixf a_mtxModelView;
+	cMatrixf a_mtxUV;
+	cMatrixf a_mtxModel;
+	cMatrixf a_mtxNormal;
+
+@ifdef UseExtendedArgs
+	float afInvFarPlane;
+	float afT;
+	cVector4f avColorMul;
+
+	/////////////////////
+	// Sway
+	cVector3f avSwayProperties;	//x=Freg, y=Amp, z=Speed
+	cVector3f avSwayOctavesMul;
+	float afSwayYFreqMul;
+	cVector3f avSwaySingleDirection;
+	cVector3f avSwaySinglesampleDirection;
+
+	cVector4f avForceFieldPos;	//W=T used for the forcefield sway
+	cVector4f avForceFieldProp; //x=FadeStartRad, y=FadeLength, z=Force, w=MaxForce
+	
+	cVector3f avForceFieldPos0;
+	cVector3f avForceFieldPos1;
+	cVector3f avForceFieldPos2;
+	cVector3f avForceFieldPos3;
+		
+	cVector4f avForceFieldFadeStarts;
+	cVector4f avForceFieldFadeLengths;
+	cVector4f avForceFieldForces;
+	cVector4f avForceFieldTs;
+		
+	float afForceFieldMaxForce;
+
+	/////////////////////
+	// Scrolling noise
+	float afScrollingNoiseSpeed;
+	float afScrollingNoiseScale;
+
+	/////////////////
+	// Soft particles
+	float afSoftParticleDepthBias;
+
+	//////////
+	// Instancing
+	int alInstanceOffset;
+@endif
+};
+
+@ifdef UseSkeleton
+cBuffer cSkinningData
+{
+	#define kMaxBones 96
+	cVector4f avDualQuatBones[kMaxBones*2];
+};
+@endif
+
+@ifdef UseSway && UseSwayMap
+	//Use another texture unit if it is a transperant material
+	@ifdef IsTransperantMaterial	
+		uniform cTexture2D aHeightMap : 5;
+	@else
+		uniform cTexture2D aHeightMap : 3;
+	@endif
+@endif
+
+///////////////////////
+// Mesh instancing
+@ifdef UseMeshInstancing || UseStaticMeshInstancing
+	uniform cTexture2D aInstanceBuffer : 15;
+@endif
+
+@ifdef UseSkeleton || UseMeshInstancing
+	//performs quaternion -> point multiplication
+	//algorithm is from the paper "Geometric Skinning with Dual Skinning" (L. Kavan et al)
+	cVector3f qmul(cVector4f qQuaternion, cVector3f vPoint)
+	{
+		return vPoint + 2.0 * cross(qQuaternion.xyz, cross(qQuaternion.xyz, vPoint) + qQuaternion.w * vPoint);
+	}
+
+	//performs quaternion -> quaternion multiplication
+	//algorithm is from the paper "Geometric Skinning with Dual Skinning" (L. Kavan et al)
+	cVector3f qmul(cVector4f qQuaternionA, cVector4f qQuaternionB)
+	{
+		return 2.0 * (qQuaternionA.w * qQuaternionB.xyz - qQuaternionB.w * qQuaternionA.xyz + cross(qQuaternionA.xyz, qQuaternionB.xyz));
+	}
+
+	//performs dual quaternion -> point multiplication
+	cVector3f dqmul(cMatrix2x4f mtxDualQuaternion, cVector3f vPoint)
+	{
+		return qmul(mtxDualQuaternion[0], vPoint) + qmul(mtxDualQuaternion[0], mtxDualQuaternion[1]);
+	}
+
+	cMatrix2x4f append(cMatrix2x4f mtxBase, cMatrix2x4f mtxBone, float fWeight)
+	{
+		//////////////////
+		// Calculate the smallest direction to rotate and rotate in that direction
+		float fDot = dot(mtxBase[0], mtxBone[0]);
+
+		return mtxBone * (sign(fDot) * fWeight);
+	}
+@endif
+
+//---------------------------------------------
+
+///////////////////////////////
+// Main program
+void main(in cVector4f vtx_vPosition,
+		  in cVector4f vtx_vTexCoord0,
+		  in cVector4f vtx_vTexCoord1,
+		  in cVector3f vtx_vNormal,
+		  in cVector4f vtx_vTangent,
+		  in cVector4f vtx_vColor,
+		  in cVector4f vtx_vBoneIndices,
+		  in cVector4f vtx_vBoneWeight,
+@ifdef UseUv
+		  out cVector4f px_vTexCoord0,
+@endif
+@ifdef UseUvCoord1
+		  out cVector4f px_vTexCoord1,
+@endif
+@ifdef UseNormals
+		  out cVector3f px_vNormal,
+@endif
+@ifdef UseNormalMapping || UseLiquid
+		  out cVector3f px_vTangent,
+		  out cVector3f px_vBinormal,
+@endif
+@ifdef UseColor || UseAngleFade
+		  out cVector4f px_vColor,
+@endif
+@ifdef UseLinearDepth || UseSoftParticle || UseDetailMap || UseRefraction
+		  out float px_fLinearDepth,
+@elseif UseHalo && UseOccludeHalo && UseDepthOfField
+		  out float px_fLinearDepth,
+@endif
+@ifdef UseVertexPosition || UseEnvMap || UseFog || UseRefraction || UseDepthOfField
+		  out cVector3f px_vVertexPos,
+@endif
+@ifdef UseScrollingNoise
+		  out cVector3f px_vScrollingNoiseCoord,
+@endif
+@ifdef DeferredLight
+	@ifdef UseBatching
+		  out cVector3f px_vLightPosition,
+		  out cVector4f px_vLightColor,
+		  out float px_fLightRadius,
+	@endif
+@endif
+@ifdef UseParallax
+		  out cVector3f px_vTangentEyePos,
+@endif
+		  out cVector4f px_vPosition)
+{	
+	/////////////
+	// load instance data
+	@ifdef UseMeshInstancing
+		/////////////
+		// Get instance data from instance buffer texture
+		cVector4f vInstancePositionScale = load(aInstanceBuffer, cVector2l(vtx_lInstanceID + alInstanceOffset, 0), 0);
+		cVector4f vInstanceRotation = load(aInstanceBuffer, cVector2l(vtx_lInstanceID + alInstanceOffset, 1), 0);
+		cVector4f vInstanceColor = load(aInstanceBuffer, cVector2l(vtx_lInstanceID + alInstanceOffset, 2), 0);
+	@endif
+
+	@ifdef UseStaticMeshInstancing
+		/////////////
+		// Get instance data and convert it
+		cVector4f vRow0 = load(aInstanceBuffer, cVector2l(vtx_lInstanceID + alInstanceOffset, 0), 0);
+		cVector4f vRow1 = load(aInstanceBuffer, cVector2l(vtx_lInstanceID + alInstanceOffset, 1), 0);
+		cVector4f vRow2 = load(aInstanceBuffer, cVector2l(vtx_lInstanceID + alInstanceOffset, 2), 0);
+		cVector4f vRow3 = load(aInstanceBuffer, cVector2l(vtx_lInstanceID + alInstanceOffset, 3), 0);
+
+		cVector4f vInstanceColor = cVector4f(vRow0.w, vRow1.w, vRow2.w, vRow3.w);
+		cMatrixf mtxModel = cMatrixf(cVector4f(vRow0.xyz, 0),
+							 cVector4f(vRow1.xyz, 0),
+							 cVector4f(vRow2.xyz, 0),
+							 cVector4f(vRow3.xyz, 1));
+		@ifdef Lang_PSSL
+			mtxModel = transpose(mtxModel); //todo: fix this outside of shader?
+		@endif
+	@endif
+
+	//////////////////////
+	// Position - Skeleton
+	@ifdef UseSkeleton
+		cVector4l lvBoneIndices = clamp(cVector4l(vtx_vBoneIndices), cVector4l(0), cVector4l(kMaxBones-1)) * 2;
+		cVector4f  vBoneWeight   = vtx_vBoneWeight;
+
+		//Create bone matrix
+		cMatrix2x4f mtxDualQuat;
+		cMatrix2x4f mtxBase = cMatrix2x4f(avDualQuatBones[lvBoneIndices.x], avDualQuatBones[lvBoneIndices.x+1]);
+
+		mtxDualQuat  = mtxBase * vBoneWeight.x;
+		mtxDualQuat += append(mtxBase, cMatrix2x4f(avDualQuatBones[lvBoneIndices.y], avDualQuatBones[lvBoneIndices.y+1]), vBoneWeight.y);
+		mtxDualQuat += append(mtxBase, cMatrix2x4f(avDualQuatBones[lvBoneIndices.z], avDualQuatBones[lvBoneIndices.z+1]), vBoneWeight.z);
+		mtxDualQuat += append(mtxBase, cMatrix2x4f(avDualQuatBones[lvBoneIndices.w], avDualQuatBones[lvBoneIndices.w+1]), vBoneWeight.w);
+
+		//normalize both quaternions after adding the bones together
+		mtxDualQuat /= length(mtxDualQuat[0]);
+		
+		cVector4f qRotation = mtxDualQuat[0];
+		cVector4f vLocalVertexPos = cVector4f(dqmul(mtxDualQuat, vtx_vPosition.xyz), 1.0);
+		px_vPosition = mul(a_mtxModelViewProjection, vLocalVertexPos);
+	
+	//////////////////////
+	// Position - Sway
+	@elseif	UseSway
+		
+		////////////
+		// Instance + Sway support
+		@ifdef UseMeshInstancing
+			///////////
+			// Apply instance rotation, scale and offset
+			cVector4f vWorldVtxPos = cVector4f(qmul(vInstanceRotation, vtx_vPosition.xyz) * vInstancePositionScale.w + vInstancePositionScale.xyz, 1.0);
+			cVector4f qRotation = vInstanceRotation;
+		@else
+			// Get the world postion of vertex
+			cVector4f vWorldVtxPos = mul(a_mtxModel, vtx_vPosition);
+		@endif
+
+		// Calculate the sway offset
+		@ifdef UseSwaySingleDir
+			cVector3f vOffset = GetSwaySingleDirectionOffset(afT, vWorldVtxPos, avSwayProperties, avSwayOctavesMul, avSwaySingleDirection, avSwaySinglesampleDirection);
+		@else
+			cVector3f vOffset = GetSwayOffset(afT, vWorldVtxPos, avSwayProperties, avSwayOctavesMul, afSwayYFreqMul);
+		@endif
+		
+		/////////////////////////////////
+		// Single Force field
+		@ifdef UseSingleForceField
+		
+			//Add offset of single force field
+			vOffset.xz += GetSingleForceFieldOffset(afT, vWorldVtxPos, avForceFieldPos, avForceFieldProp);
+			
+		/////////////////////////////////
+		// Four Fource fields
+		@elseif UseFourForceFields
+								
+			//Add offset of four force fields
+			vOffset.xz += GetFourForceFieldsOffset(	afT, vWorldVtxPos, 
+													avForceFieldPos0, avForceFieldPos1, avForceFieldPos2, avForceFieldPos3,
+													avForceFieldFadeStarts, avForceFieldFadeLengths, avForceFieldForces,
+													avForceFieldTs, afForceFieldMaxForce);
+		@endif
+		
+		@ifdef UseSwayMap
+			///////////////////////////////////////////
+			// Calculate the final position
+			vOffset *= sampleLod(aHeightMap, vtx_vTexCoord0.xy, 0).w;
+		@endif
+
+		@ifdef UseMeshInstancing
+			cVector4f vLocalVertexPos = cVector4f(vWorldVtxPos.xyz + vOffset, 1.0);
+		@else
+			cVector4f vLocalVertexPos = cVector4f(vtx_vPosition.xyz + vOffset, 1.0);
+		@endif
+
+		px_vPosition =  mul(a_mtxModelViewProjection, vLocalVertexPos);
+	
+	//////////////////////
+	// Position - Soft Particle
+	@elseif UseSoftParticle
+		cVector4f vLocalVertexPos = cVector4f(vtx_vPosition.xyz, 1.0);
+		cVector4f vViewPos = mul(a_mtxModelView, vLocalVertexPos);
+
+		@ifdef NegativeDepthBias
+			/////////
+			// Move the vertex closer to the camera but keep the same (x,y) screen coords
+			cVector3f vBiasOffset;
+
+			vBiasOffset.z = vViewPos.z - afSoftParticleDepthBias / afInvFarPlane;
+			vBiasOffset.xy = vViewPos.xy * vBiasOffset.z / min(vViewPos.z, -0.00001); // no div by zero
+
+			vViewPos.xyz = vBiasOffset;
+		@endif
+
+		px_vPosition = mul(a_mtxProjection, vViewPos);
+	/////////////////////
+	// Position - Instancing
+	@elseif UseMeshInstancing
+		///////////
+		// Apply instance rotation, scale and offset
+		cVector4f vLocalVertexPos = cVector4f(qmul(vInstanceRotation, vtx_vPosition.xyz) * vInstancePositionScale.w + vInstancePositionScale.xyz, 1.0);
+
+		cVector4f qRotation = vInstanceRotation;
+		px_vPosition = mul(a_mtxModelViewProjection, vLocalVertexPos);
+	/////////////////////
+	// Position - Static Instancing
+	@elseif UseStaticMeshInstancing
+		///////////
+		// Apply model matrix for instance
+		cVector4f vLocalVertexPos = mul(mtxModel, cVector4f(vtx_vPosition.xyz, 1.0));
+		px_vPosition = mul(a_mtxModelViewProjection,vLocalVertexPos);
+	//////////////////////
+	// Position - Default
+	@else
+		cVector4f vLocalVertexPos = cVector4f(vtx_vPosition.xyz, 1.0);
+		px_vPosition = mul(a_mtxModelViewProjection, vLocalVertexPos);
+	@endif
+	
+	//////////////////////
+	// Uv
+	@ifdef UseUv
+		@ifdef UseUvAnimation
+			px_vTexCoord0 = mul(a_mtxUV, vtx_vTexCoord0);
+		@else
+			px_vTexCoord0 = vtx_vTexCoord0;
+		@endif
+		@ifdef UseUvCoord1
+			px_vTexCoord1 = vtx_vTexCoord1;
+		@endif
+	@endif
+
+	//////////////////////
+	// Color
+	@ifdef UseColor
+		px_vColor = vtx_vColor;
+	@elseif UseAngleFade
+		px_vColor = cVector4f(1.0);
+	@endif
+	
+	
+	@ifdef UseColorMul
+		@ifdef UseStaticMeshInstancing
+			px_vColor *= vInstanceColor;
+		@else
+			px_vColor *= avColorMul;
+		@endif
+	@endif
+	
+	@ifdef UseMeshInstancing
+		px_vColor *= vInstanceColor;
+	@endif
+
+	@ifdef UseStaticMeshInstancing
+		cMatrix3f mtxNormal = cMatrix3f(mul(a_mtxNormal, mtxModel));
+	@else
+		cMatrix3f mtxNormal = cMatrix3f(a_mtxNormal);
+	@endif
+
+	//////////////////////
+	// Normals
+	@ifdef UseNormals || UseLiquid
+		@ifdef UseSkeleton || UseMeshInstancing
+			px_vNormal = normalize(mul(mtxNormal, qmul(qRotation, vtx_vNormal)));
+		@else
+			px_vNormal = normalize(mul(mtxNormal, vtx_vNormal));
+		@endif
+	@elseif UseParallax
+		cVector3f px_vNormal = normalize(mul(mtxNormal, vtx_vNormal));
+	@endif
+
+	//////////////////////
+	// Normalmapping
+	@ifdef UseNormalMapping || UseLiquid
+		@ifdef UseSkeleton || UseMeshInstancing
+			px_vTangent =  normalize(mul(mtxNormal, qmul(qRotation, vtx_vTangent.xyz)));
+			
+			///NOTE: normal are and tan are reveresed, because of OpenGL texture coord system
+			px_vBinormal = normalize(mul(mtxNormal, qmul(qRotation, cross(vtx_vTangent.xyz, vtx_vNormal) * vtx_vTangent.w)));
+		@else
+			px_vTangent = normalize(mul(mtxNormal, vtx_vTangent.xyz));
+		
+			//Need to do it in model space (and not view) because reflection normal mapping will fail otherwise!
+			//NOTE: normal are and tan are reveresed, because of OpenGL texture coord system
+			px_vBinormal = normalize(mul(mtxNormal, cross(vtx_vTangent.xyz, vtx_vNormal) * vtx_vTangent.w)); 
+		@endif
+	@endif
+	
+	//////////////////////
+	// Parallax
+	@ifdef UseParallax
+		cVector3f vViewEyeVec =  mul(a_mtxModelView, vLocalVertexPos).xyz;
+		
+		@ifdef UseNormalMapping || UseLiquid
+			px_vTangentEyePos.x = dot(vViewEyeVec, px_vTangent);
+			px_vTangentEyePos.y = -dot(vViewEyeVec, px_vBinormal); //Need to invert!
+			px_vTangentEyePos.z = abs(dot(vViewEyeVec, px_vNormal)); //use abs value so interpolation doesnt result in gimbal lock
+		@else
+			@ifdef UseSkeleton || UseMeshInstancing
+				cVector3f vTangent =  normalize(mul(mtxNormal, qmul(qRotation, vtx_vTangent.xyz)));
+				cVector3f vBinormal = normalize(mul(mtxNormal, qmul(qRotation, cross(vtx_vTangent.xyz,vtx_vNormal) * vtx_vTangent.w)));
+			@else
+				cVector3f vTangent =  normalize(mul(mtxNormal, vtx_vTangent.xyz));
+				cVector3f vBinormal = normalize(mul(mtxNormal, cross(vtx_vTangent.xyz,vtx_vNormal) * vtx_vTangent.w)); 
+			@endif
+
+			px_vTangentEyePos.x = dot(vViewEyeVec, vTangent);
+			px_vTangentEyePos.y = -dot(vViewEyeVec, vBinormal);//Need to invert!
+			px_vTangentEyePos.z = abs(dot(vViewEyeVec, px_vNormal));//use abs value so interpolation doesnt result in gimbal lock
+		@endif
+		
+		//Do not normalize yet! Do that in the fragment shader.		
+	@endif
+	
+
+	/////////
+	// Angle fade
+	@ifdef UseAngleFade
+		@ifdef UseParallax
+			vViewEyeVec = normalize(vViewEyeVec);
+		@else
+			cVector3f vViewEyeVec = normalize((mul(a_mtxModelView,vtx_vPosition)).xyz);
+		@endif
+
+		@ifdef UseNormals
+			cVector3f vNormal = px_vNormal;
+		@else
+			@ifdef UseSkeleton || UseMeshInstancing
+				cVector3f vNormal = normalize(mul(mtxNormal, qmul(qRotation, vtx_vNormal)));
+			@else
+				cVector3f vNormal = normalize(mul(mtxNormal, vtx_vNormal));
+			@endif
+		@endif
+
+		/////////
+		// Fade vertices that are perpendicular to the eye vector
+		float fAngleFade = abs(dot(vNormal, vViewEyeVec));
+		px_vColor.a *= clamp((fAngleFade - 0.15) * 1.5, 0, 1.0);
+	@endif
+
+
+	//////////////////////
+	// Linear depth
+	@ifdef UseLinearDepth || UseSoftParticle || UseDetailMap || UseRefraction
+		px_fLinearDepth = -mul(a_mtxModelView, vLocalVertexPos).z * afInvFarPlane; //Do not use near plane! Doing like this will make the calcs simpler in the light shader.
+	@elseif  UseHalo && UseOccludeHalo && UseDepthOfField
+		px_fLinearDepth = -mul(a_mtxModelView, vLocalVertexPos).z * afInvFarPlane; //Do not use near plane! Doing like this will make the calcs simpler in the light shader.
+	@endif
+	
+	//////////////////////
+	// Vertex Position
+	@ifdef UseVertexPosition || UseEnvMap || UseFog || UseRefraction || UseDepthOfField
+		px_vVertexPos = mul(a_mtxModelView, vLocalVertexPos).xyz;
+	@endif
+
+	////////////////////
+	// Scrolling noise
+	@ifdef UseScrollingNoise
+		//////////
+		// Move the noise down and swirl it a bit
+		cVector4f vWorldVtxPos = mul(a_mtxModel, vtx_vPosition);
+		float fOffset = afT * afScrollingNoiseSpeed;
+		// Swirl the coordinates a bit, vtx_vTexCoord0.w stores a unique id to the billboard
+		cVector3f vSwirl = cos(cVector3f(0.3, 1.5, -1.0) + cVector3f(-1.9, 2.5, 3.1) * (fOffset + vtx_vTexCoord0.w));
+		px_vScrollingNoiseCoord = (vWorldVtxPos.xyz + vSwirl * 0.5 + cVector3f(0, fOffset, 0)) * afScrollingNoiseScale;
+	@endif
+
+	//////////////////////
+	// Deferring (Lights)
+	@ifdef DeferredLight
+	////////////////////////////
+		//Batching is used
+		@ifdef UseBatching
+			px_vLightPosition = vtx_vTexCoord0.xyz;
+			px_vLightColor =  vtx_vColor;
+			px_fLightRadius = vtx_vTexCoord1.x;			
+		@endif
+	@endif
+
+
+}
+
+@endif

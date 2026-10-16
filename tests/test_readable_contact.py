@@ -11,7 +11,7 @@ head=r'''
 typedef int i32;typedef unsigned u32;
 #define H5755HJ_STATIC_CONTACT_MAX 4
 #define H481_MECH_NONE 0
-static void* g_h14GripBody[2];static int g_h30NativeMouseDown;
+static void* g_h14GripBody[2];static int g_h30NativeMouseDown,g_h30NativeUseHand;
 static unsigned g_h14PhysicsSteps=100,g_h5755hjStaticContactStep[2],g_h5755hjStaticContactCount[2];
 static const void* g_h5755hjStaticContactBody[2][4];static int g_h5755hjStaticContactPointValid[2][4];static float g_h5755hjStaticContactPoint[2][4][3];
 static const void* g_s26dpReadableContactBody,*g_s26daItemClaim[2];static unsigned g_s26daItemClaimStep[2];
@@ -44,17 +44,17 @@ static int geticon(void*a,int b,void*c){return icon;}
 '''
 main=r'''
 int main(void){float m[16]={0};
-for(int h=0;h<2;h++)for(int fault=0;fault<17;fault++){
+for(int h=0;h<2;h++)for(int fault=0;fault<18;fault++){
  memset(g_h14GripBody,0,sizeof(g_h14GripBody));g_h14GripBody[1-h]=(void*)99;
  memset(g_h5755hjStaticContactBody,0,sizeof(g_h5755hjStaticContactBody));memset(g_s26daItemClaim,0,sizeof(g_s26daItemClaim));
  g_h5755hjStaticContactStep[h]=100;g_h5755hjStaticContactCount[h]=1;g_h5755hjStaticContactBody[h][0]=(void*)1;g_h5755hjStaticContactPointValid[h][0]=1;
  icon=22;can=meshOK=queueOK=1;kind=jointed=calls=scopeSeen=g_h30NativeMouseDown=0;distance=.036f;wrongRaw=0;
  switch(fault){case 1:distance=.006f;break;case 2:g_h5755hjStaticContactStep[h]=99;break;case 3:g_h5755hjStaticContactStep[h]=98;break;case 4:can=0;break;
  case 5:icon=13;break;case 6:icon=2;break;case 7:icon=14;break;case 8:jointed=1;break;case 9:kind=1;break;case 10:wrongRaw=(void*)3;break;
- case 11:g_h5755hjStaticContactPointValid[h][0]=0;break;case 12:meshOK=0;break;case 13:queueOK=0;break;case 14:g_h30NativeMouseDown=1;break;
+ case 11:g_h5755hjStaticContactPointValid[h][0]=0;break;case 12:meshOK=0;break;case 13:queueOK=0;break;case 14:g_h30NativeMouseDown=1;g_h30NativeUseHand=h;break;
  case 15:g_h5755hjStaticContactCount[h]=2;g_h5755hjStaticContactBody[h][1]=(void*)2;g_h5755hjStaticContactPointValid[h][1]=1;break;
- case 16:g_h5755hjStaticContactStep[h]=99;distance=.006f;break;}
- int r=s26da_queue_contact_item(h,m);C((r==1)==(fault==0||fault==1||fault==2||fault==16));C(g_s26dpReadableContactBody==0);C(g_h14GripBody[1-h]==(void*)99);
+ case 16:g_h5755hjStaticContactStep[h]=99;distance=.006f;break;case 17:g_h30NativeMouseDown=1;g_h30NativeUseHand=1-h;break;}
+ int r=s26da_queue_contact_item(h,m);C((r==1)==(fault==0||fault==1||fault==2||fault==7||fault==16||fault==17));C(g_s26dpReadableContactBody==0);C(g_h14GripBody[1-h]==(void*)99);
  if(r==1){C(calls==1);C(g_s26daItemClaim[h]==(void*)1);C(scopeSeen==1);}else C(!g_s26daItemClaim[h]);
 }
 

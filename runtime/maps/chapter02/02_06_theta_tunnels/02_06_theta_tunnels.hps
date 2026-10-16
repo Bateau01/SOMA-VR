@@ -2771,8 +2771,13 @@ class cScrMap : iScrMap
 			// Tool is picked up
 			// H5756AV_VR_THETA_TUNNELS_SAME_GRIP_DETACH
 			if (_HPL3VR_RuntimeActive_ThetaTunnelsAT())
-				cScript_RunGlobalFunc("VROMNITHETA", "chip_unformatted", "R");
-			Entity_CallEntityInteract("chip_unformatted");
+            {
+                // The sticky callback runs after OnInteract has returned.
+                // Bind the transfer to the still-held source body explicitly.
+                iPhysicsBody@ source=cLux_GetCurrentMap().GetPhysicsWorld().GetBody(asBodyName);
+                if(source !is null)cScript_RunGlobalFunc("VROMNITHETA","chip_unformatted","B"+source.GetUniqueID());
+            }
+            Entity_CallEntityInteract("chip_unformatted");
 			Entity_SetActive("brandon_chip_interact",false);
 			Player_ChangeStateToNormal();
 			Sound_CreateAtEntity("BreakBrandon", "02_06_theta_tunnels/sfx/brandon_hand/break", asStickyArea);
@@ -2828,6 +2833,18 @@ class cScrMap : iScrMap
 		
 		void security_chip_unformatted_OnPlayerInteract(const tString &in asEntity)
 		{
+            // A direct VR contact may hit the disabled presentation sharing this socket.
+            // Let the active formatted presentation own the callback and handoff.
+            if (_HPL3VR_RuntimeActive_ThetaTunnelsAT())
+            {
+                if (Entity_IsActive("security_chip_formatted"))
+                {
+                    security_chip_formatted_OnPlayerInteract("security_chip_formatted");
+                    return;
+                }
+                if (Map_GetEntity("security_chip_unformatted").GetInteractionDisabled()) return;
+            }
+
             // VR removal is a single acquisition; ignore a replay after ownership.
             if (_HPL3VR_RuntimeActive_ThetaTunnelsAT() && Player_ToolIsInInventory("chip_unformatted")) return;
 			//////////////////////////////////////////////
@@ -2845,7 +2862,7 @@ class cScrMap : iScrMap
 			if (_HPL3VR_RuntimeActive_ThetaTunnelsAT())
             {
                 Entity_SetVarString("chip_unformatted","VRReturnArea","Area_InsertUnformattedChip");
-                Entity_PlaceAtEntity("chip_unformatted", "security_chip_unformatted");
+                Entity_PlaceAtEntity("chip_unformatted", "security_chip_unformatted", cVector3f_Zero, true);
             }
 			Entity_CallEntityInteract("chip_unformatted");
 			
@@ -2883,7 +2900,7 @@ class cScrMap : iScrMap
 			if (_HPL3VR_RuntimeActive_ThetaTunnelsAT())
             {
                 Entity_SetVarString("door_panel_chip_formatted","VRReturnArea","Area_InsertUnformattedChip");
-                Entity_PlaceAtEntity("door_panel_chip_formatted", "security_chip_formatted");
+                Entity_PlaceAtEntity("door_panel_chip_formatted", "security_chip_formatted", cVector3f_Zero, true);
             }
 			Tool_PickUp("door_panel_chip_formatted", true, true);
 
@@ -3250,7 +3267,7 @@ class cScrMap : iScrMap
 			if (_HPL3VR_RuntimeActive_ThetaTunnelsAT())
             {
                 Entity_SetVarString("chip_unformatted","VRReturnArea",msBrokenPanelArea);
-                Entity_PlaceAtEntity("chip_unformatted", "Replaced_Chip_Startpos");
+                Entity_PlaceAtEntity("chip_unformatted", "Replaced_Chip_Startpos", cVector3f_Zero, true);
             }
 			Tool_PickUp("chip_unformatted", true, true);
 				

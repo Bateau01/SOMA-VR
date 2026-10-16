@@ -432,6 +432,19 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
     void _Global_VROmniShoulderDrawOwned(){bool ok=VR_ExecuteOwnedOmniStorage(true);cScript_SetGlobalReturnBool(ok);}
     void _Global_VROmniShoulderStoreOwned(){bool ok=VR_ExecuteOwnedOmniStorage(false);cScript_SetGlobalReturnBool(ok);}
 
+    // S26GB: no ensure/spawn fallback. The exact current-map owned carrier
+    // must consent while native recall is executing at a safe gameplay boundary.
+    void _Global_VRRecallOwnedOmni()
+    {
+        cScript_SetGlobalReturnBool(false);
+        if(!_HPL3VR_RuntimeActive_ToolHandler()) return;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null) return;
+        tString name=VR_GetOwnedPhysicalOmniName();if(name=="") return;
+        iLuxEntity@ entity=map.GetEntityByName(name,eLuxEntityType_Prop,"");
+        if(entity is null || !entity.ScriptPrepare("bool VR_TryRecall()") || !entity.ScriptExecute()) return;
+        cScript_SetGlobalReturnBool(entity.GetReturnBool());
+    }
+
     void _Global_VRGetOwnedPhysicalOmniName()
     {
         tString name="";
@@ -1051,6 +1064,45 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
         cScript_SetGlobalReturnBool(committed);
     }
 
+    // S26GN: Omicron assembly changes retrieval preference only. Native use
+    // callbacks and stage gates remain authoritative; no inventory is reordered.
+    bool VR_IsSuitAssemblyRetrieval()
+    {
+        cLuxMap@ pMap = cLux_GetCurrentMap();
+        if (pMap is null) return false;
+        if (pMap.GetEntityByName("DiveSuitArea", eLuxEntityType_LastEnum, "") is null ||
+            pMap.GetEntityByName("ToolArea_ComputerBrain", eLuxEntityType_LastEnum, "") is null ||
+            pMap.GetEntityByName("ToolArea_PowerSource", eLuxEntityType_LastEnum, "") is null ||
+            pMap.GetEntityByName("ToolArea_StructureGel", eLuxEntityType_LastEnum, "") is null) return false;
+        iLuxEntity@ suit = pMap.GetEntityByName("DiveSuitArea", eLuxEntityType_LastEnum, "");
+        return suit.IsActive() && !suit.GetInteractionDisabled();
+    }
+
+    int VR_SuitRetrievalPriority(const tString &in name, bool suitAssembly)
+    {
+        if (!suitAssembly) return 3;
+        if (name == "BrokenRobotBrain") return 0;
+        if (name == "PowerCube_Inserted") return 1;
+        if (name == "StructureGelTool") return 2;
+        return 3;
+    }
+
+    int VR_SelectShoulderRetrieve(bool suitAssembly)
+    {
+        int best = -1, bestOrder = 2147483647, bestPriority = 4;
+        for (uint i = 0; i < mvInventory.length(); ++i)
+        {
+            cToolData@ tool = mvInventory[i];
+            if (!VR_IsShoulderKeyItem(tool) || !tool.mbVRShoulderStowed || tool.mlVRShoulderOrder <= 0) continue;
+            int priority = VR_SuitRetrievalPriority(tool.msPickedEntityName, suitAssembly);
+            if (priority < bestPriority || (priority == bestPriority && tool.mlVRShoulderOrder < bestOrder))
+            {
+                best = int(i); bestOrder = tool.mlVRShoulderOrder; bestPriority = priority;
+            }
+        }
+        return best;
+    }
+
     bool VR_Try_ShoulderRetrieve()
     {
 		cScript_SetGlobalReturnBool(false);
@@ -1062,20 +1114,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		// Newton continuation without granting physical or story authority to a name.
 		if (msVRShoulderRetrievePending == "")
 		{
-			// Rotating FIFO, not a strict stack. The oldest stored item comes out first;
-			// re-stowing it assigns a new order at the back.
-			int lBest = -1;
-			int lBestOrder = 2147483647;
-			for (uint i = 0; i < mvInventory.length(); ++i)
-			{
-				cToolData@ pTool = mvInventory[i];
-				if (!VR_IsShoulderKeyItem(pTool) || !pTool.mbVRShoulderStowed) continue;
-				if (pTool.mlVRShoulderOrder > 0 && pTool.mlVRShoulderOrder < lBestOrder)
-				{
-					lBest = int(i);
-					lBestOrder = pTool.mlVRShoulderOrder;
-				}
-			}
+			int lBest = VR_SelectShoulderRetrieve(VR_IsSuitAssemblyRetrieval());
 			if (lBest < 0) return false;
 			msVRShoulderRetrievePending = mvInventory[uint(lBest)].msPickedEntityName;
 			// B publishes selection only. Native may keep the fresh-inside-shoulder Grip

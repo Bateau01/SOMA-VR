@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess,sys
-R=Path(__file__).resolve().parents[1];s=(R/'source/s26n.c').read_text();start=s.index('static void s26dr_scan_small_lever(');end=s.index('static void __attribute__((ms_abi)) h14_scan_body',start);fn=s[start:end]
+R=Path(__file__).resolve().parents[1];s=(R/'source/s26n.c').read_text();start=s.index('static void s26dr_scan_small_lever(');end=s.index('/* S26EQ:',start);fn=s[start:end]
 head=r'''
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +34,6 @@ C(s26dr_small_lever_choice(0)==0);printf("PASS %d non-colliding switch interior/
 '''
 B=R/'build';p=B/'small_lever_test.c';p.write_text(head+fn+main);e=p.with_suffix('.exe');subprocess.run([sys.argv[1],'cc','-O2',str(p),'-o',str(e)],check=True);subprocess.run([str(e)],check=True)
 assert 's26dr_small_lever_choice(&ready)==1' in s and 's26dr_small_lever_choice(&authScan)' in s
-assert 'poseSamples[h]<3u' in s and 'poseNextStep[h]=g_h14PhysicsSteps+120u' in s
-print('PASS shared selector wiring and capped human pose capture. No engine/headset simulation.')
+assert 'poseSamples[h]' not in s and 'poseNextStep[h]' not in s
+print('PASS shared selector wiring and retired pose-capture diagnostics. No engine/headset simulation.')
 assert 'h,authScan.drBody,authScan.drHandM,authScan.drContact,0.0f,0' in s

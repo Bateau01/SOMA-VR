@@ -1,0 +1,38 @@
+S26GD experimental 120 Hz provenance
+
+SOMA Steam SHA256 7c424e6055dda5b3aa41d4b3a9d6ffdebb8f4b50fa8a38769dee82d080b79113.
+Engine initializer +0x23a0a0 reads requested logic rate from its creation structure.
+Timer factory +0x364f10 -> ctor +0x3b93d0 -> rate setter +0x3b9180.
+Setter stores rate and 1e6/rate interval; constructor sets catch-up budget rate/10.
+S26GD intercepts the first eligible factory call, before any gameplay update.
+
+Newton 2.36 timestamp 0x54bcf792, image size 0xe9000.
+NewtonUpdate accepts 1/120; its dt clamp is 0.001 through 0.016666668.
+Body damping setter scales authored damping by 0.02 into body +0x1c0..+0x1cc.
+ApplyDamping +0x1f150 uses those coefficients per call, without dt scaling.
+Four direct references found at +0x22359, +0x229a8, +0x2f71b, +0x2f74b.
+Its two nested helpers perform local vector scale/subtract; no script callbacks.
+The experiment halves the decay exponent for that call, then restores all four
+fields. It does not adjust gravity, forces, authored data or save contents.
+
+Classification: grace periods, TTLs and polling cadence scale by two ticks.
+Actual solver step identities, stale-contact rejection, ownership generations,
+map maturity boundaries and collision iteration budgets retain real step counts.
+Per-step drag bounds/deadzones scale down; physical force/velocity units do not.
+Slider target velocity and door inverse-recurrence adapters already use dt.
+OpenXR timestamps, frame histories and display pacing are not changed.
+
+The Bunker evidence: MenuHandler's 120 setting selects native logic timer rate
+through GameplayUpdateRate; no swap to a different Newton DLL is required.
+The SOMA mod uses no copied Bunker binaries or scripts.
+
+Tests use a private Newton world and the isolated SOMA validation copy.
+The first tiny-body hinge fixture was unstable at the native 60 Hz baseline;
+it was replaced with a larger door-sized body and matching inertia. The final
+comparison is in newton-comparison.json. Numerical paths need not be identical.
+An initial uncorrected damping comparison failed (5-second velocities about
+0.406 vs 0.165); the corrected comparison passes.
+
+Not proved here: complete story playthrough, headset hand/contact feel,
+CPU headroom in complex maps, every joint/solver/contact configuration,
+and unsupported executable/library revisions. Headset testing is deferred.

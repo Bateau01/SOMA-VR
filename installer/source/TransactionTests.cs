@@ -1,4 +1,4 @@
-﻿using System;using System.IO;using System.Linq;using System.Collections.Generic;
+using System;using System.IO;using System.Linq;using System.Collections.Generic;
 public static class TransactionTests {
  static Dictionary<string,string> Snapshot(string root){return Directory.GetFiles(root,"*",SearchOption.AllDirectories).ToDictionary(p=>p.Substring(root.Length),p=>Engine.Hash(p));}
  public static int Main(string[] a){try{

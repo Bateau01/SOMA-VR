@@ -8,9 +8,9 @@ From the repository root:
 python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
 ```
 
-Output: `build/hpl3vr.dll` (1.05-S26ER). SHA256:
+Output: `build/hpl3vr.dll` (1.0.8-S26HO). SHA256:
 
-`b7343e64fa30bbec8f6d30cac43206ef930d91d3dc31823ad1b4fde33e771dfc`
+`ed8b837e47f2fb46ac604e3c3ef536bf18ec0580b49006eed916abaa3388ad31`
 
 Build the separately guarded Epic/GOG DLL with:
 
@@ -20,7 +20,7 @@ python -X utf8 scripts/build_store.py --zig "C:\Tools\zig\zig.exe"
 
 Output: `build/store/hpl3vr-store.dll`. SHA256:
 
-`82e875550a088dab1df60176ed3a0d7dd0165a515310625c61b3911ed7a7f674`
+`2d7c94d8a1107f33086423c2e02ccb9560eccdfd1b802ccae3d20584d58d0eee`
 
 The store build generates a mapped source copy using `reference/store-profile.json`, verifies signatures, and patches the frozen-base operands for that exact engine layout. Do not mix the DLLs manually; the normal launcher selects them by executable identity.
 
@@ -66,3 +66,47 @@ python -X utf8 tests/test_foveation_scope.py "C:\Tools\zig\zig.exe"
 ```
 
 The real OpenGL foveation test requires a GPU exposing GL_NV_shading_rate_image. It verifies state restoration and shading invocation counts, not headset image quality or whole-game performance. See the release notes for remaining hardware checks.
+
+Gesture regressions: `python tests/test_shoulder_gestures.py "C:\Tools\zig\zig.exe"`. They exercise production gesture code with mocked tracking state, without launching the game.
+
+Rear-region regressions: `python tests/test_shoulder_rear.py C:\Tools\zig\zig.exe`. These use production functions with synthetic state.
+
+Rear-region regressions: `python tests/test_shoulder_rear.py C:\Tools\zig\zig.exe`. These use production functions with synthetic state.
+
+GB rebuilds both native DLLs and updates MenuHandler, PlayerToolHandler and Catherine scripts for guarded recall. The GA Push-prop fix remains included. Run tests/test_omni_recall.py and tests/test_extra_buttons.py with your Zig path.
+
+
+S26GF binaries (SHA-256):
+
+hpl3vr.dll: ab38b44c6e916f322677e1ac4ae42b9936f849108f2f17a2de15c1e37df26c71
+hpl3vr-store.dll: b2692235e3cee95d3e9cfe6376b5a51d67ffda5ff227241829e3f3aaa31dde22
+
+
+S26GG binaries (SHA-256):
+
+hpl3vr.dll: fde3327573fbdaca0e38d2099c671ac0a5255e289a86aa42d6c7e0076c55f9e5
+hpl3vr-store.dll: e9baf8064d6dd5bafb5f20b8133cbc179c652d25a10ceb0a7bf604e9fb32e05c
+
+
+S26GG binaries (SHA-256):
+
+hpl3vr.dll: fde3327573fbdaca0e38d2099c671ac0a5255e289a86aa42d6c7e0076c55f9e5
+hpl3vr-store.dll: e9baf8064d6dd5bafb5f20b8133cbc179c652d25a10ceb0a7bf604e9fb32e05c
+
+
+S26GH binaries (SHA-256):
+
+hpl3vr.dll: de1cff24e49111a2b932fa05b42a5c53d3f6aad0791c5dea9c9fc5cd79b4e0ce
+hpl3vr-store.dll: e05a4aa49ea8cdbbf19e1ae8a2ef8e3358cb57a89d45268c1976914e27801c1d
+
+
+1.07-S26GI binaries (SHA-256):
+
+hpl3vr.dll: a872cd11cbfbf49ce0108e480eeebdfca852412fcce24216e33a54cd8a795728
+hpl3vr-store.dll: 8c29311e76b25ead2f7dbe25a0442aa4c7224e4086d010b7c2fe015df7b34309
+
+
+1.07-S26GJ binaries (SHA-256):
+
+hpl3vr.dll: 8aa26fd833f7e2f2f30bec10b6a102832d75add62e362c679a2a9b5349bfcbe8
+hpl3vr-store.dll: b043a88a6a6b1d9c6bd3c4f0f95b7b6225f12f399e933b5a68e32a82c78a14bc

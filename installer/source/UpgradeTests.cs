@@ -1,4 +1,4 @@
-﻿using System;using System.IO;using System.Linq;
+using System;using System.IO;using System.Linq;
 public static class UpgradeTests {
  public static int Main(string[] a){try{
  string root=Path.GetFullPath(a[0]);Directory.CreateDirectory(root);

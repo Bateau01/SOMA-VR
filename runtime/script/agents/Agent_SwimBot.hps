@@ -1,0 +1,498 @@
+#include "interfaces/Agent_Interface.hps"
+
+//---------------------------------------------------
+
+enum eState
+{
+	eState_Idle,
+	eState_Stop,
+	eState_Move,
+}
+
+//---------------------------------------------------
+
+class cScrAgentSwimBot : iScrAgent, iScrAgent_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		m_idLoopSound = tID_Invalid;
+		mfLoopSoundMinMoveSpeed = 0.1;
+		
+		msBubbleFileName = "oneshot_waterbubbles_robot_start_small";
+		mbBubbleEffectsActive = false;
+		mlBubbleSpeedState=0;
+		mfBubbleSpeedAmount =1;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupCharBody()
+	{
+		iCharacterBody@ pCharBody = mBaseObj.GetCharBody();
+		
+		pCharBody.SetGravityActive(false);
+		pCharBody.SetMass(60);
+		
+		pCharBody.SetAccurateClimbing(false);
+		pCharBody.SetMaxNoSlideSlopeAngle(cMath_ToRad(30) );
+		pCharBody.SetMaxPushMass(16);
+		pCharBody.SetMaxPushForce(300);
+		pCharBody.SetPushImpulse(100);
+		pCharBody.SetPushIn2D(false);
+		pCharBody.SetCharacterMaxPushMass(10);
+		pCharBody.SetCharacterPushForce(100);
+		pCharBody.SetMaxStepSize(0.0f);
+		pCharBody.SetMaxStepSizeInAir(0.0f);
+		pCharBody.SetStepClimbSpeed(0.5f);
+		
+		pCharBody.SetEntityPitchAmount(0.3f);
+		
+		pCharBody.SetMaxPositiveMoveSpeed(eCharDir_Forward,2);
+		pCharBody.SetMoveAcc(eCharDir_Forward,1);
+		pCharBody.SetMoveDeacc(eCharDir_Forward,1);
+		pCharBody.SetMoveOppositeDirAccMul(eCharDir_Forward,1);
+		pCharBody.SetDeaccelerateMoveSpeedInAir(true);
+	}
+	
+	//------------------------------------------------------------
+		
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		/////////////////////////////////
+		// Attacker Variables
+		msAttackerTeleportPos = apInstanceVars.GetVarString("AttackerTeleportPos","");
+		msAttackerDamageCallback = apInstanceVars.GetVarString("AttackerDamageCallback","");
+		msAttackerCustomCallback = apInstanceVars.GetVarString("AttackerCustomCallback","");
+		
+		/////////////////////////////////
+		// Mover Module
+		@mpMover = cLux_CreateEntityComponent_CharMover(mBaseObj, mBaseObj.GetCharBody());
+		
+		mpMover.LoadFromVariables(apVars);
+		
+		mpMover.SetMaxForwardSpeed(2);
+		mpMover.SetMaxBackwardSpeed(1);
+		
+		mpMover.SetTurnMinBreakAngle(cMath_ToRad(40) );
+		mpMover.SetTurnBreakMul(0);
+		mpMover.SetTurnSpeedMul(3);
+		mpMover.SetTurnMaxSpeed(4);
+
+		mpMover.SetStoppedToWalkSpeed(0.2);
+		mpMover.SetWalkToRunSpeed(3);
+		mpMover.SetWalkToStoppedSpeed(0.15);
+		mpMover.SetRunToWalkSpeed(0.8);
+		
+		mpMover.SetMoveSpeedAnimMul(1);
+		
+		mpMover.SetUse3DMovement(true);
+		
+		mpMover.SetBankingActive(true);
+		mpMover.SetBankingAngleMul(0.3f);
+		mpMover.SetBankingMaxAngle(cMath_ToRad(45));
+		mpMover.SetBankingSpeedMul(3.0f);
+		mpMover.SetBankingMaxSpeed(1.0f);
+		
+		mpMover.SetupWallAvoidance(2.5f, 8.0f, 4);
+		mpMover.SetWallAvoidanceActive(true);
+		
+		mpMover.SetupDynamicObjectAvoidance(2.0f, 5, 4);
+		mpMover.SetDynamicObjectAvoidanceActive(true);
+		
+		
+		/////////////////////////////////
+		// Pathfinder Module
+		@mpPathfinder = cLux_CreateEntityComponent_Pathfinder(mBaseObj);
+		mpPathfinder.SetNodeIsAtCenter(true);
+		mpPathfinder.SetMaxEdgeDistance(10);
+		mpPathfinder.SetMaxHeight(10);
+		
+		/////////////////////////////////
+		// State machine Module
+		@mpStateMachine = cLux_CreateEntityComponent_StateMachine(mBaseObj);
+		
+		/////////////////////////////////
+		// Force Emitter
+		@mpForceEmitter = cLux_CreateEntityComponent_ForceEmitter(mBaseObj);
+		mpForceEmitter.SetCharacterBody(mBaseObj.GetCharBody(), cVector3f(0), false);
+		mpForceEmitter.SetActive(false);
+		mpForceEmitter.SetMinForceSpeed(0.1f);
+		mpForceEmitter.SetMaxForceSpeed(2.0f);
+
+		///////////
+		// Preload particles		
+		cLux_PreloadParticleSystem(msBubbleFileName);
+	}
+	
+	/////////////////////////////////////////
+	// HELPERS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void DisableMovementAnimations()
+	{
+		mpMover.SetBackwardAnimName("");
+		mpMover.SetWalkAnimName("");
+		mpMover.SetRunAnimName("");
+		mpMover.SetIdleAnimName("");
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{		
+		UpdateLoopSound(afTimeStep);
+		UpdateBubbleEffects(afTimeStep);
+	}
+	
+	//------------------------------------------------------------
+	
+	cSoundEntity@ CheckStartLoopSound(float afSpeed)
+	{
+		if (mbSoundsDisabled) return null;
+
+		cSoundEntity@ pLoopSoundEntity = null;
+		
+		/////////////////////////////
+		// Idle Sound
+		if(msLoopSound_Idle != "" && afSpeed <= mfLoopSoundMinMoveSpeed)
+		{
+			@pLoopSoundEntity = mBaseObj.PlaySound("IdleLoop", msLoopSound_Idle, true, true);
+			pLoopSoundEntity.FadeIn(2.0f);
+			m_idLoopSound = pLoopSoundEntity.GetID();
+			mlLoopSoundPlaying = 0;
+		}
+		
+		/////////////////////////////
+		// Move Sound
+		if(msLoopSound_Move != "" && afSpeed > mfLoopSoundMinMoveSpeed)
+		{
+			@pLoopSoundEntity = mBaseObj.PlaySound("MoveLoop", msLoopSound_Move, true, true);
+			pLoopSoundEntity.FadeIn(2.0f);
+			m_idLoopSound = pLoopSoundEntity.GetID();
+			mlLoopSoundPlaying = 1;
+			
+			cSoundEntity@ pStartSound = mBaseObj.PlaySound("MoveLoopStart", msLoopSound_MoveStart,true, true);
+			if(pStartSound !is null)
+			{
+				float fSpeed = mBaseObj.GetCharBody().GetVelocity(cEngine_GetStepSize()).Length();
+				pStartSound.SetParam(0, fSpeed);
+			}
+		}
+		
+		return pLoopSoundEntity;
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateLoopSound(float afTimeStep)
+	{
+		if(msLoopSound_Move == "" && msLoopSound_Idle=="") return;
+		
+		float fSpeed = mBaseObj.GetCharBody().GetVelocity(afTimeStep).Length();
+		cSoundEntity@ pLoopSoundEntity = cLux_ID_SoundEntity(m_idLoopSound);
+		
+		///////////////////////////////////
+		// Check if sound should be started
+		if(pLoopSoundEntity is null) 
+			@pLoopSoundEntity = CheckStartLoopSound(fSpeed);
+		
+		///////////////////////////////////
+		// Update sound
+		if(pLoopSoundEntity !is null)
+		{
+			//////////////////////////////
+			// Idle Sound is playing
+			if(mlLoopSoundPlaying == 0)
+			{
+				//Check if moving or if sound has been disabled.
+				if(mbSoundsDisabled || (fSpeed > mfLoopSoundMinMoveSpeed && msLoopSound_Move!=""))
+				{
+					pLoopSoundEntity.FadeOut(3.0f);
+					@pLoopSoundEntity = null;
+					mlLoopSoundPlaying = -1;
+				}
+			}
+			//////////////////////////////
+			// Move Sound is playing
+			else if(mlLoopSoundPlaying == 1)
+			{
+				//Set param to adjust sound according to speed.
+				pLoopSoundEntity.SetParam(0, fSpeed);
+			
+				//Check if slightly below min speed or if sound has been disabled
+				if(mbSoundsDisabled || (fSpeed < mfLoopSoundMinMoveSpeed*0.75))
+				{
+					cSoundEntity @pStopSound = mBaseObj.PlaySound("MoveLoopStop", msLoopSound_MoveStop,true, true);
+					if(pStopSound !is null)
+					{
+						float fSpeed = mBaseObj.GetCharBody().GetVelocity(cEngine_GetStepSize()).Length();
+						pStopSound.SetParam(0, fSpeed);
+					}
+					
+					pLoopSoundEntity.FadeOut(3.0f);
+					@pLoopSoundEntity = null;
+					mlLoopSoundPlaying = -1;
+				}
+			}
+		}
+		
+		///////////////////////////////////
+		// In case the sound was stopped, check start again
+		if(pLoopSoundEntity is null) 
+			CheckStartLoopSound(fSpeed);
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateBubbleEffects(float afTimeStep)
+	{
+		if(mbBubbleEffectsActive==false) return;
+	
+		float fSpeed = mBaseObj.GetCharBody().GetVelocity(afTimeStep).Length();
+		if( (mlBubbleSpeedState==0 && fSpeed > 0.1) ||
+			(mlBubbleSpeedState==1 && fSpeed > 0.3*mfBubbleSpeedAmount) ||
+			(mlBubbleSpeedState==2 && fSpeed > 0.6*mfBubbleSpeedAmount) ||
+			(mlBubbleSpeedState==3 && fSpeed > 0.9*mfBubbleSpeedAmount) ||
+			(mlBubbleSpeedState==4 && fSpeed > 1.5*mfBubbleSpeedAmount) ||
+			(mlBubbleSpeedState==5 && fSpeed > 1.9*mfBubbleSpeedAmount)
+			)
+		{
+			mlBubbleSpeedState++;
+			mBaseObj.CreateParticleSystem("MoveStart", msBubbleFileName, true, false);
+		}
+		if( (mlBubbleSpeedState==1 && fSpeed < 0.05) ||
+			(mlBubbleSpeedState==2 && fSpeed < 0.2*mfBubbleSpeedAmount) ||
+			(mlBubbleSpeedState==3 && fSpeed < 0.4*mfBubbleSpeedAmount) ||
+			(mlBubbleSpeedState==4 && fSpeed < 0.7*mfBubbleSpeedAmount) ||
+			(mlBubbleSpeedState==5 && fSpeed < 1.2*mfBubbleSpeedAmount) ||
+			(mlBubbleSpeedState==6 && fSpeed < 1.7*mfBubbleSpeedAmount)
+			)
+		{
+			mlBubbleSpeedState--;
+			if(mlBubbleSpeedState <=1)
+				mBaseObj.CreateParticleSystem("MoveStart", msBubbleFileName, true, false);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+		mlBubbleSpeedState =0;
+		m_idLoopSound = tID_Invalid;
+		mlLoopSoundPlaying =-1;
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+		if(	m_idLoopSound != tID_Invalid &&
+			cLux_GetCurrentMap().GetWorld().IsValid(cLux_ID_SoundEntity(m_idLoopSound)))
+		{
+			cLux_ID_SoundEntity(m_idLoopSound).FadeOut(1.0f);
+		}
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+		
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+		if (abX) return;
+		
+		if(	m_idLoopSound != tID_Invalid)
+		{
+			cSoundEntity @pSound = cLux_ID_SoundEntity(m_idLoopSound);
+			if(pSound !is null)
+				pSound.FadeOut(1.0f);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		return false;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		return false;
+	}
+	
+	/////////////////////////////////////////
+	// ATTACKER CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	tString msAttackerTeleportPos;
+	tString msAttackerDamageCallback;
+	tString msAttackerCustomCallback;
+	
+	//------------------------------------------------------------
+	
+	void _Global_Attacker_GetTeleportPos()
+	{
+		cScript_SetGlobalReturnString(msAttackerTeleportPos);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_Attacker_GetDamageCallback()
+	{
+		cScript_SetGlobalReturnString(msAttackerDamageCallback);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_Attacker_GetCustomCallback()
+	{
+		cScript_SetGlobalReturnString(msAttackerCustomCallback);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetSoundDisabled()
+	{
+		SetSoundsDisabled(cScript_GetGlobalArgBool(0));
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPERS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetSoundsDisabled(bool abState)
+	{
+		mbSoundsDisabled = abState;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	tID m_idLoopSound;
+	int mlLoopSoundPlaying=-1; //-1=non, 0=idle, 1=move
+	bool mbSoundsDisabled = false;
+	
+	//------------------------------------------------------------
+	
+	cLuxPathfinder@ mpPathfinder;
+	cLuxCharMover@ mpMover;
+	cLuxStateMachine@ mpStateMachine;
+	cLuxForceEmitter@ mpForceEmitter;
+	
+	tString msLoopSound_Move;
+	tString msLoopSound_Idle;
+	tString msLoopSound_MoveStart;
+	tString msLoopSound_MoveStop;
+	float mfLoopSoundMinMoveSpeed;
+	
+	bool mbBubbleEffectsActive;
+	tString msBubbleFileName;
+	int mlBubbleSpeedState;
+	float mfBubbleSpeedAmount;
+	
+	//------------------------------------------------------------
+	
+	//------------------------------------------------------------
+	
+	
+	//------------------------------------------------------------
+		
+}	

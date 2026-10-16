@@ -1,0 +1,65 @@
+////////////////////////////////////////////////////////
+// Edge glow - fragment shader
+////////////////////////////////////////////////////////
+
+cBuffer cEdgeGlowArguments : 0
+{
+	cMatrixf a_mtxViewProjection;
+	cMatrixf a_mtxView;
+	
+	cVector4f aColor;
+		
+	float afInvFarPlane;
+	float afT;
+
+	float afAlpha;
+	float afLightLevel;
+	float afLightLimit;
+	float afEdgeThickness;
+
+	int alInstanceOffset;
+	int alInstanceStride;
+};
+uniform cTexture2D aDiffuseMap : 0;
+
+void main(in cVector4f px_vPosition,
+		  in cVector4f px_vTexCoord0,
+		  in cVector3f px_vNormal,
+		  in cVector3f px_vVertexPos,
+		  out cVector4f out_vColor : 0)
+{
+    // S26HK: tagged remote target only. Use a bright untextured rim so dark
+    // props remain identifiable. Keep native mesh depth and additive blending.
+    if(aColor.w > 1.5)
+    {
+        float fFacing = max(dot(normalize(px_vNormal), -normalize(px_vVertexPos)), 0.0);
+        float fRim = pow(1.0 - fFacing, 2.0);
+        // A faint face tint keeps front-facing readables visible.
+        out_vColor.xyz = aColor.xyz * (0.20 + 2.0 * fRim);
+        out_vColor.w = 0.0;
+        return;
+    }
+
+	const float kGlowEdgeSharpness = 5.0;
+
+	////////////
+	// Make edge glow brighter in darkness
+	float fBrightness = (afLightLimit - afLightLevel) / afLightLimit;
+
+	//////////////
+	// Only affect edges
+	float fDot = max(dot(px_vNormal, -normalize(px_vVertexPos)), 0.0); 
+	float fLimitDot = pow(1.0 - fDot, (1.0 - afEdgeThickness) * kGlowEdgeSharpness);
+	
+	//////////
+	// Add together and alpha test
+	float fSum = fBrightness * fLimitDot * afAlpha;
+	if(fSum <= 1e-5f) discard;
+	
+	cVector4f vColor = sample(aDiffuseMap, px_vTexCoord0.xy);
+
+	out_vColor.xyz = aColor.xyz * vColor.xyz * 8.0 * fSum;
+	out_vColor.w = 0.0;
+}
+
+

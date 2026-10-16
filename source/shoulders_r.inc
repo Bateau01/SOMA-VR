@@ -1,10 +1,10 @@
 /* S26R: independent shoulder heading, in raw application tracking space.
    No camera, character, physics, recenter, or inventory writes. */
 typedef struct {
-    float yaw;
+    float yaw, inputYaw, turnRate, headReference;
     i64 time;
     u32 epoch;
-    u8 valid, following, reach, trackerSeen;
+    u8 valid, following, reach, trackerSeen, headSeen, headVertical;
 } S26RShoulders;
 static S26RShoulders g_s26rShoulders;
 static u32 g_s26rShoulderLogs;
@@ -12,58 +12,62 @@ static u32 g_s26rShoulderLogs;
 static float s26r_angle(float x) {
     return h5755eb_wrap_pi(x);
 }
-/* Pure state update. Nanosecond XR time, never render/physics frame counts. */
-static void s26r_shoulder_step(S26RShoulders* st,i64 now,u32 epoch,i32 valid,
-                               float headYaw,i32 reach,float handYaw,i32 hands) {
-    if(!valid||now<=0){st->valid=0;st->reach=0;st->following=0;return;}
-    if(!st->valid||st->epoch!=epoch||now<st->time||now-st->time>250000000LL){
-        st->yaw=headYaw;st->valid=1;st->epoch=epoch;st->time=now;
-        st->following=0;st->reach=0;return;
-    }
-    if(now==st->time)return;
-    float dt=(float)(now-st->time)*0.000000001f;st->time=now;
-    st->reach=reach?1:0;
-    if(reach){st->following=0;return;}
-    /* Controller evidence only corroborates head direction, at most 9 degrees.
-       The caller excludes raised, crossed, missing and behind-head hands. */
-    float target=headYaw;
-    float hd=s26r_angle(handYaw-headYaw);
-    if(hands&&h9_abs(hd)<0.785398164f)target=s26r_angle(target+0.20f*hd);
-    float delta=s26r_angle(target-st->yaw),a=h9_abs(delta);
-    if(a>0.349065850f)st->following=1; /* 20-degree turn threshold */
-    if(a<=0.087266463f)st->following=0; /* settle within 5 degrees */
-    if(st->following){
-        float step=2.094395102f*dt; /* 120 degrees/second at every refresh rate */
-        float remaining=a-0.087266463f;if(step>remaining)step=remaining;
-        st->yaw=s26r_angle(st->yaw+(delta<0?-step:step));
-    }
+/* FV: guard the projected heading near the vertical singularity. Pitch and
+   roll never tilt shoulder volumes. This reference is local to shoulders/Body
+   movement; it does not change the submitted camera pose or recenter basis. */
+static float s26fv_head_reference(S26RShoulders* st,float yaw,float horizontal){
+    if(!(horizontal>=0.0f&&horizontal<=1.1f))horizontal=0.0f;
+    if(horizontal<0.25f)st->headVertical=1;
+    else if(horizontal>0.35f)st->headVertical=0;
+    if(!st->headVertical){st->headReference=yaw;st->headSeen=1;}
+    return st->headSeen?st->headReference:0.0f;
 }
-
-/* S26FG: tracker heading is a torso reference, independent of locomotion mode.
-   Preserve the existing reach latch; movement in Waist mode stays tracker-directed.
-   Rate limiting bridges tracker acquisition/loss without snapping slot targets. */
-static void s26fg_shoulder_step(S26RShoulders* st,i64 now,u32 epoch,i32 valid,
-                                float head,i32 reach,float hand,i32 hands,
-                                i32 tracked,float waist) {
-    if(!tracked){
-        if(st->trackerSeen&&st->valid&&st->epoch==epoch&&now-st->time>250000000LL)
-            st->time=now-50000000LL;
-        s26r_shoulder_step(st,now,epoch,valid,head,reach,hand,hands);return;
+/* Continuous time-based heading. OpenXR poses are already predicted; only
+   follow gain uses measured turn speed, never an extrapolated future position.
+   A reach marks intent but cannot freeze heading or locomotion. */
+static void s26fv_follow(S26RShoulders* st,i64 now,u32 epoch,i32 valid,
+                         float target,i32 reach,i32 tracked){
+    if(!valid||now<=0||!(target>=-3.142f&&target<=3.142f)){
+        st->valid=0;st->reach=0;st->following=0;st->turnRate=0;
+        st->headSeen=0;st->headVertical=0;st->trackerSeen=0;return;
     }
-    st->trackerSeen=1;
-    if(!valid||now<=0){s26r_shoulder_step(st,now,epoch,0,0,0,0,0);return;}
-    if(!st->valid||st->epoch!=epoch||now<st->time){
-        st->yaw=waist;st->valid=1;st->epoch=epoch;st->time=now;
-        st->following=0;st->reach=reach?1:0;return;
+    if(!st->valid||st->epoch!=epoch||now<st->time||now-st->time>250000000LL){
+        st->yaw=target;st->inputYaw=target;st->turnRate=0;st->valid=1;
+        st->epoch=epoch;st->time=now;st->following=0;st->reach=reach?1:0;
+        st->trackerSeen=tracked?1:0;return;
     }
     if(now==st->time)return;
     float dt=(float)(now-st->time)*0.000000001f;st->time=now;
     if(dt>0.05f)dt=0.05f;
-    st->reach=reach?1:0;st->following=0;
-    if(reach)return;
-    float delta=s26r_angle(waist-st->yaw),limit=2.094395102f*dt;
-    if(delta>limit)delta=limit;if(delta<-limit)delta=-limit;
-    st->yaw=s26r_angle(st->yaw+delta);
+    if(st->trackerSeen!=(tracked?1:0)){st->inputYaw=target;st->turnRate=0;}
+    st->trackerSeen=tracked?1:0;st->reach=reach?1:0;
+    float speed=h9_abs(s26r_angle(target-st->inputYaw))/dt;st->inputYaw=target;
+    if(speed>6.283185307f)speed=6.283185307f;
+    float rateAlpha=(12.0f*dt)/(1.0f+6.0f*dt);
+    st->turnRate+=(speed-st->turnRate)*rateAlpha;
+    float gain=tracked?14.0f:6.0f+st->turnRate*2.0f;
+    if(gain>14.0f)gain=14.0f;
+    float alpha=(gain*dt)/(1.0f+0.5f*gain*dt);
+    float delta=s26r_angle(target-st->yaw),step=delta*alpha;
+    float limit=6.283185307f*dt; /* bounded 360 degrees/sec, never a hard snap */
+    if(step>limit)step=limit;if(step<-limit)step=-limit;
+    st->yaw=s26r_angle(st->yaw+step);
+    st->following=h9_abs(delta)>0.001745329f;
+}
+static void s26r_shoulder_step(S26RShoulders* st,i64 now,u32 epoch,i32 valid,
+                               float headYaw,i32 reach,float handYaw,i32 hands){
+    float target=headYaw;
+    /* Hands corroborate, never override, heading. Raised/crossed/behind-head
+       hands are excluded by the caller, so a reach cannot steer the shoulders. */
+    float hd=s26r_angle(handYaw-headYaw);
+    if(hands&&h9_abs(hd)<0.785398164f)target=s26r_angle(target+0.20f*hd);
+    s26fv_follow(st,now,epoch,valid,target,reach,0);
+}
+static void s26fg_shoulder_step(S26RShoulders* st,i64 now,u32 epoch,i32 valid,
+                                float head,i32 reach,float hand,i32 hands,
+                                i32 tracked,float waist){
+    if(tracked)s26fv_follow(st,now,epoch,valid,waist,reach,1);
+    else s26r_shoulder_step(st,now,epoch,valid,head,reach,hand,hands);
 }
 
 static void s26r_update_shoulders(void) {
@@ -77,7 +81,10 @@ static void s26r_update_shoulders(void) {
     if(!(hc>=-1.01f&&hc<=1.01f&&hs>=-1.01f&&hs<=1.01f))valid=0;
     if(!valid){s26r_shoulder_step(&g_s26rShoulders,now,g_h5745YawCaptures,0,0,0,0,0);return;}
     if(g_s26rShoulders.valid&&g_s26rShoulders.time==now&&g_s26rShoulders.epoch==g_h5745YawCaptures)return;
-    float head=p_h5755blAtan2f(hs,hc);
+    if(!g_s26rShoulders.valid||g_s26rShoulders.epoch!=g_h5745YawCaptures){
+        g_s26rShoulders.headSeen=0;g_s26rShoulders.headVertical=0;
+    }
+    float head=s26fv_head_reference(&g_s26rShoulders,p_h5755blAtan2f(hs,hc),g_s26fvHeadHorizontal);
     float yaw=g_s26rShoulders.valid?g_s26rShoulders.yaw:head;
     float c=ext_Cosf(yaw),s=ext_Sinf(yaw);
     volatile float* hp=p2_eye_mid();
@@ -87,16 +94,16 @@ static void s26r_update_shoulders(void) {
         float dx=g_lastPose[h].position.x-hp[0],dy=g_lastPose[h].position.y-hp[1],dz=g_lastPose[h].position.z-hp[2];
         if(!(dx>-3&&dx<3&&dy>-3&&dy<3&&dz>-3&&dz<3))continue;
         local[h][0]=c*dx-s*dz;local[h][1]=dy;local[h][2]=s*dx+c*dz;good[h]=1;
-        /* Broad approach guard only; NEVER grants inventory admission. Both
+        /* Approach classification only; NEVER freezes heading and NEVER grants inventory admission. Both
            hands can approach either configured shoulder. Exit hysteresis keeps
-           a reach stable while the wrist moves around the actual slot. */
+           controller corroboration disabled throughout an active reach. */
         float pad=g_s26rShoulders.reach?0.18f:0.12f;
         for(i32 slot=0;slot<2;++slot){
             float x=slot?g_h576anOmniShoulderX:g_h576aaShoulderX;
             float y=slot?g_h576anOmniShoulderY:g_h576aaShoulderY;
             float z=slot?g_h576anOmniShoulderZ:g_h576aaShoulderZ;
             float r=(slot?g_h576anOmniShoulderRadius:g_h576aaShoulderRadius)+pad;
-            float ex=local[h][0]-x,ey=dy-y,ez=local[h][2]-z;
+            float ex=(local[h][0]-x)/1.5f,ey=dy-y,ez=local[h][2]-z; // FN: approach guard covers wider lateral slot
             if(ex*ex+ey*ey+ez*ez<r*r)reach=1;
         }
     }
@@ -115,7 +122,7 @@ static void s26r_update_shoulders(void) {
     s26fg_shoulder_step(&g_s26rShoulders,now,g_h5745YawCaptures,1,head,reach,handYaw,hands,tracked,waist);
     if((g_s26rShoulderLogs==0||previous!=g_s26rShoulders.reach)&&g_s26rShoulderLogs<24u){
         ++g_s26rShoulderLogs;
-        ext_Log(">>> S26R SHOULDER FRAME #%u: raw head %.1f torso %.1f reach %u hands %d epoch %u | shared placement/admission; no body or camera writes",g_s26rShoulderLogs,head*57.2957795f,g_s26rShoulders.yaw*57.2957795f,(u32)g_s26rShoulders.reach,hands,g_h5745YawCaptures);
+        ext_Log(">>> S26FV SHOULDER FRAME #%u: raw head %.1f torso %.1f reach %u hands %d epoch %u | continuous heading; shared Body movement/slots; no camera writes",g_s26rShoulderLogs,head*57.2957795f,g_s26rShoulders.yaw*57.2957795f,(u32)g_s26rShoulders.reach,hands,g_h5745YawCaptures);
     }
 }
 static float s26r_shoulder_yaw(void) {

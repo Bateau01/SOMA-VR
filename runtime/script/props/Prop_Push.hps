@@ -1,0 +1,225 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+
+class cScrPropPush : iScrProp, iScrProp_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		mbPushAtPoint = apVars.GetVarBool("PushAtPoint", false);
+		mfForceMul = apVars.GetVarFloat("ForceMul", 1);
+		mfThrowImpulse = apVars.GetVarFloat("ThrowImpulse", 2);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	/*void OnUpdate(float afTimeStep)
+	{
+		 //mClimbHelper.Update(afTimeStep, mBaseObj.GetMainBody());
+	}*/
+	
+	//------------------------------------------------------------
+	
+	/*void OnPostUpdate(float afTimeStep)
+	{
+		//mClimbHelper.PostUpdate(afTimeStep);
+	}*/
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+		
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in aContactData)
+	{
+		//Debug:
+		//cLux_AddDebugMessage("Body "+apBody.GetName()+" vs "+apCollideBody.GetName() + "Nrm: " +aContactData.mfMaxContactNormalSpeed + " Tan: "+aContactData.mfMaxContactTangentSpeed, false);
+	}
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INTERACTION
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		if(mBaseObj.GetStaticPhysics()) return false;
+		if(mBaseObj.GetParentType() == eParentType_StickyStuck) return false;
+	
+		return true;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+        // S26GA: only an already-held tracked body enters the VR Grab shell.
+        // Native Push initializes a different state; forcing Grab afterward
+        // leaves its body/owner stale and CheckShouldUpdate immediately exits.
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+        bool vrActive=cScript_GetGlobalReturnBool();
+        if (vrActive && apBody !is null &&
+            cScript_RunGlobalFunc("VRSOCKETHELD", ""+apBody.GetUniqueID(), "H"))
+        {
+            cScript_SetGlobalArgID(0, mBaseObj.GetID());
+            cScript_SetGlobalArgInt(1, apBody.GetUniqueID());
+            cScript_SetGlobalArgVector3f(2, avFocusPos);
+            cScript_SetGlobalArgBool(3, false);
+            cScript_SetGlobalArgVector3f(4, cVector3f_Zero);
+            cScript_SetGlobalArgVector3f(5, cVector3f_Zero);
+            cScript_SetGlobalArgBool(6, false);
+            cScript_SetGlobalArgFloat(7, 0.0f);
+            cScript_SetGlobalArgFloat(8, 1.0f);
+            cScript_SetGlobalArgFloat(9, 0.2f);
+            cScript_SetGlobalArgFloat(10, 2.5f);
+            cScript_SetGlobalArgFloat(11, mfForceMul);
+            cScript_SetGlobalArgFloat(12, 1.0f);
+            cScript_SetGlobalArgFloat(13, mfThrowImpulse);
+            cScript_SetGlobalArgBool(14, true);
+            cScript_SetGlobalArgBool(15, true);
+            cScript_RunGlobalFunc("State_Interact_Grab", "", "SetupGrab");
+            // Clear any reading state left by a previously held document.
+            cScript_SetGlobalArgString(0, "");
+            cScript_SetGlobalArgString(1, "");
+            cScript_SetGlobalArgString(2, "");
+            cScript_SetGlobalArgFloat(3, 0.0f);
+            cScript_RunGlobalFunc("State_Interact_Grab", "", "SetupReading");
+            mBaseObj.SetSaveDataIsUpdated(true);
+            cLux_GetPlayer().ChangeState(ePlayerState_Grab);
+            return true;
+        }
+
+		///////////////////////////////
+		//Set up the grabstate
+		cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+		cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+		cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
+		cScript_SetGlobalArgBool(3,mbPushAtPoint);
+		cScript_SetGlobalArgFloat(4,mfForceMul);
+		cScript_SetGlobalArgFloat(5,mfThrowImpulse);
+				
+		cScript_RunGlobalFunc("State_Interact_Push", "", "SetupPush");
+		
+		///////////////////////////////
+		//Set up the grabstate
+		cLux_GetPlayer().ChangeState(ePlayerState_Push);	
+	
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return eCrossHairState_Push;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] bool mbPushAtPoint;
+	[nosave] float mfForceMul;
+	[nosave] float mfThrowImpulse;
+	
+	//------------------------------------------------------------
+}	

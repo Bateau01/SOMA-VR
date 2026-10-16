@@ -13,6 +13,7 @@ typedef struct {XrPosef eye,head;i64 time;u8 valid,headValid;} S26SEyeSample;
 static u32 g_s26eiMeasureEpoch;static S26SEyeSample g_s26sEyeSample;static u32 g_s26ehGazeStats[7];static u8 xr[256];static int locked;
 static int s26s_eye_lock(void){return !locked;}static void s26s_eye_unlock(void){}
 static void*p2_xr_obj(void){return xr;}
+static i64 s26gl_gaze_now(i64 t){return t;}
 static int s26s_pose_finite(const XrPosef*p){const float*f=(const float*)p;for(int i=0;i<7;i++)if(!isfinite(f[i]))return 0;return 1;}
 static void s26s_quat_rotate(const XrQuaternionf*q,const float*v,float*out){
 float t[3]={2*(q->y*v[2]-q->z*v[1]),2*(q->z*v[0]-q->x*v[2]),2*(q->x*v[1]-q->y*v[0])};

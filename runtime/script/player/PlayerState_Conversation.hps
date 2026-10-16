@@ -1,0 +1,775 @@
+#include "interfaces/PlayerState_Interface.hps"
+#include "base/InputHandler_Types.hps"
+
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_player.hps"
+#include "helpers/helper_modules.hps"
+
+/////////////////////////////////////////
+// SETTINGS
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+enum ePositionState
+{
+	ePositionState_Entering,
+	ePositionState_Ready,
+	ePositionState_Leaving
+}
+
+const float gfConvHeadRotateAcc = 6.0f;
+const float gfConvHeadRotateMaxSpeed = 1.5f;
+const float gfConvHeadRotateSpeedMul = 2;
+
+//------------------------------------------------------------
+
+class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetupConversation()
+	{
+		msVoiceCharacter = cScript_GetGlobalArgString(0);
+		msFocusEntity = cScript_GetGlobalArgString(1);
+		mfMaxMoveDist = cScript_GetGlobalArgFloat(2);
+		mlHeadBoneIndex = cScript_GetGlobalArgInt(3);
+		mvFocusOffset = cScript_GetGlobalArgVector3f(4);
+		
+		msPositionArea = "";
+		mePositionState = ePositionState_Ready;
+		mvHeadBob = cVector3f_Zero;
+		cLux_AddDebugMessage("SetupConversation");
+	}
+	
+	//------------------------------------------------------------
+	void SetupPosBasedConversation()
+	{
+		mfMaxMoveDist = 0.5f;
+		
+		msVoiceCharacter = cScript_GetGlobalArgString(0);
+		msFocusEntity = cScript_GetGlobalArgString(1);
+		msPositionArea = cScript_GetGlobalArgString(2);
+		mfMaxMoveDist = cScript_GetGlobalArgFloat(3);
+		mvFocusOffset = cScript_GetGlobalArgVector3f(4);
+		mlHeadBoneIndex = cScript_GetGlobalArgInt(5);
+		
+		mePositionState = ePositionState_Entering;
+		mvHeadBob = cVector3f_Zero;
+		cLux_AddDebugMessage("SetupPosBasedConversation");
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnAttachBodyToStickyArea()
+	{
+		//Do nothing!
+	}
+	//------------------------------------------------------------
+	
+	void _Global_StartResponseSelection()
+	{
+		//////////////////////////////////
+		// Set up response data
+		mfResponseTimeCount = cScript_GetGlobalArgFloat(0);
+		mvResponseOptions.resize(cScript_GetGlobalArgInt(1));
+		if(mvResponseOptions.size()>4)
+		{
+			Error("Response options in dialog is greater than 4! Skipping response selection.");
+			cLux_GetDialogHandler().ReturnResponseSelectChoice(mlCurrentSelection);
+			return;
+		}
+				
+		for(int i=0; i<mvResponseOptions.size(); ++i)
+		{
+			tString sEntry = cScript_GetGlobalArgString(2+i);
+			tString sCat = cLux_GetCurrentMap().GetName();
+			mvResponseOptions[i] = cLux_Translate(sCat, sEntry);
+		}
+		
+		//////////////////////////////////
+		// Set up response variables
+		mbResponseHasTimeLimit = mfResponseTimeCount>0;
+		mfResponseAlpha = 0;
+		mbResponseSelectionActive = true;
+		mlCurrentSelection =-1;
+		
+		mlNextSelection = mlCurrentSelection;
+		mlNextSelectionCount =0;
+		
+		mvInputPos = cVector3f(0);
+		
+		//////////////////////////////////
+		//Set up the texts
+		mvReponseOptionAdd.resize(0);
+		mvReponseOptionAlign.resize(0);
+		if(mvResponseOptions.size()>=3)
+		{
+			mvReponseOptionAdd.push_back(cVector3f(0,-1, 0));
+			mvReponseOptionAlign.push_back(eFontAlign_Center);
+		}
+		if(mvResponseOptions.size()>=2)
+		{
+			mvReponseOptionAdd.push_back(cVector3f(-1, 0, 0));
+			mvReponseOptionAlign.push_back(eFontAlign_Right);
+			mvReponseOptionAdd.push_back(cVector3f(1, 0, 0));
+			mvReponseOptionAlign.push_back(eFontAlign_Left);
+		}
+		if(mvResponseOptions.size()==4)
+		{
+			mvReponseOptionAdd.push_back(cVector3f(0,1, 0));
+			mvReponseOptionAlign.push_back(eFontAlign_Center);
+		}
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mbResponseSelectionActive = false;
+		mfResponseAlpha=0;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// USER SETTINGS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void LoadUserConfig()
+	{
+	
+	}
+	void SaveUserConfig()
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ENTER MAP
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	
+	}
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	/*
+		cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Script, cVector3f_Zero);
+		cLux_GetPlayer().GetCamera().SetYawLimits(0, 0);
+		cLux_GetPlayer().GetCamera().SetPitchLimits(0,0);
+		*/
+	}
+	
+	//------------------------------------------------------------
+	
+	void CreateWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	void DestroyWorldEntities(cLuxMap @apMap)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnEnterState(int alPrevStateId)
+	{
+		///////////////////////////////////////
+		// Set up variables
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		cCamera@ pCam = cLux_GetPlayer().GetCamera();
+		
+		mbResponseSelectionActive = false;
+		
+		///////////////////////////////////////
+		// Save pitch limits
+		mfPitchMinLimit = cLux_GetPlayer().GetCamera().GetPitchMinLimit();
+		mfPitchMaxLimit = cLux_GetPlayer().GetCamera().GetPitchMaxLimit();
+		
+		///////////////////////////////////////
+		// Set up move speed
+		if(cLux_GetPlayer().GetCurrentMoveStateId() == eMoveState_Normal)
+		{
+			Player_SetCrouching(false);
+		}
+
+		Player_SetMoveSpeedMul(0);
+	
+		///////////////////////////////////////
+		// Get start position
+		if (mePositionState == ePositionState_Ready)
+		{
+			mvStartFeetPos = cLux_GetPlayer().GetCharacterBody().GetFeetPosition();
+		}
+		else
+		{
+			// Position-based conversation
+			cLux_AddDebugMessage("Posbased dialogue: moving player to:"+msPositionArea);
+			cLuxArea@ pPositionArea = cLux_ToArea(Map_GetEntity(msPositionArea));
+			mvStartFeetPos = pPositionArea.GetAreaBody().GetBoundingVolume().GetPosition();
+			mvStartFeetPos.y = pPositionArea.GetAreaBody().GetBoundingVolume().GetMin().y;
+			
+			mvFocusPos = CalcCameraTarget();
+			cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
+			mfDirectLookCount = 2.0f;
+			mlFailedToMoveCount=0;
+		}
+		
+		ZoomIn();
+		
+		cScript_SetGlobalVarFloat("Conversation_SpeedMul", 1.0f);
+	}
+	
+	//------------------------------------------------------------
+	
+	void ZoomIn()
+	{
+		cCamera@ pCam = cLux_GetPlayer().GetCamera();
+		cVector3f vFocusPos = CalcCameraTarget();
+		float fDistToFocus = cMath_Vector3Dist(pCam.GetPosition(), vFocusPos);
+		
+		float fFovAdd = -cMath_Min(fDistToFocus*0.3f, 0.2);
+		cLux_GetPlayer().FadeCameraFOVMulTo(0.95 + fFovAdd, 2);
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnLeaveState(int alNextStateId)
+	{
+		cLux_AddDebugMessage("Dialogue - Leave state.");
+		cLux_GetPlayer().StopCameraRotate(0);
+		
+		cLux_GetPlayer().FadeCameraFOVMulTo(1, 4);
+		
+		cLux_GetPlayer().GetCamera().SetPitchLimits(mfPitchMinLimit, mfPitchMaxLimit);
+		cLux_GetPlayer().GetCamera().SetYawLimits(0, 0);
+		
+		cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Conversation,0);
+		
+		Player_SetMoveSpeedMul(1);
+
+		mfResponseAlpha = 0;
+		mbResponseSelectionActive=false;
+	}
+		
+	//------------------------------------------------------------
+	
+	void Reset()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		///////////////////////////
+		// Check if dialog ongoing
+		if(	Dialog_CharacterIsActive(msVoiceCharacter)==false &&
+			Dialog_CharacterIsActive("Player")==false)
+		{
+			cLux_GetPlayer().ChangeState(ePlayerState_Normal);
+			return;	
+		}
+		
+		///////////////////////////
+		// Disable crosshair
+		Player_SetCrossHairState(eCrossHairState_None);
+		
+		if (mePositionState==ePositionState_Ready)
+		{
+			///////////////////////////
+			// Check if look at should continue
+			cVector3f vFocusPos = CalcCameraTarget();
+			if ((mvFocusPos-vFocusPos).SqrLength()>0.001f)
+			{
+				mvFocusPos = vFocusPos;
+				mfDirectLookCount=2.0f;
+				cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
+			}
+				
+			if (mfDirectLookCount>0)
+			{
+				mfDirectLookCount -= afTimeStep;
+				if(	mfDirectLookCount <= 0.0f || 
+					(cLux_GetPlayer().GetRotateCameraTargetDistance() < 0.2 && mbResponseSelectionActive==false))
+				{
+					mfDirectLookCount = 0;
+					cLux_GetPlayer().StopCameraRotate(1);
+						
+					///////////////////////////////////////
+					// Set new pitch & yaw limits
+					cCamera@ pCam = cLux_GetPlayer().GetCamera();
+					cVector3f vFocusAngles = cMath_GetAngleFromPoints3D(pCam.GetPosition(),vFocusPos);
+					cVector3f vFwdAngles = cMath_GetAngleFromPoints3D(cVector3f(0), pCam.GetForward());
+					
+					float fYawDiff = cMath_GetAngleDistanceRad(vFwdAngles.y, vFocusAngles.y);
+									
+					float fYmin = pCam.GetYaw() + cMath_ToRad(-20) + fYawDiff;
+					float fYmax = pCam.GetYaw() + cMath_ToRad(20) + fYawDiff;
+					pCam.SetYawLimits(fYmin, fYmax);
+					
+					float fPitchDiff = cMath_GetAngleDistanceRad(vFwdAngles.x, vFocusAngles.x);
+					float fPmin = pCam.GetPitch() + cMath_ToRad(-20) + fPitchDiff;
+					float fPmax = pCam.GetPitch() + cMath_ToRad(20) + fPitchDiff;
+					pCam.SetPitchLimits(fPmin, fPmax);
+				}
+			}
+		}
+
+		// Only true at start of PosBased conversations while we find the start point
+		if (mePositionState == ePositionState_Entering)
+		{
+			///////////////////////////////////
+			// Posbased conversation - move player to start position
+			iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+			
+			cVector3f vPos = pCharBody.GetFeetPosition();
+			cVector3f vMove = mvStartFeetPos-vPos;
+			vMove.y=0.0f;
+
+			bool bDone = false;
+			float fSpeed = 2.0f;
+			
+			cVector3f vDir = vMove;
+			float fLength = vMove.Length();
+			vDir.Normalize();
+			
+			fLength = cMath_Clamp(fLength,0.0f,fSpeed*afTimeStep);
+			vMove=vDir*fLength;
+
+			if (fLength<0.001f)
+			{
+				// Really close to the target - move done.
+				bDone = true;
+			}
+			
+			// By setting vel rather than moving position we push objects
+			pCharBody.SetForceVelocity(vMove/afTimeStep);
+			
+			// Have we been repeatedly trying to move and not getting far enough? Probably stuck on geometry - let's stop.
+			cVector3f vMoved = vPos-mvLastPos;
+			//cLux_AddDebugMessage("Length:"+vMoved.Length()+" = "+mlFailedToMoveCount);
+			if (vMoved.Length()<0.01f * (afTimeStep * 60.0f))	// Didn't move very far
+			{
+				mlFailedToMoveCount++;
+				if (float(mlFailedToMoveCount) * afTimeStep > 10.0f / 60.0f)
+				{
+					// Force a new conversation point, since this is as close as we could get.
+					cLux_AddDebugMessage("PosBased conversation - Couldn't move close enough. Geometry in the way? :( - doing the best I can!");
+					bDone = true;
+					mvStartFeetPos = vPos;
+				}
+			}
+			else
+			{
+				// All good
+				if (mlFailedToMoveCount>0)
+					mlFailedToMoveCount--;
+			}
+			mvLastPos = vPos;
+			
+			// Stop the move looking smooth - add headbob
+			// Magic numbers nicked from the normal MoveState_Normal
+			mfHeadBobCount += afTimeStep * cMath_PiMul2 * 6.1f * 0.25f;
+			mvHeadBob.x = cMath_Sin(mfHeadBobCount/2.0f - cMath_PiDiv4) * 0.06f;
+			mvHeadBob.y = cMath_Sin(mfHeadBobCount) * 0.06f - 0.06f;
+			cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Conversation, mvHeadBob);
+		
+			if (bDone)
+			{
+				// Make sure we're looking at the person
+				cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
+				mfDirectLookCount = 2.0f;
+				mePositionState = ePositionState_Ready;
+			}
+			return;
+		}
+		else
+		{
+			// Blend any added headbob back to 0
+			mvHeadBob*=0.95f;
+			cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Conversation,mvHeadBob);
+		}
+	
+		///////////////////////////
+		// Distance restriction - can't wander too far from the start point
+		cVector3f vPlayerPos = cLux_GetPlayer().GetCharacterBody().GetFeetPosition();
+		float fDistToStart = cMath_Vector2DistXZ(vPlayerPos, mvStartFeetPos);
+		
+		const float fSlowDownRange = 0.3; //When outside of max dist, the dist over which speed starts to lower
+		
+		float fSpeedMul = 1.0f; 
+		if(fDistToStart>mfMaxMoveDist) fSpeedMul = 1.0f - cMath_Min((fDistToStart-mfMaxMoveDist)/fSlowDownRange, 1.0f);
+		
+		cScript_SetGlobalVarFloat("Conversation_SpeedMul",  fSpeedMul);
+		if(fDistToStart > mfMaxMoveDist)
+		{
+			cVector3f vDir = mvStartFeetPos - vPlayerPos;
+			vDir.y=0; vDir.Normalize();
+			
+			cLux_GetPlayer().GetCharacterBody().AddForce(vDir * 1000.0f * (1.0f - fSpeedMul));
+		}
+		
+		///////////////////////////
+		// Reponse Options
+		if(mbResponseSelectionActive)
+		{
+			//////////////////
+			//Alpha
+			mfResponseAlpha += afTimeStep*2;
+			if(mfResponseAlpha>1) mfResponseAlpha =1;
+			
+			//////////////////
+			//Keep player looking at head when showing the options
+			mfDirectLookCount = 1;
+			
+			//////////////////
+			//Time limit
+			if(mbResponseHasTimeLimit)
+			{
+				mfResponseTimeCount -= afTimeStep;
+				if(mfResponseTimeCount <=0)
+				{
+					cLux_GetDialogHandler().ReturnResponseSelectChoice(-1);
+					mbResponseSelectionActive = false;
+				}
+			}
+		}
+		else
+		{
+			mfResponseAlpha -= afTimeStep*4;
+			if(mfResponseAlpha<0) mfResponseAlpha =0;
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void PostUpdate(float afTimeStep)
+	{
+		
+	}
+	//------------------------------------------------------------
+	
+	void OnDraw(float afFrameTime)
+	{
+		if(mfResponseAlpha<=0) return;
+		
+		/////////////////////////////////////////
+		// Get data
+		cGuiSet@ pSet = cLux_GetGameHudSet();
+		iFontData@ pFont = cLux_GetDefaultFont();
+		
+		////////////////////////////////////////
+		// Time limit
+		if(mbResponseHasTimeLimit)
+		{
+			int lTimeLeft = mfResponseTimeCount;
+			pSet.DrawFontEx(tWString("Time Left: "),pFont, cVector3f(512, 660, 1), cVector2f(22),cColor(1,mfResponseAlpha),
+							eFontAlign_Right, eGuiMaterial_FontNormal);
+			pSet.DrawFontEx(tWString(""+lTimeLeft),pFont, cVector3f(522, 657, 1), cVector2f(29),cColor(1,mfResponseAlpha),
+							eFontAlign_Left, eGuiMaterial_FontNormal);
+		}
+		
+		/////////////////////////////////////////
+		// Draw the different options
+		for(int i=0; i<mvResponseOptions.size(); ++i)
+		{
+			cColor col = mlCurrentSelection == i ? cColor(1, 0,0, mfResponseAlpha) : cColor(0.75, mfResponseAlpha);
+			
+			pSet.DrawFontEx(mvResponseOptions[i],pFont, cVector3f(512, 550, 1)+mvReponseOptionAdd[i]*60, cVector2f(26),col,
+							mvReponseOptionAlign[i], eGuiMaterial_FontNormal);
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	cVector3f CalcCameraTarget()
+	{
+		iLuxEntity@ pEntity = Map_GetEntity(msFocusEntity);
+		if (pEntity is null)
+		{
+			Error("Can't find entity for conversation lookat!"+msFocusEntity);
+			return cVector3f_Zero;
+		}
+		
+		cVector3f vPos = pEntity.GetPosition();
+		if (mlHeadBoneIndex>-1)
+		{
+			cBoneState @pBone = pEntity.GetMeshEntity().GetBoneState(mlHeadBoneIndex);
+			vPos = pBone.GetWorldPosition();
+		}
+		
+		return vPos+mvFocusOffset;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool OnAction(int alAction, bool abPressed)
+	{
+		if(abPressed==false) return true;
+		
+		//////////////////////////////
+		// Awaiting response mode
+		if(mbResponseSelectionActive)
+		{
+			////////////////////////////////////
+			// Select response
+			if( alAction == eAction_Interact)
+			{
+				//Wait for text to be fully visible before allowing response.
+				if(mfResponseAlpha>=1 && mlCurrentSelection>=0)
+				{
+					cLux_GetDialogHandler().ReturnResponseSelectChoice(mlCurrentSelection);
+					mbResponseSelectionActive = false;
+				}
+				
+				return false;
+			}
+			
+			
+			if(alAction == eAction_InteractCancel) return false;
+		}
+		//////////////////////////////
+		// Dialog mode
+		else
+		{
+			////////////////////////////////////
+			// Skip line
+			if((alAction == eAction_Interact ||	alAction == eAction_InteractCancel) && cLux_ScriptDebugOn())
+			{
+				tString sScene = Dialog_GetCharacterScene(msVoiceCharacter);
+				
+				Voice_AdvanceFromCurrentSound(sScene);
+			}
+		}
+		
+		////////////////////////////////////
+		// Disable Jump and Crouch
+		if(	alAction == eAction_Jump || 
+			alAction == eAction_Crouch)
+		{
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnAnalogInput(int alAnalogId, const cVector3f &in avAmount)
+	{
+		//////////////////////////////
+		// Awaiting response mode
+		if(mbResponseSelectionActive)
+		{
+			if(alAnalogId == eAnalogType_Look)
+			{
+				mvInputPos += avAmount*15;
+				if(mvInputPos.Length()>1.0f) mvInputPos.Normalize();
+				
+				///////////////////////////////
+				// Select current
+				if(mvInputPos != cVector3f(0))
+				{
+					float fClosest = 99999.0f;
+					int lSelected=0;
+					for(int i=0; i<mvReponseOptionAdd.size(); ++i)
+					{
+						float fDist = cMath_Vector3Dist(mvInputPos, mvReponseOptionAdd[i]);
+						if(fDist < fClosest)
+						{
+							fClosest = fDist;
+							lSelected = i;
+						}
+					}
+					
+					//This is all there just so that the option needs to be selected a little bit before becoming active.
+					if(lSelected == mlNextSelection) 	mlNextSelectionCount++;
+					else								mlNextSelectionCount=0;
+					mlNextSelection = lSelected;
+					if(mlNextSelectionCount==3)
+					{
+						mlNextSelectionCount=0;
+						mlCurrentSelection = mlNextSelection;
+					}
+				}
+				
+				///////////////////////////////
+				// Look
+				float fMul = 0.4;
+				if(mfDirectLookCount>0) fMul *= 0.3f;
+				
+				iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+				
+				pCharBody.AddYaw(avAmount.x*-1*fMul);
+				cLux_GetPlayer().GetCamera().AddPitch(avAmount.y*-1*fMul);
+				
+				return false;
+			}
+		}
+		//////////////////////////////
+		// Dialog mode
+		else
+		{
+			////////////////////////////////////
+			// Look
+			if(alAnalogId == eAnalogType_Look)
+			{
+				float fMul = 0.4;
+				if(mfDirectLookCount>0) fMul *= 0.3f;
+				
+				iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+				
+				pCharBody.AddYaw(avAmount.x*-1*fMul);
+				cLux_GetPlayer().GetCamera().AddPitch(avAmount.y*-1*fMul);
+				
+				return false;
+			}
+		}
+		
+		////////////////////////////////////
+		// Disable Move unless in normal
+		if(alAnalogId == eAnalogType_Move || alAnalogId == eAnalogType_GamepadMove)
+		{
+			return false;
+		}
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	bool OnExitPressed()
+	{
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// BODY CALLBACKS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	bool AllowBuoyancy(iPhysicsBody @apBody)
+	{
+		return true;
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// CHARACTER CALLBACK
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void CharBody_GravityCollide(iCharacterBody@ apCharBody, iPhysicsBody@ apBody, cCollideData @apCollideData)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void CharBody_HitGround(iCharacterBody@ apCharBody,const cVector3f &in avVel)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	
+	//------------------------------------------------------------
+	
+	float mfPitchMaxLimit;
+	float mfPitchMinLimit;
+	
+	tString msVoiceCharacter;
+	tString msFocusEntity;
+	int mlHeadBoneIndex;
+	cVector3f mvFocusPos;
+	cVector3f mvFocusOffset;
+	cVector3f mvStartFeetPos;
+	float mfMaxMoveDist;
+	
+	float mfDirectLookCount;
+	
+	//------------------------------------------------------------
+	
+	bool mbResponseSelectionActive;
+	float mfResponseAlpha;
+	float mfResponseTimeCount;
+	array<tWString> mvResponseOptions;
+	int mlCurrentSelection;
+	int mlNextSelection;
+	int mlNextSelectionCount;
+	
+	array<cVector3f> mvReponseOptionAdd;
+	array<eFontAlign> mvReponseOptionAlign;
+	cVector3f mvInputPos;	
+	bool mbResponseHasTimeLimit;
+	
+	tString msPositionArea;
+	ePositionState mePositionState;
+	float mfHeadBobCount=0.0f;
+	cVector3f mvHeadBob;
+	cVector3f mvLastPos;
+	int mlFailedToMoveCount=0;
+		
+	//------------------------------------------------------------
+		
+}

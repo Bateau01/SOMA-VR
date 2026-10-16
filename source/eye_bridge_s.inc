@@ -28,8 +28,8 @@ static i32 s26dg_eye_bridge_status(u32 reason){
 static i32 s26s_read_gaze(void){
     g_s26sReadValid=0;float cp[3],R[9];if(!s26s_view_frame(cp,R))return s26dg_eye_bridge_status(1);if(!s26s_eye_lock())return 0;
     S26SEyeSample sample=g_s26sEyeSample;s26s_eye_unlock();
-    u8* xr=(u8*)p2_xr_obj();i64 now=xr?*(i64*)(xr+0xE8):0;
-    if(!sample.valid||!sample.headValid||now<=0||sample.time>now+100000000LL||sample.time<now-100000000LL)return s26dg_eye_bridge_status(2);
+    u8* xr=(u8*)p2_xr_obj();i64 now=s26gl_gaze_now(xr?*(i64*)(xr+0xE8):0);
+    if(!sample.valid||!sample.headValid||!s26gl_gaze_fresh(sample.time,now))return s26dg_eye_bridge_status(2);
     XrQuaternionf inv={-sample.head.orientation.x,-sample.head.orientation.y,-sample.head.orientation.z,sample.head.orientation.w};
     float f[3]={0,0,-1},raw[3],local[3],offset[3],offlocal[3],offworld[3];
     s26s_quat_rotate(&sample.eye.orientation,f,raw);s26s_quat_rotate(&inv,raw,local);

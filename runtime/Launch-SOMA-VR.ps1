@@ -1,4 +1,4 @@
-﻿param([string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly, [string]$Executable = '', [switch]$Experimental, [switch]$SkipSettingsRepair, [switch]$KeepSSAO, [int]$MonitorIndex = -1, [string]$SettingsPath = '', [string]$SettingsDirectory = '')
+param([switch]$SkipUpdateCheck, [string]$GameArguments = '', [switch]$CheckOnly, [switch]$StopOnly, [string]$Executable = '', [switch]$Experimental, [switch]$SkipSettingsRepair, [switch]$KeepSSAO, [int]$MonitorIndex = -1, [string]$SettingsPath = '', [string]$SettingsDirectory = '')
 $ErrorActionPreference = 'Stop'
 # Elevate before cleanup, config writes or injection. SOMA and the injector
 # inherit this token. Serialize arguments as data rather than executable text.
@@ -40,32 +40,64 @@ try {
 # Use the Windows PowerShell modules even when a parent shell supplied a PowerShell 7 module path.
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility')
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Management')
-function Stop-SomaInstances {
-    # Limit cleanup to the two game executable names; never stop Steam or the VR runtime.
-    $instances = @(Get-Process -Name Soma,Soma_NoSteam -ErrorAction SilentlyContinue)
-    foreach ($instance in $instances) {
-        try {
-            if ($instance.HasExited) { continue }
-            Write-Output ('Closing existing SOMA process ' + $instance.Id + '...')
-            # Give the game a short opportunity to shut down normally before clearing an orphan.
-            if ($instance.MainWindowHandle -ne [IntPtr]::Zero) {
-                [void]$instance.CloseMainWindow()
-                [void]$instance.WaitForExit(3000)
-            }
-            if (!$instance.HasExited) {
-                $instance.Kill()
-                if (!$instance.WaitForExit(5000)) { throw 'The process did not exit within five seconds.' }
-            }
-        } catch {
-            if (!$instance.HasExited) {
-                throw ('Could not close SOMA process ' + $instance.Id + ': ' + $_.Exception.Message + ' Close it in Task Manager, or run the launcher with the same permissions as that process.')
-            }
-        } finally { $instance.Dispose() }
+function Get-SomaProcesses {
+    # Enumerate with errors enabled: failure must not masquerade as "nothing running".
+    @(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -in @('Soma','Soma_NoSteam') })
+}
+function Stop-SomaInstances([switch]$Force) {
+    # Only the game names, never Steam/SteamVR or an entire process tree.
+    for ($attempt=0; $attempt -lt 3; $attempt++) {
+        $instances = @(Get-SomaProcesses)
+        if (!$instances.Count) { return }
+        foreach ($instance in $instances) {
+            try {
+                if ($instance.HasExited) { continue }
+                Write-Output ('Stopping SOMA process ' + $instance.Id + '...')
+                if (!$Force -and $attempt -eq 0 -and $instance.MainWindowHandle -ne [IntPtr]::Zero) {
+                    [void]$instance.CloseMainWindow()
+                    [void]$instance.WaitForExit(3000)
+                }
+                if (!$instance.HasExited) {
+                    try { $instance.Kill() } catch {
+                        # Alternate Windows termination path; re-check the original process
+                        # before using its PID to avoid targeting a recycled process ID.
+                        if (!$instance.HasExited) {
+                            $current = Get-Process -Id $instance.Id -ErrorAction SilentlyContinue
+                            if ($current -and $current.ProcessName -in @('Soma','Soma_NoSteam') -and $current.StartTime -eq $instance.StartTime) {
+                                & "$env:SystemRoot\System32\taskkill.exe" /F /PID $instance.Id 2>&1 | Out-Null
+                            }
+                        }
+                    }
+                    [void]$instance.WaitForExit(5000)
+                }
+            } catch {
+                if (!$instance.HasExited) { Write-Warning ('SOMA process ' + $instance.Id + ': ' + $_.Exception.Message) }
+            } finally { $instance.Dispose() }
+        }
+    }
+    $remaining = @(Get-SomaProcesses)
+    if ($remaining.Count) {
+        $ids = ($remaining | ForEach-Object { $_.Id }) -join ', '
+        foreach ($instance in $remaining) { $instance.Dispose() }
+        throw ('SOMA is still running (process IDs: ' + $ids + '). Windows refused or has not completed forced termination. Cleanup was not successful.')
     }
 }
 if ($CheckOnly -and $StopOnly) { throw 'Choose either -CheckOnly or -StopOnly.' }
-if ($StopOnly) { Stop-SomaInstances; Write-Output 'SOMA process cleanup completed.'; exit 0 }
+if ($StopOnly) { Stop-SomaInstances -Force; Write-Output 'SOMA process cleanup completed.'; exit 0 }
 $gameDir = $PSScriptRoot
+if (!$CheckOnly -and !$SkipUpdateCheck) {
+    . (Join-Path $gameDir 'SOMA-VR-Update.ps1')
+    if (Invoke-SomaVrUpdate $gameDir) {
+        $restart=@{};foreach($key in $PSBoundParameters.Keys){$restart[$key]=$PSBoundParameters[$key]}
+        $restart['SkipUpdateCheck']=$true
+        & $PSCommandPath @restart
+        exit $LASTEXITCODE
+    }
+}
+if (Test-Path -LiteralPath (Join-Path $gameDir '.soma-vr-installer\pending-transaction')) {
+    throw 'An installation needs recovery. Run the SOMA VR installer and select Recover interrupted install before playing.'
+}
+
 if (!$Executable) {
     if (Test-Path -LiteralPath (Join-Path $gameDir 'Soma.exe')) { $Executable = 'Soma.exe' }
     elseif (Test-Path -LiteralPath (Join-Path $gameDir 'Soma_NoSteam.exe')) { $Executable = 'Soma_NoSteam.exe' }
@@ -113,6 +145,8 @@ public static class SomaVrLaunch {
 }
 '@
 Stop-SomaInstances
+. (Join-Path $gameDir 'SOMA-VR-ShaderCache.ps1')
+try { Update-SomaVrOutlineCache $gameDir } catch { Write-Warning ('Could not update target outline shader cache: ' + $_.Exception.Message) }
 if (!$SettingsPath -and !$SettingsDirectory) {
     $optionFile = Join-Path $gameDir 'SOMA-VR-Install-Options.json'
     if (Test-Path -LiteralPath $optionFile -PathType Leaf) {

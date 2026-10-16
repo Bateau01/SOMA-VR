@@ -14,6 +14,9 @@ header=r'''
 #include <stdlib.h>
 #define CHECK(x) do {++checks;if(!(x)){printf("FAIL line %d: %s\n",__LINE__,#x);return 1;}}while(0)
 static int checks,logs;
+static unsigned char g_s26glTimeExtension;
+static void* ext_GetModuleHandleA(const char*p){return 0;}
+static void* ext_GetProcAddress(void*p,const char*n){return 0;}
 static void zero_bytes(void*p,u64 n){memset(p,0,n);}
 static void ext_Log(const char*f,...){(void)f;++logs;}
 static XrPath g_s26nProfiles[6]={10,11,12,13,14,15},g_handPath[2]={20,21};
@@ -51,6 +54,10 @@ static i32 pLocateSpace(Handle s,Handle base,i64 t,XrSpaceLocation*l){
 }
 '''
 main=r'''
+static i64 clockNow;static int clockError,counterError;
+static i32 __attribute__((ms_abi)) test_counter(i64*out){*out=123;return !counterError;}
+static i32 __attribute__((ms_abi)) test_clock(Handle h,const i64*counter,i64*out){*out=clockNow;return clockError;}
+
 int main(void){
  Handle session=(Handle)99;char self[512]={0};*(PFN_GIPA*)(self+0x1c8)=get;
  CHECK(s26u_controller_fingers_allowed(session,0));currentProfile=11;CHECK(s26u_controller_fingers_allowed(session,1));
@@ -134,6 +141,17 @@ int main(void){
  headError=-1;s26s_eye_tick(session,(Handle)4,now,0);CHECK(!g_s26sEyeSample.valid&&g_s26sEyeReported==5);headError=0;
  s26s_eye_tick(session,(Handle)4,now,1);CHECK(!g_s26sEyeSample.valid);
  s26s_eye_tick(session,(Handle)4,now,0);CHECK(g_s26sEyeSample.valid);
+ // Display prediction is not elapsed time: a fresh sample remains valid
+ // when the next displayed frame is more than 100 ms in the future.
+ p_s26glCounter=test_counter;p_s26glConvertTime=test_clock;g_s26glClockInstance=(Handle)1;
+ clockNow=now;sampleTime=now-20000000;
+ s26s_eye_tick(session,(Handle)4,now+200000000,0);CHECK(g_s26sEyeSample.valid);
+ sampleTime=now-100000001;s26s_eye_tick(session,(Handle)4,now+200000000,0);CHECK(!g_s26sEyeSample.valid);
+ sampleTime=now+100000001;s26s_eye_tick(session,(Handle)4,now,0);CHECK(!g_s26sEyeSample.valid);
+ sampleTime=now;clockError=-1;s26s_eye_tick(session,(Handle)4,now+200000000,0);CHECK(!g_s26sEyeSample.valid);
+ clockError=0;counterError=1;CHECK(s26gl_gaze_now(now+5)==now+5);counterError=0;
+ CHECK(s26gl_gaze_now(now+5)==now);
+ sampleTime=0;s26s_eye_tick(session,(Handle)4,now+200000000,0);CHECK(g_s26sEyeSample.valid&&g_s26sEyeSample.time==now);
  s26s_eye_end((Handle)98);CHECK(g_s26sEyeSpace);s26s_eye_end(session);CHECK(!g_s26sEyeSpace&&!g_s26dgEyeView&&!g_s26sEyeSample.valid);
  s26s_eye_binding(self,(Handle)1,session);spaceError=-1;s26s_eye_spaces(self,(Handle)1,session);CHECK(!g_s26sEyeSpace);spaceError=0;
  refError=-1;s26s_eye_spaces(self,(Handle)1,session);CHECK(!g_s26dgEyeView);refError=0;

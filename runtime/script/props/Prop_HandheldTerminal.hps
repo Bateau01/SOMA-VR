@@ -234,13 +234,16 @@ class cScrPropHandheldTerminal : iScrProp, iScrProp_Interface
 		
 	bool CanInteract(int alType, iPhysicsBody@ apBody)
 	{
+        if(_HPL3VR_HandheldActive() && cScript_RunGlobalFunc("VRACCESS","ENTRY","Q"))return false;
 		return true;
 	}
 	
 	//------------------------------------------------------------
 		
 	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
-	{					
+	{
+        if(_HPL3VR_HandheldActive() && cScript_RunGlobalFunc("VRACCESS","ENTRY","Q"))return false; // Fixed-screen laser never activates phones/tablets.
+					
         if(_HPL3VR_HandheldActive() && VR_IsTablet()) return VR_BeginTablet(apBody,avFocusPos);
 		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
 		if(pCharBody.IsOnGround() == false) return false;

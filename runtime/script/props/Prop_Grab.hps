@@ -208,6 +208,22 @@ class cScrPropGrab : iScrProp, iScrProp_Interface
 	bool CanInteract(int alType, iPhysicsBody@ apBody)
 	{
 		if(ToolHandler_GetPlayerCarriesHeavyTool()) return false;
+        // S26GO: reject the disabled socket presentation during candidate
+        // selection, before two overlapping owners can make the grip ambiguous.
+        tString vrName=mBaseObj.GetName();
+        if(vrName=="security_chip_unformatted" || vrName=="brandon_corpse_1")
+        {
+            cScript_SetGlobalReturnBool(false);
+            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+            if(cScript_GetGlobalReturnBool())
+            {
+                if(vrName=="security_chip_unformatted" && mBaseObj.GetInteractionDisabled()) return false;
+                // The immovable torso is not the authored hand extraction.
+                // Keep the dynamic hand/arm bodies and their sticky detach path.
+                if(vrName=="brandon_corpse_1" && apBody !is null && apBody !is mBaseObj.GetMainBody() && apBody.GetMass()<=0) return false;
+            }
+        }
+
         if(VR_ThetaSocket()!="") return true;
         if(mbGrab_InteractOnlyWithMainBody && apBody !is mBaseObj.GetMainBody()) return false;
 		if(mBaseObj.HasPlayerInteractCallback()) return true;

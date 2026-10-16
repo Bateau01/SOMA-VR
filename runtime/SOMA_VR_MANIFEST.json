@@ -1,9 +1,17 @@
 {
-  "version": "1.06-S26FM",
+  "version": "1.0.8-S26HO",
   "files": {
     "Check-SOMA-VR-Compatibility.cmd": {
       "sha256": "1c9186797da4dd711fd91b1f487fb2647ddbf05f172a284b727be2d13983833b",
       "bytes": 115
+    },
+    "core/shaders/hpsl/deferred_base_vtx.hpsl": {
+      "sha256": "804b00786cef856fad78666d2973a94f0adc3d6396daaa14fdb898a29e51d18d",
+      "bytes": 31261
+    },
+    "core/shaders/hpsl/game_edge_glow.hpsl": {
+      "sha256": "b0da536dc04ae86d3cf2d368f01300c64a481abe428d464172581295ba282ce3",
+      "bytes": 1805
     },
     "defaults/hpl3vr_hand_calibration.ini": {
       "sha256": "fa607bb7a1c3925b7a6c222ac7d66605bf5aebc50d4fc1c0459d5d0280f48a6b",
@@ -12,6 +20,10 @@
     "defaults/hpl3vr_vr_settings.ini": {
       "sha256": "dbbab4dd40d76286f6ff18bf132dd3cfa00f987f16212124b1aea93038abb3fd",
       "bytes": 192
+    },
+    "entities/creatures/misc/jellyfish_drift.hps": {
+      "sha256": "c71887fe28a884c62c2aa3204a73963814064e38430210c1984662a63017bc69",
+      "bytes": 2606
     },
     "entities/oceanbottom/tech/02_04_computer_relaystation/02_04_computer_relaystation_screen.ent": {
       "sha256": "b9672a3563e67b0c4ffbae1364f4bd2f9af89dc0057c8673f12ac444a4340085",
@@ -176,6 +188,10 @@
     "entities/station/special/01_05_transporter_passenger/01_05_transporter_passenger_destinationpicker.ent": {
       "sha256": "41f85af5d0ea216f1156ac6bf1ae0c2dd48818359ed17b10fb22253bcf983ae4",
       "bytes": 5462
+    },
+    "entities/station/special/02_07_power_pump/02_07_power_pump_button.ent": {
+      "sha256": "85262e750b9f23034316b83d3d322057b41bfbb42af97edff91bd36c5ed0f76d",
+      "bytes": 11658
     },
     "entities/station/special/04_02_lindwall_heartmonitor/04_02_lindwall_heartmonitor.ent": {
       "sha256": "4a973092f7d2e5f5f932b60c535fe06b89c9e2e3af012ceecb6bf02d12d850bf",
@@ -346,16 +362,20 @@
       "bytes": 22369776
     },
     "hpl3vr-store.dll": {
-      "sha256": "135ea378ea2c9149533a143ef2ff0c77e2443bbd6d528bb6c859d3fbc9a73fba",
-      "bytes": 2307072
+      "sha256": "f22e077b3658a94ad0d011364fa89d52557d076880c7855af6a9df1d67bf7b0a",
+      "bytes": 2360832
     },
     "hpl3vr.dll": {
-      "sha256": "40ce70f5f7c0e949c0ee384c42dd9c27ea15a1d3fd2c2fd1cc79b20fdbc64de9",
-      "bytes": 2294784
+      "sha256": "4f23e061ef969a25fbf32bdd5cee67ef6ed5bfdf0aa26c1c7458e92a7bbe75ad",
+      "bytes": 2348544
     },
     "hpl3vr_inject.exe": {
       "sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
       "bytes": 267851
+    },
+    "hpl3vr_simulation_rate.txt": {
+      "sha256": "a7b785fcacb4beb3fa3061e79befd2eb06605e1a407e42dd565709459f4304eb",
+      "bytes": 4
     },
     "hpl3vr_vr_settings.ini": {
       "sha256": "dbbab4dd40d76286f6ff18bf132dd3cfa00f987f16212124b1aea93038abb3fd",
@@ -366,8 +386,8 @@
       "bytes": 120
     },
     "Launch-SOMA-VR.ps1": {
-      "sha256": "1d1bdab57e7c925778b908925bcabd799d8d448854a46e4f09da0495d1331fac",
-      "bytes": 10500
+      "sha256": "016a5a0325279cc47ae5020f7c08ade08a8a0a5af0439f063d5afbaa4b08c353",
+      "bytes": 12436
     },
     "licenses/MinHook-LICENSE.txt": {
       "sha256": "573cb7e07f3c69bef5d9a02f76f17241ae5b0c0a3dd66758ee6535ee1dbbab55",
@@ -397,9 +417,17 @@
       "sha256": "800799ea13adf5745e42c926cd9e45352138d7fc7f9360dacdd12004cf915594",
       "bytes": 182954
     },
+    "maps/chapter01/01_02_upsilon_inside/01_02_upsilon_inside.hps": {
+      "sha256": "b883d188aae450f19250803927ce8fb029e1dc951e32d155be67b50a98ee0ac3",
+      "bytes": 322997
+    },
     "maps/chapter01/01_03_upsilon_outside/01_03_upsilon_outside.hps": {
       "sha256": "e17db08924d1afd893a41cfa28c66446f05d2c7008d597472d6b71af686a1474",
       "bytes": 71766
+    },
+    "maps/chapter01/01_04_transport_station/01_04_transport_station.hps": {
+      "sha256": "20e25e696129f37e42a132ba08f80c12945cae5f7813fe13ba33e5febe3ffa95",
+      "bytes": 205632
     },
     "maps/chapter02/02_02_ms_curie_inside/02_02_ms_curie_inside.hps": {
       "sha256": "46ca418671b041aa3c9ebd3e740befd739269248bd88d6fa0749975173488b89",
@@ -413,13 +441,17 @@
       "sha256": "568e8ae4dff72382346c485191903cb70958a031c8c24b86e783258fc18c523b",
       "bytes": 223672
     },
+    "maps/chapter02/02_04_theta_outside/02_04_theta_outside.hps": {
+      "sha256": "8e61ad47537c44313548a74787c159972157661cdd927259c02388d7c61e6ecd",
+      "bytes": 69180
+    },
     "maps/chapter02/02_05_theta_inside/02_05_theta_inside.hps": {
-      "sha256": "03ff19b9cec8fff182b6874678c205038066f738df4453b43d73a26281cb2bb2",
-      "bytes": 292473
+      "sha256": "a17de0be8e668022da08b1dfca5665d1f540458c0f4dc37bd22bcd31f43aa02e",
+      "bytes": 292493
     },
     "maps/chapter02/02_06_theta_tunnels/02_06_theta_tunnels.hps": {
-      "sha256": "b0e47388025932a197339623345a7b9a11b165cf8dd3b69cfb499d48ba248ed8",
-      "bytes": 242003
+      "sha256": "efe3bc4294b3f58e6171e12a43cb9259ea1d777670a18d13b0af3a442cf8791b",
+      "bytes": 242996
     },
     "maps/chapter02/02_07_theta_exit/02_07_theta_exit.hps": {
       "sha256": "3270280ba011f2bc7c9984911ccecc30e5827b934b4e968569a3af30205bcdf2",
@@ -462,12 +494,20 @@
       "bytes": 123229
     },
     "maps/chapter05/05_01_phi_inside/05_01_phi_inside.hps": {
-      "sha256": "1a4317e22851203fdce82cdd00255ff5f57f3931869d9edd0acbc495dac4fa4c",
-      "bytes": 203735
+      "sha256": "72b526bf8d79698ae0eb3b67dcabc6829c57d9374db9500016682421a9f22342",
+      "bytes": 203755
     },
     "openxr_loader.dll": {
       "sha256": "9248b6ddd93ddd1c722313d8a24a4c2e9dd996f9dfa8087118037e5ac42c255e",
       "bytes": 422552
+    },
+    "PACKAGE_VERIFICATION.json": {
+      "sha256": "59e2554b32685d8ebc884606da7a691871eb5a86ed1a2acd3bbb957ea0a1e46b",
+      "bytes": 491
+    },
+    "script/agents/Agent_SwimBot.hps": {
+      "sha256": "0a49a25c7d5f6d44be98972175b12511e0aae963c34b0f68b20d6a4326065999",
+      "bytes": 14368
     },
     "script/areas/Area_InteractAux.hps": {
       "sha256": "4642a496e00bee5b068ae972f37a433622b90a6b337c1e6ef0dc675b3f0b5baf",
@@ -476,6 +516,22 @@
     "script/areas/Area_Sticky.hps": {
       "sha256": "01f01498483754b1cca964b1c4e162001ca067d5688c17f50639d0339e049073",
       "bytes": 22654
+    },
+    "script/custom_depth/agent_construct_theta.hps": {
+      "sha256": "906078f5bf46d958203e786c60d0e64a1a96afc40f2d8b325b1612798b72409b",
+      "bytes": 33325
+    },
+    "script/custom_depth/agent_flesher.hps": {
+      "sha256": "3815fd907471ed07ea4162b257e7a60075e1d1d4997cfdf9cf9d9136e520139b",
+      "bytes": 78908
+    },
+    "script/custom_depth/agent_roomba.hps": {
+      "sha256": "e94e1c8fbf8fa740ee1ead8220d740615ec58cfee5c0bbe682faac31fd9d9b26",
+      "bytes": 11862
+    },
+    "script/custom_depth/agent_swimbot_leviathan.hps": {
+      "sha256": "afdaf7dc26270d046a0a851ecfa20e33d239aa397c22b1db2a268d067d71a943",
+      "bytes": 41853
     },
     "script/custom_depth/helper_custom_deathfx.hps": {
       "sha256": "0f49ff24b2848936163751dbc2de6b8beca1192f32b1c93291ddc74f6522111a",
@@ -490,16 +546,16 @@
       "bytes": 65143
     },
     "script/custom_depth/prop_catherine_tool.hps": {
-      "sha256": "dbd750aaefdd93c677c126751f8482abb944590ac1b45204124d19150c7239dc",
-      "bytes": 40391
+      "sha256": "761439fb1198b3daae561d1d04d3ad39fe59c7ddc77dbbe7ac31ba254e321cb9",
+      "bytes": 41075
     },
     "script/custom_depth/prop_omnitool_panel.hps": {
       "sha256": "711d697f3953f081111c53753342d5b8fe0b6924b2ded3fcff2a1e62c380290d",
       "bytes": 3060
     },
     "script/custom_depth/prop_omnitool_slot.hps": {
-      "sha256": "94ef43f21f2d83f5095d4cfb6f44e5acd539618a308db88eae18d4deec00c577",
-      "bytes": 9595
+      "sha256": "8968eae55aa295f3daf811cb8575da5ae4e945c7b11ea755fddefcea7ec34d93",
+      "bytes": 10891
     },
     "script/custom_depth/vr_omni_authored_callbacks.hps": {
       "sha256": "22c576985a60021f1d589d409eb1414a5113ca9fc2cfe7402140bc154f56ec49",
@@ -525,6 +581,10 @@
       "sha256": "b9fa44ced450d6bcb4bd4012078cd99d072305a0a8ad0542219d866d0502a158",
       "bytes": 9168
     },
+    "script/effects/Effect_TimeGlitch.hps": {
+      "sha256": "e0f1cc3b04e98b557315f7e82b6d6335276eb1eb60644b8d1182d323c278d004",
+      "bytes": 4663
+    },
     "script/effects/Effect_VideoDistortion.hps": {
       "sha256": "01681438ae8c39cdbc1f34643b4e5abde4956cd736bde641e6cc3ffa51cf8f98",
       "bytes": 11712
@@ -536,6 +596,10 @@
     "script/helpers/helper_map.hps": {
       "sha256": "1ebb49b6812ba6762ebc9b900f2340897186b2eeacde2a555dc9a4ebd41c3123",
       "bytes": 59289
+    },
+    "script/helpers/helper_player.hps": {
+      "sha256": "8c7385cd6c7c7f1c7756538cfc8492daafc15cd118ad8c4534c3309eb81ff7ac",
+      "bytes": 52538
     },
     "script/helpers/helper_vr_phone_q.hps": {
       "sha256": "643ed690763ab5ec7d16d6d48c839d4b0e2de204a9460abc26e13093a9c45fe5",
@@ -562,8 +626,8 @@
       "bytes": 32015
     },
     "script/modules/MenuHandler.hps": {
-      "sha256": "8ebaa5224a0521e5bce2f4e30077ffe833c4ff75b06b300a8f13ab0907c5d8e7",
-      "bytes": 301114
+      "sha256": "51cc4c3d6b08bc86b61ef96db7da5b3f02a551a0ad3ddfd08aed3840f7399597",
+      "bytes": 311747
     },
     "script/modules/PlayerEnergyHandler.hps": {
       "sha256": "42fe650394f5ed450dfc817ec345ca9c8d7678007af973d84e9b41eaefdcf39b",
@@ -574,16 +638,20 @@
       "bytes": 41464
     },
     "script/modules/PlayerToolHandler.hps": {
-      "sha256": "6a54944c7dafde0c1f08a4a9af466db13b7b1e453e0f48fd66e7e8d96b558c9d",
-      "bytes": 129272
+      "sha256": "fe2bef1ea897812b65a4e0198a54dae58beef8d714ef53084f8ebfa942698c8f",
+      "bytes": 131419
     },
     "script/player/MoveState_Normal.hps": {
-      "sha256": "a4946542a0d3ca880f5466b24358fc7f25b5958b75cc0d5e22b19d376c51638f",
-      "bytes": 46067
+      "sha256": "2c08826a9b934c8870307e96c116f9eda532be5a9f96be4659c452b4c59076da",
+      "bytes": 47771
     },
     "script/player/Player.hps": {
-      "sha256": "3a24696f954f2a0b5f2aa6f423de8361cca521fedd946ed7eb80fb7c5f13ee2e",
-      "bytes": 68018
+      "sha256": "c95455fb57ad46016a7a92c19148a9fe9a5f35338e286fcee681ccc20584fae6",
+      "bytes": 68291
+    },
+    "script/player/PlayerState_Conversation.hps": {
+      "sha256": "c269201db75edcc0a44cac359eff5a36207fa399e5fb724e287a0ba4ab628a7c",
+      "bytes": 22307
     },
     "script/player/PlayerState_CustomControls.hps": {
       "sha256": "b2615d5213a8bd4d43f2c4a5025ae0456d721764eedd5a63c83796faf921968a",
@@ -601,17 +669,25 @@
       "sha256": "9f6832bec771111fdc1219057032d1495aaa337acd2dd2ef0d2bc5742e29b309",
       "bytes": 18860
     },
+    "script/player/PlayerState_Interact_MovingButton.hps": {
+      "sha256": "10bcf9cca9ab78c5ad77cf43238adaf6a526c64467755a641a6dcb18ae1a61c6",
+      "bytes": 11684
+    },
     "script/player/PlayerState_Interact_Push.hps": {
       "sha256": "2932fcebc8d124b30874cbff5b5777330287ae173639a7dbb6ed2600bd2db75a",
       "bytes": 17631
     },
     "script/player/PlayerState_Interact_RotateBase.hps": {
-      "sha256": "448c4ef4017f8bea71914a25d0bd789d840b4973dfe160477807ac512c5725c8",
-      "bytes": 18076
+      "sha256": "eef1395dfe2649255d47dfc2facc24bcc55f3cc471ebf69b987c2146199781b2",
+      "bytes": 19572
     },
     "script/player/PlayerState_Interact_Slide.hps": {
       "sha256": "4216d7e907584dbde760228fce89635afc3650f3000ba529c43adc230e28089e",
       "bytes": 20206
+    },
+    "script/player/PlayerState_Interact_SwingDoor.hps": {
+      "sha256": "e6f6040ece191d67b80ad59be00ff3b3a7385720ae7984c84a7056709662375b",
+      "bytes": 7087
     },
     "script/player/PlayerState_Interact_Tear.hps": {
       "sha256": "28744e33dbbab67903f51e98a25ea74750d354aabee990118c2b1297e3d7293d",
@@ -638,12 +714,12 @@
       "bytes": 9767
     },
     "script/props/Prop_Grab.hps": {
-      "sha256": "3777be04752d88a68413b2c75f13ee1d62dcc0b8d1fafab783721e108e6f9b5e",
-      "bytes": 11733
+      "sha256": "d6fbf3ecbe5371ff10b04fbdfe069d19bf269917473de82dd83a4b303f7d40ad",
+      "bytes": 12668
     },
     "script/props/Prop_HandheldTerminal.hps": {
-      "sha256": "e5b56c0ddc4a69f36d8efef10d4db3f605894ed612b3232482c30d87d652604a",
-      "bytes": 15565
+      "sha256": "a98460f93ede46e57067c1dd79affa8f361f4e4e043b16710b760f3c58f4ee0e",
+      "bytes": 15821
     },
     "script/props/Prop_LevelDoor.hps": {
       "sha256": "8f6404aa33b7f6001b57b760a0cd4e79d85a5f1df4550bdbc0f570a8bdbdbf53",
@@ -653,13 +729,25 @@
       "sha256": "fb594a019e3a12d651876e83e3e9f42ca39345138c889d4b2517b56d8764f7b7",
       "bytes": 22775
     },
+    "script/props/Prop_PhysicsSlideDoor.hps": {
+      "sha256": "12d9a445122799aca0fff322752677684e0ddbd9707058b37a6f236dcbfd8f65",
+      "bytes": 18103
+    },
+    "script/props/Prop_Push.hps": {
+      "sha256": "4e418efadaf69f25b5b41d0d0e5b0c3e4fc4b120b06cc60f133ee6d8df691d99",
+      "bytes": 7214
+    },
     "script/props/Prop_Readable.hps": {
-      "sha256": "5e72e8afb5ab0fd5071840a23b1b38298af8444f83337dcf9387bb82ecfe83df",
-      "bytes": 16640
+      "sha256": "dd01a460491fa26f47d2a43fe49e31e8043c54c2116e4d6c67eac1b5d02dcba5",
+      "bytes": 17518
+    },
+    "script/props/Prop_SwingDoor.hps": {
+      "sha256": "c6be758332965ca006ce55947fd11939c61fc05326481adc95b76ef80b54b05f",
+      "bytes": 31912
     },
     "script/props/Prop_Tear.hps": {
-      "sha256": "1b316d45ce24a5fba98f4929404c62a2d47c5ab933c1996f52294c1be9588f45",
-      "bytes": 18867
+      "sha256": "cae14d1e18efd99ae2980fa38a7c0901c33b531cf375a4bb613ac84a3c85ce7c",
+      "bytes": 18934
     },
     "script/props/Prop_Terminal.hps": {
       "sha256": "5937c48d5f8ec9acb625c63a6848a4fce89979da008a9f66bc6e08606e72e39e",
@@ -678,28 +766,44 @@
       "bytes": 22598
     },
     "SOMA-VR-Compatibility.ps1": {
-      "sha256": "5035057f6ce83dea8853c1d19d50094081ef739f5720d8bd56574ddde0b04894",
-      "bytes": 5496
+      "sha256": "3c0c4eb33953a887210620861a97f83ee91d9964b5ab60ecfbf23adc8b4beb3d",
+      "bytes": 5493
     },
     "SOMA-VR-Executable.json": {
       "sha256": "537229cf3db85e65512afacfe2c05e2515a4aa14abb51c9cd11b97f38c395b2e",
       "bytes": 2607
     },
     "SOMA-VR-Settings.ps1": {
-      "sha256": "1e800aa777c9a28552f1187f76591f4ac3b139c37d6b6f937889debac1191638",
-      "bytes": 7554
+      "sha256": "4b0938a956ca12afe408ac43059691256f828ef12d1a5079d4a50d35422f4462",
+      "bytes": 8034
+    },
+    "SOMA-VR-ShaderCache.ps1": {
+      "sha256": "6fa382a3edd0e4625cbdb63065682fa0b10933c8d59d0331a24f16aab72c98f5",
+      "bytes": 5798
+    },
+    "SOMA-VR-Update-Version.json": {
+      "sha256": "9a99853bb54019e7abad5b7f8c57f2ca571ecd7ce57343c6c6a40fea000a3476",
+      "bytes": 46
+    },
+    "SOMA-VR-Update.ps1": {
+      "sha256": "c855a5f3a61bef14fb93ceb512437d6e1ba52cd7efc2a9ecec98430771c6fc40",
+      "bytes": 6681
+    },
+    "SOMA_VR_120HZ.txt": {
+      "sha256": "96b494c682bc773219ddf670e922f05f7118b906c239ed0194d9171dba0b6f0c",
+      "bytes": 1383
     },
     "SOMA_VR_COMPATIBILITY.md": {
       "sha256": "4f55ced44924c0d1794dc4351d2f8fc242a82029e1b3da1e6742c3fdcbf13c0a",
       "bytes": 1547
     },
     "SOMA_VR_FEATURES.md": {
-      "sha256": "101a806c5c5af51da0bdb42bf241cdfa70209b51dd3d0ad42fb9f9efe20efa6a",
-      "bytes": 9476
+      "sha256": "9ede1159cb7f98e56746da3b100846a2aeffe251cfb973c5af10f12efc908c50",
+      "bytes": 13911
     },
     "SOMA_VR_INSTALLATION.md": {
-      "sha256": "e49c8d15944cc8807736e5b829c9a7eccc33711c8ae0dc7faa40bb32478caf0f",
-      "bytes": 5699
+      "sha256": "4dfe10e4b24f9a9d5a8f41b62f336db99bd42066930992ff7b54024542f541b1",
+      "bytes": 9203
     },
     "SOMA_VR_LICENSE.txt": {
       "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
@@ -710,8 +814,8 @@
       "bytes": 1361
     },
     "Stop-SOMA-VR.cmd": {
-      "sha256": "4530974bc9f81e9199870db1fdece8af77a8b15dd3d9904dd82a8ddf973f7dc1",
-      "bytes": 124
+      "sha256": "456f1c9fa65b4a7b54b0818d5a7189fc2f92929cef83f8e942df3cb7a5dabe7f",
+      "bytes": 203
     },
     "vr_audio_s/ATTRIBUTION.txt": {
       "sha256": "f28f3eb548f839917b8a64d680916311d94fc59975acc58581cdc5983cb2bde8",
@@ -732,27 +836,6 @@
     "vr_audio_s/THIRDPARTY-SteamAudio.md": {
       "sha256": "a95e143e7d2466e82a28d6680c7287d9fc7d772136c323ab538a6d24472e70f0",
       "bytes": 36284
-    },
-    "script/player/PlayerState_Interact_MovingButton.hps": {
-      "sha256": "10bcf9cca9ab78c5ad77cf43238adaf6a526c64467755a641a6dcb18ae1a61c6",
-      "bytes": 11684
-    },
-    "entities/station/special/02_07_power_pump/02_07_power_pump_button.ent": {
-      "sha256": "85262e750b9f23034316b83d3d322057b41bfbb42af97edff91bd36c5ed0f76d",
-      "bytes": 11658
-    },
-    "maps/chapter02/02_04_theta_outside/02_04_theta_outside.hps": {
-      "sha256": "8e61ad47537c44313548a74787c159972157661cdd927259c02388d7c61e6ecd",
-      "bytes": 69180
-    },
-    "maps/chapter01/01_04_transport_station/01_04_transport_station.hps": {
-      "sha256": "20e25e696129f37e42a132ba08f80c12945cae5f7813fe13ba33e5febe3ffa95",
-      "bytes": 205632
     }
-  },
-  "excluded_self_metadata": [
-    "SOMA_VR_MANIFEST.json",
-    "PACKAGE_VERIFICATION.json",
-    "installer-manifest.json"
-  ]
+  }
 }

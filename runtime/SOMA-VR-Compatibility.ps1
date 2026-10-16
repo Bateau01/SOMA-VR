@@ -1,4 +1,4 @@
-﻿# Read-only PE comparison. No signature scanning, address guessing, or game mutation.
+# Read-only PE comparison. No signature scanning, address guessing, or game mutation.
 function Get-SomaLaunchReport([string]$Path, [string]$ReferencePath) {
     $report = Get-SomaExecutableReport $Path $ReferencePath
     $dllName = 'hpl3vr.dll'

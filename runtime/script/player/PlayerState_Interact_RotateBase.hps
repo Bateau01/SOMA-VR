@@ -36,6 +36,9 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   mfMaxAngularImpulse = 1000; 
   mbResetSpeedWhenNoMouseMovement = true; 
   mbHPL3VRSwingInputThisStep = false;
+  mbHPL3VRSwingMotor = false;
+  mbHPL3VRSwingDirect = false;
+  mfHPL3VRSwingOmega = 0;
   mbHPL3VRWheelDirect = false;
   mfHPL3VRWheelOmega = 0;
   mbHPL3VRLeverInputThisStep = false;
@@ -58,7 +61,8 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
  void EnterRotateBase(int alPrevStateId){} 
  void LeaveRotateBase(int alNextStateId){} 
   
- float GetSpeedAdd(cCamera @apCam){ return 0;} 
+ float GetSpeedAdd(cCamera @apCam){ return 0;}
+ void HPL3VR_OnSwingSpeed(float speed) {} 
   
  //------------------------------------------------------------ 
   
@@ -125,6 +129,9 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   mfRotSpeed =0; 
   mvMoveAdd = cVector2f(0);
   mbHPL3VRSwingInputThisStep = false;
+  mbHPL3VRSwingMotor = false;
+  mbHPL3VRSwingDirect = false;
+  mfHPL3VRSwingOmega = 0;
   mbHPL3VRWheelDirect = false;
   mfHPL3VRWheelOmega = 0;
   mbHPL3VRLeverInputThisStep = false;
@@ -314,7 +321,7 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   // H57.56BD: exact Lever packets already carry the signed physical hinge-angle
   // scalar. Skip the camera-space Lever::GetSpeedAdd reconstruction for that
   // packet only; desktop, Wheel and SwingDoor behavior stays on the stock path.
-  float fSpeedAdd = mbHPL3VRLeverInputThisStep ? mfHPL3VRLeverSpeedAdd : GetSpeedAdd(pCam); 
+   float fSpeedAdd = mbHPL3VRSwingDirect ? 0 : (mbHPL3VRLeverInputThisStep ? mfHPL3VRLeverSpeedAdd : GetSpeedAdd(pCam)); 
   mfRotSpeed +=  fSpeedAdd * 3000.0f * mfMoveSpeedFactor * afTimeStep;  
   // H57.55EO: physical SwingDoor input still uses the shipped RotateBase
   // recurrence/PID/inertia/torque cap below.  Only its speed ceiling is widened
@@ -324,6 +331,12 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   if(mbHPL3VRSwingInputThisStep && fMoveMax < 12.0f) fMoveMax = 12.0f;
   if(mfRotSpeed > fMoveMax) mfRotSpeed = fMoveMax; 
   if(mfRotSpeed < -fMoveMax) mfRotSpeed = -fMoveMax;
+   if(mbHPL3VRSwingDirect)
+   {
+    // Keep native movement sound/effect notification, without camera projection.
+    HPL3VR_OnSwingSpeed((mfHPL3VRSwingOmega-mfRotSpeed)/(3000.0f*afTimeStep));
+    mfRotSpeed=mfHPL3VRSwingOmega;
+   }
   if(mbHPL3VRWheelDirect) mfRotSpeed=mfHPL3VRWheelOmega;
   /////////////////////////////////// 
   //Calculate torque -- exact authored PID/inertia/cap/AddTorque path.
@@ -338,18 +351,29 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   // interpolates smoothly; >=8 kg retains the FM/FN heavy-door P=20 / 3x budget.
   // Desktop/authored behavior is restored immediately after this one VR packet.
   float fAuthoredPidP = mRotatePid.p;
+  float fAuthoredPidD = mRotatePid.d;
   float fVRMass = pBody.GetMass();
   if(mbHPL3VRWheelDirect) mRotatePid.p=15.0f;
-  if(mbHPL3VRSwingInputThisStep)
+  if(mbHPL3VRSwingMotor)
   {
    if(fVRMass >= 8.0f) mRotatePid.p = 20.0f;
    else if(fVRMass > 4.0f) mRotatePid.p = fAuthoredPidP + ((fVRMass - 4.0f) / 4.0f) * (20.0f - fAuthoredPidP);
   }
-  cVector3f vTorque = mRotatePid.Output(vWantedVel - vHingeVel, afTimeStep); 
+  // S26GK: the VR target is already a velocity derived from hand motion.
+  // Differentiating its error again adds a kick at each target change. Use a
+  // timestep-bounded proportional velocity response for SwingDoor packets.
+  // The native joint, inertia, limits and torque cap still own the door.
+  if(mbHPL3VRSwingMotor)
+  {
+   mRotatePid.p = mRotatePid.p / (1.0f + mRotatePid.p * afTimeStep);
+   mRotatePid.d = 0.0f;
+  }
+  cVector3f vTorque = mRotatePid.Output(vWantedVel - vHingeVel, afTimeStep);
   mRotatePid.p = fAuthoredPidP;
+  mRotatePid.d = fAuthoredPidD;
   vTorque = cMath_MatrixMul(pBody.GetInertiaMatrix(), vTorque); 
   float fTorqueCap = mfMaxAngularImpulse*pBody.GetMass();
-  if(mbHPL3VRSwingInputThisStep)
+  if(mbHPL3VRSwingMotor)
   {
    float fVRCapMul = 1.0f;
    if(fVRMass >= 8.0f) fVRCapMul = 3.0f;
@@ -361,6 +385,8 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   mvLastMouseAdd = mvMoveAdd; 
   mvMoveAdd = cVector2f(0);
   mbHPL3VRSwingInputThisStep = false;
+  mbHPL3VRSwingDirect = false;
+  mfHPL3VRSwingOmega = 0;
   mbHPL3VRWheelDirect = false;
   mfHPL3VRWheelOmega = 0;
   mbHPL3VRLeverInputThisStep = false;
@@ -422,6 +448,17 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
    // normalization/gain. Preserve that sign directly instead of projecting the
    // motion through camera-facing mouse geometry, which could make some levers
    // effectively one-way. It is still consumed by this stock RotateBase state.
+   if(avAmount.z==5.0f)
+   {
+    if(cLux_GetPlayer().GetCurrentStateId()==ePlayerState_SwingDoor)
+    {
+     mfHPL3VRSwingOmega=cMath_Clamp(avAmount.x,-12.0f,12.0f);
+     mbHPL3VRSwingDirect=true;
+     mbHPL3VRSwingMotor=true;
+     mbHPL3VRSwingInputThisStep=true;
+    }
+    return false;
+   }
    if(avAmount.z==4.0f)
    {
     if(cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Wheel)
@@ -444,7 +481,7 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
    bool bHPL3VRWheelPacket = avAmount.z > 1.5f;
    cVector2f vAmount(avAmount.x, avAmount.y); 
    if(bHPL3VRWheelPacket==false && cLux_GetInputHandler().IsYAxisInverted()) vAmount.y = -vAmount.y; 
-   if(avAmount.z > 0.5f && bHPL3VRWheelPacket==false) mbHPL3VRSwingInputThisStep = true;
+   if(avAmount.z > 0.5f && bHPL3VRWheelPacket==false) { mbHPL3VRSwingInputThisStep = true;mbHPL3VRSwingMotor = true; }
    mvMoveAdd += vAmount * mfMoveToMouseAddFactor; 
     
    return false; 
@@ -509,6 +546,9 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
  float mfMaxAngularImpulse; 
  bool mbResetSpeedWhenNoMouseMovement; 
  bool mbHPL3VRSwingInputThisStep;
+ [nosave] bool mbHPL3VRSwingMotor;
+ [nosave] bool mbHPL3VRSwingDirect;
+ [nosave] float mfHPL3VRSwingOmega;
  [nosave] bool mbHPL3VRWheelDirect;
  [nosave] float mfHPL3VRWheelOmega;
  bool mbHPL3VRLeverInputThisStep;

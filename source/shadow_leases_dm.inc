@@ -4,7 +4,7 @@
    stereo scenes can reuse resources sequentially; their GL reads/writes are
    ordered. Never change the global frame counter, light owner, content age,
    textures, caster list or a lease while the first scene is still executing. */
-typedef struct {void* renderer;void* world;void* frustum;u32 xrFrame,nativeFrame;i32 eye;u8 valid;} S26DMShadowBoundary;
+typedef struct {void* renderer;void* world;void* frustum;u32 xrFrame,nativeFrame;i32 eye;u8 valid; i32 role; u32 depth;} S26DMShadowBoundary;
 static S26DMShadowBoundary g_s26dmShadowBoundary;
 static u32* s26dm_native_render_stamp(void){
     static u32* stamp;static u8 tried;
@@ -32,14 +32,28 @@ static u32 s26dm_release_shadow_leases(void* renderer,u32 frame){
     }
     return released;
 }
-static u32 s26dm_shadow_begin(i32 live,void* renderer,void* world,void* frustum,u32 xrFrame,u32 nativeFrame,i32 eye){
+/* Roles: 0 unclassified/inactive, 1 exact player camera, 2 auxiliary.
+   Native cCamera3D::GetFrustum (Steam 140277d80) returns camera+0x3f8.
+   Do not use P2's last-published frustum: the render callback also publishes
+   monitor cameras, so it can lag the current scene by one render. */
+static i32 s26gq_scene_role(i32 live,void* camera,void* frustum){
+    if(!live||!camera||!frustum||!h20_mem_readable((u8*)camera+0x3f8u,0x198u))return 0;
+    return frustum==(void*)((u8*)camera+0x3f8u)?1:2;
+}
+static u32 s26dm_shadow_begin(i32 role,void* renderer,void* world,void* frustum,u32 xrFrame,u32 nativeFrame,i32 eye){
     S26DMShadowBoundary* s=&g_s26dmShadowBoundary;u32 n=0;
-    if(live&&s->valid&&s->renderer==renderer&&s->world==world&&s->frustum==frustum&&
-       s->xrFrame==xrFrame&&s->nativeFrame==nativeFrame&&s->eye!=eye)
+    ++s->depth;
+    /* Nested scenes may still have a parent consuming its leased textures. */
+    if(s->depth==1u && role && s->valid && s->renderer==renderer && s->world==world &&
+       s->xrFrame==xrFrame && s->nativeFrame==nativeFrame &&
+       (role==1 || s->role==1) && (s->frustum!=frustum || s->eye!=eye))
         n=s26dm_release_shadow_leases(renderer,nativeFrame);
     s->valid=0;return n;
 }
-static void s26dm_shadow_end(i32 live,void* renderer,void* world,void* frustum,u32 xrFrame,u32 nativeFrame,i32 eye){
+static void s26dm_shadow_end(i32 role,void* renderer,void* world,void* frustum,u32 xrFrame,u32 nativeFrame,i32 eye){
     S26DMShadowBoundary* s=&g_s26dmShadowBoundary;
-    s->renderer=renderer;s->world=world;s->frustum=frustum;s->xrFrame=xrFrame;s->nativeFrame=nativeFrame;s->eye=eye;s->valid=live?1:0;
+    if(!s->depth){s->valid=0;return;}
+    --s->depth;
+    if(s->depth){s->valid=0;return;}
+    s->renderer=renderer;s->world=world;s->frustum=frustum;s->xrFrame=xrFrame;s->nativeFrame=nativeFrame;s->eye=eye;s->role=role;s->valid=role?1:0;
 }

@@ -1,0 +1,1776 @@
+//-------------------------------------------------
+
+#include "player/Player_Types.hps"
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// PROPERTIES
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Gets the position of the player.
+ * 
+ * @return cVector3f, The position of the player.
+ **/ 
+cVector3f Player_GetPosition()
+{
+	return cLux_GetPlayer().GetCharacterBody().GetPosition();
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the feet position of the player.
+ * 
+ * @return cVector3f, The position of the player's feet.
+ **/ 
+ 
+cVector3f Player_GetFeetPosition()
+{
+	return cLux_GetPlayer().GetCharacterBody().GetFeetPosition();
+}
+
+//-------------------------------------------------
+
+/**
+ * @param asEntity The entity name
+ * 
+ * @return float, The square of the distance the entity is from the player.
+ **/ 
+ 
+float Player_GetDistanceToEntitySquared(const tString& in asEntity)
+{
+	iLuxEntity@ pEntity =  cLux_GetCurrentMap().GetEntityByName(asEntity, eLuxEntityType_LastEnum, "");
+	if (pEntity is null)
+	{
+		Error("Could not find any entities with name '"+asEntity+"' for Player_GetDistanceToEntitySquared");
+		return 0;
+	}
+	return (pEntity.GetPosition()-Player_GetPosition()).SqrLength();
+}
+
+//-------------------------------------------------
+
+/**
+ * @param asEntity The entity name
+ * 
+ * @return float, The distance the entity is from the player.
+ **/ 
+ 
+float Player_GetDistanceToEntity(const tString& in asEntity)
+{
+	iLuxEntity@ pEntity =  cLux_GetCurrentMap().GetEntityByName(asEntity, eLuxEntityType_LastEnum, "");
+	if (pEntity is null)
+	{
+		Error("Could not find any entities with name '"+asEntity+"' for Player_GetDistanceToEntity");
+		return 0;
+	}
+	return (pEntity.GetPosition()-Player_GetPosition()).Length();
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets whether player is underwater or not, setting up various properties for this
+ * 
+ * @param abX if underwater or not.
+ **/ 
+void Player_SetUnderwater(bool abX)
+{
+	//NOTE: If you update this, update Map_SetUnderwater too!
+	cScript_SetGlobalVarBool("PlayerUnderwater", abX);
+	if(abX)
+	{
+		Player_SetGravity(cVector3f(0,-2,0));
+	}
+	else
+	{
+		Player_SetGravity(cVector3f(0,-12,0));
+	}
+}
+
+//-------------------------------------------------
+
+/**
+ * Retuns if the player is under water or not.
+ **/
+bool Player_GetUnderwater()
+{
+	return cScript_GetGlobalVarBool("PlayerUnderwater");
+}
+
+//-------------------------------------------------
+
+/**
+ * Reset the properties of the character body to what
+ * they were when the game started
+ **/ 
+ 
+void Player_SetCharacterBodyDefaults()
+{
+	cScript_RunGlobalFunc("LuxPlayer","","_Global_SetCharacterBodyDefaults");
+}
+
+//-------------------------------------------------
+
+/**
+ * Set the level of gravity affecting the player
+ * 
+ * @param avGravity the gravity vector to use.
+ **/ 
+ 
+void Player_SetGravity(const cVector3f&in avGravity)
+{
+	cScript_SetGlobalArgVector3f(0, avGravity);
+	cScript_RunGlobalFunc("LuxPlayer","","_Global_SetGravity");
+}
+
+//-------------------------------------------------
+
+/**
+ * Enable or disable gravity affecting the player
+ * 
+ * @param abX if gravity is enabled or not.
+ **/ 
+void Player_SetGravityEnabled(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("LuxPlayer","","_Global_SetGravityEnabled");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets whether fall damage is allowed or not.
+ * 
+ * @param abX true = can take fall damage. - false = cannot take fall damage.
+ **/
+void Player_SetFallDamageActive(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetFallDamageAllowed");
+}
+
+//-------------------------------------------------
+
+/**
+ * Makes the player jump
+ * 
+ **/ 
+void Player_Jump()
+{
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_Jump");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets whether player is crouching or not.
+ * 
+ * @param abState true = player crouches - false = player stops crouching.
+ * @param abInstant true = camera moves to new position instantly - false = camera moves to new position over time.
+ * @param abSilent false = play sounds, true = don't play sounds
+ **/ 
+void Player_SetCrouching(bool abState, bool abInstant = false, bool abSilent = false)
+{
+	cScript_SetGlobalArgBool(0, abState);
+	cScript_SetGlobalArgBool(1, abInstant);
+	cScript_SetGlobalArgBool(2, abSilent);
+	cScript_SetGlobalArgBool(3, false);
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_SetCrouching");
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets whether player is crouching or not.
+ * 
+ * @return bool, true = player crouches - false = player is not crouching.
+ **/ 
+bool Player_GetCrouching()
+{
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_GetCrouching");
+	return cScript_GetGlobalReturnBool();
+}
+
+
+//-------------------------------------------------
+
+/**
+ * Increaments the crawl counter, which if it is >0and player is crouching it means the player is crawling.
+ * 
+ **/
+void Player_IncCrawlCount()
+{
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_IncCrawlCount");
+}
+
+/**
+ * Decrements the crawl counter, which if it is >0 and player is crouching it means the player is crawling.
+ * 
+ **/
+void Player_DecCrawlCount()
+{
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_DecCrawlCount");	
+}
+
+/**
+ * Forces the player to be in crawling mode no matter if they are standing or not.
+ * 
+ **/
+void Player_SetForceCrawling(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_SetForceCrawling");	
+}
+
+/**
+ * Turns off crawling and forces it not to occur again.
+ * 
+ **/
+void Player_SetDisableCrawling(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_SetDisableCrawling");	
+}
+
+
+//-------------------------------------------------
+
+/**
+ * Gets the current headbob amount
+ * 
+ **/ 
+cVector3f Player_GetHeadBob()
+{
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_GetHeadBob");
+	return cScript_GetGlobalReturnVector3f();
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets whether player is running or not.
+ * 
+ **/ 
+bool Player_GetRunning()
+{
+	cScript_RunGlobalFunc("MoveState_Normal","","_Global_GetRunning");
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------
+
+/**
+ * Set what type of footwear the player has.
+ * 
+ * @param asType can be: barefoot, sneaker, default. For Depth default will be the soma steps.
+ **/ 
+void Player_SetFootWear(tString &in asType)
+{
+	cScript_SetGlobalArgString(0, asType);
+	cScript_RunGlobalFunc("MoveState_Normal","","_GlobalFunc_SetFootWear");
+}
+
+//-------------------------------------------------
+
+/**
+ * Set what type of clothing the player is wearing. These change the jump and pose sounds.
+ * 
+ * @param asType can be: naked, dressed, default. For Depth default will be the soma body.
+ **/ 
+void Player_SetClothing(tString &in asType)
+{
+	cScript_SetGlobalArgString(0, asType);
+	cScript_RunGlobalFunc("MoveState_Normal","","_GlobalFunc_SetClothing");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the head bob amount multiplier
+ * 
+ * @param afMul the amount of headbob, 0=none, 1=normal
+ **/ 
+void Player_SetHeadBobMul(float afMul)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_SetGlobalArgFloat(1, 0.0f);
+	cScript_RunGlobalFunc("MoveState_Normal","","_GlobalFunc_FadeHeadBobMul");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the head bob amount multiplier
+ * 
+ * @param afMul the amount of headbob, 0=none, 1=normal
+ * @param afTime the time to fade over
+ **/ 
+void Player_FadeHeadBobMul(float afMul, float afTime=1.0f)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_SetGlobalArgFloat(1, afTime);
+	cScript_RunGlobalFunc("MoveState_Normal","","_GlobalFunc_FadeHeadBobMul");
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the head bob amount multiplier
+ **/ 
+float Player_GetHeadBobMul()
+{
+	cScript_RunGlobalFunc("MoveState_Normal","","_GlobalFunc_GetHeadBobMul");
+	return cScript_GetGlobalReturnFloat();
+}
+
+
+//-------------------------------------------------
+
+/**
+ * Set if foot steps sounds (landing included) should be played or not.
+ * 
+ * @param abX true = steps should be played - false = steps should not be playe
+ **/ 
+void Player_SetFootstepSoundsDisabled(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal","","_GlobalFunc_SetFootstepSoundsDisabled");
+}
+
+//-------------------------------------------------
+
+void Player_SetRunBreathingDisabled(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal","","_GlobalFunc_SetRunBreathingDisabled");
+}
+
+//-------------------------------------------------
+
+/**
+ * Set if the player can control the main character.
+ * 
+ * @param abX set controls active or not.
+ **/
+void Player_SetActive(bool abX)
+{
+	cLux_GetPlayer().SetActive(abX);
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the player's look speed multiplier
+ * 
+ * @return float, the speed multiplier, where 1.0 is the default value
+ **/
+float Player_GetLookSpeedMul()
+{
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_GetLookSpeedMul");
+	return cScript_GetGlobalReturnFloat();
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the player's look speed multiplier
+ * 
+ * @param afMul multiplier value to set, where 1.0 is the default value
+ **/
+void Player_SetLookSpeedMul(float afMul)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetLookSpeedMul");
+}
+
+//-------------------------------------------------
+
+/**
+ * Fades the player's look speed multiplier over a specified time.
+ * 
+ * @param afMul multiplier value to fade to, where 1.0 is the default value
+ * @param afTime time to fade over.
+ **/
+void Player_FadeLookSpeedMulTo(float afMul, float afTime)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_SetGlobalArgFloat(1, afTime);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_FadeLookSpeedMulTo");
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the player's move speed multiplier
+ * 
+ * @return float, the speed multiplier, where 1.0 is the default value
+ **/
+float Player_GetMoveSpeedMul()
+{
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_GetMoveSpeedMul");
+	return cScript_GetGlobalReturnFloat();
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the player's move speed multiplier
+ * 
+ * @param afMul multiplier value to set, where 1.0 is the default value
+ **/
+void Player_SetMoveSpeedMul(float afMul)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetMoveSpeedMul");
+}
+
+//-------------------------------------------------
+
+/**
+ * Fades the player's move speed multiplier over a specified time.
+ * 
+ * @param afMul multiplier value to fade to, where 1.0 is the default value
+ * @param afTime time to fade over.
+ **/
+void Player_FadeMoveSpeedMulTo(float afMul, float afTime)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_SetGlobalArgFloat(1, afTime);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_FadeMoveSpeedMulTo");
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the player's script run speed multiplier
+ * 
+ * @return float, the speed multiplier, where 1.0 is the default value
+ **/
+float Player_GetRunSpeedMul()
+{
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_GetRunSpeedMul");
+	return cScript_GetGlobalReturnFloat();
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the player's script run speed multiplier
+ * 
+ * @param afMul multiplier value to set, where 1.0 is the default value
+ **/
+void Player_SetRunSpeedMul(float afMul)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetRunSpeedMul");
+}
+
+//-------------------------------------------------
+
+/**
+ * Fades the player's run speed multiplier over a specified time.
+ * 
+ * @param afMul multiplier value to fade to, where 1.0 is the default value
+ * @param afTime time to fade over.
+ **/
+void Player_FadeRunSpeedMulTo(float afMul, float afTime)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_SetGlobalArgFloat(1, afTime);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_FadeRunSpeedMulTo");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets whether jumping should be disabled or not.
+ * 
+ * @param abX true = jumping is disabled - false = jumping is enabled
+ **/
+void Player_SetJumpDisabled(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal", "", "_GlobalFunc_SetJumpDisabled");
+}
+
+//-------------------------------------------------
+
+/**
+ * If a jump is currently in progress, cancel it.
+ **/
+void Player_CancelJump()
+{
+	cScript_RunGlobalFunc("MoveState_Normal", "", "_GlobalFunc_CancelJump");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets whether anything should happen when you press the crouch button
+ * 
+ * @param abX 
+ **/
+void Player_SetCrouchActionDisabled(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal", "", "_GlobalFunc_SetCrouchActionDisabled");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets whether crouching should be disabled or not.
+ * 
+ * @param abX true = crouching is disabled - false = crouching is enabled
+ **/
+void Player_SetCrouchDisabled(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal", "", "_GlobalFunc_SetCrouchDisabled");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets whether standing should be disabled or not.
+ * 
+ * @param abX true = standing is disabled - false = standing is enabled
+ **/
+void Player_SetStandDisabled(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal", "", "_GlobalFunc_SetStandDisabled");
+}
+
+//-------------------------------------------------
+
+/**
+ * If the crawling taking place is a special after taking damage
+ * 
+ * @param abX If active or not.
+ **/
+void Player_SetAfterDamageCrawl(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal", "", "_Global_SetAfterDamageCrawl");
+}
+
+//-------------------------------------------------
+
+/**
+ * If the player should move much slower when rising up from crouch.
+ * 
+ * @param abX If active or not.
+ **/
+void Player_SetSlowStandupMotion(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("MoveState_Normal", "", "_Global_SetSlowStandupMotion");
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns true if the player was damaged this update, else false.
+ * 
+ **/
+bool Player_WasDamaged()
+{
+	return cScript_GetGlobalVarBool("PlayerWasDamaged");
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the name of the current state.
+ * 
+ **/
+tString Player_GetCurrentStateName()
+{
+	return cLux_GetPlayer().GetCurrentStateName();
+}
+
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// STATE
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Sets the state of the player to normal
+ * 
+ **/
+void Player_ChangeStateToNormal()
+{
+	cLux_GetPlayer().ChangeState(ePlayerState_Normal);
+}
+
+//-------------------------------------------------
+
+/**
+ * Changes the player state so that the normal controls are used for something else.
+ * 
+ * @param asLookInputCallback Overrides look controls. If false is returned, normal controls are overridden. Syntax: bool F(const cVector2f &in avLookAmount)
+ * @param asMoveInputCallback Overrides move controls. If false is returned, normal controls are overridden. Syntax: bool F(const cVector2f &in avMoveAmount)
+ * @param asActionInputCallback Overrides action input. If false is returned, normal controls are overridden. Syntax: bool F(int alAction, bool abPressed)
+ * @param asLeanInputCallback Overrides lean input. If false is returned, normal controls are overridden. Syntax: bool F(float afAmount)
+ **/
+void Player_ChangeStateToCustomControls(const tString& in asLookInputCallback, 
+											const tString& in asMoveInputCallback,
+											const tString& in asActionInputCallback,
+											const tString& in asLeanInputCallback="")
+{
+	cScript_SetGlobalArgString(0, asLookInputCallback);
+	cScript_SetGlobalArgString(1, asMoveInputCallback);
+	cScript_SetGlobalArgString(2, asActionInputCallback);
+	cScript_SetGlobalArgString(3, asLeanInputCallback);
+	
+	cScript_RunGlobalFunc("State_CustomControls","", "_Global_Setup");
+	
+	cLux_GetPlayer().ChangeState(ePlayerState_CustomControls);
+}
+
+//-------------------------------------------------
+
+
+/////////////////////////////////////////
+// CAMERA
+/////////////////////////////////////////
+
+/**
+ * Get the player's eyeline height i.e. the height from the foot position to the camera
+ * 
+ * @return The distance between the feet and the default eyeline
+ */
+float Player_GetDefaultEyelineHeight()
+{
+	cLuxPlayer@ pPlayer = cLux_GetPlayer();
+	return pPlayer.GetCharacterBody().GetSize().y + pPlayer.GetBaseCameraPosAdd().y;
+}
+
+//-------------------------------------------------
+
+/**
+ * Turn on or off camera smoothing. When off, this stops the camera lagging slightly behind the player's movements.
+ * 
+ * @param abValue smooth values of the camera or not
+ **/
+void Player_SetCameraUseSmoothing(bool abValue)
+{
+	cLux_GetPlayer().GetCharacterBody().SetCameraUseSmoothing(abValue);
+}
+
+//-------------------------------------------------
+
+/**
+ * Rotate the player camera towards the positon of an entity/area.
+ * 
+ * @param asEntityName name of the entity/area to rotate camera towards.
+ * @param afAcc acceleration of the camera movement.
+ * @param afSpeedMul distance towards camera multiplied with this value sets the camera speed.
+ * @param afMaxSpeed maximum speed of camera movement.
+ **/
+void Player_StartLookAt(const tString &in asEntityName, float afAcc, float afSpeedMul, float afMaxSpeed)
+{
+	iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(asEntityName, eLuxEntityType_LastEnum, "");
+	cLuxPlayer@ pPlayer = cLux_GetPlayer();
+
+	if(pEntity is null) return;
+
+	cVector3f vPos = cVector3f(0);
+	
+	if(pEntity.GetBodyNum()>0)
+		vPos = pEntity.GetBody(0).GetLocalPosition();
+	else if(pEntity.GetMeshEntity() !is null)
+		vPos = pEntity.GetMeshEntity().GetBoundingVolume().GetWorldCenter();
+	else
+	{
+		Error("Entity "+asEntityName+" does not have body or mesh entity! Cannot make player look at it!");
+		return;
+	}
+	
+	pPlayer.RotateCameraTowards(afAcc, afSpeedMul, afMaxSpeed, vPos, false);
+}
+
+//-------------------------------------------------
+
+/**
+ * Stop rotating the camera towards a target specified with Player_StartLookAt()
+ * 
+ * @param afDeacc deacceleration of the camera movement. 0 means 'stop now'
+ **/
+void Player_StopLookAt(float afDeacc)
+{
+	cLuxPlayer@ pPlayer = cLux_GetPlayer();
+	pPlayer.StopCameraRotate(afDeacc);
+}
+
+//-------------------------------------------------
+
+/**
+ * Moves the position of the camera over time.
+ * 
+ * @param avPos target offset from original camera position, relative to the rotation of the player.
+ * @param afAcc acceleration of camera movement.
+ * @param afSpeed target speed of camera movement.
+ * @param afSlowDownDist distance from target where movement starts slowing down.
+ **/
+void Player_MoveHeadPos(const cVector3f &in avPos, float afAcc, float afSpeed, float afSlowDownDist)
+{
+	cLuxPlayer@ pPlayer = cLux_GetPlayer();
+	pPlayer.MoveCameraPosAdd(eCameraAddType_Script, avPos, afAcc, afSpeed, afSlowDownDist );
+}
+
+//-------------------------------------------------
+
+/**
+ * Fades the FOV Multiplier to a value
+ * 
+ * @param afX The FOV to a value, something like 0.001 - 2 are okay values.  1 = default
+ * @param afSpeed The amount of change per second
+ **/
+void Player_FadeFOVMulTo(float afX, float afSpeed)
+{
+	cLux_GetPlayer().FadeCameraFOVMulTo(afX, afSpeed);
+}
+
+//-------------------------------------------------
+
+/**
+ * Fades the Aspect Multiplier to a value. This value represent how much wider the screen than the height.
+ * 
+ * @param afX The Aspect to a value, something like 0.2 - 2 are okay values.  1 = default
+ * @param afSpeed The amount of change per second
+ **/
+void Player_FadeAspectMulTo(float afX, float afSpeed)
+{
+	cLux_GetPlayer().FadeCameraAspectMulTo(afX, afSpeed);
+}
+
+//-------------------------------------------------
+
+/**
+ * Fades the FOV value. This does NOT affect the FOV multiplier which will still be applied
+ * 
+ * @param afX The vertical FOV to a value in radians, -1 = default (the menu displays horzontal FOV which is not the same)
+ * @param afSpeed The amount of change per second
+ **/
+void Player_FadeFOVTo(float afX, float afSpeed)
+{
+	cLux_GetPlayer().FadeCameraFOVTo(afX, afSpeed);
+}
+
+//-------------------------------------------------
+
+/**
+ * Fades the FOV value to default. This does NOT affect the FOV multiplier 
+ * 
+ * @param afSpeed The amount of change per second
+ **/
+void Player_FadeFOVToDefault(float afSpeed)
+{
+	cLux_GetPlayer().FadeCameraFOVTo(-1.0f, afSpeed);
+}
+
+//-------------------------------------------------
+
+/**
+ * Fades the camera roll angle. 
+ * 
+ * @param afX This is the angle of rotation in angles. 0=normal and 180=upside down.
+ * @param afSpeedMul This is used to calculate the speed based on the distance to the goal angle. speed = dist_to_goal * afSpeedMul
+ * @param afMaxSpeed The maximum speed the camera is rotated in
+ **/
+void Player_FadeRollTo(float afX, float afSpeedMul, float afMaxSpeed)
+{
+	cLux_GetPlayer().FadeCameraRollTo(ePlayerRoll_Script, cMath_ToRad(afX), afSpeedMul, cMath_ToRad(afMaxSpeed));
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the camera roll angle. 
+ * 
+ * @param afX This is the angle of rotation in angles. 0=normal and 180=upside down.
+ **/
+void Player_SetRoll(float afX)
+{
+	cLux_GetPlayer().SetCameraRoll(ePlayerRoll_Script, cMath_ToRad(afX));
+}
+
+//-------------------------------------------------
+
+/**
+ * Teleport the player to a specific PlayerStart Area.
+ * 
+ * @param asStartPosName name of the PlayerStart Area to teleport to.
+ * @param abAlignYaw if the player yaw should be aligned with the PlayerStart Area's yaw.
+ **/
+void Player_Teleport(const tString &in asStartPosName, bool abAlignYaw = true)
+{
+	float afPlayerYaw = cLux_GetPlayer().GetCharacterBody().GetYaw();
+	
+	cLux_GetCurrentMap().PlacePlayerAtStartPos(asStartPosName);
+	
+	if (!abAlignYaw)
+	{
+		cLux_GetPlayer().GetCharacterBody().SetYaw(afPlayerYaw);
+	}
+}
+
+//-------------------------------------------------
+
+/**
+ * Teleport the player to a specific entity
+ * 
+ * @param asEntityName name of the entity to teleport to.
+ * @param abAlignYaw if the player should be rotated to match the entity's rotation
+ **/
+ 
+void Player_PlaceAtEntity(const tString& in asEntityName, bool abAlignYaw = true)
+{
+	iLuxEntity@ pTargetEntity = cLux_GetCurrentMap().GetEntityByName(asEntityName, eLuxEntityType_LastEnum, "");
+	
+	if (pTargetEntity is null)
+	{
+		Error("Could not find the target entity '"+asEntityName+"' for Player_PlaceAtEntity");
+		return;
+	}
+	
+	iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+	pCharBody.SetFeetPosition(pTargetEntity.GetPosition(), false);
+	
+	if (abAlignYaw)
+	{
+		cVector3f vForward = pTargetEntity.GetMatrix().GetForward();
+		float fYaw = -cMath_GetAngleFromPoints2D(0,cVector2f(vForward.x, vForward.z));
+		pCharBody.SetYaw(fYaw);
+	}
+}
+
+//-------------------------------------------------
+
+/**
+ * This locks the player's camera based upon the current look direction. Arguments are in degrees and local to the current look direction.
+ * 
+ **/
+void Player_EnableCameraLock(float afLocalYawMin, float afLocalYawMax, float afLocalPitchMin, float afLocalPitchMax)
+{
+	cLux_GetPlayer().EnableCameraLock(	cMath_ToRad(afLocalYawMin), 
+										cMath_ToRad(afLocalYawMax), 
+										cMath_ToRad(afLocalPitchMin), 
+										cMath_ToRad(afLocalPitchMax));
+}
+
+//-------------------------------------------------
+
+/**
+ * Disables the camera lock and makes it go back to normal
+ * 
+ **/
+void Player_DisableCameraLock()
+{
+	cLux_GetPlayer().DisableCameraLock();
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the position that the camera should be having at this moment (but might not, if it is doing something else)
+ * 
+ **/
+cVector3f Player_GetCameraPosition()
+{
+	iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+	float fMainHeight = pCharBody.GetShape(0).GetSize().y;
+		
+	return 	pCharBody.GetFeetPosition() + cVector3f(0,fMainHeight,0) +
+			cLux_GetPlayer().GetBaseCameraPosAdd() + 
+			cLux_GetPlayer().GetCameraPosAddSum();
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the yaw, pitch and roll for the current player camera
+ * 
+ **/
+cVector3f Player_GetCameraYawPitchRoll()
+{
+	iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+			
+	return 	cVector3f(cMath_ToDeg(pCharBody.GetYaw()), cMath_ToDeg(pCharBody.GetPitch()), cMath_ToDeg(pCharBody.GetRoll()));
+}
+
+
+/////////////////////////////////////////
+// PHYSICS
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Adds force to the player's body.
+ * 
+ * @param avForce force added.
+ * @param abUseLocalCoords true = force is added relative to the player's rotation - false = force is added relative to the world.
+ **/
+void Player_AddBodyForce(const cVector3f &in avForce, bool abUseLocalCoords)
+{
+	iCharacterBody@ pBody = cLux_GetPlayer().GetCharacterBody();
+
+	cVector3f vForce;
+	if(abUseLocalCoords)
+	{
+		vForce = pBody.GetRight()*avForce.x + pBody.GetUp()*avForce.y + pBody.GetForward()*avForce.z;
+	}
+	else
+	{
+		vForce = avForce;
+	}
+
+	pBody.AddForce(vForce*((1.0f/60.0f)/cEngine_GetStepSize()));
+}
+
+//-------------------------------------------------
+
+/**
+ * Adds continuous force to the player's body for a certain duration in global space
+ * Only support one of this running at one time.
+ * 
+ * @param avForce force added.
+ * @param afTime Duration of the force add
+ **/
+void Player_AddContinuosBodyForce(const cVector3f &in avForce, float afTime)
+{
+	cLux_GetCurrentMap().RemoveTimer("_Player_AddContinuosBodyForce_Update");
+	
+	cScript_SetGlobalVarVector3f("_ContinuosBodyForce", avForce);
+	
+	cLux_GetCurrentMap().AddTimer("_Player_AddContinuosBodyForce_Update", 1.0f/60.0f, "$_Player_AddContinuosBodyForce_Update");
+	cLux_GetCurrentMap().SetTimerUserVarFloat("_Player_AddContinuosBodyForce_Update", afTime);
+}
+
+void _Player_AddContinuosBodyForce_Update(const tString& in asTimer)
+{
+	// Preserve authored 60 Hz timer cadence; normalize each force impulse in the shared helper.
+	Player_AddBodyForce(cScript_GetGlobalVarVector3f("_ContinuosBodyForce"), false);
+	
+	float fTime = cLux_GetCurrentMap().GetTimerUserVarFloat(asTimer);
+	
+	if(fTime > 0)
+	{
+		fTime -= 1.0f/60.0f;
+		cLux_GetCurrentMap().SetTimerUserVarFloat(asTimer, fTime);
+		cLux_GetCurrentMap().RestartCurrentTimer();
+	}
+}
+
+//-------------------------------------------------
+
+/**
+ * Adds force to the player's body away from the specified entity.
+ * 
+ * @param asEntity entity to push away from.
+ * @param afForce magnitude of the force added.
+ * @param abOnly2D true = only have into account the x and z values
+ * @param afMaxForceSpeed
+ **/
+void Player_AddBodyForceAwayFromEntity(const tString &in asEntity, float afForce, bool abOnly2D=false, float afMaxForceSpeed=2)
+{
+	iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(asEntity);
+	if (pEntity is null)
+	{
+		Error("Could not find any entity " + asEntity + " for Player_AddBodyForceAwayFromEntity");
+		return;
+	}
+	
+	iCharacterBody@ pBody = cLux_GetPlayer().GetCharacterBody();
+	
+	cVector3f vForce = pBody.GetPosition() - pEntity.GetPosition();
+	if (abOnly2D)
+		vForce.y=0.0f;
+	vForce.Normalize();
+	vForce*=afForce;
+	
+	if(pBody.GetVelocity(cEngine_GetStepSize()).Length()<afMaxForceSpeed)
+	{
+		pBody.AddForce(vForce*((1.0f/60.0f)/cEngine_GetStepSize()));
+	}
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the player's speed.
+ * 
+ * @return float, the speed of the player's movement, measured in m/s.
+ **/
+float Player_GetSpeed()
+{
+	iCharacterBody@ pBody = cLux_GetPlayer().GetCharacterBody();
+	return pBody.GetVelocity(cEngine_GetStepSize()).Length();
+}
+
+//-----------------------------------------------------------------------
+
+/**
+ * Gets the player's velocity.
+ * 
+ * @return cVector3f, the velocity of the player.
+ **/
+cVector3f Player_GetVelocity()
+{
+	iCharacterBody@ pBody = cLux_GetPlayer().GetCharacterBody();
+	return pBody.GetVelocity(cEngine_GetStepSize());
+}
+
+//-----------------------------------------------------------------------
+
+/**
+ * Moves the player character in the direction it's facing.
+ * 
+ * @param afAcc acceleration with which to move forward.
+ **/
+void Player_MoveForward(float afAcc)
+{
+	iCharacterBody@ pBody = cLux_GetPlayer().GetCharacterBody();
+	pBody.Move(eCharDir_Forward, afAcc);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// INTERACTION
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Gets the name of the current entity in focus. Will only returna  string when player is in the normal state.
+ **/
+tString Player_GetFocusEntityName()
+{
+	if(cLux_GetPlayer().GetCurrentStateId() != ePlayerState_Normal) return "";
+	
+	cScript_RunGlobalFunc("State_Normal", "", "_Global_GetFocusEntityName");
+	return cScript_GetGlobalReturnString();
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the ID of the current entity in focus. Will return tID_Invalid when player is in the normal state or has no focus entity.
+ **/
+tID Player_GetFocusEntityID()
+{
+	if(cLux_GetPlayer().GetCurrentStateId() != ePlayerState_Normal) return tID_Invalid;
+	
+	cScript_RunGlobalFunc("State_Normal", "", "_Global_GetFocusEntityID");
+	return cScript_GetGlobalReturnID();
+}
+
+//-------------------------------------------------
+
+/** Returns false if the player is grabbing an object, reading a terminal or a piece of paper etc. etc. */
+bool Player_IsInteracting()
+{
+	return (cLux_GetPlayer().GetCurrentStateId()!=ePlayerState_Normal);
+}
+
+//-------------------------------------------------
+
+/** Turn on or off the player's ability to interact with the world.*/
+void Player_SetInteractionAllowed(bool abState)
+{
+	cScript_SetGlobalArgBool(0,abState);
+	cScript_RunGlobalFunc("State_Normal", "", "_Global_SetInteractionAllowed");
+}
+
+//-------------------------------------------------
+
+/** Is the player allowed to interact with the world?*/
+bool Player_GetInteractionAllowed()
+{
+	cScript_RunGlobalFunc("State_Normal", "", "_Global_GetInteractionAllowed");
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------
+
+/** Return true if the player is reading a note, terminal or zoom area */
+bool Player_IsReading()
+{
+	int id = cLux_GetPlayer().GetCurrentStateId();
+
+	if(id == ePlayerState_Terminal || 
+	   id == ePlayerState_HandheldTerminal || 
+	   id == ePlayerState_Read ||
+	   id == ePlayerState_ZoomArea)
+	{
+		return true;
+	}
+
+	return false;
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// GUI
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Sets whether the crosshair should be drawn or not.
+ * 
+ * @param abX true = draw crosshair - false = hide crosshair.
+ **/
+void Player_ShowCrossHairIcons(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetShowCrosshair");
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the crosshair state for the player.
+ * 
+ * @param alState state to set.
+ **/
+void Player_SetCrossHairState(eCrossHairState alState)
+{
+	cScript_SetGlobalArgInt(0, alState);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetCrosshairState");
+}
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// FLASHLIGHT
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Turns the flashlight on or off.
+ * 
+ * @param abX true = flashlight on. - false = flashlight off.
+ * @param abSuppressSound if true don't make a noise
+ **/
+void Player_SetFlashlightActive(bool abX, bool abSuppressSound = false)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_SetGlobalArgBool(1, abSuppressSound);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetFlashlightOn");
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns if the flashlight is turned on or off
+ * 
+ * @return abX, true = flashlight on. - false = flashlight off.
+ **/
+bool Player_GetFlashlightActive()
+{
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_GetFlashlightOn");
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the range of the flashlight
+ * 
+ * @return afX, Radius of flashlight.
+ **/
+float Player_GetFlashlightRange()
+{
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_GetFlashlightRange");
+	return cScript_GetGlobalReturnFloat();
+}
+
+//-------------------------------------------------
+
+/**
+ * Set the flashlight fade out and ease
+ * 
+ * @param afSpeed fade speed
+ * @param aEasing easing method to use
+ **/
+void Player_SetFlashlightFadeOut(float afSpeed, eEasing aEasing = eEasing_Linear)
+{
+	cScript_SetGlobalArgInt(0, aEasing);
+	cScript_SetGlobalArgFloat(1, afSpeed);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetFlashlightFadeOut");
+}
+
+//-------------------------------------------------
+
+/**
+ * Set the flashlight fade in and ease
+ * 
+ * @param afSpeed fade speed
+ * @param aEasing easing method to use
+ **/
+void Player_SetFlashlightFadeIn(float afSpeed, eEasing aEasing = eEasing_Linear)
+{
+	cScript_SetGlobalArgInt(0, aEasing);
+	cScript_SetGlobalArgFloat(1, afSpeed);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetFlashlightFadeIn");
+}
+
+//-------------------------------------------------
+
+/**
+ * Enables or disables toggling flashlight on/off
+ * 
+ * @param abX true = flashlight can't be turned on or off. - false = flashlight can be turned on or off.
+ **/
+void Player_SetFlashlightDisabled(bool abX)
+{
+	cScript_SetGlobalArgBool(0, abX);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetFlashlightDisabled");
+}
+
+//-------------------------------------------------
+	
+/**
+ * Set a callback for when the flashlight is toggled on or off.
+ * 
+ * @param asCallback name of function callback.
+ * 
+ * @callback syntax for callback function, FunctionName(bool abLit).
+ **/
+void Player_SetFlashlightOnOffCallback(const tString &in asCallback)
+{
+	cScript_SetGlobalArgString(0, asCallback);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetFlashlightOnOffCallback");
+}
+
+//-------------------------------------------------
+	
+/**
+ * Set how much the player flashlight should affect env particles
+ * 
+ * @param afMul how bright the flashlight should make the env particles
+ **/
+void Player_SetFlashlightEnvParticleMul(float afMul)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetFlashLightEnvParticleMul");
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// AMBIENT LIGHT
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+void Player_SetAmbientLight(float afRadius, float afBrightness, float afFadeTime)
+{
+	if(afFadeTime<=0)
+	{
+		cScript_SetGlobalArgFloat(0, afRadius);
+		cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetAmbientLightRadius");
+		
+		cScript_SetGlobalArgFloat(0, afBrightness);
+		cScript_RunGlobalFunc("LuxPlayer", "", "_Global_SetAmbientLightBrightness");
+	}
+	else
+	{
+		cScript_SetGlobalArgFloat(0, afRadius);
+		cScript_SetGlobalArgFloat(1, afFadeTime);
+		cScript_RunGlobalFunc("LuxPlayer", "", "_Global_FadeAmbientLightRadius");
+		
+		cScript_SetGlobalArgFloat(0, afBrightness);
+		cScript_SetGlobalArgFloat(1, afFadeTime);
+		cScript_RunGlobalFunc("LuxPlayer", "", "_Global_FadeAmbientLightBrightness");
+	}	
+}
+
+//-------------------------------------------------
+
+/**
+ * Turns off the ambient light
+ * 
+ *  @param abFade if the light should fade
+ * 
+ **/
+void Player_SetAmbientLight_None(bool abFade=false)
+{
+	Player_SetAmbientLight(5, 0, abFade ? 5 : 0);
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets up the ambient light for indoors usage.
+ * 
+ *  @param abFade if the light should fade
+ * 
+ **/
+void Player_SetAmbientLight_Indoors(bool abFade=false)
+{
+	Player_SetAmbientLight(3, 0.1, abFade ? 5 : 0);
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets up the ambient light for outdoors usage.
+ * 
+ *  @param abFade if the light should fade
+ * 
+ **/
+void Player_SetAmbientLight_Outdoors(bool abFade=false)
+{
+	Player_SetAmbientLight(7, 0.4, abFade ? 5 : 0);
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// INTERACTIVE CAMERA ANIMATION
+/////////////////////////////////////////
+
+//-------------------------------------------------
+		
+/**
+ * Initializes and starts the interactive camera animation state using all nodes in the specified animation.
+ * 
+ * @param asAnimationName animation name, the first part of the name of all animation node areas that should be included in the animation.
+ * @param asInteractCallback name of the interact callback, this method is called whenever player interacts with objects while being in camera state. Syntax: void FuncName(const tString &in asEntity)
+ * @param abExitOnLastNode whether the state should automatically end when the animation has hit the final node.
+ * 
+ **/
+void CameraAnimation_Begin(const tString &in asAnimationName, const tString &in asInteractCallback, bool abExitOnLastNode)
+{
+	cScript_SetGlobalArgString(0, asAnimationName);
+	cScript_SetGlobalArgBool(1, abExitOnLastNode);
+	cScript_SetGlobalArgString(2, asInteractCallback);
+	cScript_RunGlobalFunc("State_InteractiveCameraAnimation", "cScrPlayerState_InteractiveCameraAnimation", "_Global_Setup");
+		
+	cLux_GetPlayer().ChangeState(ePlayerState_InteractiveCameraAnimation);
+}
+
+//-------------------------------------------------
+		
+/**
+ * Stops the camera animation. Has the same effect as Player_ChangeStateToNormal, but only if the camera animation state is currently active.
+ * 
+ **/
+void CameraAnimation_End()
+{
+	if (cLux_GetPlayer().GetCurrentStateId() == ePlayerState_InteractiveCameraAnimation)
+	Player_ChangeStateToNormal();
+}
+
+//-------------------------------------------------
+
+/**
+ * This attacheds a single entity with the basic transform of the camera (that is player movements not included).
+ * @param asEntity Name of the entity to update (if you need to have several entities follow the camera, just attach these to the entity you set here)
+ * @param abAlignYaw If the entity should be rotated along the Y-axis 
+ * @param abAlignPitch If the entity should be rotated along the X-axis
+ * @param abAlignRoll If the entity should be rotated along the Z-axis
+ **/
+void CameraAnimation_SetAttachedEntity(const tString&in asEntity, bool abAlignYaw, bool abAlignPitch, bool abAlignRoll)
+{
+	////////////////////////////
+	// Error handling
+	iLuxEntity@ pEntity = cLux_GetCurrentMap().GetEntityByName(asEntity);
+	if(pEntity is null)
+	{
+		Error("Could not find entity with name '"+asEntity+"' for CameraAnimation_SetAttachedEntity.");
+		return;
+	}
+	
+	cScript_SetGlobalArgID(0, pEntity.GetID());
+	cScript_SetGlobalArgBool(1, abAlignYaw);
+	cScript_SetGlobalArgBool(2, abAlignPitch);
+	cScript_SetGlobalArgBool(3, abAlignRoll);
+	
+	cScript_RunGlobalFunc("State_InteractiveCameraAnimation", "cScrPlayerState_InteractiveCameraAnimation", "_Global_SetEntityAttachment");
+}
+
+//-------------------------------------------------
+
+void CameraAnimation_RemoveAttachedEntity()
+{
+	cScript_RunGlobalFunc("State_InteractiveCameraAnimation", "cScrPlayerState_InteractiveCameraAnimation", "_Global_RemoveEntityAttachment");
+}
+
+//-------------------------------------------------
+
+/**
+ * @return Current player-applied pitch compared to the viewpoint of the current node.
+ */
+float CameraAnimation_GetCurrentPitch()
+{
+	cScript_RunGlobalFunc("State_InteractiveCameraAnimation", "cScrPlayerState_InteractiveCameraAnimation", "_Global_GetCurrentPitch");
+	return cScript_GetGlobalReturnFloat();
+}
+
+//-------------------------------------------------
+
+/**
+ * @return Current player-applied yaw compared to the viewpoint of the current node.
+ */
+float CameraAnimation_GetCurrentYaw()
+{
+	cScript_RunGlobalFunc("State_InteractiveCameraAnimation", "cScrPlayerState_InteractiveCameraAnimation", "_Global_GetCurrentYaw");
+	return cScript_GetGlobalReturnFloat();
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// TERMINAL
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+void Player_ExitTerminal()
+{
+	if (cLux_GetPlayer().GetCurrentStateId() == ePlayerState_Terminal)
+		Player_ChangeStateToNormal();
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// TOOL
+/////////////////////////////////////////
+
+
+//-------------------------------------------------
+
+/**
+ * Returns the name of the tool entity currently equipped. 
+ * 
+ * @return tString, the name of the tool entity. An empty string if the player isn't carrying a tool or if the tool doesn't have an entity associated with it.
+ **/
+tString Player_GetCurrentToolEntityName()
+{
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_GetCurrentEntityName");
+	return cScript_GetGlobalReturnString();
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns the name of the hud entity currently equipped. 
+ * 
+ * @return tString, the name of the hud entity. An empty string if the player doesn't have a hud entity.
+ **/
+tString Player_GetCurrentHudEntityName()
+{
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_GetCurrentHudEntityName");
+	return cScript_GetGlobalReturnString();
+}
+
+//-------------------------------------------------
+
+/**
+ * Checks if the specified tool is in the player's inventory.
+ * 
+ * @param asTool name of tool entity.
+ * @return bool, true if the tool is in the player's inventory.
+ **/
+bool Player_ToolIsInInventory(const tString &in asTool)
+{
+	cScript_SetGlobalArgString(0, asTool);
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_GetToolIsInInventory");
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------
+
+/**
+ * Tries to equip a specific tool in the player's inventory. Returns false if the tool isn't in the inventory.
+ * 
+ * @param asTool the name of the tool entity to equip.
+ * @param asLookEntities names of the entities (comma separated) that trigger the equipping of the tool when inside the camera view.
+ **/
+bool Player_EquipTool(const tString &in asTool, const tString &in asLookEntities="")
+{
+	cScript_SetGlobalArgString(0, asTool);
+	cScript_SetGlobalArgString(1, asLookEntities);
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_EquipTool");
+	
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------
+
+/**
+ * Tries to equip the tool that was last unequipped. Useful when unequipping something temporarily. 
+ * Returns false if the tool is no longer in the inventory or no tool has been unequipped.
+ * 
+ * @param afTime the time it should take to raise tool. Defaults to 0.5 seconds.
+ **/
+bool Player_ReEquipTool(float afTime = 0.5f)
+{
+	cScript_SetGlobalArgFloat(0, afTime);
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_ReEquipTool");
+	
+	return cScript_GetGlobalReturnBool();
+}
+
+//-------------------------------------------------
+
+/**
+ * Unequips the currently carried tool.
+ * 
+ * @param abRemoveFromInventory if tool should be removed from inventory when hidden. Defaults to false.
+ **/
+void Player_UnequipTool(bool abRemoveFromInventory = false)
+{
+	cScript_SetGlobalArgBool(0, abRemoveFromInventory);
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_UnequipCurrentTool");
+}
+
+//-------------------------------------------------
+
+/**
+ * Removes the specified tool from the player's inventory so it can no longer be equipped.
+ * 
+ * @param asTool the name of the tool entity to remove.
+ **/
+void Player_RemoveTool(const tString &in asTool)
+{
+	cScript_SetGlobalArgString(0, asTool);
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_RemoveTool");
+}
+
+//-------------------------------------------------
+
+/**
+ * Clears the player's inventory.
+ * 
+ **/
+void Player_RemoveAllTools()
+{
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "RemoveAllTools");
+}
+
+
+//-------------------------------------------------
+
+/**
+ * This only works if the player is drawing or is holding an item. 
+ * If you want the hide animation to play after this animation is done, call Player_UnequipTool after calling this and amkes sure abRemoveToolWhenOver is false.
+ * 
+ * @param asAnim the name of the animaiton to play
+ * @param abRemoveToolWhenOver If the tool should be removed when this animaiton has finished playing.
+ * @param asAnimOverCallback played when the animation is over. syntax: void f(const tString& in asAnim)
+ **/
+void Player_PlayCustomToolAnimation(const tString& in asAnim, bool abRemoveToolWhenOver, const tString&in asAnimOverCallback)
+{
+	cScript_SetGlobalArgString(0, asAnim);
+	cScript_SetGlobalArgBool(1, abRemoveToolWhenOver);
+	cScript_SetGlobalArgString(2, asAnimOverCallback);
+	
+	cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_PlayCustomAnimation");
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// PICKUP
+/////////////////////////////////////////
+
+//-------------------------------------------------
+/**
+ * Initializes and starts a "pickup" animation for a the prop passed as argument.
+ * 
+ * @param asPropName name of the prop that will be animated.
+ * @param asCallback name of the function that will be called when animation is done. Syntax "void MyFunc(const tString &in asEntity)".
+ * @param afTimeToPickup the total time of the animation.
+ **/
+
+void Player_PickupProp(const tString &in asPropName, const tString &in asCallback, const float afTimeToPickup)
+{
+	cScript_SetGlobalArgString(0, asPropName);
+	cScript_SetGlobalArgString(1, asCallback);
+	cScript_SetGlobalArgFloat(3, afTimeToPickup);
+	
+	cScript_RunGlobalFunc("PlayerPickupHandler", "", "_Global_PickupProp");
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// HEALTH
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Sets the player's health. If at 0 or below, then Player becomes dead.
+ **/
+void Player_SetHealth(float afX)
+{
+	cLux_GetPlayer().SetHealth(afX);
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the health of the player
+ **/
+float Player_GetHealth()
+{
+	return cLux_GetPlayer().GetHealth();
+}
+
+//-------------------------------------------------
+
+/**
+ * Adds a value to the player's health. If at 0 or below, then Player becomes dead.
+ **/
+void Player_AddHealth(float afX, float afMinValue=-1)
+{
+	cLux_GetPlayer().AddHealth(afX, afMinValue);
+}
+
+//-------------------------------------------------
+
+/**
+ * Sets the player's maximum health.
+ **/
+void Player_SetMaxHealth(float afX)
+{
+	cLux_GetPlayer().SetMaxHealth(afX);
+}
+
+//-------------------------------------------------
+
+/**
+ * Gets the max health of the player
+ **/
+float Player_GetMaxHealth()
+{
+	return cLux_GetPlayer().GetMaxHealth();
+}
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// DAMAGE
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+/**
+ * Gives damage to the player which applies a damage effect
+ * 
+ * @param afAmount how much damage to do to the player
+ * @param afMinHealth the minimum health the damage can make
+ * @param aType the type of damage, which damage effect should be applied to the screen
+ * @param asSource the name of the entity doing the damage
+ **/
+void Player_GiveDamage(float afAmount, float afMinHealth, eDamageType aType, const tString&in asSource)
+{
+	cLux_GetPlayer().GiveDamage(afAmount, 0, aType, afMinHealth, asSource);
+}
+
+//-------------------------------------------------
+
+/**
+ * Returns true if the player is dead.
+ * 
+ * @return bool, true if player is dead.
+ **/
+bool Player_IsDead()
+{
+	return cLux_GetPlayer().IsDead();
+}
+
+//-------------------------------------------------
+// View Restrictions
+//-------------------------------------------------
+
+/**
+ * Restrict the camera's pitch (vs. world axes) - use 0,0 to turn off
+ **/
+void Player_SetPitchLimits(float afMin, float afMax)
+{
+	cLux_GetPlayer().GetCamera().SetPitchLimits(cMath_ToRad(afMin),cMath_ToRad(afMax));
+}
+
+//-------------------------------------------------
+
+/**
+ * Restrict the camera's yaw (vs. world axes) - use 0,0 to turn off
+ **/
+void Player_SetYawLimits(float afMin, float afMax)
+{
+	cLux_GetPlayer().GetCamera().SetYawLimits(cMath_ToRad(afMin),cMath_ToRad(afMax));
+}
+
+//-------------------------------------------------
+
+/**
+ * Return the camera's pitch limits (vs. world axes) as a vector - x=min, y=max
+ **/
+cVector2f Player_GetPitchLimits()
+{
+	float fMin = cLux_GetPlayer().GetCamera().GetPitchMinLimit();
+	float fMax = cLux_GetPlayer().GetCamera().GetPitchMaxLimit();
+	return cVector2f(cMath_ToDeg(fMin),cMath_ToDeg(fMax));
+}
+
+//-------------------------------------------------
+
+/**
+ * Return the camera's yaw limits (vs. world axes) as a vector - x=min, y=max
+ **/
+cVector2f Player_GetYawLimits()
+{
+	float fMin = cLux_GetPlayer().GetCamera().GetYawMinLimit();
+	float fMax = cLux_GetPlayer().GetCamera().GetYawMaxLimit();
+	return cVector2f(cMath_ToDeg(fMin),cMath_ToDeg(fMax));
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// LADDER
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+void Player_SetLadderMoveMul(float afMul=1.0)
+{
+	cScript_SetGlobalArgFloat(0, afMul);
+	cScript_RunGlobalFunc("State_Ladder", "cScrPlayerState_Ladder", "_Global_SetMoveMul");
+}
+
+//-------------------------------------------------
+
+/////////////////////////////////////////
+// DATAMINING
+/////////////////////////////////////////
+
+//-------------------------------------------------
+
+void Player_StopDatamining()
+{
+	/////////////////////
+	// Call Stop Datamining
+	cScript_RunGlobalFunc("DatamineHandler", "cScrDatamineHandler", "_Global_StopDatamining");
+}
+//-------------------------------------------------

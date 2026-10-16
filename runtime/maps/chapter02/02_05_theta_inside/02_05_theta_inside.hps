@@ -1976,7 +1976,7 @@ class cScrMap : iScrMap
             // Confirm the real carrier before removing the socket presentation.
             Entity_SetVarString(sChip,"Slot","");
             Entity_SetVarString(sChip,"VRReturnSlot",asEntity);
-            Entity_PlaceAtEntity(sChip,asEntity+"_Chip");
+            Entity_PlaceAtEntity(sChip,asEntity+"_Chip",cVector3f_Zero,true);
             cScript_RunGlobalFunc("VROMNITHETA",sChip,"R");
             cScript_SetGlobalReturnBool(false);
             cScript_RunGlobalFunc(sChip,"cScrPropTool","_Global_VRReturnThetaCarrier");

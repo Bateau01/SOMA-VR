@@ -405,6 +405,7 @@ class cScrPropTear : iScrProp, iScrProp_Interface
 	
 	bool SetupTearInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
 	{
+		cScript_RunGlobalFunc("VRMECHPREP","","BEGIN");
 		mTearPid.Reset();
 		
 		///////////////////////////////

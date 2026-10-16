@@ -75,7 +75,7 @@ static void s26x_phone_grip(i32 valid,i32 occupied,i32 active,float squeeze){
 }
 static void s26x_phone_step(float dt){
     if(!g_s26xPhoneActive)return;
-    if(g_h576bfMapTransitionActive||g_h14PhysicsSteps-g_s26xPhoneLease>60u){s26x_phone_reset();return;}
+    if(g_h576bfMapTransitionActive||g_h14PhysicsSteps-g_s26xPhoneLease>s26gd_steps(60u)){s26x_phone_reset();return;}
     if(!s26x_phone_gate()){
         g_s26xPhoneGripArmed=0;g_s26xPhoneRequest=0;g_s26xPhoneTap=0;g_s26xPhoneTapArmed[0]=g_s26xPhoneTapArmed[1]=0;return;
     }

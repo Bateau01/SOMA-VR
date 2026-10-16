@@ -1,0 +1,174 @@
+#include "effect/Effects.hps"
+
+#include "helpers/helper_effects.hps"
+/////////////////////////////////////////
+// SETTINGS - VIDEO DISTORTION
+/////////////////////////////////////////
+
+//------------------------------------------------------------
+
+tString gsEffectSound = "Player/UI/time_glitch"; //The sound that plays as the glitch happens, 
+
+//------------------------------------------------------------
+
+//------------------------------------------------------------
+
+class cScrEffect_TimeGlitch : iScrEffect, iScrEffect_Interface, iScrEffect_TimeGlitch
+{
+
+	//----------------------------------
+	
+	void Init()
+	{
+	}
+	
+	//----------------------------------
+	
+	void OnDestroy()
+	{
+	}
+	
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PUBLIC METHODS
+	/////////////////////////////////////////
+	
+	//---------------------------------
+	
+	float mfSoundFadeOutSpeed;
+	
+	//---------------------------------
+	
+	void Start(float afTimeAdvancement, float afPlayFastSoundTime, float afShakeAmount, bool abPlayEffectSound, float afSoundEffectVolume)
+	{
+		if(mBaseObj.IsActive()) return;
+		
+		//////////////////////////////////////
+		// Get all critters in view
+		/*array<iLuxEntity@> vCrittersInMap;
+		array<cLuxCritter@> vCritters;
+		cLux_GetCurrentMap().GetEntityArray("*", eLuxEntityType_Critter, "", vCrittersInMap);
+		cCamera@ pCam = cLux_GetPlayer().GetCamera();
+		for(int i=0; i<vCrittersInMap.size(); ++i)
+		{
+			iLuxEntity @pEntity = vCrittersInMap[i];
+			cLuxCritter @pCritter = cLux_ToCritter(pEntity);
+			
+			if(pCritter !is null && pCritter.GetEntityIsInPlayerFOV() && pCritter.GetDistanceToPlayer()<40)
+				vCritters.push_back(pCritter);
+		}*/
+			
+					
+		//////////////////////////////////////
+		// Advance time
+		float fCount = cMath_Min(afTimeAdvancement, 0.5f);
+        // S26GH: explicit world advancement must use the active simulation
+        // cadence too, so native damping and VR step windows remain consistent.
+        // The normal 60-Hz path keeps its original float and loop behaviour.
+        float fAdvanceStep = cEngine_GetStepSize()<0.012f ? 1.0f/120.0f : 1.0f/60.0f;
+		while(fCount>0)
+		{
+			cLux_GetCurrentMap().GetWorld().Update(fAdvanceStep);
+			cLux_GetCurrentMap().GetPhysicsWorld().PostUpdate(fAdvanceStep);
+			
+			/*for(int i=0; i<vCritters.size(); ++i)
+			{
+				cLuxCritter @pCritter = vCritters[i];
+				pCritter.Update(1.0f/60.0f);
+				pCritter.PostUpdate(1.0f/60.0f);
+				pCritter.VariableUpdate(1.0f/60.0f);
+			}*/
+			
+			fCount-= fAdvanceStep;
+		}
+		
+		//////////////////////////////////////
+		// Play sounds
+		float fSoundTime = cMath_Max(afPlayFastSoundTime, 0.3f);
+		float fSpeed = cMath_Min(afTimeAdvancement / fSoundTime, 10.0f);
+		if(fSpeed > 1)
+		{
+			cSound_FadeGlobalSpeed(fSpeed, (fSpeed-1)*20, eSoundEntryType_WorldAll, eLuxGlobalFreqType_Effect, false);
+			mfSoundFadeOutSpeed = (fSpeed-1)*10;
+			mfEndSoundFreqCount = fSoundTime;
+			mBaseObj.SetActive(true);
+		}
+		
+		//////////////////////////////////////
+		// Shake
+		Effect_Shake_Start(0.6*afShakeAmount, fSoundTime, 0.05f, 0.1f, cVector3f(1,1,0));
+		
+		//////////////////////////////////////
+		// Sound Effect
+		if(abPlayEffectSound)
+			cLux_PlayGuiSoundData(gsEffectSound, eSoundEntryType_GuiWorld, afSoundEffectVolume, false);
+
+		///////////////////
+		// Reset the logic timer (so the game doesnt lag after timeshift)
+		cEngine_ResetLogicTimer();
+	}
+		
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL CALLBACKS
+	/////////////////////////////////////////
+	
+	
+	//----------------------------------
+	
+	void OnStart()
+	{
+	}
+
+	//----------------------------------
+	
+	void OnMapEnter(cLuxMap @apMap)
+	{
+	}
+	
+	//----------------------------------
+	
+	void OnMapLeave(cLuxMap @apMap)
+	{
+	}
+
+	//----------------------------------
+	
+	void Reset()
+	{
+		mfEndSoundFreqCount =0;
+	}
+
+	//----------------------------------
+	
+	void Update(float afTimeStep)
+	{
+		if(mfEndSoundFreqCount>0)
+		{
+			mfEndSoundFreqCount -= afTimeStep;
+			if(mfEndSoundFreqCount<=0)
+			{
+				mBaseObj.SetActive(false);
+				cSound_FadeGlobalSpeed(1, mfSoundFadeOutSpeed, eSoundEntryType_WorldAll, eLuxGlobalFreqType_Effect, false);
+			}
+		}
+	}
+
+	void OnDraw(float afTimeStep)
+	{
+	}
+
+	//----------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//----------------------------------
+	
+	float mfEndSoundFreqCount=0;
+		
+	//----------------------------------
+}

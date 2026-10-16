@@ -1,0 +1,207 @@
+[
+  {
+    "before": "#define H576AM_CORTEX_EXIT_GRACE_STEPS 12u",
+    "after": "#define H576AM_CORTEX_EXIT_GRACE_STEPS (s26gd_steps(12u))",
+    "count": 1
+  },
+  {
+    "before": "#define H5755CJ_GRAB_COMMIT_TIMEOUT_STEPS 12u",
+    "after": "#define H5755CJ_GRAB_COMMIT_TIMEOUT_STEPS (s26gd_steps(12u))",
+    "count": 1
+  },
+  {
+    "before": "#define H545_GESTURE_STABLE_STEPS 6u",
+    "after": "#define H545_GESTURE_STABLE_STEPS (s26gd_steps(6u))",
+    "count": 1
+  },
+  {
+    "before": "#define H545_CONTACT_CLEAR_STEPS 8u",
+    "after": "#define H545_CONTACT_CLEAR_STEPS (s26gd_steps(8u))",
+    "count": 1
+  },
+  {
+    "before": "#define H549_GRAB_GRACE_STEPS 12u",
+    "after": "#define H549_GRAB_GRACE_STEPS (s26gd_steps(12u))",
+    "count": 1
+  },
+  {
+    "before": "#define H549_HELD_BOOTSTRAP_STEPS 12u",
+    "after": "#define H549_HELD_BOOTSTRAP_STEPS (s26gd_steps(12u))",
+    "count": 1
+  },
+  {
+    "before": "#define H550_RELEASE_PAIR_IGNORE_STEPS 10u",
+    "after": "#define H550_RELEASE_PAIR_IGNORE_STEPS (s26gd_steps(10u))",
+    "count": 1
+  },
+  {
+    "before": "#define H5755HA_EDGE_NATIVE_WINDOW_STEPS 12u",
+    "after": "#define H5755HA_EDGE_NATIVE_WINDOW_STEPS (s26gd_steps(12u))",
+    "count": 1
+  },
+  {
+    "before": "#define H552_PRECONTACT_MEMORY_STEPS 3u",
+    "after": "#define H552_PRECONTACT_MEMORY_STEPS (s26gd_steps(3u))",
+    "count": 1
+  },
+  {
+    "before": "#define H552_AUTHORED_PAIR_GRACE_STEPS 4u",
+    "after": "#define H552_AUTHORED_PAIR_GRACE_STEPS (s26gd_steps(4u))",
+    "count": 1
+  },
+  {
+    "before": "#define H553_ROCKER_PAIR_PASS_STEPS 3u",
+    "after": "#define H553_ROCKER_PAIR_PASS_STEPS (s26gd_steps(3u))",
+    "count": 1
+  },
+  {
+    "before": "#define H573_CAVITY_GRACE_STEPS 8u",
+    "after": "#define H573_CAVITY_GRACE_STEPS (s26gd_steps(8u))",
+    "count": 1
+  },
+  {
+    "before": "#define H5755C_ROCKER_KEEP_STEPS 3u",
+    "after": "#define H5755C_ROCKER_KEEP_STEPS (s26gd_steps(3u))",
+    "count": 1
+  },
+  {
+    "before": "#define H543_SEG_CONTACT_HOLD_TICKS 8",
+    "after": "#define H543_SEG_CONTACT_HOLD_TICKS (s26gd_steps(8))",
+    "count": 1
+  },
+  {
+    "before": "#define H525_CURL_STABLE_STEPS 4u",
+    "after": "#define H525_CURL_STABLE_STEPS (s26gd_steps(4u))",
+    "count": 1
+  },
+  {
+    "before": "#define H525_CURL_FORCE_STEPS 90u",
+    "after": "#define H525_CURL_FORCE_STEPS (s26gd_steps(90u))",
+    "count": 1
+  },
+  {
+    "before": "#define H520_RELEASE_SKIP_STEPS 4u",
+    "after": "#define H520_RELEASE_SKIP_STEPS (s26gd_steps(4u))",
+    "count": 1
+  },
+  {
+    "before": "#define H576AN_BODY_SAMPLE_FRESH_STEPS 12u",
+    "after": "#define H576AN_BODY_SAMPLE_FRESH_STEPS (s26gd_steps(12u))",
+    "count": 1
+  },
+  {
+    "before": "#define H5755B_ROCKER_PORTAL_GUARD_STEPS 3u",
+    "after": "#define H5755B_ROCKER_PORTAL_GUARD_STEPS (s26gd_steps(3u))",
+    "count": 1
+  },
+  {
+    "before": "#define H5755GY_REGRIP_MEMORY_STEPS 12u",
+    "after": "#define H5755GY_REGRIP_MEMORY_STEPS (s26gd_steps(12u))",
+    "count": 1
+  },
+  {
+    "before": "g_h14PhysicsSteps+4u",
+    "after": "g_h14PhysicsSteps+s26gd_steps(4u)",
+    "count": 1
+  },
+  {
+    "before": "g_h14PhysicsSteps+8u",
+    "after": "g_h14PhysicsSteps+s26gd_steps(8u)",
+    "count": 2
+  },
+  {
+    "before": "g_h14PhysicsSteps+18u",
+    "after": "g_h14PhysicsSteps+s26gd_steps(18u)",
+    "count": 4
+  },
+  {
+    "before": "g_h14PhysicsSteps+30u",
+    "after": "g_h14PhysicsSteps+s26gd_steps(30u)",
+    "count": 2
+  },
+  {
+    "before": "g_h14PhysicsSteps+60u",
+    "after": "g_h14PhysicsSteps+s26gd_steps(60u)",
+    "count": 1
+  },
+  {
+    "before": "g_h14PhysicsSteps+90u",
+    "after": "g_h14PhysicsSteps+s26gd_steps(90u)",
+    "count": 1
+  },
+  {
+    "before": "g_h14PhysicsSteps+120u",
+    "after": "g_h14PhysicsSteps+s26gd_steps(120u)",
+    "count": 1
+  },
+  {
+    "before": "(g_h14PhysicsSteps-g_s26daHealStep[hand])>=60u",
+    "after": "(g_h14PhysicsSteps-g_s26daHealStep[hand])>=s26gd_steps(60u)",
+    "count": 1
+  },
+  {
+    "before": "if(age>12u){g_h576avThetaTimeouts++",
+    "after": "if(age>s26gd_steps(12u)){g_h576avThetaTimeouts++",
+    "count": 1
+  },
+  {
+    "before": "g_h14PhysicsSteps%30u",
+    "after": "g_h14PhysicsSteps%s26gd_steps(30u)",
+    "count": 1
+  },
+  {
+    "before": "(g_h14PhysicsSteps-g_s26HealPassStep[hand])<=12u",
+    "after": "(g_h14PhysicsSteps-g_s26HealPassStep[hand])<=s26gd_steps(12u)",
+    "count": 1
+  },
+  {
+    "before": "(g_h14PhysicsSteps-g_h5755dbSelfFilterLastStep)>=600u",
+    "after": "(g_h14PhysicsSteps-g_h5755dbSelfFilterLastStep)>=s26gd_steps(600u)",
+    "count": 1
+  },
+  {
+    "before": "(g_h14PhysicsSteps-g_h576adInteractReadyStep[hand])>10u",
+    "after": "(g_h14PhysicsSteps-g_h576adInteractReadyStep[hand])>s26gd_steps(10u)",
+    "count": 2
+  },
+  {
+    "before": "g_h576bfMapStartStep+600u",
+    "after": "g_h576bfMapStartStep+s26gd_steps(600u)",
+    "count": 1
+  },
+  {
+    "before": "((g_h14PhysicsSteps+(u32)h*4u)&7u)==0u",
+    "after": "((g_h14PhysicsSteps+(u32)h*s26gd_steps(4u))%s26gd_steps(8u))==0u",
+    "count": 1
+  },
+  {
+    "before": "const float alphaV=bootstrap?0.75f:0.45f,alphaW=useXrOmega?0.82f:0.45f;",
+    "after": "const float alphaV=s26gd_alpha(bootstrap?0.75f:0.45f),alphaW=s26gd_alpha(useXrOmega?0.82f:0.45f);",
+    "count": 1
+  },
+  {
+    "before": "if(dp<0.0007f)",
+    "after": "if(dp<s26gd_tick_amount(0.0007f))",
+    "count": 1
+  },
+  {
+    "before": "if(dr<0.0035f)",
+    "after": "if(dr<s26gd_tick_amount(0.0035f))",
+    "count": 1
+  },
+  {
+    "before": "if(hand<0||hand>1||!v||!w)return;u32 k=g_h31ThrowHead[hand]%H31_THROW_HISTORY;",
+    "after": "if(hand<0||hand>1||!v||!w)return;\n    if(g_s26gdRateMultiplier==2u&&(g_h14PhysicsSteps&1u)&&g_h31ThrowCount[hand])return;\n    u32 k=g_h31ThrowHead[hand]%H31_THROW_HISTORY;",
+    "count": 1
+  },
+  {
+    "file": "phone_x.inc",
+    "before": "g_h14PhysicsSteps-g_s26xPhoneLease>60u",
+    "after": "g_h14PhysicsSteps-g_s26xPhoneLease>s26gd_steps(60u)"
+  },
+  {
+    "file": "multibody_t.inc",
+    "before": "(g_h14PhysicsSteps-last[slot])<6u",
+    "after": "(g_h14PhysicsSteps-last[slot])<s26gd_steps(6u)"
+  }
+]

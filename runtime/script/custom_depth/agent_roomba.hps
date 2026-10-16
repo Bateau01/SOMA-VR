@@ -1,0 +1,421 @@
+#include "interfaces/Agent_Interface.hps"
+#include "custom_depth/helper_custom_depth.hps"
+
+//-------------------------------------------------------
+
+enum eRoombaLoopSound
+{
+	eRoombaLoopSound_None = -1,
+	eRoombaLoopSound_Idle,
+	eRoombaLoopSound_Move
+}
+
+//-------------------------------------------------------
+//{SOUNDS
+const tString gsMoveLoopSound = "NPC_Kate/katebot_engine/katebot_engine";
+const tString gsIdleLoopSound = "";
+const tString gsMoveLoopStartSound = "NPC_Kate/katebot_engine/katebot_engine_start";
+const tString gsMoveLoopStopSound = "NPC_Kate/katebot_engine/katebot_engine_stop";
+//}END SOUNDS
+
+const float gfMoveLoopSoundMinSpeed =0.2;
+
+class cScrRoomba:  iScrAgent, iScrAgent_Interface
+{
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+
+	//------------------------------------------------------------
+
+	void Init() 
+	{
+		mBaseObj.SetUpdatePlayerDetection(true);
+	}
+
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+
+	//------------------------------------------------------------
+
+	void SetupCharBody() 
+	{
+		iCharacterBody@ pCharBody = mBaseObj.GetCharBody();
+
+		pCharBody.SetGravityActive(true);
+		pCharBody.SetMass(10);
+
+		pCharBody.SetAccurateClimbing(false);
+		pCharBody.SetMaxNoSlideSlopeAngle(cMath_ToRad(30) );
+		pCharBody.SetMaxPushMass(16);
+		pCharBody.SetMaxPushForce(300);
+		pCharBody.SetPushImpulse(100);
+		pCharBody.SetPushIn2D(true);
+		pCharBody.SetCharacterMaxPushMass(10);
+		pCharBody.SetCharacterPushForce(100);
+		pCharBody.SetMaxStepSize(0.0f);
+		pCharBody.SetMaxStepSizeInAir(0.0f);
+		pCharBody.SetStepClimbSpeed(0.5f);
+
+		pCharBody.SetEntityPitchAmount(0.3f);
+
+		pCharBody.SetMaxPositiveMoveSpeed(eCharDir_Forward,2);
+		pCharBody.SetMoveAcc(eCharDir_Forward,1);
+		pCharBody.SetMoveDeacc(eCharDir_Forward,1);
+		pCharBody.SetMoveOppositeDirAccMul(eCharDir_Forward,1);
+		pCharBody.SetDeaccelerateMoveSpeedInAir(true);
+	}
+
+	//------------------------------------------------------------
+
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)	
+	{
+		/////////////////////////////////////////
+		// Mover
+		@mpMover = cLux_CreateEntityComponent_CharMover(mBaseObj, mBaseObj.GetCharBody());
+
+		mpMover.LoadFromVariables(apVars);
+
+		mpMover.SetMaxForwardSpeed(2);
+		mpMover.SetMaxBackwardSpeed(1);
+
+		mpMover.SetTurnMinBreakAngle(cMath_ToRad(40) );
+		mpMover.SetTurnBreakMul(1);
+		mpMover.SetTurnSpeedMul(2);
+		mpMover.SetTurnMaxSpeed(2);
+
+		mpMover.SetUse3DMovement(false);
+		mpMover.SetBankingActive(false);
+		mpMover.SetUseMoveStateAnimations(false);
+		mpMover.SetWallAvoidanceActive(false);
+
+		mpMover.SetupDynamicObjectAvoidance(2.0f, 5, 4);
+		mpMover.SetDynamicObjectAvoidanceActive(true);
+
+		/////////////////////////////////
+		// Speed States
+		mpMover.AddSpeedState(0);
+		mpMover.SetSpeedState_Forward(1.0f);
+		mpMover.SetSpeedState_ForwardAcc(0.4f);
+		mpMover.SetSpeedState(0);
+		
+		mvBodySize = apVars.GetVarVector3f("CharBodySize", cVector3f_Zero);
+
+		/////////////////////////////////
+		// Pathfinder
+		@mpPathfinder = cLux_CreateEntityComponent_Pathfinder(mBaseObj);
+		mpPathfinder.SetTrackPaused(true);
+		
+		/////////////////////////////////
+		// Senses
+		mBaseObj.SetFOV(cMath_ToRad(120.0f));
+		mBaseObj.SetSightRange(1.0f);
+	}
+
+	//------------------------------------------------------------
+
+	void OnAfterWorldLoad() 
+	{
+	}
+
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+
+	//------------------------------------------------------------
+
+	void OnPostUpdate(float afTimeStep) 
+	{
+		UpdateLoopSound(afTimeStep);
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateLoopSound(float afTimeStep)
+	{
+		if(gsMoveLoopSound == "" && gsIdleLoopSound=="") return;
+		
+		float fSpeed = mBaseObj.GetCharBody().GetVelocity(afTimeStep).Length();
+		cSoundEntity@ pLoopSoundEntity = cLux_ID_SoundEntity(m_idLoopSound);
+		
+		///////////////////////////////////
+		// Check if sound should be started
+		if(pLoopSoundEntity is null) 
+			@pLoopSoundEntity = CheckStartLoopSound(fSpeed);
+		
+		///////////////////////////////////
+		// Update sound
+		if(pLoopSoundEntity !is null)
+		{
+			//////////////////////////////
+			// Idle Sound is playing
+			if(mLoopSoundPlaying == eRoombaLoopSound_Idle)
+			{
+				//Check if moving.
+				if(fSpeed > gfMoveLoopSoundMinSpeed && gsMoveLoopSound!="")
+				{
+					pLoopSoundEntity.FadeOut(3.0f);
+					@pLoopSoundEntity = null;
+					mLoopSoundPlaying = eRoombaLoopSound_None;
+				}
+			}
+			//////////////////////////////
+			// Move Sound is playing
+			else if(mLoopSoundPlaying == eRoombaLoopSound_Move)
+			{
+				//Set param to adjust sound according to speed.
+				pLoopSoundEntity.SetParam(0, fSpeed);
+			
+				//Check if slightly below min speed
+				if(fSpeed < gfMoveLoopSoundMinSpeed*0.75)
+				{
+					cLux_AddDebugMessage("Roomba Move Loop Stop");
+					cSoundEntity @pStopSound = mBaseObj.PlaySound("MoveLoopStop", gsMoveLoopStopSound,true, true);
+					if(pStopSound !is null)
+					{
+						float fSpeed = mBaseObj.GetCharBody().GetVelocity(cEngine_GetStepSize()).Length();
+						pStopSound.SetParam(0, fSpeed);
+					}
+					
+					pLoopSoundEntity.FadeOut(3.0f);
+					@pLoopSoundEntity = null;
+					mLoopSoundPlaying = eRoombaLoopSound_None;
+				}
+			}
+		}
+		
+		///////////////////////////////////
+		// In case the sound was stopped, check start again
+		if(pLoopSoundEntity is null) 
+			CheckStartLoopSound(fSpeed);
+	}
+	
+	//------------------------------------------------------------
+	
+	cSoundEntity@ CheckStartLoopSound(float afSpeed)
+	{
+		cSoundEntity@ pLoopSoundEntity = null;
+		
+		/////////////////////////////
+		// Idle Sound
+		if(gsIdleLoopSound != "" && afSpeed <= gfMoveLoopSoundMinSpeed)
+		{
+			cLux_AddDebugMessage("Roomba Idle Loop");
+			@pLoopSoundEntity = mBaseObj.PlaySound("IdleLoop", gsIdleLoopSound, true, true);
+			pLoopSoundEntity.FadeIn(2.0f);
+			m_idLoopSound = pLoopSoundEntity.GetID();
+			mLoopSoundPlaying = eRoombaLoopSound_Idle;
+		}
+		
+		/////////////////////////////
+		// Move Sound
+		if(gsMoveLoopSound != "" && afSpeed > gfMoveLoopSoundMinSpeed)
+		{
+			cLux_AddDebugMessage("Roomba Move Loop");
+			@pLoopSoundEntity = mBaseObj.PlaySound("MoveLoop", gsMoveLoopSound, true, true);
+			pLoopSoundEntity.FadeIn(2.0f);
+			m_idLoopSound = pLoopSoundEntity.GetID();
+			mLoopSoundPlaying = eRoombaLoopSound_Move;
+			
+			cLux_AddDebugMessage("Roomba Move Loop Start");
+			cSoundEntity@ pStartSound = mBaseObj.PlaySound("MoveLoopStart", gsMoveLoopStartSound,true, true);
+			if(pStartSound !is null)
+			{
+				float fSpeed = mBaseObj.GetCharBody().GetVelocity(cEngine_GetStepSize()).Length();
+				pStartSound.SetParam(0, fSpeed);
+			}
+		}
+		
+		return pLoopSoundEntity;
+	}
+
+	//------------------------------------------------------------
+
+	void ResetProperties() 
+	{
+		m_idLoopSound = tID_Invalid;
+	}
+
+	//------------------------------------------------------------
+
+	void BeforeEntityDestruction() 
+	{
+		if(	m_idLoopSound != tID_Invalid &&
+			cLux_GetCurrentMap().GetWorld().IsValid(cLux_ID_SoundEntity(m_idLoopSound)))
+		{
+			cLux_ID_SoundEntity(m_idLoopSound).FadeOut(1.0f);
+		}
+	}
+
+	//------------------------------------------------------------
+
+	void OnStartMove() 
+	{
+	}
+
+	//------------------------------------------------------------
+
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState) 
+	{
+	}
+	
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+
+	//------------------------------------------------------------
+
+	void OnSetActive(bool abX) 
+	{
+		if (abX) return;
+		
+		if(	m_idLoopSound != tID_Invalid)
+		{
+			cSoundEntity @pSound = cLux_ID_SoundEntity(m_idLoopSound);
+			if(pSound !is null)
+				pSound.FadeOut(1.0f);
+		}
+	}
+
+	//------------------------------------------------------------
+
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource) 
+	{
+	}
+
+	//------------------------------------------------------------
+
+	void OnHealthChange() 
+	{
+	}
+
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+
+	//------------------------------------------------------------
+
+	bool CanInteract(int alType, iPhysicsBody@ apBody) 
+	{
+		return false;
+	}
+
+	//------------------------------------------------------------
+
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData) 
+	{
+		return false;
+	}
+
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// GLOBAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_StartMoving()
+	{
+		TimerPickNewNode();
+	}
+	
+	//------------------------------------------------------------
+	
+	void TimerPickNewNode(uint64 alTimerID=1)
+	{
+		cVector3f vDest;
+		
+		if (cMath_RandRectf(0,1)>0.75f)
+		{
+			vDest = Player_GetPosition();
+		}
+		else
+		{
+			vDest = Player_GetPosition();
+			vDest += cMath_RandRectVector3f(cVector3f(-10.0f,0.0f,-10.0f), cVector3f(10.0f,0.0f,10.0f));
+		}
+		
+		vDest.y = mBaseObj.GetPosition().y;
+					
+		mpPathfinder.MoveTo(vDest, 0.5f, true);
+		
+		mBaseObj.Timer_Add(1, cMath_RandRectf(5.0f,20.0f), "TimerPickNewNode");
+		mBaseObj.Timer_Add(2, 0.3f, "TimerCheckGround");
+	}
+	
+	//------------------------------------------------------------
+
+	void _Global_StopMoving()
+	{
+		mpPathfinder.Stop();
+		mBaseObj.Timer_Remove(1);
+		mBaseObj.Timer_Remove(2);
+	}
+	
+	//------------------------------------------------------------
+	
+	void TimerCheckGround(uint64 alTimerID)
+	{
+		cVector3f vRayPos = mBaseObj.GetPosition()+
+			mBaseObj.GetCharBody().GetForward()*0.5f;
+		mBaseObj.GetClosestBody("OnCheckLatestBody", vRayPos, cVector3f_Down, 5.0f);
+		mBaseObj.Timer_Add(2, 0.3f, "TimerCheckGround");
+	}
+
+	//------------------------------------------------------------
+
+	void OnCheckLatestBody(bool abSuccessful, float afDistance, const cVector3f&in avNormal, iPhysicsBody@ apBody)
+	{
+		if (!abSuccessful||cMath_Abs(afDistance)>0.25f)
+		{
+			// Back off!
+			cVector3f vDest;
+			vDest = mBaseObj.GetPosition();
+			vDest += mBaseObj.GetCharBody().GetForward()*-10.0f;
+		}
+	}
+	
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+
+	//------------------------------------------------------------
+
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY) 
+	{
+		return afStartY;
+	}
+
+	//------------------------------------------------------------
+
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+
+	//------------------------------------------------------------
+
+	cLuxCharMover@ mpMover;
+	cLuxPathfinder@ mpPathfinder;
+	cVector3f mvBodySize;
+	
+	tID m_idLoopSound = tID_Invalid;
+	eRoombaLoopSound mLoopSoundPlaying=eRoombaLoopSound_None;
+	
+	//------------------------------------------------------------
+
+	//------------------------------------------------------------
+}

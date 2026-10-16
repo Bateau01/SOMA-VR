@@ -19,6 +19,22 @@ static void s26dg_eye_system(void* self,Handle inst){
     r=properties(inst,id,&props);
     ext_Log(">>> S26DG eye gaze device support %u (system query %d); action activity still requires runtime access and calibration",eye.supported,r);
 }
+/* Gaze timestamps describe acquisition, not the predicted display instant.
+   Compare age in the runtime clock domain when clock conversion is available. */
+typedef i32 (__attribute__((ms_abi)) *S26GLConvertTime)(Handle,const i64*,i64*);
+typedef i32 (__attribute__((ms_abi)) *S26GLCounter)(i64*);
+static S26GLConvertTime p_s26glConvertTime;
+static S26GLCounter p_s26glCounter;
+static Handle g_s26glClockInstance;
+static i64 s26gl_gaze_now(i64 predicted){
+    i64 counter=0,now=0;
+    if(g_s26glClockInstance&&p_s26glConvertTime&&p_s26glCounter&&
+       p_s26glCounter(&counter)&&p_s26glConvertTime(g_s26glClockInstance,&counter,&now)==0&&now>0)return now;
+    return predicted;
+}
+static i32 s26gl_gaze_fresh(i64 sample,i64 now){
+    return now>0&&sample>0&&sample>=now-100000000LL&&sample<=now+100000000LL;
+}
 typedef struct {i32 type;void* next;i64 time;} S26SEyeSampleTime;
 typedef struct {XrPosef eye,head;i64 time;u8 valid,headValid;} S26SEyeSample;
 static S26SEyeSample g_s26sEyeSample;
@@ -28,6 +44,7 @@ static i32 s26s_eye_lock(void){u32 expected=0;return __atomic_compare_exchange_n
 static void s26s_eye_unlock(void){__atomic_store_n(&g_s26sEyeLock,0u,__ATOMIC_RELEASE);}
 static void s26s_eye_end(Handle session){
     if(session!=g_s26sEyeSession)return;
+    g_s26glClockInstance=0;p_s26glConvertTime=0;p_s26glCounter=0;
     g_s26sEyeAction=0;g_s26sEyeSpace=0;g_s26sEyeSession=0;g_s26dgEyeView=0;
     if(s26s_eye_lock()){g_s26sEyeSample.valid=0;g_s26sEyeSample.headValid=0;s26s_eye_unlock();}
     g_s26sEyeReported=255;g_s26sEyeLogs=0;
@@ -57,6 +74,12 @@ static void s26s_eye_spaces(void* self,Handle inst,Handle sess){
     if(r<0||!g_s26sEyeSpace){ext_Log(">>> S26DG eye gaze action space failed (%d)",r);g_s26sEyeSpace=0;return;}
     PFN_GIPA get=*(PFN_GIPA*)((u8*)self+0x1c8);S26DGEyeCreateRef create=0;
     if(!get||get(inst,"xrCreateReferenceSpace",(void**)&create)<0||!create){ext_Log(">>> S26DG eye VIEW entry point unavailable");return;}
+    p_s26glConvertTime=0;p_s26glCounter=0;g_s26glClockInstance=0;
+    if(g_s26glTimeExtension&&get(inst,"xrConvertWin32PerformanceCounterToTimeKHR",(void**)&p_s26glConvertTime)==0&&p_s26glConvertTime){
+        void* kernel=ext_GetModuleHandleA("kernel32.dll");
+        if(kernel)p_s26glCounter=(S26GLCounter)ext_GetProcAddress(kernel,"QueryPerformanceCounter");
+        if(p_s26glCounter)g_s26glClockInstance=inst;
+    }
     S26DGEyeRefInfo view;zero_bytes(&view,sizeof(view));view.type=37;view.referenceSpaceType=1;view.poseInReferenceSpace.orientation.w=1;
     r=create(sess,&view,&g_s26dgEyeView);
     if(r<0||!g_s26dgEyeView){g_s26dgEyeView=0;ext_Log(">>> S26DG eye VIEW space failed (%d)",r);return;}
@@ -82,7 +105,7 @@ static void s26s_eye_tick(Handle sess,Handle baseSpace,i64 time,i32 sync){
             locResult=pLocateSpace(g_s26sEyeSpace,baseSpace,time,&loc);reason=3;
             if(locResult==0&&(loc.locationFlags&15u)==15u&&s26s_pose_finite(&loc.pose)){
                 reason=4;
-                if(!sample.time||(sample.time>=time-100000000LL&&sample.time<=time+100000000LL)){
+                if(!sample.time||s26gl_gaze_fresh(sample.time,s26gl_gaze_now(time))){
                     /* Eye tracking can be unpredicted. Match VIEW to the returned
                        gaze sample time instead of mixing it with a later camera. */
                     i64 headTime=sample.time?sample.time:time;
@@ -93,8 +116,9 @@ static void s26s_eye_tick(Handle sess,Handle baseSpace,i64 time,i32 sync){
             }
         }
     }
-    if(s26s_eye_lock()){g_s26sEyeSample.valid=(u8)valid;g_s26sEyeSample.headValid=(u8)headValid;g_s26sEyeSample.head=head.pose;g_s26sEyeSample.eye=loc.pose;g_s26sEyeSample.time=sample.time?sample.time:time;s26s_eye_unlock();}
-    if(g_s26sEyeReported!=(u8)reason&&g_s26sEyeLogs<24u){++g_s26sEyeLogs;ext_Log(">>> S26DG eye gaze %s: reason %d (0=active 1=setup/focus 2=inactive/action 3=tracking/pose 4=stale 5=head-space), state %d locate %d flags %u; no gaze coordinates logged",valid?"active":"unavailable",reason,stateResult,locResult,(u32)loc.locationFlags);}
+    if(s26s_eye_lock()){g_s26sEyeSample.valid=(u8)valid;g_s26sEyeSample.headValid=(u8)headValid;g_s26sEyeSample.head=head.pose;g_s26sEyeSample.eye=loc.pose;g_s26sEyeSample.time=sample.time?sample.time:s26gl_gaze_now(time);s26s_eye_unlock();}
+    if(g_s26sEyeReported!=(u8)reason&&g_s26sEyeLogs<96u){++g_s26sEyeLogs;ext_Log(">>> S26DG eye gaze %s: reason %d (0=active 1=setup/focus 2=inactive/action 3=tracking/pose 4=stale 5=head-space), state %d locate %d flags %u; no gaze coordinates logged",valid?"active":"unavailable",reason,stateResult,locResult,(u32)loc.locationFlags);
+        ext_Log(">>> S26GK EYE SAMPLE AGE: predicted-minus-sample %.3f ms; timestamp supplied %u; current-minus-sample %.3f ms",sample.time?(double)(time-sample.time)/1000000.0:0.0,(u32)(sample.time!=0),sample.time?(double)(s26gl_gaze_now(time)-sample.time)/1000000.0:0.0);}
     g_s26sEyeReported=(u8)reason;
 }
 static void s26s_quat_rotate(const XrQuaternionf* q,const float in[3],float out[3]){

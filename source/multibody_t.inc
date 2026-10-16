@@ -74,7 +74,7 @@ static void s26t_gravity_tick(const void* body){
     if(!probe.wrapper||!h20_mem_readable((u8*)probe.wrapper+0x2c0,0x30)){s26t_gravity_end(slot);return;}
     probe.owner=*(void**)((u8*)probe.wrapper+0x2c0);
     if(!s26t_live(&probe)||h482_body_mass(body)<=.001f){s26t_gravity_end(slot);return;}
-    static u32 last[2];if((u32)(g_h14PhysicsSteps-last[slot])<6u)return;last[slot]=g_h14PhysicsSteps;
+    static u32 last[2];if((u32)(g_h14PhysicsSteps-last[slot])<s26gd_steps(6u))return;last[slot]=g_h14PhysicsSteps;
     if(!h484_classify_compliant_cluster(slot,body,probe.owner)){s26t_retire_support(slot);return;}
     /* Only refresh ownership if membership changed; stable holds issue no setters. */
     u32 owned=0;int changed=0;

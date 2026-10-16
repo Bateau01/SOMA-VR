@@ -1,11 +1,14 @@
 {
-  "version": "1.04-S26EE",
-  "base": "1.04-S26EB",
-  "dll_sha256": "4c478d65089a676514d49c474308dc82f22bd92f426e69e20908f98e925352f0",
-  "validation": "docs/S26EE-validation.txt",
-  "upstream_docs_commit": "b14b3866bbda38978ff9ed5063097475fad9240f",
-  "release_notes_installed": false,
-  "source_revision": "2026-10-04-controller-generalisation",
-  "binary_matches_source": false,
-  "new_binary_built": false
+  "version": "1.0.8-S26HO",
+  "build": 2026101613,
+  "gameplay_base": "1.0.8-S26HM",
+  "tests": {
+    "updater_policy_checks": 17,
+    "isolated_installer_update_settings_rollback": "PASS",
+    "live_GitHub_API_discovery": "PASS"
+  },
+  "limitations": [
+    "No public release yet contains the new updater manifest/protocol; accepted-update integration is tested with a local fixture.",
+    "Gameplay DLLs are unchanged from S26HM; readable drop investigation paused."
+  ]
 }

@@ -72,7 +72,7 @@ static i32 s26ef_foveation_gl(void){
 #include "foveation_timing_ei.inc"
 static i32 s26ei_read_foveation_gaze(float* gaze){
     if(!s26s_eye_lock()){__atomic_fetch_add(&g_s26ehGazeStats[0],1u,__ATOMIC_RELAXED);return 0;}S26SEyeSample sample=g_s26sEyeSample;s26s_eye_unlock();
-    u8* xr=(u8*)p2_xr_obj();i64 now=xr?*(i64*)(xr+0xe8):0;
+    u8* xr=(u8*)p2_xr_obj();i64 now=s26gl_gaze_now(xr?*(i64*)(xr+0xe8):0);
     if(!sample.valid||!sample.headValid||now<=0){__atomic_fetch_add(&g_s26ehGazeStats[1],1u,__ATOMIC_RELAXED);return 0;}
     /* Same bounded timestamp policy as the producer and gameplay gaze bridge.
        Runtime gaze can be delayed or predicted. Never reuse an invalid sample. */

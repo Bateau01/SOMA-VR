@@ -891,6 +891,18 @@ class cScrPropCatherineTool : cScrPropTool
         cScript_SetGlobalReturnBool(committed);
     }
 
+    bool VR_TryRecall()
+    {
+        if(!_HPL3VR_RuntimeActive_Catherine() || !mbVRBootstrapDone) return false;
+        if(mbInserted || msSlot!="" || mbVRReplacementSourceRetirePending || mbVRPhysicalPickupInProgress || mbVRHolstered) return false;
+        if(!mBaseObj.IsActive() || mBaseObj.GetInteractionDisabled()) return false;
+        if(mBaseObj.GetAttachmentParent() !is null || !Player_ToolIsInInventory(mBaseObj.GetName())) return false;
+        if(!cScript_RunGlobalFunc("VROMNIRECALL",mBaseObj.GetName(),"COMMIT")) return false;
+        bool stored=VR_TryShoulderStore();
+        if(stored) mBaseObj.SetSaveDataIsUpdated(true);
+        return stored;
+    }
+
     bool VR_TryShoulderStore()
 	{
 		// AO: shoulder storage mirrors the left-shoulder inventory presentation.

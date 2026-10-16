@@ -981,6 +981,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] bool mbVRMenuHeld=false;
     [nosave] float mfVRMenuHoldTime=0;
     [nosave] int mlVRComfortCategory=-1;
+    [nosave] array<int> mvVRSettingsPages={0,0,0,0,0,0,0,0,0,0,0};
     [nosave] tString msVRSettingsSelected="GAMEPLAY";
     [nosave] bool mbVRHMDMovement=false;
     [nosave] int mlVRMoveMode=0;
@@ -989,6 +990,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] int mlVRSubtitleDistance=18;
     [nosave] int mlVRMoveHand=0;
     [nosave] int mlVRCrouchMode=0;
+    [nosave] bool mbVROmnidirectionalSprint=true;
     [nosave] bool mbVRDoubleTapSprint=false;
     [nosave] int mlVRTurnMode=0;
     [nosave] bool mbVRHideDistortion=false;
@@ -998,6 +1000,12 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] bool mbVRHideShake=false;
     [nosave] bool mbVRHideMovementBob=false;
     [nosave] bool mbVRTextureBudget=false;
+    [nosave] bool mbVR120Mode=false;
+    [nosave] bool mbVR120Pending=false;
+    [nosave] bool mbVR120Target=false;
+    [nosave] bool mbVR120Error=false;
+    [nosave] bool mbVR120Supported=false;
+    [nosave] tString msVR120Focus="NO";
     [nosave] bool mbVRDesktopMirror=true;
     [nosave] bool mbVRDynamicFoveation=false;
     [nosave] int mlVRDFRPreset=0;
@@ -1007,8 +1015,16 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] bool mbVRDFRProtection=false;
     [nosave] bool mbVRDFRTiming=false;
     [nosave] int mlVRVignette=0;
-    [nosave] array<int> mvVRButtonMap={0,1,2,3,4,5};
+    [nosave] array<int> mvVRButtonMap={0,1,2,3,4,5,14};
     [nosave] int mlVRBindAction=-1;
+    [nosave] int mlVRBindEdit=0;
+    [nosave] bool mbVRRemoteGrab=false,mbVRTerminalLaser=false,mbVRInteractionLaser=false;
+    [nosave] int mlVRRemoteRange=2;
+    [nosave] bool mbVRBindConfirm=false;
+    [nosave] bool mbVRBindClear=false;
+    [nosave] bool mbVRBindError=false;
+    [nosave] tString msVRBindMessage="";
+    [nosave] tString msVRBindFocus="NO";
     [nosave] array<int> mvVRBindingProfiles={-1,-1};
     [nosave] int mlVRGrabControls=0;
     [nosave] bool mbVRFingerTracking=true;
@@ -1019,11 +1035,15 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] bool mbVREyeDistortion=false;
     [nosave] int mlVRAudioMode=1;
     [nosave] float mfVRBindWait=0;
-    tString HPL3VR_BindingLabel(int role)
+    tString HPL3VR_BindingAction(int role)
     {
-        array<tString> roles={"JUMP / ACCEPT","RUN / BACK","PAUSE","CENTER CAMERA","CROUCH","HAND REBASE"};
-        array<tString> buttons={"RIGHT PRIMARY","RIGHT SECONDARY","LEFT PRIMARY","LEFT SECONDARY","LEFT STICK CLICK","RIGHT STICK CLICK","LEFT SHOULDER","RIGHT SHOULDER","D-PAD DOWN","D-PAD RIGHT","RIGHT X","RIGHT Y","VIEW","MENU"};
-        int src=mvVRButtonMap[role]; int hand=(src==0 || src==1 || src==5 || src==7 || src==10 || src==11 || src==13) ? 1 : 0;
+        array<tString> roles={"JUMP / ACCEPT","RUN / BACK","PAUSE","CENTER CAMERA","CROUCH","HAND REBASE","RECALL OMNI-TOOL"};
+        return roles[role];
+    }
+    tString HPL3VR_BindingButton(int src)
+    {
+        array<tString> buttons={"RIGHT PRIMARY","RIGHT SECONDARY","LEFT PRIMARY","LEFT SECONDARY","LEFT STICK CLICK","RIGHT STICK CLICK","LEFT SHOULDER","RIGHT SHOULDER","D-PAD DOWN","D-PAD RIGHT","RIGHT X","RIGHT Y","VIEW","MENU","UNASSIGNED"};
+        int hand=(src==0 || src==1 || src==5 || src==7 || src==10 || src==11 || src==13) ? 1 : 0;
         int profile=mvVRBindingProfiles[hand];
         if(profile==0) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="LEFT X";buttons[3]="LEFT Y"; }
         if(profile==1) { buttons[0]="RIGHT A";buttons[1]="RIGHT B";buttons[2]="LEFT A";buttons[3]="LEFT B"; }
@@ -1031,24 +1051,43 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(profile==2) { buttons[0]="RIGHT PAD CLICK";buttons[1]="RIGHT MENU";buttons[2]="LEFT MENU";buttons[3]="UNAVAILABLE";buttons[4]="LEFT PAD CLICK";buttons[5]="UNAVAILABLE"; }
         if(profile==3) { buttons[0]="RIGHT MENU";buttons[1]="RIGHT PAD CLICK";buttons[2]="LEFT MENU";buttons[3]="LEFT PAD CLICK"; }
         if(profile==4) { buttons[0]="UNAVAILABLE";buttons[1]="RIGHT MENU";buttons[2]="LEFT MENU";buttons[3]="UNAVAILABLE";buttons[4]="UNAVAILABLE";buttons[5]="UNAVAILABLE"; }
-        return roles[role]+": "+(mlVRBindAction==role ? "PRESS A BUTTON" : buttons[src]);
+        return buttons[src];
+    }
+    tString HPL3VR_BindingLabel(int role)
+    {
+        return HPL3VR_BindingAction(role)+": "+HPL3VR_BindingButton(mvVRButtonMap[role]);
     }
     void HPL3VR_ReadBindings()
     {
         for(int h=0;h<2;h++) { mvVRBindingProfiles[h]=-1;for(int i=0;i<6;i++) if(cScript_RunGlobalFunc("VRBIND","P"+h,""+i)) { mvVRBindingProfiles[h]=i;break; } }
-        for(int r=0;r<6;r++) for(int v=0;v<14;v++)
+        for(int r=0;r<7;r++) for(int v=0;v<=14;v++)
             if(cScript_RunGlobalFunc("VRBIND",""+r,"Q"+v)) { mvVRButtonMap[r]=v;break; }
     }
     void HPL3VR_CancelBinding()
     {
-        if(mlVRBindAction>=0) cScript_RunGlobalFunc("VRBIND","","CANCEL");
-        mlVRBindAction=-1;mfVRBindWait=0;
+        cScript_RunGlobalFunc("VRBIND","","CANCEL");
+        mlVRBindAction=-1;mfVRBindWait=0;mbVRBindConfirm=false;mbVRBindClear=false;
     }
 
 
+    void HPL3VR_FinishBinding(bool accept)
+    {
+        bool ok=true;
+        if(accept)
+        {
+            if(mbVRBindClear) ok=cScript_RunGlobalFunc("VRBIND",""+mlVRBindEdit,"14");
+            else ok=cScript_RunGlobalFunc("VRBIND",""+mlVRBindEdit,"APPLY");
+        }
+        HPL3VR_CancelBinding();HPL3VR_ReadBindings();
+        if(accept && ok)HPL3VR_SaveComfort();
+        mbVRBindError=accept && !ok;msVRBindFocus="OK";
+        msVRSettingsSelected="CHANGE BINDING";msFocusNextFrame=msVRSettingsSelected;
+    }
+
     int HPL3VR_Slider(const tString &in name,int row,int index,int steps,const tString &in value)
     {
-        float next=OptionMenu_ButtonOptionsSlider(name,kMainMenuButtonPos,row,msVRSettingsSelected,float(index)/float(steps),1.0f/float(steps),mlActionHorizontal,value);
+        if(!HPL3VR_RowVisible(row))return index;
+        float next=OptionMenu_ButtonOptionsSlider(name,kMainMenuButtonPos,row%8,msVRSettingsSelected,float(index)/float(steps),1.0f/float(steps),mlActionHorizontal,value);
         ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus(name,msVRSettingsSelected);
         return int(cMath_Clamp(next,0.0f,1.0f)*float(steps)+0.5f);
     }
@@ -1058,6 +1097,11 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(!mbVRComfortLoaded)
         {
             cConfigFile@ p=cLux_GetUserConfig();
+            mbVRRemoteGrab=p.GetBool("SOMA_VR_Comfort","RemoteGrab",false);
+            mbVRTerminalLaser=p.GetBool("SOMA_VR_Comfort","TerminalLaser",false);
+        mbVRInteractionLaser=p.GetBool("SOMA_VR_Comfort","InteractionLaser",false);
+            mlVRRemoteRange=p.GetInt("SOMA_VR_Comfort","RemoteRange",2);
+            if(mlVRRemoteRange<0 || mlVRRemoteRange>4)mlVRRemoteRange=2;
             mbVRHMDMovement=p.GetBool("SOMA_VR_Comfort","HMDMovement",false);
             mlVRMoveMode=p.GetInt("SOMA_VR_Comfort","MovementDirection",mbVRHMDMovement ? 1 : 0);
             if(mlVRMoveMode<0 || mlVRMoveMode>4) mlVRMoveMode=0;
@@ -1071,6 +1115,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             if(mlVRMoveHand<0 || mlVRMoveHand>1) mlVRMoveHand=0;
             mlVRGrabControls=p.GetInt("SOMA_VR_Comfort","GrabControls",0);
             if(mlVRGrabControls<0 || mlVRGrabControls>3) mlVRGrabControls=0;
+            mbVROmnidirectionalSprint=p.GetBool("SOMA_VR_Comfort","OmnidirectionalSprint",true);
             mbVRDoubleTapSprint=p.GetBool("SOMA_VR_Comfort","DoubleTapSprint",false);
             mlVRCrouchMode=p.GetInt("SOMA_VR_Comfort","CrouchMode",0);
             if(mlVRCrouchMode<0 || mlVRCrouchMode>2) mlVRCrouchMode=0;
@@ -1087,8 +1132,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             mlVRVignette=p.GetInt("SOMA_VR_Comfort","Vignette",0);
             if(mlVRVignette<0 || mlVRVignette>3) mlVRVignette=0;
             array<bool> seen={false,false,false,false,false,false,false,false,false,false,false,false,false,false};bool valid=true;
-            for(int i=0;i<6;i++) { int v=p.GetInt("SOMA_VR_Buttons","Role"+i,i);if(v<0 || v>=14 || seen[v]) { valid=false;break; }mvVRButtonMap[i]=v;seen[v]=true; }
-            if(!valid) for(int i=0;i<6;i++) mvVRButtonMap[i]=i;
+            for(int i=0;i<7;i++) { int v=p.GetInt("SOMA_VR_Buttons","Role"+i,i==6 ? 14 : i);if(v<0 || v>14 || (v<14 && seen[v])) { valid=false;break; }mvVRButtonMap[i]=v;if(v<14)seen[v]=true; }
+            if(!valid) for(int i=0;i<7;i++) mvVRButtonMap[i]=i==6 ? 14 : i;
             mbVRFingerTracking=p.GetBool("SOMA_VR_Comfort","FingerTrackingEnabled",true);
             mbVRDesktopMirror=p.GetBool("SOMA_VR_Comfort","DesktopMirror",true);
             mbVRTextureBudget=p.GetBool("SOMA_VR_Comfort","TextureBudgetBoost",false);
@@ -1112,6 +1157,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     void HPL3VR_PublishComfort()
     {
         if(!gbHPL3VRRuntimeActive) return;
+        cScript_RunGlobalFunc("VRCOMFORT","REMOTE",mbVRRemoteGrab?"1":"0");
+        cScript_RunGlobalFunc("VRCOMFORT","LASER",mbVRTerminalLaser?"1":"0");
+        cScript_RunGlobalFunc("VRCOMFORT","INTERACT",mbVRInteractionLaser?"1":"0");
+        cScript_RunGlobalFunc("VRCOMFORT","RRANGE",""+mlVRRemoteRange);
         cScript_RunGlobalFunc("VRCOMFORT","M",mlVRMoveMode==0 ? "B" : (mlVRMoveMode==1 ? "H" : (mlVRMoveMode==2 ? "L" : (mlVRMoveMode==3 ? "R" : "W"))));
         cScript_RunGlobalFunc("VRCOMFORT","W",""+mlVRWorldScale);
         cScript_RunGlobalFunc("VRCOMFORT","D",""+mlVRPanelDistance);
@@ -1132,7 +1181,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         cScript_RunGlobalFunc("VRCOMFORT","G",""+mlVRGrabControls);
         cScript_RunGlobalFunc("VRCOMFORT","C",""+mlVRCrouchMode);
         cScript_RunGlobalFunc("VRCOMFORT","J",mbVRDoubleTapSprint ? "1" : "0");
-        for(int i=0;i<6;i++) cScript_RunGlobalFunc("VRBIND",""+i,""+mvVRButtonMap[i]);
+        for(int i=0;i<7;i++) cScript_RunGlobalFunc("VRBIND",""+i,""+mvVRButtonMap[i]);
         cScript_RunGlobalFunc("VRCOMFORT","T",""+mlVRTurnMode);
         cScript_RunGlobalFunc("VRCOMFORT","V",""+mlVRVignette);
         int mask=(mbVRHideDistortion ? 1 : 0)+(mbVRHideChromatic ? 2 : 0)+(mbVRHideTrails ? 4 : 0)+(mbVRHideBlur ? 8 : 0);
@@ -1142,6 +1191,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     {
         HPL3VR_ValidateDFR();
         cConfigFile@ p=cLux_GetUserConfig();
+        p.SetBool("SOMA_VR_Comfort","RemoteGrab",mbVRRemoteGrab);
+        p.SetBool("SOMA_VR_Comfort","TerminalLaser",mbVRTerminalLaser);
+        p.SetBool("SOMA_VR_Comfort","InteractionLaser",mbVRInteractionLaser);
+        p.SetInt("SOMA_VR_Comfort","RemoteRange",mlVRRemoteRange);
         p.SetBool("SOMA_VR_Comfort","HMDMovement",mlVRMoveMode==1);
         p.SetInt("SOMA_VR_Comfort","MovementDirection",mlVRMoveMode);
         p.SetInt("SOMA_VR_Comfort","MovementHand",mlVRMoveHand);
@@ -1150,6 +1203,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         p.SetInt("SOMA_VR_Comfort","SubtitleDistanceIndex",mlVRSubtitleDistance);
         p.SetInt("SOMA_VR_Comfort","GrabControls",mlVRGrabControls);
         p.SetInt("SOMA_VR_Comfort","CrouchMode",mlVRCrouchMode);
+        p.SetBool("SOMA_VR_Comfort","OmnidirectionalSprint",mbVROmnidirectionalSprint);
         p.SetBool("SOMA_VR_Comfort","DoubleTapSprint",mbVRDoubleTapSprint);
         p.SetBool("SOMA_VR_Comfort","FingerTrackingEnabled",mbVRFingerTracking);
         p.SetBool("SOMA_VR_Comfort","DesktopMirror",mbVRDesktopMirror);
@@ -1161,7 +1215,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         p.SetInt("SOMA_VR_DFR","PeripheralRate",mlVRDFRRate);
         p.SetBool("SOMA_VR_DFR","GazeProtection",mbVRDFRProtection);
         p.SetBool("SOMA_VR_DFR","PerformanceMeasurements",mbVRDFRTiming);
-        for(int i=0;i<6;i++) p.SetInt("SOMA_VR_Buttons","Role"+i,mvVRButtonMap[i]);
+        for(int i=0;i<7;i++) p.SetInt("SOMA_VR_Buttons","Role"+i,mvVRButtonMap[i]);
         p.SetInt("SOMA_VR_Comfort","TurnMode",mlVRTurnMode);
         p.SetBool("SOMA_VR_Comfort","HideDistortion",mbVRHideDistortion);
         p.SetBool("SOMA_VR_Comfort","HideChromatic",mbVRHideChromatic);
@@ -1187,19 +1241,28 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         {
             cScript_RunGlobalFunc("VRCOMFORT","FTRESET","CANCEL");mbVRFingerResetPending=false;
         }
-        if(mlVRBindAction>=0)
+        if((mlVRBindAction>=0 || mbVRBindConfirm) && (!mbMenuActive || !mbVRComfortOpen || mlVRComfortCategory!=9))
+            HPL3VR_CancelBinding();
+        if(mlVRBindAction>=0 && !mbVRBindConfirm)
         {
-            if(!mbMenuActive || !mbVRComfortOpen || mlVRComfortCategory!=3) HPL3VR_CancelBinding();
-            else
+            if(dt>0 && dt<0.5f) mfVRBindWait+=dt;
+            int candidate=-1;
+            for(int i=0;i<14;i++) if(cScript_RunGlobalFunc("VRBIND",""+mlVRBindAction,"C"+i)){candidate=i;break;}
+            if(candidate>=0)
             {
-                if(dt>0 && dt<0.5f) mfVRBindWait+=dt;
-                if(cScript_RunGlobalFunc("VRBIND","","CHANGED"))
+                HPL3VR_ReadBindings();
+                int other=-1;
+                for(int i=0;i<7;i++) if(i!=mlVRBindAction && mvVRButtonMap[i]==candidate){other=i;break;}
+                if(other>=0)
                 {
-                    int role=mlVRBindAction;HPL3VR_ReadBindings();HPL3VR_CancelBinding();HPL3VR_SaveComfort();
-                    msVRSettingsSelected=HPL3VR_BindingLabel(role);msFocusNextFrame=msVRSettingsSelected;
+                    tString consequence=mvVRButtonMap[mlVRBindAction]==14 ? HPL3VR_BindingAction(other)+": UNASSIGNED." : HPL3VR_BindingAction(other)+": "+HPL3VR_BindingButton(mvVRButtonMap[mlVRBindAction])+".";
+                    msVRBindMessage="ASSIGN "+HPL3VR_BindingButton(candidate)+" TO "+HPL3VR_BindingAction(mlVRBindAction)+"?";
+                    msVRBindMessage+=" "+consequence;
+                    mbVRBindConfirm=true;mbVRBindClear=false;msVRBindFocus="NO";msFocusNextFrame="NO";
                 }
-                else if(mfVRBindWait>=10.0f) { HPL3VR_CancelBinding();msVRSettingsSelected="BACK";msFocusNextFrame="BACK"; }
+                else HPL3VR_FinishBinding(true);
             }
+            else if(mfVRBindWait>=10.0f){HPL3VR_CancelBinding();msVRSettingsSelected="CHANGE BINDING";msFocusNextFrame=msVRSettingsSelected;}
         }
 
         if(!mbMenuActive) { if(mCurrentGroup==eMainMenuGroup_VRSettings) mCurrentGroup=eMainMenuGroup_Main; mbVRComfortOpen=false; HPL3VR_MenuHoldEnd(); return; }
@@ -1252,19 +1315,43 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     {
         cScript_RunGlobalFunc("VRBIND","","PROFILE");
         HPL3VR_LoadComfort(); mbVRComfortOpen=true;
+        mbVR120Mode=cScript_RunGlobalFunc("VRSIMRATE","","GET");
+        mbVR120Supported=cScript_RunGlobalFunc("VRSIMRATE","","SUPPORTED");
+        mbVR120Pending=false;mbVR120Error=false;HPL3VR_CancelBinding();mbVRBindError=false;
         mlVRComfortCategory=-1; msVRSettingsSelected="GAMEPLAY";
         mCurrentGroup=eMainMenuGroup_VRSettings;
         msFocusNextFrame=msVRSettingsSelected;
     }
-    bool HPL3VR_Option(const tString &in label,int row)
+    int HPL3VR_Page()
+    {
+        return mlVRComfortCategory<0 ? 0 : mvVRSettingsPages[mlVRComfortCategory];
+    }
+    bool HPL3VR_RowVisible(int row)
+    {
+        return row/8==HPL3VR_Page();
+    }
+    int HPL3VR_Multi(const tString &in label,int row,array<tString> &in values,int current)
+    {
+        if(!HPL3VR_RowVisible(row))return current;
+        int value=OptionMenu_ButtonOptionsMultiSelect(label,kMainMenuButtonPos,row%8,msVRSettingsSelected,values,current,false,mlActionHorizontal,"");
+        ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus(label,msVRSettingsSelected);
+        return value;
+    }
+    bool HPL3VR_Navigation(const tString &in label,int row)
     {
         bool clicked=OptionMenu_ButtonOptions(label,kMainMenuButtonPos,row,msVRSettingsSelected);
         msVRSettingsSelected=OptionMenu_UpdateFocus(label,msVRSettingsSelected);
         return clicked;
     }
+    bool HPL3VR_Option(const tString &in label,int row)
+    {
+        if(!HPL3VR_RowVisible(row))return false;
+        return HPL3VR_Navigation(label,row%8);
+    }
     bool HPL3VR_Toggle(const tString &in label,int row,bool value)
     {
-        bool next=OptionMenu_ButtonOptionsToggle(label,kMainMenuButtonPos,row,msVRSettingsSelected,value,mlActionHorizontal);
+        if(!HPL3VR_RowVisible(row))return value;
+        bool next=OptionMenu_ButtonOptionsToggle(label,kMainMenuButtonPos,row%8,msVRSettingsSelected,value,mlActionHorizontal);
         msVRSettingsSelected=OptionMenu_UpdateFocus(label,msVRSettingsSelected);
         return next;
     }
@@ -1279,16 +1366,26 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     int HPL3VR_BackRow()
     {
         if(mlVRComfortCategory<0) return 5;
-        if(mlVRComfortCategory==2) return 9;
-        if(mlVRComfortCategory==7 || mlVRComfortCategory==1) return 8;
-        if(mlVRComfortCategory==0) return 8;
+        if(mlVRComfortCategory==2) return 10;
+        if(mlVRComfortCategory==1) return 9;
+        if(mlVRComfortCategory==7) return 8;
+        if(mlVRComfortCategory==0) return 12;
+        if(mlVRComfortCategory==10)return 3;
         if(mlVRComfortCategory==8) return 2;
-        if(mlVRComfortCategory==3) return 9;
+        if(mlVRComfortCategory==3) return 8;
+        if(mlVRComfortCategory==9) return mlVRBindAction>=0 ? 2 : (mvVRButtonMap[mlVRBindEdit]==14 ? 2 : 3);
         return 5;
     }
     void HPL3VR_BackSettings()
     {
-            if(mlVRComfortCategory==8){mlVRComfortCategory=0;msVRSettingsSelected="VR HINTS";msFocusNextFrame=msVRSettingsSelected;}
+        if(mlVRComfortCategory>=0 && HPL3VR_Page()>0)
+        {
+            mvVRSettingsPages[mlVRComfortCategory]--;
+            msVRSettingsSelected="BACK";msFocusNextFrame="BACK";return;
+        }
+            if(mlVRComfortCategory==9){HPL3VR_CancelBinding();mbVRBindError=false;mlVRComfortCategory=3;msVRSettingsSelected=HPL3VR_BindingLabel(mlVRBindEdit);msFocusNextFrame=msVRSettingsSelected;}
+            else if(mlVRComfortCategory==10){mlVRComfortCategory=0;msVRSettingsSelected="REMOTE GRAB";msFocusNextFrame=msVRSettingsSelected;}
+            else if(mlVRComfortCategory==8){mlVRComfortCategory=0;msVRSettingsSelected="VR HINTS";msFocusNextFrame=msVRSettingsSelected;}
             else if(mlVRComfortCategory==7)
             {
                 mlVRComfortCategory=4;msVRSettingsSelected="DYNAMIC FOVEATED RENDERING";msFocusNextFrame=msVRSettingsSelected;
@@ -1313,15 +1410,69 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
                 mCurrentGroup=eMainMenuGroup_Main; msFocusNextFrame="VR SETTINGS";
             }
     }
+    void HPL3VR_RequestSimulationMode(bool target)
+    {
+        if(target==mbVR120Mode)return;
+        mbVR120Target=target;mbVR120Pending=true;mbVR120Error=false;msVR120Focus="NO";msFocusNextFrame="NO";
+    }
+    void HPL3VR_ConfirmSimulationMode(bool accept)
+    {
+        if(!mbVR120Pending)return;
+        mbVR120Pending=false;
+        if(accept)
+        {
+            if(mbVR120Target && !mbVR120Supported)mbVR120Error=true;
+            else if(cScript_RunGlobalFunc("VRSIMRATE","",mbVR120Target ? "ON" : "OFF"))mbVR120Mode=mbVR120Target;
+            else mbVR120Error=true;
+        }
+        msVRSettingsSelected="120HZ PHYSICS";msFocusNextFrame=msVRSettingsSelected;
+        msVR120Focus="OK";
+    }
     bool HPL3VR_DrawComfort()
     {
         if(!mbVRComfortOpen) return false;
         tString cat=ImGui_GetTransCategory(); ImGui_SetTransCategory("");
+        if(mbVRBindConfirm || mbVRBindError)
+        {
+            if(mbVRBindError)
+            {
+                int result=OptionMenu_MessageBox_Proper("BINDINGS CHANGED WHILE WAITING. PLEASE TRY AGAIN.","OK",msVRBindFocus,msVRBindFocus);
+                if(result!=0 || ImGui_ActionTriggered(eImGuiAction_Cancel,true)){mbVRBindError=false;msFocusNextFrame="CHANGE BINDING";}
+            }
+            else
+            {
+                int result=OptionMenu_MessageBox_Proper(msVRBindMessage,"YES","NO",msVRBindFocus,msVRBindFocus);
+                if(ImGui_ActionTriggered(eImGuiAction_Cancel,true))HPL3VR_FinishBinding(false);
+                else if(result!=0)HPL3VR_FinishBinding(result==-1);
+            }
+            ImGui_SetModUseInput(false);ImGui_SetTransCategory(cat);return true;
+        }
+        if(mbVR120Pending || mbVR120Error)
+        {
+            if(mbVR120Error)
+            {
+                tString message=mbVR120Target && !mbVR120Supported ? "120HZ PHYSICS IS NOT SUPPORTED BY THIS GAME VERSION." : "COULD NOT SAVE THE SETTING. YOUR PREVIOUS SELECTION IS UNCHANGED.";
+                int result=OptionMenu_MessageBox_Proper(message,"OK",msVR120Focus,msVR120Focus);
+                if(result!=0 || ImGui_ActionTriggered(eImGuiAction_Cancel,true)){mbVR120Error=false;msFocusNextFrame="120HZ PHYSICS";}
+            }
+            else
+            {
+                tString message=mbVR120Target ? "RAISING PHYSICS FROM NATIVE 60 HZ TO 120 HZ INCREASES CPU FRAME TIME AND MAY CAUSE STUTTERING OR LOWER FPS." : "DISABLE 120HZ PHYSICS AND RETURN TO NATIVE 60 HZ?";
+                tString restart=mbVR120Target ? "ENABLE? EXIT AND RESTART SOMA MANUALLY TO APPLY." : "EXIT AND RESTART SOMA MANUALLY TO APPLY.";
+                int result=OptionMenu_MessageBox_Proper(message,"YES","NO",msVR120Focus,msVR120Focus,cString_To16Char(restart));
+                if(ImGui_ActionTriggered(eImGuiAction_Cancel,true))HPL3VR_ConfirmSimulationMode(false);
+                else if(result!=0)HPL3VR_ConfirmSimulationMode(result==-1);
+            }
+            ImGui_SetModUseInput(false);
+            ImGui_SetTransCategory(cat);return true;
+        }
         tString title="VR SETTINGS";
         if(mlVRComfortCategory==0) title="GAMEPLAY";
+        if(mlVRComfortCategory==10)title="REMOTE GRAB";
         if(mlVRComfortCategory==1) title="CONTROLS";
         if(mlVRComfortCategory==2) title="VIDEO";
         if(mlVRComfortCategory==3) title="BUTTON BINDINGS";
+        if(mlVRComfortCategory==9) title=HPL3VR_BindingAction(mlVRBindEdit);
         if(mlVRComfortCategory==4) title="EYE TRACKING";
         if(mlVRComfortCategory==5) title="AUDIO";
         if(mlVRComfortCategory==6) title="RESET FINGER TRACKING";
@@ -1341,7 +1492,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(grabControls,"");
             OptionMenu_UpdateExtraWidth("RIGHT GRAB",true);
             OptionMenu_UpdateExtraWidth("RESET FINGER TRACKING",true);
-            size.y=440;
+            OptionMenu_UpdateExtraWidth("OMNIDIRECTIONAL SPRINTING",true);
+            size.y=510;
             ImGui_SetTransCategory("");
         }
         if(mlVRComfortCategory==2)
@@ -1360,10 +1512,13 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             OptionMenu_UpdateExtraWidth("CALIBRATE STANDING HEIGHT",true);
             OptionMenu_UpdateExtraWidth("CENTER CAMERA",true);
         }
-        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); OptionMenu_UpdateExtraWidth("TEXTURE BUDGET BOOST",true); size.y=510; }
-        if(mlVRComfortCategory==3) { size.y=430;for(int i=0;i<6;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
+        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); OptionMenu_UpdateExtraWidth("TEXTURE BUDGET BOOST",true); OptionMenu_UpdateExtraWidth("120HZ PHYSICS",true); size.y=550; }
+        if(mlVRComfortCategory==9) { size.x=650;size.y=360; }
+        if(mlVRComfortCategory==3) { size.y=470;for(int i=0;i<7;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
         if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=440;
-        if(mlVRComfortCategory==0) size.y=430;
+
+        if(mlVRComfortCategory==0){size.y=590;OptionMenu_UpdateExtraWidth("INTERACTION LASER POINTER",true);}
+        if(mlVRComfortCategory==10){size.y=350;size.x=650;}
         if(mlVRComfortCategory==6) { size.y=360;size.x=600; }
         if(mlVRComfortCategory==4) { OptionMenu_UpdateExtraWidth("DYNAMIC FOVEATED RENDERING",true);size.y=390; }
         if(mlVRComfortCategory==7)
@@ -1374,6 +1529,15 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             size.y=510;size.x=650;
         }
         if(mlVRComfortCategory==5) { array<tString> audio={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};OptionMenu_UpdateExtraButtonWidth_MultiSelection(audio,"");ImGui_SetTransCategory(""); }
+        int totalRows=HPL3VR_BackRow();
+        int pages=(totalRows+7)/8;
+        int visibleRows=totalRows-HPL3VR_Page()*8;
+        if(visibleRows>8)visibleRows=8;
+        if(pages>1)
+        {
+            title+=" ("+(HPL3VR_Page()+1)+"/"+pages+")";
+            size.y=170+38*(visibleRows+(HPL3VR_Page()+1<pages ? 1 : 0));
+        }
         size.x+=OptionMenu_GetExtraWidth();
         OptionMenu_SectionTitle(title,kOptionsBgPos,size);
         ImGui_DrawFrame(mGfxFrame,OptionMenu_GetTopLeftOffset(kOptionsBgPos,0),OptionMenu_GetScaledSize(size));
@@ -1388,7 +1552,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             if(HPL3VR_Option("AUDIO",4)) next=5;
             if(next>=0)
             {
-                mlVRComfortCategory=next;
+                mlVRComfortCategory=next;mvVRSettingsPages[next]=0;
                 msVRSettingsSelected=next==0 ? "MOVEMENT DIRECTION" : (next==1 ? "TURNING" : (next==4 ? "REACTIVE ENVIRONMENT" : (next==5 ? "SPATIAL AUDIO" : "HIDE DISTORTION")));
                 msFocusNextFrame=msVRSettingsSelected;
                 ImGui_SetTransCategory(cat); return true;
@@ -1397,52 +1561,69 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         else if(mlVRComfortCategory==0)
         {
             array<tString> directions={"BODY","HEAD","LEFT HAND","RIGHT HAND","HIP TRACKER"};
-            int next=OptionMenu_ButtonOptionsMultiSelect("MOVEMENT DIRECTION",kMainMenuButtonPos,0,msVRSettingsSelected,directions,mlVRMoveMode,false,mlActionHorizontal,"");
+            int next=HPL3VR_Multi("MOVEMENT DIRECTION",0,directions,mlVRMoveMode);
             ImGui_SetTransCategory("");
-            msVRSettingsSelected=OptionMenu_UpdateFocus("MOVEMENT DIRECTION",msVRSettingsSelected);
+            
             changed=next!=mlVRMoveMode; mlVRMoveMode=next;
             array<tString> crouch={"SEATED BUTTON","STANDING BUTTON","STANDING PHYSICAL"};
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(crouch,""); ImGui_SetTransCategory("");
-            int stance=OptionMenu_ButtonOptionsMultiSelect("CROUCH MODE",kMainMenuButtonPos,1,msVRSettingsSelected,crouch,mlVRCrouchMode,false,mlActionHorizontal,"");
-            ImGui_SetTransCategory(""); msVRSettingsSelected=OptionMenu_UpdateFocus("CROUCH MODE",msVRSettingsSelected);
+            int stance=HPL3VR_Multi("CROUCH MODE",1,crouch,mlVRCrouchMode);
+            ImGui_SetTransCategory(""); 
             changed=changed || stance!=mlVRCrouchMode; mlVRCrouchMode=stance;
-            if(HPL3VR_Option("CALIBRATE STANDING HEIGHT",2)) cScript_RunGlobalFunc("VRCOMFORT","C","R");
-            if(HPL3VR_Option("CENTER CAMERA",3)) cScript_RunGlobalFunc("VRCOMFORT","R","C");
+            if(HPL3VR_Option("REMOTE GRAB",2)){mlVRComfortCategory=10;msVRSettingsSelected="REMOTE GRAB";msFocusNextFrame=msVRSettingsSelected;ImGui_SetTransCategory(cat);return true;}
+            bool laser=HPL3VR_Toggle("TERMINAL LASER POINTER",3,mbVRTerminalLaser);
+            changed=changed || laser!=mbVRTerminalLaser;mbVRTerminalLaser=laser;
             int scale=HPL3VR_Slider("WORLD SCALE",4,mlVRWorldScale,30,""+(50+5*mlVRWorldScale)+"%");
             int panel=HPL3VR_Slider("2D SCREEN DISTANCE",5,mlVRPanelDistance,65,cString_ToString(0.75f+0.05f*mlVRPanelDistance,2)+" m");
             int subtitle=HPL3VR_Slider("SUBTITLE DISTANCE",6,mlVRSubtitleDistance,65,cString_ToString(0.75f+0.05f*mlVRSubtitleDistance,2)+" m");
             changed=changed || scale!=mlVRWorldScale || panel!=mlVRPanelDistance || subtitle!=mlVRSubtitleDistance;
             mlVRWorldScale=scale;mlVRPanelDistance=panel;mlVRSubtitleDistance=subtitle;
             if(HPL3VR_Option("VR HINTS",7)){mlVRComfortCategory=8;msVRSettingsSelected="VR HINTS";msFocusNextFrame=msVRSettingsSelected;ImGui_SetTransCategory(cat);return true;}
+            if(HPL3VR_Option("RECALL OMNI-TOOL",8)) cScript_RunGlobalFunc("VROMNIRECALL","","REQUEST");
+            if(HPL3VR_Option("CALIBRATE STANDING HEIGHT",9)) cScript_RunGlobalFunc("VRCOMFORT","C","R");
+            if(HPL3VR_Option("CENTER CAMERA",10)) cScript_RunGlobalFunc("VRCOMFORT","R","C");
+            bool interaction=HPL3VR_Toggle("INTERACTION LASER POINTER",11,mbVRInteractionLaser);
+            changed=changed || interaction!=mbVRInteractionLaser;mbVRInteractionLaser=interaction;
 
 
 
 
+
+        }
+        else if(mlVRComfortCategory==10)
+        {
+            bool enabled=HPL3VR_Toggle("REMOTE GRAB",0,mbVRRemoteGrab);
+            int range=HPL3VR_Slider("RANGE",1,mlVRRemoteRange,4,cString_ToString(1.0f+0.5f*mlVRRemoteRange,1)+" m");
+            changed=enabled!=mbVRRemoteGrab || range!=mlVRRemoteRange;
+            mbVRRemoteGrab=enabled;mlVRRemoteRange=range;
+            HPL3VR_ResetLabel("Point at a loose prop and hold your grab button.",2);
         }
         else if(mlVRComfortCategory==1)
         {
             array<tString> modes={"SMOOTH","SNAP 30","SNAP 45","OFF"};
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(modes,"");
             ImGui_SetTransCategory("");
-            int next=OptionMenu_ButtonOptionsMultiSelect("TURNING",kMainMenuButtonPos,0,msVRSettingsSelected,modes,mlVRTurnMode,false,mlActionHorizontal,"");
+            int next=HPL3VR_Multi("TURNING",0,modes,mlVRTurnMode);
             ImGui_SetTransCategory("");
-            msVRSettingsSelected=OptionMenu_UpdateFocus("TURNING",msVRSettingsSelected);
+            
             changed=next!=mlVRTurnMode; mlVRTurnMode=next;
             array<tString> moveHands={"LEFT","RIGHT"};
-            int moveHand=OptionMenu_ButtonOptionsMultiSelect("MOVEMENT HAND",kMainMenuButtonPos,1,msVRSettingsSelected,moveHands,mlVRMoveHand,false,mlActionHorizontal,"");
-            ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("MOVEMENT HAND",msVRSettingsSelected);
+            int moveHand=HPL3VR_Multi("MOVEMENT HAND",1,moveHands,mlVRMoveHand);
+            ImGui_SetTransCategory("");
             changed=changed || moveHand!=mlVRMoveHand;mlVRMoveHand=moveHand;
             array<tString> grabControls={"GRIP","TRIGGER"};
-            int leftGrab=OptionMenu_ButtonOptionsMultiSelect("LEFT GRAB",kMainMenuButtonPos,2,msVRSettingsSelected,grabControls,mlVRGrabControls&1,false,mlActionHorizontal,"");
-            ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("LEFT GRAB",msVRSettingsSelected);
-            int rightGrab=OptionMenu_ButtonOptionsMultiSelect("RIGHT GRAB",kMainMenuButtonPos,3,msVRSettingsSelected,grabControls,(mlVRGrabControls>>1)&1,false,mlActionHorizontal,"");
-            ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("RIGHT GRAB",msVRSettingsSelected);
+            int leftGrab=HPL3VR_Multi("LEFT GRAB",2,grabControls,mlVRGrabControls&1);
+            ImGui_SetTransCategory("");
+            int rightGrab=HPL3VR_Multi("RIGHT GRAB",3,grabControls,(mlVRGrabControls>>1)&1);
+            ImGui_SetTransCategory("");
             int grabMask=leftGrab+(rightGrab*2);changed=changed || grabMask!=mlVRGrabControls;mlVRGrabControls=grabMask;
-            bool sprint=HPL3VR_Toggle("DOUBLE-TAP SPRINT",4,mbVRDoubleTapSprint);
+            bool omni=HPL3VR_Toggle("OMNIDIRECTIONAL SPRINTING",4,mbVROmnidirectionalSprint);
+            changed=changed || omni!=mbVROmnidirectionalSprint;mbVROmnidirectionalSprint=omni;
+            bool sprint=HPL3VR_Toggle("DOUBLE-TAP SPRINT",5,mbVRDoubleTapSprint);
             changed=changed || sprint!=mbVRDoubleTapSprint;mbVRDoubleTapSprint=sprint;
-            bool fingers=HPL3VR_Toggle("FINGER TRACKING",5,mbVRFingerTracking);
+            bool fingers=HPL3VR_Toggle("FINGER TRACKING",6,mbVRFingerTracking);
             changed=changed || fingers!=mbVRFingerTracking;mbVRFingerTracking=fingers;
-            if(HPL3VR_Option("RESET FINGER TRACKING",6))
+            if(HPL3VR_Option("RESET FINGER TRACKING",8))
             {
                 cScript_RunGlobalFunc("VRCOMFORT","FTRESET","CANCEL");
                 mlVRComfortCategory=6;msVRSettingsSelected="START RESET";msFocusNextFrame=msVRSettingsSelected;
@@ -1457,15 +1638,39 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         }
         else if(mlVRComfortCategory==3)
         {
-            for(int i=0;i<6;i++) if(HPL3VR_Option(HPL3VR_BindingLabel(i),i))
+            for(int i=0;i<7;i++) if(HPL3VR_Option(HPL3VR_BindingLabel(i),i))
             {
-                HPL3VR_CancelBinding();cScript_RunGlobalFunc("VRBIND","","CHANGED");
-                mlVRBindAction=i;mfVRBindWait=0;cScript_RunGlobalFunc("VRBIND",""+i,"BEGIN");
-                msVRSettingsSelected=HPL3VR_BindingLabel(i);msFocusNextFrame=msVRSettingsSelected;
+                HPL3VR_CancelBinding();HPL3VR_ReadBindings();mlVRBindEdit=i;mlVRComfortCategory=9;
+                msVRSettingsSelected="CHANGE BINDING";msFocusNextFrame=msVRSettingsSelected;
+                ImGui_SetTransCategory(cat);return true;
             }
             if(HPL3VR_Option("RESTORE DEFAULTS",7))
             {
-                HPL3VR_CancelBinding();for(int i=0;i<6;i++) mvVRButtonMap[i]=i;HPL3VR_SaveComfort();
+                HPL3VR_CancelBinding();for(int i=0;i<7;i++) mvVRButtonMap[i]=i==6 ? 14 : i;HPL3VR_SaveComfort();
+            }
+        }
+        else if(mlVRComfortCategory==9)
+        {
+            HPL3VR_ResetLabel("CURRENT BINDING: "+HPL3VR_BindingButton(mvVRButtonMap[mlVRBindEdit]),0);
+            if(mlVRBindAction>=0) HPL3VR_ResetLabel("RELEASE BUTTONS, THEN PRESS THE NEW BUTTON.",1);
+            else
+            {
+                if(HPL3VR_Option("CHANGE BINDING",1))
+                {
+                    HPL3VR_CancelBinding();mlVRBindAction=mlVRBindEdit;mfVRBindWait=0;
+                    cScript_RunGlobalFunc("VRBIND",""+mlVRBindEdit,"BEGIN");msVRSettingsSelected="BACK";msFocusNextFrame="BACK";
+                }
+                if(mlVRBindAction<0 && mvVRButtonMap[mlVRBindEdit]!=14 && HPL3VR_Option("CLEAR BINDING",2))
+                {
+                    mbVRBindClear=true;
+                    if(mlVRBindEdit<6)
+                    {
+                        msVRBindMessage="CLEAR "+HPL3VR_BindingAction(mlVRBindEdit)+"? THIS ACTION WILL HAVE NO CONTROLLER BUTTON.";
+                        if(mlVRBindEdit==2)msVRBindMessage="CLEAR PAUSE? USE KEYBOARD ESC TO OPEN THE MENU.";
+                        mbVRBindConfirm=true;msVRBindFocus="NO";msFocusNextFrame="NO";
+                    }
+                    else HPL3VR_FinishBinding(true);
+                }
             }
         }
         else if(mlVRComfortCategory==2)
@@ -1477,9 +1682,9 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             array<tString> modes={"OFF","MOVEMENT LOW","MOVEMENT HIGH","ALWAYS"};
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(modes,"");
             ImGui_SetTransCategory("");
-            int vignette=OptionMenu_ButtonOptionsMultiSelect("VIGNETTE",kMainMenuButtonPos,4,msVRSettingsSelected,modes,mlVRVignette,false,mlActionHorizontal,"");
+            int vignette=HPL3VR_Multi("VIGNETTE",4,modes,mlVRVignette);
             ImGui_SetTransCategory("");
-            msVRSettingsSelected=OptionMenu_UpdateFocus("VIGNETTE",msVRSettingsSelected);
+            
             bool shake=HPL3VR_Toggle("HIDE SCREEN SHAKE",5,mbVRHideShake);
             changed=distortion!=mbVRHideDistortion || chromatic!=mbVRHideChromatic || trails!=mbVRHideTrails || blur!=mbVRHideBlur || vignette!=mlVRVignette || shake!=mbVRHideShake;
             bool bob=HPL3VR_Toggle("HIDE HEAD AND HAND BOBBING",6,mbVRHideMovementBob);
@@ -1488,6 +1693,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             changed=changed || budget!=mbVRTextureBudget;mbVRTextureBudget=budget;
             bool mirror=HPL3VR_Toggle("DESKTOP MIRROR",8,mbVRDesktopMirror);
             changed=changed || mirror!=mbVRDesktopMirror;mbVRDesktopMirror=mirror;
+            bool rate=HPL3VR_Toggle("120HZ PHYSICS",9,mbVR120Mode);
+            if(rate!=mbVR120Mode)HPL3VR_RequestSimulationMode(rate);
             mbVRHideShake=shake;
             mbVRHideDistortion=distortion; mbVRHideChromatic=chromatic; mbVRHideTrails=trails;mbVRHideBlur=blur;mlVRVignette=vignette;
         }
@@ -1515,14 +1722,14 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             bool enabled=HPL3VR_Toggle("ENABLE DFR",0,mbVRDynamicFoveation);
             changed=enabled!=mbVRDynamicFoveation;mbVRDynamicFoveation=enabled;
             array<tString> presets={"QUALITY","BALANCED","PERFORMANCE","CUSTOM"};
-            int preset=OptionMenu_ButtonOptionsMultiSelect("QUALITY PRESET",kMainMenuButtonPos,1,msVRSettingsSelected,presets,mlVRDFRPreset,false,mlActionHorizontal,"");
-            ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("QUALITY PRESET",msVRSettingsSelected);
+            int preset=HPL3VR_Multi("QUALITY PRESET",1,presets,mlVRDFRPreset);
+            ImGui_SetTransCategory("");
             if(preset!=mlVRDFRPreset) { HPL3VR_ApplyDFRPreset(preset);changed=true; }
             int inner=HPL3VR_Slider("SHARP REGION RADIUS",2,mlVRDFRInner,25,""+(10+mlVRDFRInner)+" DEG");
             int outer=HPL3VR_Slider("OUTER REGION START",3,mlVRDFROuter,35,""+(25+mlVRDFROuter)+" DEG");
             array<tString> rates={"2 X 2","4 X 4"};
-            int rate=OptionMenu_ButtonOptionsMultiSelect("OUTER SHADING",kMainMenuButtonPos,4,msVRSettingsSelected,rates,mlVRDFRRate,false,mlActionHorizontal,"");
-            ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("OUTER SHADING",msVRSettingsSelected);
+            int rate=HPL3VR_Multi("OUTER SHADING",4,rates,mlVRDFRRate);
+            ImGui_SetTransCategory("");
             bool protection=HPL3VR_Toggle("GAZE MOTION PROTECTION",5,mbVRDFRProtection);
             if(inner!=mlVRDFRInner || outer!=mlVRDFROuter || rate!=mlVRDFRRate || protection!=mbVRDFRProtection)
             {
@@ -1532,21 +1739,22 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             changed=changed || timing!=mbVRDFRTiming;mbVRDFRTiming=timing;
             if(HPL3VR_Option("RESTORE DEFAULTS",7)) { HPL3VR_ApplyDFRPreset(0);mbVRDFRTiming=false;changed=true; }
         }
+
         else if(mlVRComfortCategory==8)
         {
             array<tString> modes={"FULL","ESSENTIAL","OFF"};
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(modes,"");ImGui_SetTransCategory("");
             int mode=cLux_GetUserConfig().GetInt("SOMA_VR_Hints","Mode",0);if(mode<0 || mode>2)mode=0;
-            int value=OptionMenu_ButtonOptionsMultiSelect("VR HINTS",kMainMenuButtonPos,0,msVRSettingsSelected,modes,mode,false,mlActionHorizontal,"");
-            ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("VR HINTS",msVRSettingsSelected);
+            int value=HPL3VR_Multi("VR HINTS",0,modes,mode);
+            ImGui_SetTransCategory("");
             if(value!=mode){cLux_GetUserConfig().SetInt("SOMA_VR_Hints","Mode",value);cLux_GetUserConfig().Save();}
             if(HPL3VR_Option("RESET VR HINTS",1)){cScript_RunGlobalFunc("HintHandler","cScrHintHandler","ResetVRHints");cLux_GetUserConfig().Save();}
         }
         else if(mlVRComfortCategory==5)
         {
             array<tString> modes={"ORIGINAL","HEAD TRACKED","BINAURAL HEADPHONES"};
-            int mode=OptionMenu_ButtonOptionsMultiSelect("SPATIAL AUDIO",kMainMenuButtonPos,0,msVRSettingsSelected,modes,mlVRAudioMode,false,mlActionHorizontal,"");
-            ImGui_SetTransCategory("");msVRSettingsSelected=OptionMenu_UpdateFocus("SPATIAL AUDIO",msVRSettingsSelected);
+            int mode=HPL3VR_Multi("SPATIAL AUDIO",0,modes,mlVRAudioMode);
+            ImGui_SetTransCategory("");
             changed=mode!=mlVRAudioMode;mlVRAudioMode=mode;
         }
         else if(mlVRComfortCategory==6)
@@ -1569,7 +1777,19 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         }
 
         if(changed) HPL3VR_SaveComfort();
-        if(HPL3VR_Option("BACK",HPL3VR_BackRow()) || ImGui_ActionTriggered(eImGuiAction_Cancel,true))
+        int navigationRow=visibleRows;
+        if(pages>1 && !mbVR120Pending && !mbVRBindConfirm)
+        {
+            int delta=0;
+            if(HPL3VR_Page()+1<pages && HPL3VR_Navigation("NEXT PAGE",navigationRow++))delta=1;
+            if(delta!=0)
+            {
+                mvVRSettingsPages[mlVRComfortCategory]+=delta;
+                msVRSettingsSelected="BACK";msFocusNextFrame="BACK";
+                ImGui_SetTransCategory(cat);return true;
+            }
+        }
+        if(!mbVR120Pending && !mbVRBindConfirm && (HPL3VR_Navigation("BACK",navigationRow) || ImGui_ActionTriggered(eImGuiAction_Cancel,true)))
         {
             HPL3VR_BackSettings();
         }
@@ -1589,6 +1809,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(role==4)text=mlVRCrouchMode==2 ? "Lower your body to crouch. Moving while crouched is quieter." : "Use your crouch binding to crouch. "+text;
         cScript_SetGlobalReturnString(text);
     }
+	void HPL3VR_GetOmnidirectionalSprint() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive && mbVROmnidirectionalSprint); }
 	void HPL3VR_GetRuntimeActive() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive); }
 
     void HPL3VR_GetBobMask()
@@ -2119,6 +2340,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 	
 	void PostUpdate(float afTimeStep)
 	{
+        if(mbVRRemoteGrab) cScript_RunGlobalFunc("VROUTLINE","POST","Q");
 	}
 	
 	void Reset()

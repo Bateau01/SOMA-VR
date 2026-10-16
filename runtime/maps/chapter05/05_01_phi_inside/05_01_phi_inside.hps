@@ -1786,7 +1786,7 @@ class cScrMap : iScrMap
                 cScript_SetGlobalArgString(0,"powerpack_1"); cScript_SetGlobalReturnBool(false);
                 cScript_RunGlobalFunc("PlayerToolHandler","","_Global_GetToolIsInInventory");
                 if(cScript_GetGlobalReturnBool()) return false;
-                Entity_PlaceAtEntity("powerpack_1",asTool);
+                Entity_PlaceAtEntity("powerpack_1",asTool,cVector3f_Zero,true);
                 Entity_SetVarString("powerpack_1","VRReturnArea",sPowerpackAreaPrefix+cString_Sub(asTool,sPowerpackPluggedPrefix.length()));
                 cScript_RunGlobalFunc("VROMNITHETA","powerpack_1","R");
                 cScript_SetGlobalReturnBool(false);

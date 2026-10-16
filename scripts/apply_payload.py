@@ -413,6 +413,11 @@ def main(inp,objp,outp):
  off=rva_to_file(data,CREATE_SWAPCHAINS_CALL_RVA);expected=rel32(CREATE_SWAPCHAINS_CALL_RVA,CREATE_SWAPCHAINS_OLD_RVA)
  if data[off:off+5]!=expected:raise SystemExit(f'unexpected CreateSwapchains call {data[off:off+5].hex()} expected {expected.hex()}')
  data[off:off+5]=rel32(CREATE_SWAPCHAINS_CALL_RVA,res['h5750xr2_create_swapchains_wrapper']-IMAGE_BASE)
+ # S26GJ: an immutable call beyond the swap prologue also runs when an
+ # external hook chain invokes a cached entry trampoline rather than the entry.
+ off=rva_to_file(data,0xAACB)
+ if data[off:off+5]!=bytes.fromhex('b801000000'):raise SystemExit('Unexpected P2 swap-body instruction')
+ data[off:off+5]=rel32(0xAACB,res['s26gj_swap_entry']-IMAGE_BASE)
  # Route every frozen direct Session::SubmitEye call through the H57.50x wrapper.
  # It calls the original method first, then expands only imageRect to the full
  # swapchain because the eye texture is already pre-cropped to the exact runtime FOV.

@@ -135,7 +135,23 @@
     "0x378a40": "0x3708d0",
     "0x3716e0": "0x3697b0",
     "0x371ee0": "0x368ad0",
-    "0x387e50": "0x3800d0"
+    "0x387e50": "0x3800d0",
+    "0x364f10": "0x35d630",
+    "0x54540": "0x50e20",
+    "0x54170": "0x50a50",
+    "0x161510": "0x15ba20",
+    "0xaf5e0": "0x2f4fa0",
+    "0x57c8b0": "0x574120",
+    "0x57c8ff": "0x57416f",
+    "0x57c959": "0x5741c9",
+    "0x57c95a": "0x5741ca",
+    "0x57c95b": "0x5741cb",
+    "0x68ea40": "0x65c620",
+    "0x6151d1ca": "0x6151ca9c",
+    "0x8fb000": "0x87b000",
+    "0x43cf10": "0x434f60",
+    "0x392b00": "0x38a950",
+    "0xaabf0": "0xa8660"
   },
   "signature_changes": {
     "488bc45541564157488da8e8": "48895c240848897c24104c89",
@@ -143,7 +159,9 @@
     "48897424204154415541564883ec60488b05dae252000f29742450660f": "48897424204154415541564883ec60488b05aa4a4b000f29742450660f",
     "48895c240848896c24104889742418574883ec50ff05965e570033c0": "48895c240848896c24104889742418574883ec50ff05a69e4f0033c0",
     "40534883ec20488d05bbd444": "40534883ec20488d05fb4941",
-    "488bcae9d8c50100cccccccccccccccc": "488bcae968c60100cccccccccccccccc"
+    "488bcae9d8c50100cccccccccccccccc": "488bcae968c60100cccccccccccccccc",
+    "488bc4488948085556574154415541564157": "48895c241048896c24185657415441554156",
+    "488bc455574154488d68a14881eca0000000": "4c8bdc49895b2055498d6ba14881ec900000"
   },
   "base_operands": [
     {
@@ -6510,6 +6528,17 @@
     "0x5d1f0": "Ghidra store 0x59b40 is config writer, uses width at this+100 and height at this+0x68; 0x5b730 is reader.",
     "0x284720": "2376-byte function normalized instruction equality at 0x27e480.",
     "0x1af620": "64-byte leaf prefix normalized instruction equality at 0x1a98a0; existing signature matches.",
-    "0x8148f0": "Unique global reference votes; render-frame increment RIP operand at mapped 0x29ea40 checked in runtime guard."
+    "0x8148f0": "Unique global reference votes; render-frame increment RIP operand at mapped 0x29ea40 checked in runtime guard.",
+    "0x364f10": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x54540": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x54170": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x161510": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0xaf5e0": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x57c8b0": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x57c8ff": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x57c959": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x57c95a": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x57c95b": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence.",
+    "0x68ea40": "S26GL: verified store timer/step normalized machine code, RTTI player-update slot and constructor history fields; see store-rate evidence."
   }
 }

@@ -268,6 +268,14 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 		/////////////////////////////////////////////
 		// Get variables
 		iCharacterBody @pCharBody = mBaseObj.mpPlayer.GetCharacterBody();
+        // S26GG: native ground grace counts updates, not seconds. Preserve the
+        // shipped 12/60-second window, including when a saved body is restored.
+        // Do not replace custom script-authored values outside our 12/24 pair.
+        int groundCount=pCharBody.GetMaxOnGroundCount();
+        int desiredGroundCount=cEngine_GetStepSize()<0.012f ? 24 : 12;
+        if((groundCount==12 || groundCount==24) && groundCount!=desiredGroundCount)
+            pCharBody.SetMaxOnGroundCount(desiredGroundCount);
+
 				
 		/////////////////////////////////////////////
 		// Check if in conversation
@@ -378,6 +386,7 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 		
 		/////////////////////////////////////////////
 		// Update speed muls
+		bool bVROmniSprint = false;
 		float fUnmodifiedMaxForwardSpeed = mBaseObj.mfMaxForwardSpeed; //Not affected by script multipliers
 		
 		if(pCharBody.IsOnGround())
@@ -389,7 +398,20 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 				float fScriptRunMul = Player_GetRunSpeedMul();
 				fScriptRunMul *= cScript_GetGlobalVarFloat("ToolRunSpeedMul");
 				mBaseObj.mfMaxForwardSpeed += (mBaseObj.mfMaxForwardSpeed * 1.1) * fScriptRunMul;
-				mBaseObj.mfMaxSidwaySpeed += (mBaseObj.mfMaxSidwaySpeed * 0.5) *  fScriptRunMul;
+                cScript_SetGlobalReturnBool(false);
+                cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetOmnidirectionalSprint");
+                if(cScript_GetGlobalReturnBool())
+                {
+                    bVROmniSprint = fScriptRunMul > 0;
+                    // FN: equal full run speed in every body-relative direction.
+                    // Preserve zero/reduced authored run multipliers and all later movement modifiers.
+                    mBaseObj.mfMaxBackwardSpeed += (2.5f * 2.1f - mBaseObj.mfMaxBackwardSpeed) * fScriptRunMul;
+                    mBaseObj.mfMaxSidwaySpeed += (2.5f * 2.1f - mBaseObj.mfMaxSidwaySpeed) * fScriptRunMul;
+                }
+                else
+                {
+                    mBaseObj.mfMaxSidwaySpeed += (mBaseObj.mfMaxSidwaySpeed * 0.5) * fScriptRunMul;
+                }
 				
 			}
 			if(mbCrouching)
@@ -437,8 +459,8 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 		if(Player_GetUnderwater())
 		{
 			mBaseObj.mfMaxForwardSpeed *= 0.8;
-			mBaseObj.mfMaxBackwardSpeed *= 0.9;
-			mBaseObj.mfMaxSidwaySpeed *= 0.9;
+			mBaseObj.mfMaxBackwardSpeed *= bVROmniSprint ? 0.8f : 0.9f;
+			mBaseObj.mfMaxSidwaySpeed *= bVROmniSprint ? 0.8f : 0.9f;
 			
 			fUnmodifiedMaxForwardSpeed *= 0.8;
 		}
@@ -944,7 +966,11 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 
 		if(!mbVRPhysicalCrouch) SetCrouching(false);
 
-		pCharBody.AddForce(cVector3f(0, fStartForce * gfPlayer_BodyDefaultMass,0));		
+		// Launch force is applied once and cleared by native integration. Preserve
+		// its authored 60-Hz impulse at the active engine step; ongoing gravity
+		// compensation in UpdateJumping remains an ordinary unscaled force.
+		float fLaunchStepScale=(1.0f/60.0f)/cEngine_GetStepSize();
+		pCharBody.AddForce(cVector3f(0, fStartForce * fLaunchStepScale * gfPlayer_BodyDefaultMass,0));		
 		mbJumping = true;
 		mfJumpCount = 0;
 		mfJumpDelayCount = 0;
@@ -1587,6 +1613,7 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 	bool mbForceCrawling;
 	bool mbCrouching;
 	bool mbRunning;
+
 	bool mbCrawling;
 	
 	bool mbDisableCrawling=false;

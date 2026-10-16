@@ -121,9 +121,18 @@ class cScrPropOmniSlot : cScrPropRigid
 		return mtxTarget;
 	}
 
+    bool VR_IsLambdaLifeboatSlot()
+    {
+        if (mBaseObj.GetName() != "OmniToolSlotLifeBoat") return false;
+        cLuxMap@ map = cLux_GetCurrentMap();
+        return map !is null && map.GetName() == "02_01_ms_curie_outside";
+    }
+
 	void VR_UpdatePhysicalDock()
 	{
-		if (!mbAttachAllowed) { mbVRDockCaptureLatched = false; return; }
+        // S26GV: preserve the pre-GU gate for every other map/slot.
+        if (!mbAttachAllowed && !VR_IsLambdaLifeboatSlot())
+        { mbVRDockCaptureLatched = false; return; }
 		cScript_RunGlobalFunc("PlayerToolHandler", "", "_Global_VRGetCanonicalOmniName");
 		tString sTool = cScript_GetGlobalReturnString();
 		if (sTool == "") { mbVRDockCaptureLatched = false; return; }
@@ -135,6 +144,15 @@ class cScrPropOmniSlot : cScrPropRigid
 		cMatrixf mtxTarget = VR_GetToolTargetMatrix(pTool);
 		cMatrixf mtxTool = pTool.GetMatrix();
 		float fDist = cMath_Vector3Dist(mtxTool.GetTranslation(), mtxTarget.GetTranslation());
+        // Ejection must not immediately redock a tool as the player retrieves it.
+        // Preserve this across missing canonical carriers and save/load; require
+        // physical withdrawal, not merely rotating the tool inside the socket.
+        if (VR_IsLambdaLifeboatSlot() && mbVRDockAwaitExit)
+        {
+            if (fDist <= 0.12f) return;
+            mbVRDockAwaitExit = false;
+            mbVRDockCaptureLatched = false;
+        }
 		float fForward = cMath_Vector3Dot(mtxTool.GetForward(), mtxTarget.GetForward());
 		float fUp = cMath_Vector3Dot(mtxTool.GetUp(), mtxTarget.GetUp());
 		bool bCaptured = fDist <= 0.08f && fForward >= 0.80f && fUp >= 0.80f;
@@ -259,6 +277,7 @@ class cScrPropOmniSlot : cScrPropRigid
 	
 	void AllowDetach(const tString &in asTool, bool abEffects)
 	{		
+        if (_HPL3VR_RuntimeActive_OmniSlot() && VR_IsLambdaLifeboatSlot()) mbVRDockAwaitExit = true;
 		if (abEffects) Depth_Audio_Omnitool_Popout(asTool);
 		
 		cScript_RunGlobalFunc(asTool, "cScrPropCatherineTool", "Detach");
@@ -288,6 +307,7 @@ class cScrPropOmniSlot : cScrPropRigid
 	tString msOffLamp;
 	
 	bool mbAttachAllowed = true;
+    bool mbVRDockAwaitExit = false; // saved withdrawal requirement after ejection
 	[nosave] bool mbVRDockCaptureLatched = false;
 	[nosave] float mfVRDockRetry=0;
 }

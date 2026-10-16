@@ -1,0 +1,1448 @@
+#include "interfaces/Agent_SwimBot.hps"
+
+#include "helpers/helper_player.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_modules.hps"
+#include "helpers/helper_effects.hps"
+#include "helper_custom_depth.hps"
+
+enum eLeviathanState
+{
+	eLeviathanState_FollowTrack,
+	eLeviathanState_CirclePlayer,
+	eLeviathanState_Hunt,
+}
+
+enum eLeviathanSpeed
+{
+	eLeviathanSpeed_Normal,
+	eLeviathanSpeed_CircleSlow,
+	eLeviathanSpeed_CircleNormal,
+	eLeviathanSpeed_CircleFast,
+	eLeviathanSpeed_CircleCatchUp,
+	eLeviathanSpeed_Hunt,
+	eLeviathanSpeed_HuntDash,
+}
+
+enum eLeviathanBark
+{
+	eLeviathanBark_Search,
+	eLeviathanBark_Hunt,
+	eLeviathanBark_HuntIntense,
+}
+	
+//-------------------------------------------------------
+//{BARKS
+
+const tString gsMoveLoopSound = "NPC_Creatures/Foley/Underwater/Leviathan/moving";
+const tString gsIdleLoopSound = "";
+const float gfMoveLoopSoundMinSpeed =0;
+
+const tString gsBarkSearch_Sound ="NPC_Creatures/Vocalisations/Underwater/Leviathan/search";
+const float gfBarkSearch_MinTime=7;
+const float gfBarkSearch_MaxTime=12;
+
+const tString gsBarkHunt_Sound ="NPC_Creatures/Vocalisations/Underwater/Leviathan/hunt";
+const float gfBarkHunt_MinTime=6;
+const float gfBarkHunt_MaxTime=12;
+
+const tString gsBarkHuntIntense_Sound ="NPC_Creatures/Vocalisations/Underwater/Leviathan/hunt_intense";
+const float gfBarkHuntIntense_MinTime=6;
+const float gfBarkHuntIntense_MaxTime=12;
+
+const tString gfHuntBuildUpStartScream="";
+const tString gfHuntStartScream="";
+
+const tString gsCaptureStartSound = "NPC_Creatures/Foley/Underwater/Leviathan/capture/capture_start";
+const tString gsCaptureLoopSound = "NPC_Creatures/Foley/Underwater/Leviathan/capture/capture_loop";
+const tString gsCaptureEndSound = "NPC_Creatures/Foley/Underwater/Leviathan/capture/capture_end";
+
+//}ENDBARKS
+//-------------------------------------------------------
+//Music for chase to be triggered in-game
+const tString gsMusic_HuntBuildUp ="NPC_Creature_Attack";
+const float gfMusic_HuntBuildUpVolume = 0.75f;
+
+const tString gsMusic_Hunt ="NPC_creature_attack_brutal";
+const float gfMusic_HuntVolume = 0.75f;
+
+//-------------------------------------------------------
+
+
+class cScrAgentLeviathan : cScrAgentSwimBot
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		cScrAgentSwimBot::Init();
+		
+		mBaseObj.SetUpdatePlayerDetection(true);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	//{//////////////////////////////////////
+	
+	
+	//------------------------------------------------------------
+	
+	void SetupCharBody()
+	{ 
+		cScrAgentSwimBot::SetupCharBody();
+		
+		iCharacterBody@ pCharBody = mBaseObj.GetCharBody();
+		pCharBody.SetMass(300);
+		
+		pCharBody.SetMaxPositiveMoveSpeed(eCharDir_Forward,1.55f);
+		pCharBody.SetMoveAcc(eCharDir_Forward,2.3f);
+		pCharBody.SetMoveDeacc(eCharDir_Forward,5.3);
+		pCharBody.SetMoveOppositeDirAccMul(eCharDir_Forward,1);
+		pCharBody.SetTestCollision(false);
+		pCharBody.SetCollideCharacter(false);
+		pCharBody.SetEntityPitchAmount(0.7f);
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld,  cResourceVarsObject@ apVars,  cResourceVarsObject@ apInstanceVars)
+	{
+		cScrAgentSwimBot::SetupAfterLoad(apWorld, apVars, apInstanceVars);
+		
+		/////////////////////////////////
+		// Genral Setup
+		mBaseObj.SetFOV(cMath_ToRad(230.0f));
+		mBaseObj.SetSightRange(40);
+		
+		msLoopSound_Move = gsMoveLoopSound;
+		msLoopSound_Idle = gsIdleLoopSound;
+		mfLoopSoundMinMoveSpeed = gfMoveLoopSoundMinSpeed;
+		mbBubbleEffectsActive = false;
+		
+		mpForceEmitter.SetActive(true);
+		mpForceEmitter.SetRadius(4.4f);
+		
+		/////////////////////////////////
+		// Mover
+		mpMover.SetWallAvoidanceActive(true);
+		mpMover.SetupWallAvoidance(4.75f, 12.0f, 8);
+		mpMover.SetDynamicObjectAvoidanceActive(false);
+		
+		mpMover.SetWalkAnimName("swim");
+		mpMover.SetMoveSpeedAnimMul(0.35);
+		
+				
+		mpMover.SetStoppedToWalkSpeed(0.05);
+		mpMover.SetWalkToStoppedSpeed(0.025);
+		mpMover.SetWalkToRunSpeed(300);
+		mpMover.SetRunToWalkSpeed(300);
+		
+		mpMover.SetTurnMinBreakAngle(cMath_ToRad(30) );
+		mpMover.SetTurnBreakMul(0);
+		mpMover.SetTurnSpeedMul(0.5);
+		mpMover.SetTurnMaxSpeed(1.5);
+		
+		mpMover.SetBankingAngleMul(0.05);
+		mpMover.SetBankingMaxAngle(cMath_ToRad(35));
+		mpMover.SetBankingSpeedMul(2.0f);
+		mpMover.SetBankingMaxSpeed(0.3f);
+		
+		/////////////////////////////////
+		// Speed States
+		mpMover.AddSpeedState(eLeviathanSpeed_Normal);
+		mpMover.SetSpeedState_Forward(2.5f);
+		mpMover.SetSpeedState_ForwardAcc(1.3f);
+		mpMover.SetSpeedState_TurnSpeedMul(2.5f);
+		mpMover.SetSpeedState_TurnMaxSpeed(5.0f);
+		
+		mpMover.AddSpeedState(eLeviathanSpeed_CircleSlow);
+		mpMover.SetSpeedState_Forward(2.5f);
+		mpMover.SetSpeedState_ForwardAcc(1.3f);
+		mpMover.SetSpeedState_ForwardDeacc(1.5f);
+		
+		mpMover.AddSpeedState(eLeviathanSpeed_CircleNormal);
+		mpMover.SetSpeedState_Forward(4.5f);
+		mpMover.SetSpeedState_ForwardAcc(1.3f);
+		mpMover.SetSpeedState_ForwardDeacc(1.5f);
+		
+		mpMover.AddSpeedState(eLeviathanSpeed_CircleFast);
+		mpMover.SetSpeedState_Forward(6.0f);
+		mpMover.SetSpeedState_ForwardAcc(1.3f);
+		mpMover.SetSpeedState_ForwardDeacc(2.3f);
+		
+		mpMover.AddSpeedState(eLeviathanSpeed_CircleCatchUp);
+		mpMover.SetSpeedState_Forward(12.0f);
+		mpMover.SetSpeedState_ForwardAcc(5.3f);
+				
+		mpMover.AddSpeedState(eLeviathanSpeed_Hunt);
+		mpMover.SetSpeedState_Forward(5.75);
+		mpMover.SetSpeedState_ForwardAcc(5.3f);
+		mpMover.SetSpeedState_TurnSpeedMul(2.5f);
+		mpMover.SetSpeedState_TurnMaxSpeed(5.0f);
+		
+		mpMover.AddSpeedState(eLeviathanSpeed_HuntDash);
+		mpMover.SetSpeedState_Forward(9.75);
+		mpMover.SetSpeedState_ForwardAcc(5.3f);
+		mpMover.SetSpeedState_TurnSpeedMul(3.5f);
+		mpMover.SetSpeedState_TurnMaxSpeed(7.0f);
+				
+		/////////////////////////////////
+		// States
+		mpStateMachine.AddState("CirclePlayer", eLeviathanState_CirclePlayer);
+		mpStateMachine.AddState("Hunt", eLeviathanState_Hunt);
+		mpStateMachine.AddState("FollowTrack", eLeviathanState_FollowTrack);
+		
+		
+		///////////////////////////////
+		//Light Sensor
+		@mpLightSensor = cLux_CreateEntityComponent_LightSensor(mBaseObj);
+		
+		
+		/////////////////////////////////
+		// BarkMachine
+		@mpBarkMachine = cLux_CreateEntityComponent_BarkMachine(mBaseObj);
+		mpBarkMachine.AddState(eLeviathanBark_Search);
+		mpBarkMachine.SetState_SoundBark(gsBarkSearch_Sound, gfBarkSearch_MinTime,gfBarkSearch_MaxTime, true);
+		
+		mpBarkMachine.AddState(eLeviathanBark_Hunt);
+		mpBarkMachine.SetState_SoundBark(gsBarkHunt_Sound, gfBarkHunt_MinTime,gfBarkHunt_MaxTime, true);
+		
+		mpBarkMachine.AddState(eLeviathanBark_HuntIntense);
+		mpBarkMachine.SetState_SoundBark(gsBarkHuntIntense_Sound, gfBarkHuntIntense_MinTime,gfBarkHuntIntense_MaxTime, true);
+		
+		/////////////////////////////////
+		// BackBone
+		@mpBackboneTail = cLux_CreateEntityComponent_BackboneTail(mBaseObj);
+		mpBackboneTail.SetAddTrailFreq(1.0f);
+ 		mpBackboneTail.SetMaxTrailSize(80);
+		mpBackboneTail.SetStiffness(1.05f);
+		array<tString> vBoneNames;
+			vBoneNames.push_back("Spine_00");
+			vBoneNames.push_back("Spine_01");
+			vBoneNames.push_back("Spine_02");
+			vBoneNames.push_back("Spine_03");
+			vBoneNames.push_back("Spine_04");
+			vBoneNames.push_back("Spine_05");
+			vBoneNames.push_back("Spine_06");
+			vBoneNames.push_back("Spine_07");
+			vBoneNames.push_back("Spine_end");
+		mpBackboneTail.Setup(vBoneNames);
+	}
+	
+	//------------------------------------------------------------
+	
+	//} END LOADING
+	
+	/////////////////////////////////////////
+	// GENERAL
+	//{//////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{
+		cScrAgentSwimBot::OnUpdate(afTimeStep);
+		
+		//cLux_AddDebugMessage("Heading to: " + vMoveToTarget);
+		//cLux_AddDebugMessage("Dist: " + cMath_Vector3Dist(vMoveToTarget, mBaseObj.GetPosition()));
+		
+		UpdatePlayerIsInTheOpen(afTimeStep);
+		
+		UpdateLightBrightness(afTimeStep);
+		
+		UpdateGroundCollideTest(afTimeStep);
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdatePlayerIsInTheOpen(float afTimeStep)
+	{
+		mfCheckPlayerIsInTheOpenCount -= afTimeStep;
+		if(mfCheckPlayerIsInTheOpenCount>0) return;
+		mfCheckPlayerIsInTheOpenCount = 0.3f;
+		
+		mbPlayerIsInTheOpen = true;
+		
+		if(mbCirclePlayer_Capture) return;
+		
+		cVector3f vPlayerPos = mBaseObj.GetPlayerPos();
+		
+		cLuxClosestCharCollider output;
+		
+		array<cVector3f> vRayDirs; vRayDirs.resize(5);
+		vRayDirs[0] = cVector3f(0,1,0);
+		vRayDirs[1] = cVector3f(1,0,0);
+		vRayDirs[2] = cVector3f(-1,0,0);
+		vRayDirs[3] = cVector3f(0,0,1);
+		vRayDirs[4] = cVector3f(0,0,-1);
+		//vRayDirs[5] = cVector3f(1,0,1);
+		//vRayDirs[6] = cVector3f(-1,0,1);
+		//vRayDirs[7] = cVector3f(1,0,-1);
+		//vRayDirs[8] = cVector3f(-1,0,-1);
+		
+		int lCount=0;
+		int lGoalCount = 2;
+		for(int i=0; i<vRayDirs.size(); ++i)
+		{
+			if(cLux_GetClosestCharCollider(vPlayerPos, vRayDirs[i], 1.9f, false,output))
+				lCount++;
+				
+			if(lCount==lGoalCount)
+			{
+				mbPlayerIsInTheOpen=false;
+				break;
+			}
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateLightBrightness(float afTimeStep)
+	{
+		float fT = Effect_VideoDistortion_GetEffectAmount();
+		
+		float fBrightness = cMath_Easing(eEasing_QuadIn, fT, 	cMath_Min(0.3f*mfLightBrightness, 0.4f), 
+																mfLightBrightness);
+		
+		mBaseObj.SetEffectBaseColor(cColor(fBrightness, 1.0f));
+	}
+	
+	//------------------------------------------------------------
+	
+	void UpdateGroundCollideTest(float afTimeStep)
+	{
+		mfGroundCollideTestCount -= afTimeStep;
+		if(mfGroundCollideTestCount>0) return;
+		
+		mfGroundCollideTestCount = 0.1f;
+		
+		iCharacterBody@ pCharBody = mBaseObj.GetCharBody();
+		cVector3f vPushBack;
+		
+		//TODO!!
+		//if(pCharBody.CheckCharacterFits(pCharBody.GetPosition(), false, 0, vPushBack)==false)
+		//{
+			//cLux_AddDebugMessage("COLLISION, Amount: "+vPushBack.Length());
+		//}
+	}
+	
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+		cScrAgentSwimBot::ResetProperties();
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	//} END GENERAL
+	
+	/////////////////////////////////////////
+	// STATES
+	//{//////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void SetDefaultDistortion()
+	{
+		if(mbFollowTrackDeathMeter)
+			SetHuntDistortion();
+		else
+			DistortionEffect_AddInstance(mBaseObj.GetID(), 	60, 4, 0.4f, eEasing_QuadIn);
+	}
+	
+	void SetHuntBuildupDistortion()
+	{
+		DistortionEffect_AddInstance(mBaseObj.GetID(), 	30, 4, 0.8f, eEasing_QuadIn);
+	}
+	
+	void SetHuntDistortion()
+	{
+		DistortionEffect_AddInstance(mBaseObj.GetID(), 	40, 4, 1.0f, eEasing_QuadIn);
+	}
+	
+	void SetDefaultLightBrightness()
+	{
+		mfLightBrightness = 0.6f;
+	}
+	
+	//------------------------------------------------------------
+	
+		///////////////////////////////////
+		// STATE: CirclePlayer
+		//{////////////////////////////////
+		
+		//----------------------------------------------
+		
+		float mfCirclePlayer_WantedHeight=0;
+		float mfCirclePlayer_AttractAmount=1;
+		cVector3f mvCirclePlayer_GroundPos=0;
+		float mfCirclePlayer_AttractMul=1.0f;
+		int mlCirclePlayer_LastAttractRand=-1;
+		float mfCirclePlayer_CatchUpCount=0;
+		
+		float mfCirclePlayer_RetreatingCount = 0;
+		cVector3f mvCirclePlayer_RetreatPosition;
+		
+		bool mbCirclePlayer_Capture=false;
+		cVector3f mvCirclePlayer_HasPlayerCenterPos;
+		
+		float mfCirclePlayer_HuntBuildUpMax=10;
+		bool mbCirclePlayer_HuntBuildFirstTime=true;
+		
+		float mfCirclePlayer_HuntBuildUpCount=0; //Does NOT reset on enter!
+		
+		bool mbCirclePlayer_HuntBuildUpActive=false;
+		
+		//----------------------------------------------
+		
+		void CirclePlayer_UpdateHeight()
+		{
+			cVector3f vBasePos = mBaseObj.GetCharBody().GetPosition();
+			vBasePos.y += 5.0f; //In case already close to ground.
+			
+			cVector3f vFwd = mBaseObj.GetCharBody().GetForward();
+			vFwd.y=0; vFwd.Normalize();
+			array<cVector3f> vStartPos; vStartPos.resize(3);
+			vStartPos[0] = vBasePos;
+			vStartPos[1] = vBasePos + vFwd*3;
+			vStartPos[2] = vBasePos + vFwd*-2;
+			
+			cLuxClosestCharCollider output;
+			float fMinDistance=999999.0f;
+			bool bFoundGround=false;		
+			
+			for(int i=0; i<3; ++i)
+			{
+				cVector3f vPos = vStartPos[i];
+				
+				if(cLux_GetClosestCharCollider(vPos, cVector3f(0,-1,0), 100, false, output)==false)
+					continue;
+				
+				if(output.mfDistance < fMinDistance)
+				{
+					fMinDistance = output.mfDistance;
+					mvCirclePlayer_GroundPos = vPos;
+					mvCirclePlayer_GroundPos.y -= fMinDistance;
+					bFoundGround = true;
+				}				
+			}
+			
+			if(bFoundGround==false) return;
+			
+			mfCirclePlayer_WantedHeight = (vBasePos.y - fMinDistance) + 5.0f;
+		}
+		
+		//----------------------------------------------
+		
+		void State_CirclePlayer_Enter()
+		{
+			CirclePlayer_UpdateHeight();
+			
+			mpMover.SetSpeedState(eLeviathanSpeed_CircleNormal);
+			
+			mpBarkMachine.ChangeState(eLeviathanBark_Search);
+			
+			mpStateMachine.AddTimer("UpdateHeight", 0.5f);
+			mpStateMachine.AddTimer("AttractMulChange", 1.5f);
+			mpStateMachine.AddTimer("HuntCheck", 0.5f);
+			
+			if(mbCirclePlayer_Capture)
+			{
+				cAINode@ pNode = mpPathfinder.GetNodeAtPos(mBaseObj.GetPosition(),0, 300,true, false, false,null);
+				if(pNode !is null)
+				{
+					mvCirclePlayer_HasPlayerCenterPos = pNode.GetPosition(); 
+				}
+				else
+				{
+					mvCirclePlayer_HasPlayerCenterPos = mBaseObj.GetPlayerPos();
+				}
+			}
+			
+			mfCirclePlayer_CatchUpCount=0;	
+			mfCirclePlayer_AttractMul=1.0f;
+			
+			SetDefaultLightBrightness();
+			
+			SetDefaultDistortion();
+			
+			if (cLux_GetExplorationModeActive() == false) return;
+			mpStateMachine.AddTimer("AlternateBehaviour", cMath_RandRectf(30.f, 40.f));
+			// Remove attack meter
+			mpStateMachine.AddTimer(0, 4.f);
+		}
+		
+		//----------------------------------------------
+		
+		void State_CirclePlayer_Update(float afTimeStep)
+		{
+			///////////////////////////////
+			// Basic var set up
+			const float fCatchUpDist=25;
+			
+			cVector3f vCenterPos;
+			
+			if(mfCirclePlayer_RetreatingCount>0)
+				vCenterPos = mvCirclePlayer_RetreatPosition;
+			else if(mbCirclePlayer_Capture)
+				vCenterPos = mvCirclePlayer_HasPlayerCenterPos;
+			else
+				vCenterPos = mBaseObj.GetPlayerPos();
+			
+			float fDist = cMath_Vector3Dist(vCenterPos, mBaseObj.GetCharBody().GetPosition());
+			
+			///////////////////////////////
+			// Capture
+			if(mbCirclePlayer_Capture)
+			{
+				Capture_Update(afTimeStep);
+			}
+						
+			///////////////////////////////
+			// Retreat
+			if(mfCirclePlayer_RetreatingCount>0)
+			{
+				mfCirclePlayer_RetreatingCount -= afTimeStep;
+			}
+			
+			///////////////////////////////
+			// Catch up
+			if(mbCirclePlayer_Capture==false)
+			{
+				cVector3f vPlayerFwd = cLux_GetPlayer().GetCharacterBody().GetForward();
+				cVector3f vPlayerToMe = mBaseObj.GetCharBody().GetPosition() - vCenterPos;
+				vPlayerToMe.Normalize();
+				
+				float fPlayerDot = cMath_Vector3Dot(vPlayerFwd, vPlayerToMe);
+				
+				if(fDist> fCatchUpDist && cLux_GetPlayer().GetAverageMoveSpeed()>3.5f && fPlayerDot<0)
+				{
+					if(mfCirclePlayer_CatchUpCount<=0)
+					{
+						mfLightBrightness = 0.2f;
+					}
+					
+					mfCirclePlayer_CatchUpCount = 3.0f;
+				}
+					
+				if(mfCirclePlayer_CatchUpCount>0)
+				{
+					mfCirclePlayer_CatchUpCount-=afTimeStep;
+					
+					if(mfCirclePlayer_CatchUpCount<=0)
+					{
+						SetDefaultLightBrightness();
+					}
+				}
+			}
+			
+			///////////////////////////////
+			// Get attraction amount
+			float fMaxDist = mfCirclePlayer_HuntBuildUpCount>0 ? 10.0f : 30.0f;
+			
+			float fAttractAmount = cMath_Min(cMath_Max(fDist-5,0.0f) / fMaxDist, 1.0f);
+			fAttractAmount *= mfCirclePlayer_AttractMul;
+			
+			//When catching up, always go towards 
+			if(mfCirclePlayer_CatchUpCount>0) fAttractAmount = 1.0f;
+			
+			//So we never go through the player!
+			if(fDist < 5) fAttractAmount = 1.0f;
+			
+			//So the monster really circles the player
+			if(mfCirclePlayer_HuntBuildUpCount>0) fAttractAmount=1.0f;
+			
+			//If retreating, wanna retreat towards proper point
+			if(mfCirclePlayer_RetreatingCount>0) fAttractAmount=1.0f;
+			
+			///////////////////////////////////////////////
+			// Get the current dir and dir to center
+			cVector3f vFwd = mBaseObj.GetCharBody().GetForward();
+			vFwd.y=0; vFwd.Normalize();
+			
+			cVector3f vWantedPos = vCenterPos; vWantedPos.y = mfCirclePlayer_WantedHeight;
+			cVector3f vCurrentPos = mBaseObj.GetCharBody().GetPosition(); vCurrentPos.y = mfCirclePlayer_WantedHeight;
+			
+			cVector3f vWantedDir = cMath_Vector3Normalize(vWantedPos - vCurrentPos);
+			
+			///////////////////////////////////////////////
+			// Get the direction to travel n
+			cVector3f vNewDir = vWantedDir*fAttractAmount + vFwd*(1.0f - fAttractAmount);
+			
+			///////////////////////////////////////////////
+			// Go towards the wanted angle
+			mpMover.MoveToPos(vCurrentPos + vNewDir*2);
+			
+			//cLux_AddDebugMessage("fAttractAmount: "+fAttractAmount);
+			
+			///////////////////////////////////////////////
+			// Speed state
+			if(mfCirclePlayer_CatchUpCount>0)
+				mpMover.SetSpeedState(eLeviathanSpeed_CircleCatchUp);
+			else if(fDist > 15 && fAttractAmount>0)
+				mpMover.SetSpeedState(eLeviathanSpeed_CircleFast);
+			else if(fDist > 5)
+				mpMover.SetSpeedState(eLeviathanSpeed_CircleNormal);
+			else
+			{
+				if(mfCirclePlayer_HuntBuildUpCount>0)
+					mpMover.SetSpeedState(eLeviathanSpeed_CircleNormal);
+				else
+					mpMover.SetSpeedState(eLeviathanSpeed_CircleSlow);
+			}
+				
+			//cLux_AddDebugMessage("Speed: "+mBaseObj.GetCharBody().GetMoveSpeed(eCharDir_Forward)+" Dist:"+fDist+" Dot:"+fPlayerDot);
+			
+			
+			if (cLux_GetExplorationModeActive() == false || mpStateMachine.TimerExists(0) == true) return;
+			if (mfExplorationMode_KnockAwayCooldown > 0)
+			{
+				mfExplorationMode_KnockAwayCooldown -= afTimeStep;
+			}
+			
+			if (mBaseObj.GetDistanceToPlayer() > 3.6f || mfExplorationMode_KnockAwayCooldown > 0.f) return;			
+			////////////////////////////////////////////
+			// Player is too close, damage player a bit
+			Player_KnockAway(mBaseObj.GetPlayerPos() - mBaseObj.GetPosition(), 0.05f, 1.f);
+			cLux_AddDebugMessage("KNOCK!");
+			mfExplorationMode_KnockAwayCooldown = 3.f;
+		}
+		
+		//----------------------------------------------
+		
+		void State_CirclePlayer_TimerUp(uint64 alId) 
+		{
+			////////////////////////////////////
+			// Update the height
+			if(alId == H64("UpdateHeight"))
+			{
+				CirclePlayer_UpdateHeight();
+				
+				mpStateMachine.AddTimer("UpdateHeight", 0.5f);
+			}
+			////////////////////////////////////
+			// Attract Mul Change
+			if(alId == H64("AttractMulChange"))
+			{
+				int lRand = cMath_RandRectl(0, 2);
+				
+				float fTimeToNext;
+				if(lRand==0 && mlCirclePlayer_LastAttractRand!=0)
+				{
+					mfCirclePlayer_AttractMul = -1.0f;
+					fTimeToNext = cMath_RandRectf(2.0f, 8.0f);
+				}
+				else if(lRand==1 && mlCirclePlayer_LastAttractRand!=1)
+				{
+					mfCirclePlayer_AttractMul = 3.0f;
+					fTimeToNext = cMath_RandRectf(3.0f, 6.0f);
+				}
+				else
+				{
+					mfCirclePlayer_AttractMul = 1.0f;
+					fTimeToNext = cMath_RandRectf(2.0f, 6.0f);
+				}
+				
+				mlCirclePlayer_LastAttractRand = lRand;
+				
+				//cLux_AddDebugMessage("MUL: "+mfCirclePlayer_AttractMul);
+								
+				mpStateMachine.AddTimer("AttractMulChange", fTimeToNext);
+			}
+			////////////////////////////////////
+			// Hunt Check
+			if(alId == H64("HuntCheck"))
+			{
+				//////////////////////////////////
+				// Player is detected
+				if(	mBaseObj.PlayerIsDetected() && 
+					mfCirclePlayer_CatchUpCount<=0 && 
+					AttackMeter_GetPlayerIsRecovering()==false &&
+					mbPlayerIsInTheOpen &&
+					mbCirclePlayer_Capture==false)
+				{
+					float fMul = 1.0f;
+					
+					if(mbHasCaughtPlayer)
+					{
+						if(cLux_GetPlayer().GetHealth()<0.3f)
+						{
+							fMul = 0.175f;
+						}
+						else if(cLux_GetPlayer().GetHealth()<=0.5f)
+						{
+							fMul = 0.4f;
+						}
+						else if(cLux_GetPlayer().GetHealth()<=0.67f)
+						{
+							fMul = 0.75f;
+						}
+					}
+					
+					mBaseObj.SetFOVMul(2.0f);
+					mfCirclePlayer_HuntBuildUpCount += 0.1f*fMul;
+					
+					if(mfCirclePlayer_HuntBuildUpCount>mfCirclePlayer_HuntBuildUpMax)
+					{
+						if (cLux_GetExplorationModeActive() == false)
+						{
+							mpStateMachine.ChangeState(eLeviathanState_Hunt);
+						}
+						else
+						{
+							// Set value slightly above max so it doesn't get too high and still can decrease properly when hiding
+							mfCirclePlayer_HuntBuildUpCount = mfCirclePlayer_HuntBuildUpMax * 1.01f;
+						}
+					}
+				}
+				//////////////////////////////////
+				// Player is not detected
+				else
+				{
+					if(mfCirclePlayer_HuntBuildUpCount>0)
+					{
+						mfCirclePlayer_HuntBuildUpCount -= 0.05f;
+						if(mfCirclePlayer_HuntBuildUpCount<=0)
+							mBaseObj.SetFOVMul(1.0f);
+					}
+				}
+				
+				//////////////////////////////////
+				// Build up effects starts
+				if(mbCirclePlayer_HuntBuildUpActive==false && mfCirclePlayer_HuntBuildUpCount>2.5f)
+				{
+					mbCirclePlayer_HuntBuildUpActive=true;
+					Music_AddDynamicTrack(mBaseObj.GetID(), 0, eMusicPrio_AgentHunt, gsMusic_HuntBuildUp, gfMusic_HuntBuildUpVolume, 3, 4);
+					mfLightBrightness = 1.0f;
+					SetHuntBuildupDistortion();
+					
+					if(	(Player_GetHealth()>0.68f || mbHasCaughtPlayer==false) && 
+						mbCirclePlayer_HuntBuildFirstTime==false &&
+						cMath_RandRectl(0,2)==0)
+						mfCirclePlayer_HuntBuildUpMax = 5.0f;
+					else
+						mfCirclePlayer_HuntBuildUpMax = 10.0f;
+						
+					mbCirclePlayer_HuntBuildFirstTime = false;
+					
+					mBaseObj.PlaySound("HuntBuildupStart", gfHuntBuildUpStartScream, true, true);
+				}
+				//////////////////////////////////
+				// Build up effects go away.
+				if(mbCirclePlayer_HuntBuildUpActive && mfCirclePlayer_HuntBuildUpCount<=0.0f)
+				{
+					mbCirclePlayer_HuntBuildUpActive=false;
+					
+					if(mbCirclePlayer_Capture==false)
+						Music_RemoveDynamicTrack(mBaseObj.GetID());
+					
+					SetDefaultLightBrightness();
+					SetDefaultDistortion();
+				}
+				
+				mpStateMachine.AddTimer("HuntCheck", 0.1f);
+			}
+			
+			if (cLux_GetExplorationModeActive() == false) return;
+			if (alId == H64("AlternateBehaviour"))
+			{
+				mBaseObj.SetSensesActive(!mBaseObj.GetSensesActive());
+				mfCirclePlayer_HuntBuildUpCount = 0.f;
+				cLux_AddDebugMessage("SENSES ACTIVE: " + mBaseObj.GetSensesActive());
+				mpStateMachine.AddTimer("AlternateBehaviour", mBaseObj.GetSensesActive() ? cMath_RandRectf(30.f, 40.f) :
+																						   cMath_RandRectf(40.f, 50.f));
+			}
+			else if (alId == 0)
+			{
+				AttackMeter_RemoveInstance(mBaseObj.GetID());
+				cLux_AddDebugMessage("ATTACK METER REMOVED!");
+			}
+		}
+		
+		//----------------------------------------------
+		
+		bool State_CirclePlayer_Message(int alMessageId)
+		{
+			//////////////////////
+			// Hit by flashlight
+			if(alMessageId == eCustomEntityMessage_HitByFlashlight)
+			{
+				mfCirclePlayer_HuntBuildUpCount += 0.35f;
+				
+				//mpStateMachine.ChangeState(eLeviathanState_Hunt);
+				
+				return true;
+			}
+			//////////////////////
+			// Force to position
+			else if(alMessageId == eLuxEntityMessage_ForceToPosition)
+			{
+				mfCirclePlayer_RetreatingCount = 5.0f;
+				mvCirclePlayer_RetreatPosition = mpStateMachine.GetCurrentMessageData().mvX;
+				
+				return true;
+			}
+			
+			return false;
+		}
+		
+		//----------------------------------------------
+		
+		//} END State Circle Player
+	
+		
+		///////////////////////////////////
+		// STATE: Hunt
+		//{////////////////////////////////
+		
+		//----------------------------------------------
+		
+		float mfDefaultEntityPitchAmount;
+		
+		array<cVector3f> mvHunt_GoalPosArray;
+		cVector3f mvHunt_GoalPosition;
+		
+		//----------------------------------------------
+		
+		void State_Hunt_Enter()
+		{
+			mBaseObj.PlaySound("HuntStart", gfHuntStartScream, true, true);
+			
+			mpMover.PlayAnimation("rush",0.5f, true);
+			
+			mpMover.SetSpeedState(eLeviathanSpeed_Hunt);
+			
+			mpBarkMachine.ChangeState(eLeviathanBark_Hunt);
+			
+			AttackMeter_AddInstance(mBaseObj.GetID(), 9, 3.9f, Player_GetHealth() > 0.8 ? 0.6f : 0.29f, true, true, true);
+			SetHuntDistortion();
+			
+			Music_AddDynamicTrack(mBaseObj.GetID(), 0, eMusicPrio_AgentHunt, gsMusic_Hunt, gfMusic_HuntVolume, 1, 3);
+			mbCirclePlayer_HuntBuildUpActive = false;
+								
+			mfDefaultEntityPitchAmount = mBaseObj.GetCharBody().GetEntityPitchAmount();
+			mBaseObj.GetCharBody().SetEntityPitchAmount(1.0f);
+			
+			mvHunt_GoalPosArray.resize(0);
+			mvHunt_GoalPosition = mBaseObj.GetPlayerPos();
+			
+			mpStateMachine.AddTimer("CheckEndHunt", 2.0f); //It always does a 2 sec charge no matter what!
+			mpStateMachine.AddTimer("UpdateGoalPos", 2.0f);
+			
+			mfLightBrightness = 5.0f;
+			
+			mBaseObj.SetFOVMul(1.0f);
+		}
+		
+		//----------------------------------------------
+		
+		void State_Hunt_Leave()
+		{
+			SetDefaultLightBrightness();
+			
+			AttackMeter_RemoveInstance(mBaseObj.GetID());
+			
+			mBaseObj.GetCharBody().SetEntityPitchAmount(mfDefaultEntityPitchAmount);
+			
+			mpMover.SetUseMoveStateAnimations(true);
+			
+			mBaseObj.SetFOVMul(1.0f);
+			
+			mpMover.SetWallAvoidanceActive(true);
+		}
+		
+		//----------------------------------------------
+		
+		void State_Hunt_Update(float afTimeStep)
+		{
+			cVector3f vToPlayer = mBaseObj.GetPlayerPos() - mBaseObj.GetCharBody().GetPosition();
+			vToPlayer.Normalize();
+			
+			float fToPlayerDot = cMath_Vector3Dot(	mBaseObj.GetCharBody().GetForward(),
+													vToPlayer);
+			
+			//cLux_AddDebugMessage("ToPlayerDot:"+ fToPlayerDot+ " Dist: "+mBaseObj.GetDistanceToPlayer());
+			
+			if(mBaseObj.GetDistanceToPlayer()<6.0f && fToPlayerDot>0.6f)
+			{
+				mpMover.MoveToPos(mBaseObj.GetPlayerPos());
+				mpMover.SetWallAvoidanceActive(false);
+				mpMover.SetSpeedState(eLeviathanSpeed_HuntDash);
+			}
+			else
+			{
+				mpMover.SetSpeedState(eLeviathanSpeed_Hunt);
+				mpMover.MoveToPos(mvHunt_GoalPosition);
+				mpMover.SetWallAvoidanceActive(true);
+			}
+		}
+		
+		//----------------------------------------------
+		
+		void State_Hunt_TimerUp(uint64 alId) 
+		{
+			//////////////////////
+			// CHeck End Hunt
+			if(alId == H64("CheckEndHunt"))
+			{
+				if(	mBaseObj.PlayerIsDetected()==false ||
+					mbPlayerIsInTheOpen==false)
+				{
+					mpStateMachine.ChangeState(eLeviathanState_CirclePlayer);
+				}
+
+				mpStateMachine.AddTimer("CheckEndHunt", 0.1f);
+			}
+			//////////////////////
+			// Update Goal Pos
+			if(alId == H64("UpdateGoalPos"))
+			{
+				iCharacterBody@ pCharBody = mBaseObj.GetCharBody();
+			
+				float fPlayerSpeed = cLux_GetPlayer().GetAverageMoveSpeed();
+				cVector3f vPlayerDir = cLux_GetPlayer().GetAverageMoveDirection();
+				
+				float fSpeed = pCharBody.GetVelocity(cEngine_GetStepSize()).Length();
+				float fDistToPlayer = mBaseObj.GetDistanceToPlayer();
+				
+				float fSpeedT = (fSpeed<0.0001 ? 0 : 1.0f / fSpeed)*1.0;
+				float fDistT = fDistToPlayer*1.0f;
+				
+				cVector3f vPos =  mBaseObj.GetPlayerPos() + vPlayerDir*fPlayerSpeed*fSpeedT*fDistT;
+				
+				mvHunt_GoalPosArray.insertAt(0,vPos);
+				if(mvHunt_GoalPosArray.size()>30)
+					mvHunt_GoalPosArray.resize(30);
+				
+				mvHunt_GoalPosition	=0;
+				for(int i=0; i<mvHunt_GoalPosArray.size();++i)
+				{
+					mvHunt_GoalPosition += mvHunt_GoalPosArray[i];
+				}
+				
+				mvHunt_GoalPosition /= float(mvHunt_GoalPosArray.size());
+				
+				mpStateMachine.AddTimer("UpdateGoalPos", 0.1f);
+			}
+		}
+		
+		//----------------------------------------------
+		
+		bool State_Hunt_Message(int alMessageId)
+		{
+			//////////////////////
+			// Force to position
+			if(alMessageId == eLuxEntityMessage_ForceToPosition)
+			{
+				mfCirclePlayer_RetreatingCount = 2.0f;
+				mvCirclePlayer_RetreatPosition = mpStateMachine.GetCurrentMessageData().mvX;
+				
+				mpStateMachine.ChangeState(eLeviathanState_CirclePlayer);
+				
+				return true;
+			}
+			
+			return false;
+		}
+		
+		//----------------------------------------------
+		
+		//} END State: Hunt
+	
+		///////////////////////////////////
+		// STATE: FollowTrack
+		//{////////////////////////////////
+		
+		//----------------------------------------------
+		
+		void State_FollowTrack_Enter()
+		{
+			mfLightBrightness = 1.0f;
+			
+			mpMover.SetSpeedState(eLeviathanSpeed_Normal);
+			
+			SetDefaultDistortion();
+		}
+		
+		//----------------------------------------------
+		
+		void State_FollowTrack_Leave()
+		{
+			if (cLux_GetExplorationModeActive() == false)
+			{
+				AttackMeter_RemoveInstance(mBaseObj.GetID());
+			}			
+		}
+						
+		//----------------------------------------------
+		
+		//} END State FollowTrack
+		
+		
+	
+	//------------------------------------------------------------
+	
+	//} END STATES
+	
+	/////////////////////////////////////////
+	// PLAYER CAPTURE
+	//{//////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	int mlCapture_DistortionID;
+	int mlCapture_ImageTrailID;
+	int mlCapture_BreathID;
+	int mlCapture_HeartBeatID;
+	
+	//------------------------------------------------------------
+	
+	void Capture_Start()
+	{
+		mbCirclePlayer_Capture = true;
+		mbHasCaughtPlayer = true;
+		
+		Effect_Fade_Out(0.15);
+		
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void Capture_AfterDamage()
+	{
+		AttackMeter_BreakAttackDamageSequence();
+		
+		AttackMeter_RemoveInstance(mBaseObj.GetID());	
+		mpStateMachine.ChangeState(eLeviathanState_CirclePlayer);
+		
+		mfCirclePlayer_HuntBuildUpCount=0;
+		
+		cLux_GetPlayer().SetActive(false);
+		cLux_GetPlayer().ChangeState(ePlayerState_Null);
+		cLux_GetPlayer().GetCharacterBody().SetCollideCharacter(false);
+		cLux_GetPlayer().GetCharacterBody().SetTestCollision(false);
+		
+		Player_SetForceCrawling(true);
+		Player_SetCrouching(true, true, true);
+		Player_SetStandDisabled(true);
+		
+		Player_FadeRollTo(45, 6,20);
+		
+		mlCapture_DistortionID = Effect_VideoDistortion_Start(1.0f, -1, 1, 1);
+		
+		mlCapture_ImageTrailID = Effect_ImageTrail_Start(0.5, 1, -1, 2);
+		
+		//Music_RemoveDynamicTrack(mBaseObj.GetID());
+		
+		mBaseObj.Timer_Add(0, 0.6f, "Capture_FadeIn");
+		
+		mlCapture_BreathID = Emotion_StartBackgroundBreath(eBreathType_Fear, 1, 1, -1, 0.2, 6.0f);
+		mlCapture_HeartBeatID = Emotion_StartHeartbeat(0.7f, 1.0f, 1, -1, 1, 6.0f);
+	}
+	
+	//------------------------------------------------------------
+	
+	void Capture_FadeIn(uint64 alID)
+	{
+		Music_FadeVolumeMul(1.0f, 0.3f);
+		
+		Effect_Fade_In(2.0f);
+		
+		if(gsCaptureLoopSound != "")
+		{
+			Sound_FadeInGui(gsCaptureLoopSound, 1.0f, 1.0f);
+			Sound_PlayGui(gsCaptureStartSound, 1.0f);
+		}
+		
+		Effect_Rumble_Start(0.6, 2, 0.3, 0.5);
+		
+		mBaseObj.Timer_Add(0, cMath_RandRectf(3, 5), "Capture_End");
+		mBaseObj.Timer_Add("Flicker", cMath_RandRectf(2.1, 2.3), "Capture_FlickerOff");
+	}
+	
+	void Capture_FlickerOn(uint64 alID)
+	{
+		Effect_Rumble_Start(0.6, 1, 0.3, 0.5);
+		
+		Effect_Fade_In(0.125f);
+		mBaseObj.Timer_Add("Flicker", cMath_RandRectf(0.5, 2), "Capture_FlickerOff");
+	}
+	
+	void Capture_FlickerOff(uint64 alID)
+	{
+		Effect_Fade_Out(0.125f);
+		mBaseObj.Timer_Add("Flicker", cMath_RandRectf(0.5, 1), "Capture_FlickerOn");
+	}
+	
+	//------------------------------------------------------------
+	
+	bool mbCapture_PausePosUpdate=false;
+	
+	bool PlayerFitsCurrentLocation()
+	{
+		iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
+		
+		cVector3f vTempPushBack;
+		
+		return pCharBody.CheckCharacterFits(pCharBody.GetPosition(), false, -1,vTempPushBack);
+	}
+	
+	void Capture_End(uint64 alID)
+	{
+		if(	mfCirclePlayer_RetreatingCount>0  || PlayerFitsCurrentLocation()==false)
+		{
+			mBaseObj.Timer_Add(0, 0.5f, "Capture_End");
+			return;
+		}
+		
+		//NOTE: This test is to see if the leviathan is about to fly into a retreat area in which case we abort!
+		mbCapture_PausePosUpdate = true;
+		mBaseObj.Timer_Remove("Flicker");
+		Effect_Fade_Out(0.1f);
+		
+		mBaseObj.Timer_Add(0, 1, "Capture_End_Proper");
+	}
+	
+	void Capture_End_Proper(uint64 alID)
+	{
+		if(mfCirclePlayer_RetreatingCount>0  || PlayerFitsCurrentLocation()==false)
+		{
+			mbCapture_PausePosUpdate = false;
+			Capture_FlickerOn(0);
+			mBaseObj.Timer_Add(0, 0.5f, "Capture_End");
+			return;
+		}
+		
+		mbCapture_PausePosUpdate = false;
+		Effect_Fade_In(0.5f);
+		
+		Music_RemoveDynamicTrack(mBaseObj.GetID());
+		
+		mbCirclePlayer_Capture=false;
+		
+		cLux_AddTodoMessage("Sound: Special capture loop fades out");
+				
+		cLux_GetPlayer().SetActive(true);
+		cLux_GetPlayer().ChangeState(ePlayerState_Normal);
+		cLux_GetPlayer().GetCharacterBody().SetCollideCharacter(true);
+		cLux_GetPlayer().GetCharacterBody().SetTestCollision(true);
+		cLux_GetPlayer().GetCharacterBody().SetForceVelocity(0);
+		
+		Player_FadeRollTo(0, 10,100);
+		Player_SetMoveSpeedMul(0.4);
+		Player_SetLookSpeedMul(1.0f);
+		
+		Effect_VideoDistortion_FadeOut(mlCapture_DistortionID, 3.0f);
+		Effect_ImageTrail_FadeOut(mlCapture_ImageTrailID, 5);
+		Effect_Shake_Start(0.5, 0.5, 0.1, 0.3);
+		
+		
+		Sound_FadeGlobalVolume(1.0f, 1.0f, eSoundEntryType_WorldAll);
+		Sound_FadeGlobalVolume(1.0f, 1.0f, eSoundEntryType_GuiWorld);
+		
+		if(gsCaptureLoopSound != "")
+		{
+			Sound_StopGui(gsCaptureLoopSound, 1.5f);
+			Sound_PlayGui(gsCaptureEndSound, 1.0f);
+		}
+			
+					
+		mBaseObj.Timer_Add(0, 7, "Capture_End_StopCrawl");
+	}
+	
+	void Capture_End_StopCrawl(uint64 alID)
+	{
+		Player_SetForceCrawling(false);
+		
+		mBaseObj.Timer_Add(0, 0.75f, "Capture_End_StandUp");
+	}
+	
+	void Capture_End_StandUp(uint64 alID)
+	{
+		Player_SetStandDisabled(false);
+		Player_SetCrouching(false);
+		
+		Player_FadeMoveSpeedMulTo(1.0f, 10.0f);
+				
+		mBaseObj.Timer_Add(0, 7, "Capture_End_PlayerRecoveryOver");
+		
+		Emotion_StopBackgroundBreath(mlCapture_BreathID);
+		Emotion_StopHeartbeat(mlCapture_HeartBeatID);
+	}
+	
+	void Capture_End_PlayerRecoveryOver(uint64 alID)
+	{
+		AttackMeter_SetPlayerIsRecovering(false);
+		
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void Capture_Update(float afTimeStep)
+	{
+		if(mbCapture_PausePosUpdate) return;
+		
+		iCharacterBody@ pMyBody = mBaseObj.GetCharBody();
+		iCharacterBody@ pPlayerBody = cLux_GetPlayer().GetCharacterBody();
+		
+		cVector3f vHoldPosition = pMyBody.GetPosition() + pMyBody.GetForward()*2.15f*mBaseObj.GetOnLoadScale().z;
+		
+		pPlayerBody.SetPosition(vHoldPosition, true);
+		pPlayerBody.SetPitch(0);
+		pPlayerBody.SetYaw(pMyBody.GetYaw());
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	//} END PLAYER CAPTUER
+	
+	/////////////////////////////////////////
+	// PLAYER DEATH
+	//{//////////////////////////////////////
+		
+	//------------------------------------------------------------
+		
+	void _Global_PlayerStartDamageCallback()
+	{
+		if (cLux_GetExplorationModeActive())
+		{
+			Effect_Fade_Out(0.15f);			
+			return;
+		}
+		
+		Capture_Start();
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_PlayerAfterDamageCallback()
+	{
+		if (cLux_GetExplorationModeActive())
+		{
+			AttackMeter_RemoveInstance(mBaseObj.GetID());			
+			cLux_GetCurrentMap().AddTimer("SetUpOutOfTunnel", 0.1f, "Timer_SetupLeviathanAfterKnockdown");	
+			return;
+		}
+		
+		Capture_AfterDamage();
+	}
+	
+	//------------------------------------------------------------
+	
+	//} END PLAYER DEATH
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	//{//////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+		cScrAgentSwimBot::OnSetActive(abX);
+		
+		if(abX)
+		{
+		}
+		else
+		{
+			Music_RemoveDynamicTrack(mBaseObj.GetID());
+			AttackMeter_RemoveInstance(mBaseObj.GetID());
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+		
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	//} END ACTIONS
+	
+	
+	
+	/////////////////////////////////////////
+	// GLOBAL
+	//{//////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_InitSilent()
+	{
+		mpBarkMachine.SetActive(false);
+		msLoopSound_Idle = "";
+		msLoopSound_Move = "";
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetFollowTrackDeathMeter()
+	{
+		mbFollowTrackDeathMeter = cScript_GetGlobalArgBool(0);
+		float fDamage = cScript_GetGlobalArgFloat(1);
+		
+		if(mbFollowTrackDeathMeter)
+		{
+			AttackMeter_AddInstance(mBaseObj.GetID(), 9, 4.3f, fDamage, true, true, true);
+			SetHuntDistortion();
+		}
+		else
+		{
+			AttackMeter_RemoveInstance(mBaseObj.GetID());
+			SetDefaultDistortion();
+		}
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetState_FollowTrack()
+	{
+		Music_RemoveDynamicTrack(mBaseObj.GetID());
+			
+		mpStateMachine.ChangeState(eLeviathanState_FollowTrack);
+	}
+	
+	void _Global_SetState_CirclePlayer()
+	{
+		mpStateMachine.ChangeState(eLeviathanState_CirclePlayer);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetSpeed_Normal()
+	{
+		mpMover.SetSpeedState(eLeviathanSpeed_Normal);
+	}
+	
+	void _Global_SetSpeed_Hunt()
+	{
+		mpMover.SetSpeedState(eLeviathanSpeed_Hunt);
+	}
+	
+	void _Global_SetSpeed_CircleFast()
+	{
+		mpMover.SetSpeedState(eLeviathanSpeed_CircleFast);
+	}
+	
+	void _Global_SetSpeed_HuntDash()
+	{
+		mpMover.SetSpeedState(eLeviathanSpeed_HuntDash);
+	}
+	//------------------------------------------------------------
+	
+	void _Global_SetLightBrightness()
+	{
+		mfLightBrightness = cScript_GetGlobalArgFloat(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	//} END GLOBAL
+	
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afY)
+	{
+		afY = cLux_DrawDebugText("Speed: "+mBaseObj.GetCharBody().GetVelocity(cEngine_GetStepSize()).Length(), afY);
+		afY = cLux_DrawDebugText("PlayerIsDetected: "+mBaseObj.PlayerIsDetected(), afY);
+		afY = cLux_DrawDebugText("PlayerIsInTheOpen: "+mbPlayerIsInTheOpen, afY);
+		afY = cLux_DrawDebugText("HuntBuildUpCount: "+mfCirclePlayer_HuntBuildUpCount + " / "+mfCirclePlayer_HuntBuildUpMax, afY);
+		afY = cLux_DrawDebugText("RetreatingCount: "+mfCirclePlayer_RetreatingCount, afY);
+		afY = cLux_DrawDebugText("DistToPlayer: "+mBaseObj.GetDistanceToPlayer(), afY);
+		
+		if (cLux_GetExplorationModeActive())
+		{
+			afY = cLux_DrawDebugText("ExplorationMode_KnockAwayCooldown: " + mfExplorationMode_KnockAwayCooldown, afY);
+		}
+		
+		return afY;
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnRenderSolid(cRendererCallbackFunctions@ apFunctions)
+	{
+		cVector3f vTopPos = mvCirclePlayer_GroundPos;
+		vTopPos.y = mfCirclePlayer_WantedHeight;
+		
+		apFunctions.GetLowLevelGfx().DrawLine(mvCirclePlayer_GroundPos, vTopPos, cColor(5,0,5,1));
+		apFunctions.GetLowLevelGfx().DrawSphere(mvCirclePlayer_GroundPos, 0.4f, cColor(5,0,5,1));
+		apFunctions.GetLowLevelGfx().DrawSphere(vTopPos, 0.4f, cColor(5,0,5,1));
+		
+		apFunctions.GetLowLevelGfx().DrawSphere(mvHunt_GoalPosition, 0.6f, cColor(5,5,0,1));
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	cLuxBackboneTail @mpBackboneTail;
+	cLuxBarkMachine @mpBarkMachine;
+	cLuxLightSensor@ mpLightSensor;
+	
+	//------------------------------------------------------------
+	
+	bool mbDisableNearMusic=false;
+	
+	bool mbHasCaughtPlayer=false;
+	
+	bool mbPlayerIsInTheOpen=true;
+	float mfCheckPlayerIsInTheOpenCount=0;
+	
+	float mfLightBrightness=0;
+	
+	bool mbFollowTrackDeathMeter=false;
+	
+	float mfGroundCollideTestCount=0;
+	
+	float mfExplorationMode_KnockAwayCooldown = 0.f;
+	
+	//------------------------------------------------------------
+}

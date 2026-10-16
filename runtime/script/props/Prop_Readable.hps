@@ -107,6 +107,7 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 	
 	void OnPostUpdate(float afTimeStep)
 	{
+        VR_PrepareBrandonBadgeContact();
 		VR_RestoreSavedPhysicalRead();
 		if (mbVRReading && mpOpenEntity !is null) mpOpenEntity.SetMatrix(mBaseObj.GetMatrix());
         if(mbVRReading && mbVRIndependentRead && _HPL3VR_ReadableActive())
@@ -192,6 +193,18 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 	//------------------------------------------------------------
 		
 
+    [nosave] bool mbVRBadgeContactReady=false;
+    void VR_PrepareBrandonBadgeContact()
+    {
+        if(mbVRBadgeContactReady || mBaseObj.GetName()!="brandon_corpse_id_1") return;
+        if(!_HPL3VR_ReadableActive()) return;
+        iPhysicsBody@ body=mBaseObj.GetMainBody();
+        if(body is null) return;
+        // Native badge disables non-character collision. VR hands need its
+        // own surface instead of selecting the corpse behind it.
+        body.SetCollide(true); body.SetCollideCharacter(false);
+        mbVRBadgeContactReady=true;
+    }
 	bool mbVRReading = false;
     [nosave] bool mbVRIndependentRead=false;
 	[nosave] bool mbVRReadRestoreDone = false;
@@ -285,6 +298,10 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 		}
 		if (!mbIsRead) HeroStat_IncreaseAmount(eHeroStats_ReadDocuments,1);
 		if (msOpenSound != "") Sound_PlayGui(msOpenSound,1.0f);
+        // Publish the actual readable body, including auxiliary-area forwards.
+        cScript_RunGlobalFunc("VRREAD","","B");
+        iPhysicsBody@ pVRReadBody=mBaseObj.GetMainBody();
+        if(pVRReadBody !is apBody) cScript_RunGlobalFunc("VRREAD","","C");
         cScript_RunGlobalFunc("VRREAD",mbVRIndependentRead ? "I" : "","P"); // Suppress this exact grip's redundant gaze click.
 		return true;
 	}
