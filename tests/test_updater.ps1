@@ -24,7 +24,7 @@ $plan=Get-SomaVrUpdatePlan $r $m 1;Test-SomaVrDownloadedUpdate $file $plan
 [IO.File]::WriteAllBytes($file,[byte[]]@(1,2,4));Reject {Test-SomaVrDownloadedUpdate $file $plan}
 [IO.File]::WriteAllBytes($file,[byte[]]@(1));Reject {Test-SomaVrDownloadedUpdate $file $plan}
 # Exercise orchestration without network, downloads, dialogs or running installers.
-Copy-Item (Join-Path $root 'runtime\SOMA-VR-Update-Version.json') $fixture
+@{version='1.0.8-S26HO';build=2026101613} | ConvertTo-Json | Set-Content (Join-Path $fixture 'SOMA-VR-Update-Version.json') -Encoding UTF8
 function Get-Process { @() }
 $script:requests=0;$script:prompts=0;$script:downloads=0
 function Get-SomaVrUpdateJson($Url){$script:requests++;if($Url -like '*api.github.com*'){return $script:r};return $script:m}

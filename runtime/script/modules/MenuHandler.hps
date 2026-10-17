@@ -3002,6 +3002,11 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 		
 		if(gLastOnSomaScreen.IsActive() || mbMenuActive == false) 
 			return;
+
+		// S26HP: controller/idle input must not hide the VR menu pointer.
+		// SetShowMouse also gates native hit-testing; preserve premenu/loading policy.
+		if(mbMouseVisible && !mbPremenuActive)
+			cLux_GetCurrentImGui().SetShowMouse(true);
 			
 		
 		if(mbMainMenuActive && mbHasSaveFiles == false)

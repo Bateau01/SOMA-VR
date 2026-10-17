@@ -10,7 +10,7 @@ This inventory describes included implementation, not a claim that every interac
 - World-scale compensation for apparent hand size; S26BY adds the missing native mesh-update compensation; S26CC retains authored eye height without additional world-scale height compensation.
 - Spatial subtitles and hints, subtitle distance settings, and adjustable flat-panel presentation distance.
 - Presentation routes for menus, loading, startup sequences, pause and death/retry. These have received fixes but remain part of regression testing.
-- Comfort controls for selected post effects, distortion, vignette, camera shake, and more.
+- Comfort controls for selected post effects, distortion, vignette and camera shake.
 
 ## Movement, body and input
 

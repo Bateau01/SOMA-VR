@@ -1,5 +1,5 @@
 {
-  "version": "1.0.8-S26HO",
+  "version": "1.0.8-S26HQ",
   "files": {
     "Check-SOMA-VR-Compatibility.cmd": {
       "sha256": "1c9186797da4dd711fd91b1f487fb2647ddbf05f172a284b727be2d13983833b",
@@ -362,12 +362,12 @@
       "bytes": 22369776
     },
     "hpl3vr-store.dll": {
-      "sha256": "f22e077b3658a94ad0d011364fa89d52557d076880c7855af6a9df1d67bf7b0a",
-      "bytes": 2360832
+      "sha256": "a71c5a8614e987fa5f17e6483a4b402b70bd8d88711eb3de93d9cbd1ae154490",
+      "bytes": 2369536
     },
     "hpl3vr.dll": {
-      "sha256": "4f23e061ef969a25fbf32bdd5cee67ef6ed5bfdf0aa26c1c7458e92a7bbe75ad",
-      "bytes": 2348544
+      "sha256": "66052c41ac8dbbecb686d6784a184afa05d473fe0a875dde6ee086329a0fd0db",
+      "bytes": 2356736
     },
     "hpl3vr_inject.exe": {
       "sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
@@ -502,8 +502,8 @@
       "bytes": 422552
     },
     "PACKAGE_VERIFICATION.json": {
-      "sha256": "59e2554b32685d8ebc884606da7a691871eb5a86ed1a2acd3bbb957ea0a1e46b",
-      "bytes": 491
+      "sha256": "d6a9abd36944eb45a91bf6756a5c9b12bb300c64a2ef94be3795388258aa80dd",
+      "bytes": 871
     },
     "script/agents/Agent_SwimBot.hps": {
       "sha256": "0a49a25c7d5f6d44be98972175b12511e0aae963c34b0f68b20d6a4326065999",
@@ -626,8 +626,8 @@
       "bytes": 32015
     },
     "script/modules/MenuHandler.hps": {
-      "sha256": "51cc4c3d6b08bc86b61ef96db7da5b3f02a551a0ad3ddfd08aed3840f7399597",
-      "bytes": 311747
+      "sha256": "a4b91d0749455741c01693e86286a56ad54e7d0cd168112ade561c8c374642e4",
+      "bytes": 311991
     },
     "script/modules/PlayerEnergyHandler.hps": {
       "sha256": "42fe650394f5ed450dfc817ec345ca9c8d7678007af973d84e9b41eaefdcf39b",
@@ -782,8 +782,8 @@
       "bytes": 5798
     },
     "SOMA-VR-Update-Version.json": {
-      "sha256": "9a99853bb54019e7abad5b7f8c57f2ca571ecd7ce57343c6c6a40fea000a3476",
-      "bytes": 46
+      "sha256": "876b301f524d879aa6c7ec229f14d108677af4e9b585c4289ff83e1b42913ba9",
+      "bytes": 58
     },
     "SOMA-VR-Update.ps1": {
       "sha256": "c855a5f3a61bef14fb93ceb512437d6e1ba52cd7efc2a9ecec98430771c6fc40",

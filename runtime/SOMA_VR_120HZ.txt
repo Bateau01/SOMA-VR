@@ -1,0 +1,21 @@
+120HZ PHYSICS
+
+Select 120HZ PHYSICS in VR settings, confirm the change, then exit and restart
+SOMA. Switching back to native 60 Hz also requires a restart. Installation
+preserves your existing selection; a fresh installation defaults to 60 Hz.
+120 Hz is experimental and available for the verified Steam, Epic Games and
+GOG executables. The launcher selects the matching native runtime. Unknown
+executable layouts remain blocked. Headset refresh and render pacing are separate.
+Epic/GOG timer, movement-history and map startup checks passed at 60/120 Hz;
+full headset gameplay comparisons on those editions remain pending.
+
+Compare the same save with the same world scale and comfort settings:
+1. Crawl through the post-DUNBAT Theta vent and its drop into Theta Labs.
+2. Walk, turn, crouch, jump and sprint on land and underwater.
+3. Open a hinged door and drawer slowly; release and regrab a loose prop.
+4. Retrieve, use and stow the Omni-Tool and a key item.
+5. Check a scripted encounter, pause/resume and reload the save.
+Repeat at native 60 Hz after restarting. Keep hpl.log and hpl3vr.log if a
+difference remains. Automated fixtures do not replace these headset checks.
+
+Increasing physics from native 60 Hz to 120 Hz increases CPU frame time and may cause stuttering or lower FPS. This does not set the headset refresh rate or guarantee 120 rendered FPS.

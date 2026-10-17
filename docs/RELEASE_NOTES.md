@@ -1,9 +1,10 @@
-# SOMA VR 1.0.8-S26HO
+# SOMA VR 1.0.8-S26HQ
 
-- The Windows launcher checks the official Bateau01/SOMA-VR latest stable GitHub release before starting the game. A newer supported release prompts Yes/No before downloading or installing.
-- Yes downloads and verifies the installer size/SHA256, updates the same game folder using the existing backup/rollback installer, preserves the selected user-config folder, and restarts the updated launcher with the original launch arguments.
-- No, offline/API failures, no supported update, or a running SOMA process skip updating. Check-only and stop-only do not contact GitHub. -SkipUpdateCheck bypasses the check for that launch.
-- Failed/incomplete installation prevents automatic game launch until resolved; a settings-preserving rollback is attempted by the installer.
-- Future releases must include the generated SOMA-VR-update.json and the matching Setup.exe. Installer ZIPs alone are not enough for automatic updating. Drafts and prereleases are excluded.
+- The gameplay desktop mirror combines the existing eye images with a left-eye-dominant overlap blend, aligned by their projection bounds. Fills the visible monitor area without stretching; crops vertically as needed. Nearby objects may reveal parallax at the blend boundary. This approximates SteamVR-style spectator framing; it is not Valve's compositor implementation or a depth-correct third camera.
+- The combined path replaces the full-size intermediate copy with one desktop draw. Headset eye textures remain read-only; no extra scene render, physics change, or change to menu/credits/loading transitions.
+- The shader is prepared during the menu. Unavailable shaders/invalid geometry fall back to the existing full-left-eye mirror. DESKTOP MIRROR OFF bypasses composition.
+- Retains S26HP menu cursor correction and S26HO automatic updates. Paused remote-readable diagnostics remain excluded.
 
-Gameplay DLLs are byte-identical to S26HM. The paused S26HN readable diagnostic is not included. The reported remote-readable drop remains unresolved.
+Tests: real OpenGL driver at 1920x1080 (0x/4x MSAA), 2560x1440, and 3440x1440 (4x MSAA), checking output pixels, GL state restoration, source-eye immutability and off/menu/transition/resume guards. Isolated mirror-only GPU timings roughly 0.011-0.023 ms combined versus 0.011-0.023 ms cropped left-eye. These synthetic measurements are not whole-game benchmarks or guarantees on other GPUs.
+
+Final live check: full 2560x1440 monitor framing, bottom strip removed, and pause/resume confirmed by the tester. The menu cursor correction keeps the native cursor visible while the applicable VR menu is active. No controller-binding changes.

@@ -13,6 +13,7 @@ static int h5755ay_make_trace_path(char*p,const char*n){strcpy(p,"EXE/");strcat(
 static void* ext_fopen(const char*p,const char*m){if(strncmp(p,"EXE/",4))abort();return flagOn?(void*)1:0;}
 static void ext_fclose(void*p){}
 #define ext_Log(...) (++logs)
+static int g_s26fiMirrorEnabled=1;static int s26hq_init(void){return 1;}
 static int h5754d_menu_wanted(void){return title;}static int h5754h_pause_active(void){return 0;}
 static int p2_xr_on(void){return 1;}static int p2_xr_running(void){return 1;}static int p2_sbs_on(void){return 1;}
 static int s26cb_flat_drawable_extent(int*w,int*h){*w=100;*h=100;return drawableOn;}
