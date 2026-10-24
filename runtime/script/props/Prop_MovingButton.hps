@@ -28,7 +28,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
         {
             mbVRRockerChecked=true;
             tString file=cString_GetFileName(mBaseObj.GetFileName());
-            mbVRRockerY=(file=="light_switch.ent" || file=="lightswitch_button.ent");
+            mbVRRockerY=(file=="light_switch.ent" || file=="lightswitch_button.ent" || file=="control_board_pplant_button.ent");
         }
         if(!mbVRRockerY) return;
         mfVRRockerRefresh-=dt;if(mfVRRockerRefresh>0) return;mfVRRockerRefresh=0.5f;
@@ -45,7 +45,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
         for(int i=0;i<mBaseObj.GetBodyNum();i++)
         {
             iPhysicsBody@ body=mBaseObj.GetBody(i);
-            if(body !is null) cScript_RunGlobalFunc("VRROCKERY",""+body.GetUniqueID(),(body is paddle) ? "A" : "R");
+            if(body !is null) cScript_RunGlobalFunc("VRROCKERY",""+body.GetUniqueID(),file=="control_board_pplant_button.ent" ? "B" : ((body is paddle) ? "A" : "R"));
         }
     }
     void VRRockerY_Remove()
@@ -317,8 +317,19 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 	
 	//------------------------------------------------------------
 		
+    bool VR_PhiLaunchAllowed()
+    {
+        if(mBaseObj.GetName()!="LaunchButton" || mBaseObj.GetMap().GetName()!="05_01_phi_inside")return true;
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        if(!cScript_GetGlobalReturnBool())return true;
+        cLuxMap@ map=mBaseObj.GetMap();
+        if(!map.ScriptPrepare("bool VR_CanPressLaunchButton()") || !map.ScriptExecute())return false;
+        return map.GetReturnBool();
+    }
 	bool CanInteract(int alType, iPhysicsBody@ apBody)
 	{
+        if(!VR_PhiLaunchAllowed())return false;
         if(VRPowerPump() && (apBody is null || apBody !is mpMoveBody)) return false;
         VRRockerY_Update(0.5f); // Sleeping props must register before their first interaction.
 		if(mBaseObj.Timer_Exists(eMovingButtonTimer_InteractWait)) return false;
@@ -336,6 +347,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 		
 	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
 	{
+        if(!VR_PhiLaunchAllowed())return false;
         if(VRPowerPump() && (apBody is null || apBody !is mpMoveBody)) return false;
 		float fWaitTime =0.5f;
 		//////////////////////

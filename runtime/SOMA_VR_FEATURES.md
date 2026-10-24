@@ -140,3 +140,8 @@ Removed the recall explanation and status text from GAMEPLAY. The RECALL OMNI-TO
 120HZ PHYSICS includes rate-corrected movement, damping, interaction timing, low-step traversal and scripted physics advancement. Default remains 60 Hz; restart required. S26GL adds verified Epic/GOG executable support. See SOMA_VR_120HZ.txt for activation and test scope.
 
 Increasing physics from native 60 Hz to 120 Hz increases CPU frame time and may cause stuttering or lower FPS. This does not set the headset refresh rate or guarantee 120 rendered FPS.
+
+
+## 1.0.9 candidate
+
+Adds collision-tested roomscale movement, default-on INTERACTION GUIDES, first-run VR settings guidance, and a main-menu version label. Improves direct tap sampling, registered palm buttons and remote readable handoff. Guides respect native permission and item order. Existing bindings and optional remote settings are preserved. Native/mock tests are not headset validation.

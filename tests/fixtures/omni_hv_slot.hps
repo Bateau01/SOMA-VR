@@ -1,0 +1,16 @@
+    void _Global_HVProbe(){
+        VR_UpdateGuide(.2f);
+        bool show=mVRGuide.Live() && mVRGuide.mpMesh.IsVisible();
+        cScript_SetGlobalReturnBool(show);
+    }
+
+    void _Global_HVAlignment(){
+        cLuxProp@ inserted=Map_GetProp("OmniTool_NotConfigured");
+        float error=999.0f;
+        if(mVRGuide.Live() && inserted !is null){
+            cMatrixf a=mVRGuide.mpMesh.GetSubMeshEntity(0).GetWorldMatrix();
+            cMatrixf b=inserted.GetMeshEntity().GetSubMeshEntity(0).GetWorldMatrix();
+            error=cMath_Vector3Dist(a.GetTranslation(),b.GetTranslation())+cMath_Vector3Dist(a.GetRight(),b.GetRight())+cMath_Vector3Dist(a.GetUp(),b.GetUp())+cMath_Vector3Dist(a.GetForward(),b.GetForward());
+        }
+        LogNewLine("HV_ALIGNMENT|error="+error);cScript_SetGlobalReturnBool(error<.002f);
+    }

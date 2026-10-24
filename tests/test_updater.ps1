@@ -4,6 +4,17 @@ $root=Split-Path $PSScriptRoot -Parent
 $script:checks=0
 function Check($value,$message){$script:checks++;if(!$value){throw $message}}
 function Reject($action){$rejected=$false;try{& $action}catch{$rejected=$true};Check $rejected 'Expected rejection'}
+# Exercise the real raw-byte decoder, including the GitHub octet-stream BOM.
+$script:jsonBytes=[byte[]]@(239,187,191)+[Text.Encoding]::UTF8.GetBytes('{"schema":1,"product":"SOMA-VR","protocol":1}')
+function Invoke-WebRequest { [pscustomobject]@{RawContentStream=(New-Object IO.MemoryStream(,$script:jsonBytes))} }
+Check ((Get-SomaVrUpdateJson 'https://fixture').product -eq 'SOMA-VR') 'BOM raw manifest not parsed'
+$script:jsonBytes=[Text.Encoding]::UTF8.GetBytes('{"schema":1}')
+Check ((Get-SomaVrUpdateJson 'https://fixture').schema -eq 1) 'JSON without BOM not parsed'
+$script:jsonBytes=[Text.Encoding]::UTF8.GetBytes('not JSON')
+Reject { Get-SomaVrUpdateJson 'https://fixture' }
+$script:jsonBytes=[byte[]]@(255,123,125)
+Reject { Get-SomaVrUpdateJson 'https://fixture' }
+Remove-Item Function:Invoke-WebRequest
 $m=[pscustomobject]@{schema=1;product='SOMA-VR';protocol=1;build=2026101614;version='1.0.8-S26HP';asset='SOMA-VR-1.0.8-S26HP-Setup.exe';size=3;sha256=('a'*64)}
 $a=[pscustomobject]@{name=$m.asset;size=3;browser_download_url=('https://github.com/Bateau01/SOMA-VR/releases/download/v1.0.8/'+$m.asset)}
 $r=[pscustomobject]@{draft=$false;prerelease=$false;assets=@($a)}

@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_guidance_hr.hps"
 #include "Prop_Rigid.hps"
 #include "helpers/helper_props.hps"
 #include "helpers/helper_player.hps"
@@ -72,6 +73,7 @@ class cScrPropOmniSlot : cScrPropRigid
 	{
 		if (!_HPL3VR_RuntimeActive_OmniSlot())
 		{
+                mVRGuide.Hide();
 				if (!mbFirstUpdate) return;
 				
 				mbFirstUpdate = false;
@@ -106,10 +108,52 @@ class cScrPropOmniSlot : cScrPropRigid
 		}
 		if(mfVRDockRetry>0) mfVRDockRetry-=afTimeStep;
 		VR_UpdatePhysicalDock();
+        VR_UpdateGuide(afTimeStep);
 	}
 	
 	//------------------------------------------------------------
 	
+    [nosave] cVRGuideMesh mVRGuide;
+    [nosave] float mfVRGuidePoll=0;
+    void BeforeEntityDestruction(){mVRGuide.Dispose(mBaseObj.GetMap().GetWorld());}
+    void VR_UpdateGuide(float dt)
+    {
+        if(!cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true) ||
+           !cScript_RunGlobalFunc("VRGUIDE","","ACTIVE")){mVRGuide.Hide();return;}
+        mfVRGuidePoll-=dt;if(mfVRGuidePoll>0)return;mfVRGuidePoll=.125f;
+        mVRGuide.Hide();
+        if(mbVRDockCaptureLatched || mbVRDockAwaitExit || (!mbAttachAllowed && !VR_IsLambdaLifeboatSlot()))return;
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRGetCanonicalOmniName");
+        cLuxProp@ tool=Map_GetProp(cScript_GetGlobalReturnString());
+        if(tool is null || tool.GetMeshEntity() is null)return;
+        cMatrixf target=VR_GetToolTargetMatrix(tool);
+        if(cMath_Vector3Dist(tool.GetMatrix().GetTranslation(),target.GetTranslation())>2.0f)return;
+        cScript_SetGlobalArgString(0,mBaseObj.GetName());cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRCanGuideOmniSlot");
+        if(!cScript_GetGlobalReturnBool())return;
+        tString file=cString_GetFileName(tool.GetFileName());
+        // Verified campaign carrier meshes. HUD and unknown/custom models fail closed.
+        if(file!="omnitool.ent" && file!="omnitool_with_securitychip.ent" &&
+           file!="omnitool_with_cortexchip.ent" && file!="omnitool_with_securitychip_cortexchip.ent")return;
+        tString meshFile="entities/station/gameplay/omnitool/"+cString_SetFileExt(file,"dae");
+        // Rigid Lux props attach submeshes to their body. The cMeshEntity
+        // container can remain at identity, even while the held tool moves.
+        if(tool.GetMeshEntity().GetSubMeshEntityNum()==0)return;
+        cMatrixf relative=cMath_MatrixMul(cMath_MatrixInverse(tool.GetMatrix()),tool.GetMeshEntity().GetSubMeshEntity(0).GetWorldMatrix());
+        mVRGuide.Show(mBaseObj.GetMap().GetWorld(),"VRGuide_"+mBaseObj.GetName(),meshFile,cMath_MatrixMul(target,relative));
+    }
+
+    // Read-only bridge for the cortex-chip guide; reuse insertion geometry.
+    void _Global_VRGuidePlacement()
+    {
+        // The global return is a single typed value: writing a success bool
+        // after this matrix would replace it. RunGlobalFunc reports dispatch.
+        cScript_SetGlobalReturnMatrix(cMatrixf_Identity);
+        cLuxProp@ tool=Map_GetProp(cScript_GetGlobalArgString(0));
+        if(tool is null || tool.GetBodyNum()==0)return;
+        cScript_SetGlobalReturnMatrix(VR_GetToolTargetMatrix(tool));
+    }
+
 	cMatrixf VR_GetToolTargetMatrix(cLuxProp@ apTool)
 	{
 		cMatrixf offsetMtx = apTool.GetBodyExtraData(0).m_mtxLocalTransform;
@@ -311,3 +355,4 @@ class cScrPropOmniSlot : cScrPropRigid
 	[nosave] bool mbVRDockCaptureLatched = false;
 	[nosave] float mfVRDockRetry=0;
 }
+

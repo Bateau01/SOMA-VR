@@ -5,11 +5,12 @@ Generated source and DLL stay under build/store. Never patches a game EXE.
 from pathlib import Path
 import argparse,json,re,struct,subprocess,sys,shutil,hashlib
 R=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--zig',required=True);args=p.parse_args()
-B=R/'build/store';B.mkdir(parents=True,exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('--zig',required=True);p.add_argument('--roomscale-test',action='store_true');args=p.parse_args()
+B=R/('build/store-roomscale-test' if args.roomscale_test else 'build/store');B.mkdir(parents=True,exist_ok=True)
 profile=json.loads((R/'reference/store-profile.json').read_text())
 mapping={int(k,16):int(v,16) for k,v in profile['addresses'].items()}
 tokens=re.compile(r'''/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|0x[0-9a-fA-F]+''',re.S)
+shutil.copytree(R/'third_party/smaa',B/'third_party/smaa',dirs_exist_ok=True)
 source=B/'source';shutil.copytree(R/'source',source,dirs_exist_ok=True)
 changes=[]
 for f in source.glob('*'):
@@ -40,7 +41,7 @@ f=source/'s26n.c';s=f.read_text(encoding="utf-8");marker='u32 __attribute__((ms_
 assert s.count(marker)==1
 s=s.replace(marker,guard+marker+'\n    if(!s26ef_store_matches())return 1;');f.write_text(s,encoding="utf-8")
 obj=B/'hpl3vr.obj';out=B/'hpl3vr-store.dll'
-subprocess.run([args.zig,'cc','-target','x86_64-windows-gnu','-O2','-g0','-ffreestanding','-fno-asynchronous-unwind-tables','-fno-ident','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-Wno-unused-parameter','-c',str(f),'-o',str(obj)],check=True)
+subprocess.run([args.zig,'cc']+(['-DS26IE_NATIVE_TEST=1'] if args.roomscale_test else [])+['-target','x86_64-windows-gnu','-O2','-g0','-ffreestanding','-fno-asynchronous-unwind-tables','-fno-ident','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-Wno-unused-parameter','-c',str(f),'-o',str(obj)],check=True)
 base=R/'third_party/hpl3vr_S5-P2_base.dll'
 assert hashlib.sha256(base.read_bytes()).hexdigest()=='f17f2048c7625705e3867c7ca9e106c3c343053deefc716e67f210ca647f74ed'
 subprocess.run([sys.executable,'-X','utf8',str(R/'scripts/apply_payload.py'),str(base),str(obj),str(out)],check=True)

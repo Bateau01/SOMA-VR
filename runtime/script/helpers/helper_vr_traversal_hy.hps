@@ -1,0 +1,72 @@
+#include "helpers/helper_vr_guidance_hr.hps"
+// Graphics-only, map-owned traversal cues. Never calls OnInteract or changes an
+// entity, player state, collider, inventory item or native completion flag.
+cMatrixf VRTraversalFrameHY(const cVector3f &in contact,const cVector3f &in fingers,const cVector3f &in normal)
+{
+    cVector3f z=cMath_Vector3Normalize(normal);
+    cVector3f y=cMath_Vector3Normalize(fingers*(-1.0f)+z*cMath_Vector3Dot(fingers,z));
+    cVector3f x=cMath_Vector3Normalize(cMath_Vector3Cross(y,z));
+    cMatrixf m=cMatrixf_Identity;
+    // HPL SetRight/Up/Forward write ROWS, while these are local-to-world axes.
+    m.SetRight(cVector3f(x.x,y.x,z.x));m.SetUp(cVector3f(x.y,y.y,z.y));m.SetForward(cVector3f(x.z,y.z,z.z));
+    m.SetTranslation(contact+z*(.048f*VRGuide_Metric()));return m;
+}
+class cVRTraversalPointHY
+{
+    tString msTarget,msDoor;
+    cVector3f mvContact,mvFingers,mvNormal;
+    cVRHandGuide mHand;
+    // All points/directions are in the native area's local frame, not tracking
+    // space. Re-evaluation follows attached/moving areas without storing bodies.
+    float DistanceToCamera()
+    {
+        iLuxEntity@ area=Map_GetEntity(msTarget);
+        if(area is null)return 100000.0f;
+        return cMath_Vector3Dist(cMath_MatrixMul(area.GetMatrix(),mvContact),cLux_GetPlayer().GetCamera().GetPosition());
+    }
+    void Update(int index)
+    {
+        mHand.Hide();
+        cLuxArea@ area=cLux_ToArea(Map_GetEntity(msTarget));
+        if(area is null || !area.IsActive() || area.GetInteractionDisabled() || area.IsInteractedWith())return;
+        iPhysicsBody@ body=area.GetAreaBody();if(body is null)return;
+        if(!area.CanInteract(0,body))return;
+        // Read-only visual gate: wait for full travel, allowing 0.1% numerical endpoint tolerance.
+        if(msDoor!="" && (!Entity_Exists(msDoor) || SlideDoor_GetOpenAmount(msDoor)<.999f))return;
+        cMatrixf frame=area.GetMatrix();cVector3f origin=cMath_MatrixMul(frame,cVector3f(0));
+        cVector3f contact=cMath_MatrixMul(frame,mvContact);
+        if(cMath_Vector3Dist(contact,cLux_GetPlayer().GetCamera().GetPosition())>3.0f)return;
+        cVector3f fingers=cMath_MatrixMul(frame,mvFingers)-origin;
+        cVector3f normal=cMath_MatrixMul(frame,mvNormal)-origin;
+        mHand.Show(cLux_GetCurrentMap().GetWorld(),"VRTraversalHY_"+msTarget+"_"+index,
+                   VRTraversalFrameHY(contact,fingers,normal),1,false);
+    }
+}
+class cVRTraversalGuidesHY
+{
+    array<cVRTraversalPointHY> mvPoints;
+    float mfPoll=0;
+    bool mbAllHidden=true;
+    void Add(const tString &in target,const cVector3f &in contact,const cVector3f &in fingers,const cVector3f &in normal,const tString &in door="")
+    {
+        cVRTraversalPointHY p;p.msDoor=door;p.msTarget=target;p.mvContact=contact;p.mvFingers=fingers;p.mvNormal=normal;mvPoints.insertLast(p);
+    }
+    void Hide(){if(mbAllHidden)return;for(uint i=0;i<mvPoints.length();i++)mvPoints[i].mHand.Hide();mbAllHidden=true;}
+    void Dispose(){for(uint i=0;i<mvPoints.length();i++)mvPoints[i].mHand.Dispose(cLux_GetCurrentMap().GetWorld());mvPoints.resize(0);mbAllHidden=true;mfPoll=0;}
+    void Update(float dt)
+    {
+        if(!cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true) ||
+           cLux_GetPlayer().GetCurrentStateId()!=ePlayerState_Normal ||
+           !cScript_RunGlobalFunc("VRGUIDE","","ACTIVE")){Hide();return;}
+        mfPoll-=dt;if(mfPoll>0)return;mfPoll=.125f;mbAllHidden=false;
+        // One hand per ladder: choose the nearby end, not both ends together.
+        array<float> distances(mvPoints.length());
+        for(uint i=0;i<mvPoints.length();i++){mvPoints[i].mHand.Hide();distances[i]=mvPoints[i].DistanceToCamera();}
+        for(uint i=0;i<mvPoints.length();i++){
+            bool nearest=true;
+            for(uint j=0;j<mvPoints.length();j++)if(j!=i && mvPoints[j].msTarget==mvPoints[i].msTarget &&
+                (distances[j]<distances[i] || (distances[j]==distances[i] && j<i))){nearest=false;break;}
+            if(nearest)mvPoints[i].Update(int(i));
+        }
+    }
+}

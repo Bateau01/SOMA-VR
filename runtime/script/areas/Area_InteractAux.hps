@@ -104,12 +104,21 @@ class cScrAreaInteractAux : iScrArea, iScrArea_Interface
         }
     }
 
+    bool HU_SeatContactAllowed(iLuxEntity@ parent)
+    {
+        if(mBaseObj.GetName()!="VRSeatArm_0" && mBaseObj.GetName()!="VRSeatArm_1")return true;
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        return cScript_GetGlobalReturnBool() && parent !is null && parent.IsActive() &&
+            cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Normal;
+    }
 	bool CanInteract(int alType, iPhysicsBody@ apBody)
 	{
 		iLuxEntity@ pInteractEntity = cLux_ID_Entity(m_idInteractParent);
 		if (pInteractEntity is null)
 			return false;
 		
+		if(!HU_SeatContactAllowed(pInteractEntity))return false;
 		if (pInteractEntity.GetInteractionDisabled())
 			return false;
 
@@ -130,6 +139,7 @@ class cScrAreaInteractAux : iScrArea, iScrArea_Interface
 	{
 		iLuxEntity@ pInteractEntity = cLux_ID_Entity(m_idInteractParent);
         if(pInteractEntity is null)return false;
+		if(!HU_SeatContactAllowed(pInteractEntity))return false;
 		if (pInteractEntity.GetInteractionDisabled())
 			return false;
 			

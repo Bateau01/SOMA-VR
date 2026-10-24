@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_guidance_hr.hps"
 // Temporary story phone; separate retrieval and screen confirmation. No inventory entry.
 #include "helpers/helper_player.hps"
 #include "helper_imgui_cellphone.hps"
@@ -9,6 +10,8 @@ bool VRPhoneQ_Active()
 }
 class cVRPhoneQ
 {
+    [nosave] cVRGuideMesh mVRPhoneGuide;
+    [nosave] cVRHandGuide mVRPhoneHandGuide;
     int state=0; // 0 ended, 1 waiting for screen tap, 2 accepted, 3 declined/expired
     bool pocket=false, allowDecline=false;
     [nosave] bool guiReady=false;
@@ -82,6 +85,31 @@ class cVRPhoneQ
     {
         if(state==0 || !VRPhoneQ_Active()) return 0;
         Native("F");
+        mVRPhoneGuide.Hide();mVRPhoneHandGuide.Hide();
+        if((state==1 || (state==2 && pocket)) && cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true) &&
+           cScript_RunGlobalFunc("VRGUIDE","","ACTIVE")){
+            cWorld@ world=cLux_GetCurrentMap().GetWorld();
+            if(pocket && cScript_RunGlobalFunc("VRGUIDE","","PHONE")){
+                cVector3f position=cScript_GetGlobalReturnVector3f();
+                cMatrixf frame=cMatrixf_Identity;
+                frame.SetTranslation(position);
+                // Consume one native pose snapshot; never face the camera.
+                bool valid=cScript_RunGlobalFunc("VRGUIDE","","PHONE_ROW0");
+                if(valid) frame.SetRight(cScript_GetGlobalReturnVector3f());
+                valid=valid && cScript_RunGlobalFunc("VRGUIDE","","PHONE_ROW1");
+                if(valid) frame.SetUp(cScript_GetGlobalReturnVector3f());
+                valid=valid && cScript_RunGlobalFunc("VRGUIDE","","PHONE_ROW2");
+                if(valid) frame.SetForward(cScript_GetGlobalReturnVector3f());
+                if(valid) mVRPhoneGuide.Show(world,"VRPhoneGuide","entities/urban/tech/cellphone/cellphone_smartphone.dae",frame);
+            }else if(!pocket){
+                cLuxProp@ prop=cLux_ToProp(Entity());
+                if(prop !is null && prop.GetMainBody() !is null &&
+                   !cScript_RunGlobalFunc("VRPHONEQ",""+prop.GetMainBody().GetUniqueID(),"H")){
+                    cMatrixf frame=prop.GetMatrix();
+                    mVRPhoneHandGuide.Show(world,"VRPhoneHandGuide",frame,1,false);
+                }
+            }
+        }
         if(state==2) { callAge+=0.05f;Native("S"); }
         if(state==3) return 0;
         if(state==1) age+=0.05f;
@@ -140,6 +168,8 @@ class cVRPhoneQ
     }
     void End()
     {
+        mVRPhoneGuide.Dispose(cLux_GetCurrentMap().GetWorld());
+        mVRPhoneHandGuide.Dispose(cLux_GetCurrentMap().GetWorld());
         Native("E");
         if(state==0) return;
         state=0;guiReady=false;pocket=false;
@@ -303,4 +333,5 @@ eCellPhoneGuiAction VRPhoneX_DrawGui(bool allowDecline)
 	
 	return eCellPhoneGuiAction_None;
 }
+
 

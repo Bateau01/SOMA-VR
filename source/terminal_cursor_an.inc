@@ -19,7 +19,9 @@ static const void* g_s26bvSet[128];
 static u32 g_s26bvGuiCount;
 static void s26bv_register_terminal(void* gui){
     if(!gui || !h20_mem_readable((u8*)gui+0x18,8))return;
-    for(u32 i=0;i<g_s26bvGuiCount;i++)if(g_s26bvGui[i]==gui)return;
+    // A live GUI may replace its backing set after reopening/rebuilding.
+    // Refresh the exact association; never keep suppressing its retired set.
+    for(u32 i=0;i<g_s26bvGuiCount;i++)if(g_s26bvGui[i]==gui){g_s26bvSet[i]=*(const void**)((u8*)gui+0x18);return;}
     if(g_s26bvGuiCount>=128u)return;
     u32 i=g_s26bvGuiCount++;g_s26bvGui[i]=gui;g_s26bvSet[i]=*(const void**)((u8*)gui+0x18);
 }
@@ -30,6 +32,8 @@ static i32 s26bv_cursor_owned(const void* self,i32 legacy){
 }
 static void __attribute__((ms_abi)) s26an_gui_end(void* self){
     if(!o_s26anEnd)return;
+    if(self==g_s26TerminalImGui && g_s26GuiOwnFrame && g_s26hsTouch.remaining>0)
+        s26hs_touch_consumed(&g_s26hsTouch,*((u8*)self+0x4f69)!=0);
     if(s26bv_cursor_owned(self,0)){
         u8* autoDraw=(u8*)self+0x750;u8 saved=*autoDraw;*autoDraw=0;
         o_s26anEnd(self);*autoDraw=saved;

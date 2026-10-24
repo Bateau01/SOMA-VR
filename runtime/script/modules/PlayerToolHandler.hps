@@ -1,4 +1,5 @@
 #include "custom_depth/vr_omni_authored_callbacks.hps"
+#include "helpers/helper_vr_guidance_hr.hps"
 #include "interfaces/UserModule_Interface.hps"
 #include "modules/ModuleInterfaces.hps"
 #include "base/InputHandler_Types.hps"
@@ -154,6 +155,8 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 	}
 	void OnMapLeave(cLuxMap @apMap)
 	{
+        for(uint i=0;i<mvVRItemGuides.length();i++)mvVRItemGuides[i].Dispose(apMap.GetWorld());
+        mvVRItemGuides.resize(0);mfVRItemGuidePoll=0;
 		if (mpVRBatonTipShape !is null) apMap.GetPhysicsWorld().DestroyShape(mpVRBatonTipShape);
 		@mpVRBatonTipShape = null;
 		mbVRBatonContact = false;
@@ -643,6 +646,179 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
         iLuxEntity@ entity=map.GetEntityByName(target,eLuxEntityType_LastEnum,"");
         if(entity is null || !entity.IsActive()) return "";
         return target;
+    }
+
+    [nosave] array<cVRGuideMesh> mvVRItemGuides;
+    [nosave] float mfVRItemGuidePoll=0;
+    [nosave] uint mlVRItemGuideUsed=0;
+
+    void VR_HideItemGuides()
+    {
+        for(uint i=0;i<mvVRItemGuides.length();i++)mvVRItemGuides[i].Hide();
+    }
+    // mode: 0 placed/native linear move, 1 ARK world-offset placement,
+    // 2 Lambda inserted Omni-Tool cortex submesh.
+    void VR_ShowItemGuide(cToolData@ tool,const tString &in targetName,
+                         const tString &in sourceName,const tString &in meshFile,
+                         const tString &in moveName="",const tString &in stage="",
+                         int mode=0,const tString &in onlySubMesh="")
+    {
+        if(tool is null || tool.msPickedEntityName=="Tracer_Fluid" || tool.msPickedEntityName=="StunRod" ||
+           mlVRItemGuideUsed>=8 || tool.msCanBeUsedCallback=="" || tool.msUseCallback=="")return;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null)return;
+        iLuxEntity@ target=map.GetEntityByName(targetName,eLuxEntityType_LastEnum,"");
+        cLuxProp@ source=cast<cLuxProp>(map.GetEntityByName(sourceName,eLuxEntityType_Prop,""));
+        if(target is null || source is null || source.GetMeshEntity() is null ||
+           !target.IsActive() || target.GetInteractionDisabled())return;
+        if(stage!=""){
+            iLuxEntity@ gate=map.GetEntityByName(stage,eLuxEntityType_LastEnum,"");
+            if(gate is null || !gate.IsActive())return;
+        }
+        cLuxProp@ carrier=cast<cLuxProp>(map.GetEntityByName(VR_GetPhysicalCarrierName(tool),eLuxEntityType_Prop,""));
+        if(carrier is null || !carrier.IsActive() || carrier.GetMeshEntity() is null)return;
+        if(cMath_Vector3Dist(carrier.GetMatrix().GetTranslation(),target.GetMatrix().GetTranslation())>2.0f)return;
+        if(!map.ScriptPrepare("bool "+tool.msCanBeUsedCallback+"(const tString &in, const tString &in)"))return;
+        tString name=tool.msPickedEntityName; tString targetArg=targetName;
+        map.SetArgString(0,name);map.SetArgString(1,targetArg);
+        if(!map.ScriptExecute() || !map.GetReturnBool())return;
+        cMatrixf delta=cMatrixf_Identity;
+        if(moveName!=""){
+            iLuxEntity@ move=map.GetEntityByName(moveName,eLuxEntityType_LastEnum,"");
+            if(move is null)return;
+            cMatrixf destination=source.GetMatrix();
+            destination.SetTranslation(move.GetMatrix().GetTranslation());
+            if(mode==1){
+                // Entity_PlaceAtEntity offsets are WORLD offsets, not local.
+                destination=move.GetMatrix();
+                cVector3f offset=targetName=="ArkPlacementArea" ? cVector3f(0,.0625f,0) : cVector3f(0,-.375f,-.25f);
+                destination.SetTranslation(destination.GetTranslation()+offset);
+            }else if(mode==2){
+                // Ask the slot for its existing pure placement calculation.
+                // No Insert/Use callback and no native transform mutation.
+                if(source.GetBodyNum()==0)return;
+                cScript_SetGlobalArgString(0,sourceName);
+                if(!cScript_RunGlobalFunc(moveName,"cScrPropOmniSlot","_Global_VRGuidePlacement"))return;
+                destination=cScript_GetGlobalReturnMatrix();
+            }
+            delta=cMath_MatrixMul(destination,cMath_MatrixInverse(source.GetMatrix()));
+        }
+        if(mvVRItemGuides.length()<=mlVRItemGuideUsed)mvVRItemGuides.resize(mlVRItemGuideUsed+1);
+        if(mvVRItemGuides[mlVRItemGuideUsed].ShowNative(map.GetWorld(),"VRItemGuide_"+mlVRItemGuideUsed,
+            meshFile,source.GetMeshEntity(),delta,onlySubMesh))mlVRItemGuideUsed++;
+    }
+    // HT campaign route inventory: native replacement mesh + authored final motion.
+    void VR_DispatchItemGuides(cToolData@ tool,const tString &in mapName)
+    {
+        tString name=tool.msPickedEntityName;
+        if(name=="Tracer_Fluid" || name=="StunRod")return;
+        uint start=mlVRItemGuideUsed;
+        if(mapName=="01_01_upsilon_awake" && (name=="ConfigChipTool"))
+            VR_ShowItemGuide(tool,"AreaInsertConfigChip","ConfigChipToolInserted","entities/station/gameplay/omnitool/securitychip.dae","ConfigChipTarget","",0,"");
+        if(mapName=="02_01_ms_curie_outside" && (name=="CortexChipTool"))
+            VR_ShowItemGuide(tool,"Area_PutCortexOnOmniTool","CathTool_WithChip","entities/station/gameplay/omnitool/omnitool_with_securitychip_cortexchip.dae","OmniToolSlot","",2,"cortex_chip");
+        if(mapName=="02_03_delta" && (name=="KateChip" || name=="GoyaChip") && mlVRItemGuideUsed==start)
+            VR_ShowItemGuide(tool,"CatherineSlotInteract","CathChip_New","entities/oceanbottom/tech/chip_robot/chip_robot.dae","CathChip_Target","",0,"");
+        if(mapName=="02_03_delta" && (name=="KateChip" || name=="GoyaChip") && mlVRItemGuideUsed==start)
+            VR_ShowItemGuide(tool,"CathTool","CathChip_New","entities/oceanbottom/tech/chip_robot/chip_robot.dae","CathChip_Target","",0,"");
+        if(mapName=="02_03_delta" && (name=="KateChip" || name=="GoyaChip") && mlVRItemGuideUsed==start)
+            VR_ShowItemGuide(tool,"ZeppelinCathTerminal","CathChip_New","entities/oceanbottom/tech/chip_robot/chip_robot.dae","CathChip_Target","",0,"");
+        if(mapName=="02_05_theta_inside" && (name=="EnvironmentChip" || name=="BrainScanChip"))
+            VR_ShowItemGuide(tool,"SimulationSlot_Right_Interact","SimulationSlot_Right_Chip","entities/station/special/02_05_computer_scan_storage/02_05_computer_scan_chip.dae","SimulationSlot_Right_InPos","",0,"");
+        if(mapName=="02_05_theta_inside" && (name=="EnvironmentChip" || name=="BrainScanChip"))
+            VR_ShowItemGuide(tool,"SimulationSlot_Left_Interact","SimulationSlot_Left_Chip","entities/station/gameplay/chip_environment_storage/chip_environment_storage.dae","SimulationSlot_Left_InPos","",0,"");
+        if(mapName=="02_05_theta_inside" && (name=="EnvironmentChip" || name=="BrainScanChip"))
+            VR_ShowItemGuide(tool,"ScanRoomSlot_Interact","ScanRoomSlot_Chip","entities/station/gameplay/chip_environment_storage/chip_environment_storage.dae","ScanRoomSlot_InPos","",0,"");
+        if(mapName=="02_06_theta_tunnels" && (name=="chip_unformatted"))
+            VR_ShowItemGuide(tool,"Area_InsertUnformattedChip","security_chip_unformatted","entities/station/tech/audio_logger_flesher_mem_chip/audio_logger_flesher_mem_chip.DAE","","",0,"");
+        if(mapName=="02_06_theta_tunnels" && (name=="chip_unformatted" || name=="door_panel_chip_formatted"))
+            VR_ShowItemGuide(tool,"Area_Broken_Panel","Replaced_Chip","entities/station/tech/audio_logger_flesher_mem_chip/audio_logger_flesher_mem_chip.DAE","Replaced_Chip_Target","",0,"");
+        if(mapName=="03_02_omicron_inside" && (name=="ChipTool_Damaged"))
+            VR_ShowItemGuide(tool,"Area_PlaceBrokenChip","ChipTool_PreRepair","entities/station/gameplay/structure_gel_cabinet_chip/structiure_gel_cabinet_chip.dae","","",0,"");
+        if(mapName=="03_02_omicron_inside" && (name=="ChipTool_Repaired"))
+            VR_ShowItemGuide(tool,"Area_InsertRepairedChip","Chip_FullyRepaired","entities/station/gameplay/structure_gel_cabinet_chip/structure_gel_cabinet_chip_infected.fbx","","",0,"");
+        if(mapName=="03_02_omicron_inside" && (name=="PowerCubeTool"))
+            VR_ShowItemGuide(tool,"Area_PowerCubeInsert","PowerCube_Inserted","entities/station/tech/powerpack/powerpack.dae","","",0,"");
+        if(mapName=="03_02_omicron_inside" && (name=="BrokenRobotBrain"))
+            VR_ShowItemGuide(tool,"DiveSuitArea","ComputerBrainInBody","entities/station/special/03_02_worker_medium_maintenance/03_02_worker_medium_maintenance_brain_02.dae","ComputerBrainInBody_MoveTarget","ToolArea_ComputerBrain",0,"");
+        if(mapName=="03_02_omicron_inside" && (name=="PowerCube_Inserted"))
+            VR_ShowItemGuide(tool,"DiveSuitArea","PowerSourceInBody","entities/station/tech/powerpack/powerpack.dae","","ToolArea_PowerSource",0,"");
+        if(mapName=="03_02_omicron_inside" && (name=="StructureGelTool"))
+            VR_ShowItemGuide(tool,"DiveSuitArea","structure_gel_application","entities/station/special/03_02_structure_gel_application/03_02_structure_gel_application.fbx","","ToolArea_StructureGel",0,"");
+        if(mapName=="04_02_tau_inside" && (name=="ARK"))
+            VR_ShowItemGuide(tool,"ArkPlacementArea","ARK","entities/station/tech/ark_tau/ark.dae","ArkAirlockPos","",1,"");
+        if(mapName=="04_02_tau_inside" && (name=="ARK"))
+            VR_ShowItemGuide(tool,"CargoElevatorArea_1","ARK","entities/station/tech/ark_tau/ark.dae","CargoElevatorArea_1","",1,"");
+        if(mapName=="04_02_tau_inside" && (name=="ARK"))
+            VR_ShowItemGuide(tool,"CargoElevatorArea_2","ARK","entities/station/tech/ark_tau/ark.dae","CargoElevatorArea_2","",1,"");
+        if(mapName=="04_02_tau_inside" && (name=="ARK"))
+            VR_ShowItemGuide(tool,"CargoElevatorArea_3","ARK","entities/station/tech/ark_tau/ark.dae","CargoElevatorArea_3","",1,"");
+        if(mapName=="05_01_phi_inside" && (name=="powerpack_1"))
+            VR_ShowItemGuide(tool,"PowerpackSocketInteract_Lights","PowerpackPlugged_Lights","entities/station/tech/powerpack/powerpack.dae","","",0,"");
+        if(mapName=="05_01_phi_inside" && (name=="powerpack_1"))
+            VR_ShowItemGuide(tool,"PowerpackSocketInteract_Cargo","PowerpackPlugged_Cargo","entities/station/tech/powerpack/powerpack.dae","","",0,"");
+        if(mapName=="05_01_phi_inside" && (name=="powerpack_1"))
+            VR_ShowItemGuide(tool,"PowerpackSocketInteract_SatFrameRoom","PowerpackPlugged_SatFrameRoom","entities/station/tech/powerpack/powerpack.dae","","",0,"");
+        if(mapName=="05_01_phi_inside" && (name=="ARK"))
+            VR_ShowItemGuide(tool,"SatFrame_Interact","ARKInFrame","entities/station/tech/ark_tau/ark.dae","","",0,"");
+    }
+    void VR_UpdateItemGuides(float dt)
+    {
+        if(!_HPL3VR_RuntimeActive_ToolHandler() || !mbVRStreamMapReadyTokenSent ||
+           !cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true) ||
+           !cScript_RunGlobalFunc("VRGUIDE","","ACTIVE")){VR_HideItemGuides();return;}
+        mfVRItemGuidePoll-=dt;if(mfVRItemGuidePoll>0)return;mfVRItemGuidePoll=.125f;
+        VR_HideItemGuides();mlVRItemGuideUsed=0;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null)return;
+        for(uint i=0;i<mvInventory.length();i++){
+            cToolData@ tool=mvInventory[i];tString name=tool.msPickedEntityName;
+            if(tool.mbVRShoulderStowed || !cScript_RunGlobalFunc("VRGUIDE",name,"HELD"))continue;
+            VR_DispatchItemGuides(tool,map.GetName());
+        }
+    }
+
+    // Guidance evaluates the existing native permission callback only. It must
+    // never call UseCallback, RemoveTool, Insert or mutate inventory ownership.
+    tString VR_ResolveOmniGuideTarget(iLuxEntity@ slot)
+    {
+        if(slot is null)return "";
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null)return "";
+        // Upsilon's first insertion is owned by the trigger, not the visible
+        // slot. Guide-only alias: physical docking/use routing is unchanged.
+        if(map.GetName()=="01_01_upsilon_awake" && slot.GetName()=="cath_terminal_1")
+        {
+            if(!slot.IsActive() || slot.GetInteractionDisabled())return "";
+            iLuxEntity@ area=map.GetEntityByName("AreaInsertOmniTool_TechRoom",eLuxEntityType_LastEnum,"");
+            if(area is null || !area.IsActive() || area.GetInteractionDisabled())return "";
+            return area.GetName();
+        }
+        return VR_ResolveOmniUseTarget(slot);
+    }
+    void _Global_VRCanGuideOmniSlot()
+    {
+        tString slotName=cScript_GetGlobalArgString(0);
+        bool allowed=false;
+        if(_HPL3VR_RuntimeActive_ToolHandler() && cScript_RunGlobalFunc("VRGUIDE","","ACTIVE"))
+        {
+            cLuxMap@ map=cLux_GetCurrentMap();
+            iLuxEntity@ slot=map is null ? null : map.GetEntityByName(slotName,eLuxEntityType_LastEnum,"");
+            if(slot !is null && slot.IsActive() && slot.GetVarBool("IsOmniSlot"))
+            {
+                tString target=VR_ResolveOmniGuideTarget(slot);
+                if(target!="") for(uint i=0;i<mvInventory.length();i++)
+                {
+                    cToolData@ tool=mvInventory[i];
+                    if(!VR_IsPhysicalOmni(tool) || tool.msCanBeUsedCallback=="" || tool.msUseCallback=="")continue;
+                    if(!cScript_RunGlobalFunc("VROMNIHELD",tool.msPickedEntityName,"Q"))continue;
+                    if(!map.ScriptPrepare("bool "+tool.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)"))break;
+                    // SetArgString keeps its argument alive until ScriptExecute.
+                    // Use a local string, as the existing physical-use route does.
+                    tString toolName=tool.msPickedEntityName;
+                    map.SetArgString(0,toolName);map.SetArgString(1,target);
+                    allowed=map.ScriptExecute() && map.GetReturnBool();break;
+                }
+            }
+        }
+        cScript_SetGlobalReturnBool(allowed);
     }
 
 	void _Global_VRPhysicalOmniUseSlot()
@@ -2135,6 +2311,9 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 	
 	void Reset()
 	{
+        // OnMapLeave owns destruction while the world is valid. Reset can run
+        // after teardown, so only forget remaining non-owning script handles.
+        VR_HideItemGuides();mfVRItemGuidePoll=0;
 		if (!_HPL3VR_RuntimeActive_ToolHandler())
 		{
 				mbPlayerCarriesHeavyTool=false;
@@ -2378,6 +2557,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 
 	void Update(float afTimeStep)
 	{					
+        VR_UpdateItemGuides(afTimeStep);
 		if (!_HPL3VR_RuntimeActive_ToolHandler())
 		{
 				if(mbActive==false || mlCurrentToolIndex < 0) return;
@@ -3383,6 +3563,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 	[nosave] float mfVRShoulderReconcileTimer = 0.60f;
 
 }
+
 
 
 

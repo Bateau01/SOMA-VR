@@ -1,0 +1,2 @@
+from pathlib import Path
+p=Path('runtime/maps/chapter01/01_03_upsilon_outside/01_03_upsilon_outside.hps');s=p.read_text();s=s.replace('    bool mbVREscapeIntroOver=false;\n    bool mbVREscapeFinished=false;\n','');s=s.replace('mbVREscapeIntroOver,mbVREscapeFinished','true,mbFirstTimeClimb');s=s.replace('        mbVREscapeIntroOver=true;\n','');s=s.replace('        mbVREscapeFinished=true;mVREscapeGuide.Hide();','        mVREscapeGuide.Hide();');p.write_text(s)

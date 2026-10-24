@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/AchievementHandler_Types.hps"
 #include "base/RichPresenceHandler_Types.hps"
@@ -174,6 +175,8 @@ cVector2f[] gvCommRoomStations =
 
 class cScrMap : iScrMap
 {
+    [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
 	//-------------------------------------------------------
 	
 	/////////////////////////////////////////
@@ -369,8 +372,25 @@ class cScrMap : iScrMap
 
 	////////////////////////////
 	// Run when entering map
-	void OnEnter()
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("LadderArea_1",cVector3f(0.1016297f,-0.7205733f,0.0314772f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(-0.0000000f,0.0119065f,0.9999291f));
+
+        mVRTraversalHY.Add("LadderArea_1",cVector3f(-0.3812347f,2.4596367f,-0.1695345f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.3776376f,0.8701023f,0.3167205f));
+
+        mVRTraversalHY.Add("HatchClimb_2",cVector3f(0.253841f,-0.014486f,-0.176838f),cVector3f(0.000000f,0.000000f,-1.000000f),cVector3f(0.000000f,1.000000f,0.000000f),"hatch_1");
+
+    }
+
+void OnEnter()
 	{
+        mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        
+        
+        
+
 		MainMenu_SetBGPhase(eMainMenuPhase_Initial_To_1_3);	
 	}
 	
@@ -391,12 +411,14 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+        mVRTraversalHY.Dispose();
 	}
 	
 	//-------------------------------------------------------
 	
 	void Update(float afTimeStep)
-	{	
+	{
+        EnsureVRTraversalIA();mVRTraversalHY.Update(afTimeStep);	
 		////////////////////////////
 		// React to Carl on gaze
 		if (EyeTracking_IsEnvironmentReactive() && EyeTracking_IsEntityBeingLookedAt("AuxCarlID_Big") && mbReactedToCarlBody == false)

@@ -1,0 +1,4392 @@
+#include "helpers/helper_vr_traversal_hy.hps"
+#include "interfaces/Map_Interface.hps"
+#include "base/Inputhandler_Types.hps"
+#include "base/AchievementHandler_Types.hps"
+#include "base/RichPresenceHandler_Types.hps"
+
+#include "helpers/helper_game.hps"
+#include "helpers/helper_map.hps"
+#include "helpers/helper_areas.hps"
+#include "helpers/helper_effects.hps"
+#include "helpers/helper_audio.hps"
+#include "helpers/helper_sequences.hps"
+#include "helpers/helper_ai.hps"
+#include "helpers/helper_player.hps"
+#include "custom_depth/helper_custom_depth_audio.hps"
+#include "helper_imgui_cath_portrait.hps"
+#include "helper_imgui_station.hps"
+#include "helper_imgui_station_app_error.hps"
+#include "helper_imgui_station_app_audioplayback.hps"
+#include "helper_imgui_station_app_numpad.hps"
+
+#include "helper_custom_depth.hps"
+
+#include "helper_font.hps"
+
+//--------------------------------------------------
+
+int glMaxPowerNodesActive = 10;
+
+tString[] gvOverridePasswords = {"7755", "5422", "6866", "2828", "4111", "0090", "9909", "1050", "1880", "6677" };
+
+//Music consts
+const tString gsOmicronExtMusic = "03_01_ambience";
+
+enum eHiddenButtonGlitchState
+{
+	eHiddenButtonGlitchState_None,
+	eHiddenButtonGlitchState_NoRender,
+	eHiddenButtonGlitchState_Offset,
+	
+	eHiddenButtonGlitchState_LastEnum,
+}
+
+enum eStatusTerminalApp
+{
+	eStatusTerminalApp_MainMenu = -1,
+	eStatusTerminalApp_BlackBoxStatus,
+	eStatusTerminalApp_SystemUpdates,
+	eStatusTerminalApp_HiddenMenu
+}
+
+
+enum eBloodTerminalApp
+{
+	eBloodTerminalApp_MainMenu = -1,
+	eBloodTerminalApp_Message,
+	eBloodTerminalApp_LockdownStatus,
+	eBloodTerminalApp_LockdownInput,
+	eBloodTerminalApp_LockdownOverride
+}
+ 
+//--------------------------------------------------
+ 
+class cScrMap : iScrMap
+{
+    // S26IO: permission for unrelated physical world controls only.
+    // Native exit callbacks, GUI ownership, B/distance exit and pickups are unchanged.
+    bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)
+    {
+        return asEntityName=="StatusTerminal" ||
+               asEntityName=="BloodTerminal";
+    }
+
+ [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
+	//--------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN CALLBACKS
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void Setup()
+	{		
+		GetBase().SetDisplayNameEntry("03-01-omicron-outside");
+		RichPresence_SetCurrent(eRichPresence_OutsideOmicron );
+		
+		///////////////////////////////
+		// Setup presets
+		{
+			// When outside and underwater
+			Map_Preset_SetupDepthOfField("Outside", true, 0, 12.0, 0.25);
+			Map_Preset_SetupBloom("Outside", 256, 0.00001, 0.5, cColor(0.5, 0.37, 0.37, 1.0));
+
+			// In the dome
+			Map_Preset_SetupDepthOfField("Dome", false, 0, 12.0, 0.25);
+			Map_Preset_SetupBloom("Dome", 128, 0.75, 0.5, cColor(1.0, 1.0));
+
+			// 3.2
+			Map_Preset_SetupDepthOfField("3.2Preset", false, 0, 12.0, 0.25);
+			Map_Preset_SetupBloom("3.2Preset", 128, 0.75, 0.5, cColor(1.0, 1.0));
+		}
+						
+		Effect_DoF_Start(0, 12, 0.25, 0.0);
+
+		Effect_Bloom_FadeBrightPass(0.00001, 2);
+		Effect_Bloom_FadeBloomWidth(256, 2);
+        Effect_Bloom_FadeBloomFalloff(0.5f, 2);
+		Effect_Bloom_FadeBloomTint(0.5, 0.37, 0.37, 2);
+		Map_SetUnderwater(true);
+		
+		cLux_GetCurrentMap().GetWorld().SetFogUnderwater(true);
+
+		cTerrain@ pTerrain = cLux_GetCurrentMap().GetWorld().GetTerrain();
+		if(pTerrain !is null) pTerrain.SetCheapMaterial("sand_wavy.mat", 0.5f);
+		
+		////////////////////
+		//3.2 Preset for transition
+		Map_Preset_SetupColorGrading("Omicron3.2", "textures/colorgrading/grading_03_02.dds");
+		
+		////////////////////
+		// Entity init
+		Entity_PlayAnimation("fish_sphere_*", "fish_sphere_sway", 0, true, true);
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run first time starting map
+	void OnStart()
+	{
+		CathTool_ResetScreen(eCathToolVariant_CathDelta);
+		
+		//Setup Particles
+		ParticleSystem_SetActive("first_airlock_drain_particles_*", false);
+		ParticleSystem_SetActive("second_airlock_drain_particles_*", false);
+		
+		/////////////////////////////
+		//Preload Audio
+		Sound_PreloadProject("03_01_omicron_outside");
+		Sound_PreloadGroup("Flashback/Level/03_01", true);
+		
+		/////////////////////////////////
+		//Audio fades
+		Sound_SetGlobalVolume(0.0f, eSoundEntryType_WorldClean);
+		Sound_SetGlobalVolume(0.0f, eSoundEntryType_World);
+		
+		SetupWakeUp(!cLux_ScriptDebugOn());
+		SetupWalkToOmicron();
+		SetupSubStation();
+		SetupEnterOmicron();
+		
+		Tool_PickUp("CathTool", false, false);
+		Player_SetAmbientLight_Outdoors();
+		
+		PlayerHands_SetHandModel_Diving();
+		
+		PlayerEnergy_SetFlowerSwallows(true);
+		
+		/////////////////////////
+		// Debug
+		if(cLux_ScriptDebugOn())
+		{
+			//Add any debug stuff here
+			//Map_SetUnderwater(false);
+			
+			cLux_SetDebugInfoWindowText("Text that should show up when pressing F1");
+		}
+
+		/////////////////////////
+		// Eye tracking
+		EyeTracking_RegisterEntity("DatamineArea_3", true, false, true, 15.0f, 3.0f);
+		EyeTracking_RegisterEntity("RelayCorpseArea", true, false, true, 15.0f, 3.0f);
+		EyeTracking_RegisterEntity("BridgeLookDownTrigger_2", false, false, false, -1.0f);
+		
+		LastOnSoma_SetText("03_01_omicron_outside_1");
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when entering map
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("SubBaseLadder_Outer",cVector3f(0.1570268f,-2.4922840f,0.0303175f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(-0.0171492f,-0.0000000f,0.9998529f));
+
+        mVRTraversalHY.Add("SubBaseLadder_Outer",cVector3f(-0.3300839f,3.8883403f,-0.2022386f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.0000002f,1.0000000f,0.0000013f));
+
+        mVRTraversalHY.Add("ClimbArea_3",cVector3f(0.1108645f,-0.9675833f,0.0347009f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(-0.0025698f,0.0119075f,0.9999258f));
+
+        mVRTraversalHY.Add("ClimbArea_3",cVector3f(-0.2804628f,2.0569402f,-0.0106805f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.0007939f,0.9510499f,-0.3090363f));
+
+        mVRTraversalHY.Add("ClimbArea_4",cVector3f(0.0982174f,-1.4815840f,0.0182613f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(-0.0116789f,0.0119084f,0.9998609f));
+
+        mVRTraversalHY.Add("ClimbArea_4",cVector3f(-0.3968268f,2.9841800f,-0.2340872f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(-0.0039951f,0.9396864f,0.3420139f));
+
+    }
+
+void OnEnter()
+	{
+        // HY ladder surfaces: source triangles recorded in ladder_coverage_hy.json.
+        mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+		MainMenu_SetBGPhase(eMainMenuPhase_2_4_To_3_3);
+		
+		//PRELOAD SOUND
+		
+		/////////////////////////////////////////////////////////////
+		// Regain control after fake knock out and flush
+		if (cLux_GetExplorationModeActive())
+		{
+			Player_FadeMoveSpeedMulTo(1.f, 1.f);
+			Player_FadeLookSpeedMulTo(1.f, 1.f);
+			Player_StopLookAt(0);
+		}
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// Run when leaving map
+	void OnLeave()
+	{
+ mVRTraversalHY.Dispose();
+		PlayerEnergy_SetAllowCathComment(false);
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// The player has died.
+	void OnPlayerDead(int aType, const tString&in asSource)
+	{
+	}
+
+	//-------------------------------------------------------
+	
+	void Update(float afTimeStep)
+	{
+ EnsureVRTraversalIA();mVRTraversalHY.Update(afTimeStep);
+		////////////////////////////
+		// Handle LookAtAbyss with eye tracking
+		if (EyeTracking_IsEnvironmentReactive())
+		{
+			bool bPrevLookAtAbyssActive = mbLookAtAbyssActive;
+			mbLookAtAbyssActive = EyeTracking_IsEntityBeingLookedAt("BridgeLookDownTrigger_2");
+			float fDist = (Map_GetEntity("BridgeLookDownTrigger_2").GetPosition() - Player_GetPosition()).Length();
+			if (fDist > 100.0f) return;
+			if (bPrevLookAtAbyssActive == true && mbLookAtAbyssActive == false) SetAbyssEffectsActive(false);
+			else if (bPrevLookAtAbyssActive == false && mbLookAtAbyssActive == true) SetAbyssEffectsActive(true);		
+		}
+	}
+	
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// To get when player makes input (mostly used for debug)
+	void OnAction(int alAction, bool abPressed) 
+	{
+		if(abPressed==false) return;
+		
+		////////////////////////////
+		// Super debug button
+		if (alAction == eAction_Test1)
+		{
+			cLuxClosestEntityData pData;
+			if (!cLux_GetClosestEntity(cLux_GetPlayer().GetCamera().GetPosition(),cLux_GetPlayer().GetCamera().GetForward(),100, 0, false, pData))
+				return;
+				
+			tString sFocusEntity = pData.mpEntity.GetName();
+			
+			SlideDoor_SetClosed(sFocusEntity, false, false);
+			Button_SetDisabled(sFocusEntity, !Button_IsDisabled(sFocusEntity), true);
+			Button_SetSwitchedOn(sFocusEntity, !Button_IsSwitchedOn(sFocusEntity), true);
+		}
+		
+		if(alAction == eAction_Test2)
+		{
+			mbLockdownOverridden = true;
+			OpenShutters();
+			SlideDoor_SetClosed("SubBaseAirlockDoor_Outer", false);
+		}
+		
+		if(alAction == eAction_Test3)
+		{
+			//Timer_FishSphereCacheUpdate("Timer_FishSphereCacheUpdate_1");
+			cLux_AddDebugMessage("FOV: " + cLux_GetPlayer().GetCamera().GetFOV());
+        }
+		
+		if(alAction == eAction_Test4)
+		{
+			//PreloadChangeOfMap();
+			Seq_AirlockEmpty_Flush("");
+		}
+		
+		if(alAction == eAction_Test5)
+		{
+			Sound_CreateAtEntity("PowerOn", "03_01_omicron_outside/Gameplay/fuse_puzzle/fuse_puzzle_success", "FuseSoundSource", 0.0f, false, 1.0f);
+			Map_AddTimer("3_CathChatPowerPuzzleDone", 1, "PlayCathMiniConvo");				
+			TurnOnPower();
+		}
+		
+		if(alAction == eAction_Test6)
+		{
+			cLux_AddDebugMessage("mbResumeIdleDialogOnTerminalLeave "+mbResumeIdleDialogOnTerminalLeave );
+		}
+		
+		if(alAction == eAction_Test7)
+		{
+			Preload();
+			Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+		}
+		
+		if(alAction == eAction_Test8)
+		{
+			Map_SetEnvironmentParticleFadeIn("*", 0.1, 0.2);
+			Map_SetEnvironmentParticleFadeOut("*", 0.3, 0.4);
+		}
+		if(alAction == eAction_Test9)
+		{
+			DomePowerSequence("");
+		}
+	}
+
+	//-------------------------------------------------------
+
+	////////////////////////////
+	// This only used for pure debug purposes when info needs to printed.
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afY)
+	{
+		//afY = cLux_DrawDebugText("My Debug value:"+..., afY);
+		return afY;
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadData()
+	{
+		//GUI
+		StationGui_PreloadDefault();
+		OmnitoolGui_Preload();
+		//ImGui_PreloadImage("static_anim_01", eImGuiGfx_TextureAnimated);
+		
+		ParticleSystem_Preload("03_01_airlock_drops.ps");
+		ParticleSystem_Preload("03_01_substation_leak.ps");
+		ParticleSystem_Preload("03_01_substation_leak_impact");
+		ParticleSystem_Preload("03_01_substation_foam.ps");
+		ParticleSystem_Preload("03_02_airlock_fill.ps");
+		ParticleSystem_Preload("elec_spark_physics_oneshot.ps");
+		ParticleSystem_Preload("loop_waterbubbles_large_cloud.ps");
+		ParticleSystem_Preload("loop_waterbubbles_medium_stream.ps");
+		ParticleSystem_Preload("splash_continuous_med.ps");
+		ParticleSystem_Preload("drops_med_continuous.ps");
+		ParticleSystem_Preload("oneshot_waterbubbles_huge.ps");
+		
+		
+		PlayerHands_PreloadHandModel_Diving();
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// MAIN FUNCTIONS
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbPowerOn = false;
+	bool mbLockdownOverridden = false; 
+	bool mbSecretCodeSeen = false;
+
+	//-------------------------------------------------------
+	
+	////////////////////////
+	// Hack to get around the cache's not working 
+	// well with so many screens active at the same time
+	// This just constantly updates the screens so they are 
+	// nearly guaranteed to look right when you reach them.
+	void Timer_FishSphereCacheUpdate(const tString &in asTimer)
+	{
+		int lIndex = cString_GetNumericSuffixInt(asTimer);
+		if (Entity_Exists("FishSphereTerminal_"+lIndex)==false)
+			lIndex = 1;
+			
+		Terminal_ForceCacheUpdate("FishSphereTerminal_"+lIndex);
+		Map_AddTimer("Timer_FishSphereCacheUpdate_"+(lIndex+1), 0.4, "Timer_FishSphereCacheUpdate");
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Generic timers
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	void TimerSetEntityInactive(const tString &in asTimer)
+	{
+		Entity_SetActive(asTimer, false);
+	}
+
+	//-------------------------------------------------------
+
+	void TimerPlayVoice(const tString &in asTimer)
+	{
+		Voice_Play(asTimer);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerEnableInteraction(const tString &in asTimer)
+	{
+		Entity_SetInteractionDisabled(asTimer, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTurnOnEffects(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive(asTimer, true, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTurnOffEffects(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive(asTimer, false, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTurnOnEffectsNoFade(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive(asTimer, true, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerTurnOffEffectsNoFade(const tString &in asTimer)
+	{
+		Entity_SetEffectsActive(asTimer, false, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSetPhysicsStatic(const tString &in asTimer)
+	{
+		Prop_SetStaticPhysics(asTimer, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSetLampLit(const tString &in asTimer)
+	{
+		Lamp_SetLit(asTimer, true, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerSetLampUnlit(const tString &in asTimer)
+	{
+		cLux_AddDebugMessage("TimerSetLampUnlit "+asTimer);
+		Lamp_SetLit(asTimer, false, true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerOpenSlideDoor(const tString &in asTimer)
+	{
+		SlideDoor_SetClosed(asTimer, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void TimerDestroyParticleSystem(const tString &in asTimer)
+	{
+		ParticleSystem_Destroy(asTimer);
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Cath tool
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool CanUseCathTool(const tString &in asTool, const tString &in asEntity)
+	{
+		return CathTool_CanUse(asTool, asEntity) || asEntity == "SubStationCathTerminal_Aux";
+	}
+
+	//-------------------------------------------------------
+	
+	bool OnUseCathTool(const tString &in asTool, const tString &in asEntity)
+	{
+		if (asEntity == "SubStationCathTerminal" || asEntity == "SubStationCathTerminal_Aux")
+		{
+			return PlugInCatherine();
+		}
+		else if (asEntity == "AirlockButton")
+		{
+			CathTool_UseOnPanel(asTool, asEntity);
+		}
+		else if (asEntity == "MainAirlockButton")
+		{
+			CathTool_UseOnPanel(asTool, asEntity);
+		}
+		else if (asEntity == "SideAirlockButton")
+		{
+			CathTool_UseOnPanel(asTool, asEntity);
+			Entity_SetActive("EndAirlockBlocker", true);
+		
+			Entity_SetActive("BridgeLookDownTrigger_*", false);
+			SetAbyssEffectsActive(false);
+		}
+			
+		return false;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Inactive buttons and panels
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void InteractInactiveButton(const tString &in asEntity)
+	{
+		//////////////////////////////////////
+		// Temporarily disable interaction
+		Entity_SetInteractionDisabled(asEntity, true);
+		Map_AddTimer(asEntity, 1.25f, "TimerEnableInteraction");
+			
+		tString sButton = Entity_GetVarString(asEntity, "");
+		
+		// Use entity name if no user var specified
+		bool bGotUserVar = true;
+		if (sButton == "") 
+		{
+			sButton = asEntity;		
+			bGotUserVar = false;
+		}
+		
+		//////////////////////////////////////
+		// For actually disabled buttons (not those using areas to produce this effect) - set the button to off to avoid green!
+		if (bGotUserVar == false)
+			Button_SetSwitchedOn(asEntity,true,true);
+			
+		Sound_CreateAtEntity("InactiveDoorButton", "Entities_Station/doors/theta_door/button_locked", asEntity, 0, false);
+		Entity_SetEffectBaseColor(sButton, cColor_Red);
+		Entity_SetEffectsActive(sButton, true, false);
+
+	
+			
+		//////////////////////////////////////
+		// Blink effects
+		Map_AddTimer(sButton, 0.45f, "TimerTurnOffEffectsNoFade");
+		Map_AddTimer(sButton, 0.75f, "TimerTurnOnEffectsNoFade");
+		Map_AddTimer(sButton, 0.9f, "TimerTurnOffEffectsNoFade");
+	}
+
+	//-------------------------------------------------------
+	
+	void SetCathPanelEnabled(const tString &in asPanel, bool abState, bool abEffects)
+	{
+		Button_SetLocked(asPanel, !abState, abEffects);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 1 *WAKE UP NEAR OMICRON*
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void SetupWakeUp(bool abIntro)
+	{
+		if (abIntro)
+		{
+			/////////////////////////////////////////////
+			//Fade in audio once intro is over
+			Map_AddTimer("AudioFadeInTimer", 8.0f, "FadeInAudio");
+			Map_AddTimer("IntroMusicTimer", 10.0f, "TriggerIntroMusic");
+			//Animation audio
+			Sound_CreateAtEntity("IntroCameraAnimation", "03_01_omicron_outside/SFX/special/intro_sequence/camera_anim", "Player", 0.0f, false, 1.0f);
+			Emotion_PlayEventBreath("03_01_omicron_outside/SFX/special/intro_sequence/camera_anim_vo", 5);
+			
+			Effect_Fade_Out(0);
+			Effect_Fade_In(0.5);
+			CameraAnimation_Begin("IntroAnim", "", true);
+			CameraAnimation_SetAttachedEntity("IntroParticles", false, false, false);
+			ParticleSystem_CreateAtEntityExt("IntroBubblePS", "loop_waterbubbles_large_cloud.ps", "IntroParticles", true, cColor(0.487,0.628,0.7,1), 0.25);
+			cLux_AddDebugMessage("Frame 0 for sound sync");
+		}
+		else
+		{
+			Map_AddTimer("AudioFadeInTimer", 1.0f, "FadeInAudio");
+		}
+		
+		ParticleSystem_SetActive("SealPoundPS_*", false);
+		ParticleSystem_SetActive("TunnelBubbles", false);
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_CheckpointStart(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Game_AutoSave();
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_RestateObjective(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Map_AddTimer("1_Objective", 4, "TimerPlayVoice");
+		return false;
+	}
+
+	//-------------------------------------------------------
+
+	void FadeInAudio(const tString &in asTimer)
+	{
+        if (cLux_ScriptDebugOn())
+        {
+            Sound_FadeGlobalVolume(1.0f, 1.0f, eSoundEntryType_World);
+            Sound_FadeGlobalVolume(1.0f, 1.0f, eSoundEntryType_WorldClean); 
+        }
+        else
+        {
+            Sound_FadeGlobalVolume(1.0f, 10.0f, eSoundEntryType_World);
+            Sound_FadeGlobalVolume(1.0f, 10.0f, eSoundEntryType_WorldClean);
+        }
+		cLux_AddDebugMessage("Fading in Game Audio");
+	}
+
+	//-------------------------------------------------------
+
+	void TriggerIntroMusic(const tString &in asTimer)
+	{
+		Music_Play("03_01_start", 0.4f, false, eMusicPrio_BgAmb);
+	}
+	//-------------------------------------------------------
+	
+	void LookAt_Akers(const tString &in asEntity, int alState)
+	{
+	}
+	
+	//-------------------------------------------------------
+	
+	bool Trigger_ObjectiveComment(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		//Voice_Play("1_Objective");
+		return false;
+	}
+	
+	//-------------------------------------------------------
+
+
+	/////////////////////////////////////////
+	// Scene 1 Event A *Wake up*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool AnimationKillIntroBubbles(const tString &in asEntity, int alDirection)
+	{
+		ParticleSystem_Destroy("IntroBubblePS");
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool AnimationIntroGroundHit(const tString &in asEntity, int alDirection)
+	{
+		Effect_Shake_Start(0.09, 0.5, 0.2, 1.75);
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool AnimationIntroStopped(const tString &in asEntity, int alDirection)
+	{
+		Map_AddTimer("Timer_Achievement", 5, "Timer_Achievement");
+		Map_AddTimer(asEntity, 2.5, "TimerIntroGetUp");
+		ParticleSystem_SetActive("TunnelBubbles", true);
+		Map_AddTimer("TunnelBubbles", 6, "TimerDestroyParticleSystem");
+		
+		Timer_FishSphereCacheUpdate("Timer_FishSphereCacheUpdate_1");
+		
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerIntroGetUp(const tString &in asTimer)
+	{
+		CameraAnimationNode_SetAutoMove(asTimer, 0.45);
+		Entity_SetActive("SealProximityTrigger", true);
+	}
+	
+	void Timer_Achievement(const tString &in asTimer)
+	{
+		cLux_AddDebugMessage("Achievement_Unlock");
+		Achievement_Unlock(eAchievement_Dream);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event B *Examine broken tunnel*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbSealPoundTimerPaused = false;
+
+	//-------------------------------------------------------
+	//Akers is dead - this no longer applies
+    /**
+	bool Trigger_SealProximity(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("Trigger_SealProximity");
+		if (alState == 1)
+		{
+			if (Entity_IsInteractedWith("ListScreen"))
+			{
+				mbSealPoundTimerPaused = true;
+				return true;
+			}
+				
+			Map_AddTimer("SealPound_1", 4, "TimerSealPounds");
+		}
+		else
+		{
+			Map_RemoveTimer("SealPound_1");
+		}
+		return true;
+	}
+	
+	//-------------------------------------------------------
+
+	void TimerSealPounds(const tString &in asTimer)
+	{
+		if (asTimer == "SealPound_1")
+		{
+			Entity_RemoveCollideCallback("player", "SealProximityTrigger");
+			
+			Sound_CreateAtEntity("SealBangSound", "03_01_omicron_outside/SFX/seal_banging/hit", "SealSource", 0, false, 1.0);
+			ParticleSystem_SetActive("SealPoundPS_1", true);
+			ParticleSystem_SetActive("SealPoundPS_2", true);
+			ParticleSystem_SetActive("SealPoundPS_3", true);
+			
+			int lShake = Effect_Shake_Start(0.0175, 0.3, 0.05, 0.15);
+			Effect_Shake_SetSourceEntity(lShake, "SealSource", 5, 10);
+			
+			Map_AddTimer("SealPound_2", 1.25, "TimerSealPounds");
+		}
+		else
+		{			
+			ParticleSystem_SetActive("SealPoundPS_4", true);
+			ParticleSystem_SetActive("SealPoundPS_5", true);
+			ParticleSystem_SetActive("SealPoundPS_6", true);
+			
+			int lShake = Effect_Shake_Start(0.0275, 0.3, 0.05, 0.15);
+			Effect_Shake_SetSourceEntity(lShake, "SealSource", 5, 10);
+		}
+	}
+	**/
+	//-------------------------------------------------------
+	
+	void OnEnterListScreen(const tString&in asEntityName)
+	{
+		if (Map_GetTimerTime("SealPound_1") <= 0)
+			return;
+			
+		mbSealPoundTimerPaused = true;
+		Map_RemoveTimer("SealPound_1");
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnLeaveListScreen(const tString&in asEntityName)
+	{
+		if (!mbSealPoundTimerPaused)
+			return;
+			
+		Map_AddTimer("SealPound_1", 4, "TimerSealPounds");
+		mbSealPoundTimerPaused = false;
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 1 Event C *Interact with List Screen*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 2 *WALK TO OMICRON*
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	int mlWauLightCount = 0;
+
+	//-------------------------------------------------------
+	
+	void SetupWalkToOmicron()
+	{
+		Entity_SetEffectsActive("WauLight_*", false, false);
+		for (int i = 1; Entity_Exists("WauLight_"+i); i++)
+		{
+			mlWauLightCount++;
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	bool mbVistaMusicPlayed = false;
+	
+	bool TriggerVistaMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (mbVistaMusicPlayed==false)
+		{
+			//graceful fadeout if music already playing
+			Music_Stop(3.0f, eMusicPrio_BgAmb);
+			Map_AddTimer("VistaMusicTimer", 3.1f, "VistaMusicPlay");
+			mbVistaMusicPlayed = true;
+		}
+		else if (mbVistaMusicPlayed==true)
+		{
+			cLux_AddDebugMessage("Vista Music already triggered");
+		}
+		return false;
+	}
+
+	void VistaMusicPlay(const tString &in asTimer)
+	{
+		/////////////
+		//Vista music
+		cLux_AddDebugMessage("Trigger Vista Music");
+		Music_PlayExt("03_01_fishfield.ogg", false, 0.65f, 1.0f, 0.0f, 0.0f, eMusicPrio_BigEvent, false);
+		Sound_FadeGlobalVolume(0.65f, 8.0f,eSoundEntryType_WorldClean);
+		Map_AddTimer("VistaMusicFadeUp", 15.0f, "VistaMusicFadeUpTimer");
+	}
+
+	//-------------------------------------------------------
+
+	void VistaMusicFadeUpTimer(const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(1.0f, 13.0f,eSoundEntryType_WorldClean);
+		cLux_AddDebugMessage("Return mix to normal");
+		Map_AddTimer("StartAmbient", cMath_RandRectf(25.0f,30.0f), "AmbientMusicHandler");
+	}
+	
+	//-------------------------------------------------------
+
+	void FadeQuickReturn(const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(1.0f, 2.0f);
+		cLux_AddDebugMessage("Return mix to normal");
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event A *Find Mad man corpse (Dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event B *Find wife corpse (Dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event C *Find husband corpse (Dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event D *At Omicron entrance*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void LookAt_Omicron(const tString &in asEntity, int alState)
+	{
+		if (mbLockdownOverridden==false)
+			Voice_Play("4_LookAtOmicron");
+	}
+
+	//-------------------------------------------------------
+	
+	void OnChange_OmicronGateButton(const tString &in asEntity, int alState)
+	{
+		if (alState != 1)
+			return;
+		
+		if (mbLockdownOverridden==false)
+		{
+			Terminal_SetImGuiStateBool("DoorTerminal", "ButtonWasPressed", true);
+			Depth_Audio_Terminal_Error("DoorTerminal");
+			return;
+		}
+		
+		bool bMainDoorOpen = MovingButton_IsSwitchedOn("MainDoorButton");
+		
+		if (bMainDoorOpen==false)
+			OmicronMainDoorOpen();
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event E *Walk onto collapsed site*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool Trigger_AbyssDamage(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (SequenceStates_IsActive("SequenceAbyssFall") || alState == -1) return true;
+		
+		cLux_AddDebugMessage("BeginFall " + alState + " " + asChild);
+		
+		SequenceAbyssFall("");
+		
+		return true;
+	}
+
+	//-------------------------------------------------------
+
+	bool Trigger_AbyssDeath(const tString &in asParent, const tString &in asChild, int alState)
+	{		
+		if (alState == -1) return true;
+		
+		Entity_SetActive("BridgeLookDownTrigger_*", false);
+		SetAbyssEffectsActive(false);
+		
+		SequenceStates_Resume("SequenceAbyssFall");
+		
+		return true;
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mAbyssFallSequence;
+	
+	void SequenceAbyssFall(const tString &in asTimer)
+	{
+		Sequence_Begin("SequenceAbyssFall", mAbyssFallSequence);
+	
+		// Silence everything except dark tone
+		if (Sequence_DoStepAndPause(0))
+		{
+			//Stop Music
+			mbAmbientMusicPlaying = false;
+			Music_Stop(3.0, eMusicPrio_BgAmb);
+			Music_Stop(3.0, eMusicPrio_BigEvent);
+			Music_StopAll(3.0f);
+			//Fade out level audio
+			Sound_FadeGlobalVolume(0.0f ,3.0f, eSoundEntryType_World);
+			Sound_FadeGlobalVolume(0.0f ,3.0f, eSoundEntryType_WorldClean);
+			
+			//Create Falling Sound
+			Sound_CreateAtEntity("AbyssFall", "Player/action/underwater/abyss_fall", "Player", 0.0f, false, 1.0f);
+			Prop_MoveLinearTo("AbyssWall_1", "AbyssFallLoopTrigger_1", 100, 20, 0, true);
+			Prop_MoveLinearTo("AbyssWall_2", "AbyssFallLoopTrigger_1", 100, 20, 0, true);
+			Prop_MoveLinearTo("AbyssWall_3", "AbyssFallLoopTrigger_1", 100, 20, 0, true);
+			Prop_MoveLinearTo("AbyssWall_4", "AbyssFallLoopTrigger_2", 100, 20, 0, true);
+			Prop_MoveLinearTo("AbyssWall_5", "AbyssFallLoopTrigger_2", 100, 20, 0, true);
+			Prop_MoveLinearTo("AbyssWall_6", "AbyssFallLoopTrigger_2", 100, 20, 0, true);
+			
+			Effect_Fade_Out(3.5f);
+		}
+		
+		if (Sequence_DoStepAndWait(2.f))
+		{	
+			// Setup scene for fall
+			cLux_GetCurrentMap().GetWorld().SetDirectionalLightActive(false);
+			Map_SetSkyBoxColor(cColor(0, 1));
+			Map_SetEnvironmentParticleColor("*", cColor(0.177,0.446,0.508,0.392)*0.75);
+			Map_SetEnvironmentParticleFadeOut("*", 1.5, 3.5);
+			Map_SetEnvironmentParticleGravityVelocity(cVector3f_Up * 20);
+			
+			Player_Teleport("abyss_fall_loop", false);
+			Player_SetMoveSpeedMul(0);
+			Player_SetFootstepSoundsDisabled(true);
+		}
+		
+		/////////////////////
+		// Start falling
+		if (Sequence_DoStepAndWait(2.f))
+		{			
+			Effect_Fade_In(1.f);
+			
+			Effect_Shake_Start(0.2, 2, 12, 0);
+			
+			//Breathing
+			Sound_CreateAtEntity("HeavyBreathing", "Player/breaths/abyss/breathing", "Player", 0.0f, false, 1.0f);
+		}
+		
+	
+		else if (Sequence_DoStepAndWait(4.75f))
+		{
+			//Trigger Suit Pressure Alarm
+			Sound_CreateAtEntity("PressureAlarmMediumSpeed", "Player/UI/Suit/pressure_alarm_medium", "Player", 0.0f, false, 1.0f);
+		}
+		
+		else if (Sequence_DoStepAndWait(1.f))
+		{
+			//Stop Medium Alarm and Trigger Fast Alarm
+			Sound_Stop("PressureAlarmMediumSpeed", 0.0f);
+			Sound_CreateAtEntity("PressureAlarmHighSpeed", "Player/UI/Suit/pressure_alarm_high", "Player", 0.0f, false, 1.0f);
+		}
+		
+		else if (Sequence_DoStepAndWait(2.5f))
+		{
+			//Trigger Suit Cracking Under Pressure
+			Sound_CreateAtEntity("SuitCracking", "Player/action/underwater/abyss_suit_crack", "player", 0.0f, false);
+		}
+				
+		else if (Sequence_DoStepAndWait(6.5f))
+		{
+			//Stop all sounds apart from the big finale, quick fade to black
+			Sound_Stop("AbyssFall", 0.0f);
+			Sound_Stop("PressureAlarmHighSpeed", 0.0f);
+			
+			//Suit Crack Open
+			Sound_CreateAtEntity("SuitCrackOpen", "Player/action/underwater/abyss_suit_end", "player", 0.0f, false);
+			Effect_Fade_Out(0.1f);
+		}
+		
+		// Kill off player
+		else if (Sequence_DoStepAndWait(2.f))
+		{
+			Player_SetFootstepSoundsDisabled(false);
+			if (cLux_GetExplorationModeActive() == false)
+			{
+				Sound_PlayGui("Player/UI/death_hit", 1.0f, eSoundEntryType_Gui);
+				Player_GiveDamage(1, 0, eDamageType_None, "");
+			}
+			else
+			{
+				Player_SetHealth(0.f);
+			}
+		}
+	
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	bool LoopAbyssFall(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		int lTrigger = cString_GetNumericSuffixInt(asParent);
+		Entity_PlaceAtEntity(asChild, "AbyssWallSpawnArea_" + lTrigger);
+		
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_AbyssCheckpoint(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1 || Entity_PlayerIsInFront(asChild)==false) return true;
+		
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_AbyssDepthEffects(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1) return true;
+		
+		bool bActive = Entity_PlayerIsInFront(asChild);
+		
+		Entity_SetActive("BridgeLookDownTrigger_*", bActive);
+		if (!bActive) SetAbyssEffectsActive(false);
+		
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_SwayArea(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("Trigger_SwayArea " + alState);
+		if (alState == -1)
+		{
+			Player_FadeRunSpeedMulTo(1, 2);
+			Player_FadeMoveSpeedMulTo(1, 2);
+			Effect_Sway_FadeOut(2);
+		}
+		else
+		{
+			Player_FadeRunSpeedMulTo(0.33, 1);
+			Player_FadeMoveSpeedMulTo(0.75, 1);
+			Effect_Sway_FadeIn(0.18, 1, 1, Entity_GetVarFloat(asChild, ""));
+		}
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_DebrisFall(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddTodoMessage("Sound: Some small debris come loose as player walks over it.");
+		Sound_CreateAtEntity("DebrisFall", "03_01_omicron_outside/SFX/special/structure_fall/scaffold_panel_drop", "FallingDebris_1");
+		Prop_SetStaticPhysics("FallingDebris_*", false);
+		Entity_AddForce("FallingDebris_*", 1, false, false);
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_DebrisCrossingComment(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (asChild == "DebrisCrossingLineTrigger_Early")
+			Voice_Play("2_CrossingTheAbyssPrematurely");
+		else
+			Voice_Play("5_CrossingTheAbyss");
+		return false;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event F *Look down into abyss.*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	int mlImageTrailId = -1;
+	bool mbLookAtAbyssActive = false;
+
+	//-------------------------------------------------------
+	
+	void LookAtAbyss(const tString &in asEntity, int alState)
+	{
+		if (cLux_ScriptDebugOn()) return;
+		if (EyeTracking_IsAiReactive()) return;
+		cLux_AddDebugMessage("alState "+alState);
+		SetAbyssEffectsActive(alState==1);
+	}
+
+	//-------------------------------------------------------
+	
+	void SetAbyssEffectsActive(bool abActive)
+	{
+		float fMul = abActive ? 0.7 : 1;
+		float fSpeed = abActive ? 0.5 : 0.5;
+		
+		Player_FadeFOVMulTo(fMul, fSpeed);
+		if (abActive)
+		{
+			mlImageTrailId = Effect_ImageTrail_Start(1.25, 2, -1, 0);
+			Map_AddTimer("AbyssDangerEffect", cMath_RandRectf(0, 2), "TimerAbyssDangerEffect");
+			
+			if (mbLockdownOverridden)
+			{
+				for (int i = 1; i <= mlWauLightCount; i++)
+				{
+					Map_AddTimer("WauLight_"+i, cMath_RandRectf(0, 8), "TimerActivateWauLight");
+				}
+			}
+		}
+		else
+		{
+			Effect_ImageTrail_FadeOut(mlImageTrailId, 2);
+			Map_RemoveTimer("AbyssDangerEffect");
+			
+			if (mbLockdownOverridden)
+			{
+				Entity_SetEffectsActive("WauLight_*", false, true);
+				Map_AddTimer("WauLight_*", 1, "TimerSetEntityInactive");
+				for (int i = 1; i <= mlWauLightCount; i++)
+				{
+					Map_RemoveTimer("WauLight_"+i);
+				}
+			}
+		}			  
+		
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerAbyssDangerEffect(const tString &in asTimer)
+	{
+		float fEffectTime = cMath_RandRectf(0.5, 2);
+		float fFadeIn = 1.f;
+		float fFadeOut = 1.f;
+		Effect_VideoDistortion_Start(0.4, fEffectTime, 1, 1);
+		Map_AddTimer("AbyssDangerEffect", fEffectTime + fFadeIn + fFadeOut + cMath_RandRectf(0, 2), "TimerAbyssDangerEffect");
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerActivateWauLight(const tString &in asTimer)
+	{		
+		float fTime = cMath_RandRectf(1, 5);
+		Entity_SetActive(asTimer, true);
+		Entity_SetEffectsActive(asTimer, true, true);
+		Map_AddTimer(asTimer, fTime, "TimerTurnOffEffects");
+		Map_AddTimer(asTimer, fTime+1, "TimerSetEntityInactive");
+		Map_AddTimer(asTimer, fTime+cMath_RandRectf(2, 8), "TimerActivateWauLight");
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Event G *Find far away corpse (Dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 2 Extra Event *Wau flowers*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbFishSphereFlowerDrained=false;
+
+	//-------------------------------------------------------
+	
+	void EnergyDrained_FishSphereFlower(const tString &in asEntity)
+	{
+		mbFishSphereFlowerDrained = true;
+		Map_AddTimer("fish_sphere_7_spotlight_*", 0.75, "TimerSetLampUnlit");
+		Map_AddTimer("fish_sphere_7_light_1_*", 1.25, "TimerSetLampUnlit");
+		Map_AddTimer("fish_sphere_7_light_2_*", 1.75, "TimerSetLampUnlit");
+		Terminal_SetGuiActive("FishSphereTerminal_8", false);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 3 *ENTER SUB STATION, GET POWER ON & CONVERSE W. CATH*
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbCatherineActiveInSubBase = false;
+	bool mbResumeIdleDialogOnTerminalLeave = true;
+	bool mbAirlockFull = true;
+	bool mbAirlockFull_Audio = true;
+	bool mbSubBaseFlowerDrained = false;
+	array<tString> mvValidCodes;
+
+	//-------------------------------------------------------
+	
+	void SetupSubStation()
+	{
+		Entity_SetVarBool("ElectricSwitch_*", "Powered", false);
+		Entity_SetEffectBaseColor("AirlockValveLamp", cColor_Red);
+		Entity_SetEffectBaseColor("AirlockPumpLamp", cColor_Red);
+		Entity_SetEffectBaseColor("AirlockFlushLamp", cColor_Red);
+		Entity_SetEffectBaseColor("AirlockValve_1_Lamp", cColor(1,0.1,0.1,1));
+		Entity_SetEffectBaseColor("AirlockValve_2_Lamp", cColor(1,0.1,0.1,1));
+		Entity_SetEffectBaseColor("AirlockPumpSwitch_Lamp", cColor(1,0.1,0.1,1));
+		ParticleSystem_SetActive("SubStationLeakPS_*", false);
+		
+		Wheel_SetStuckState("AirlockValve_*", -1, false);
+		
+		Gui_CreateCameraTexture("OmicronCamera", cVector2l(768, 613), 12, 70.0f, 0.1, 60);
+		Gui_AttachCameraTextureToEntity("OmicronCamera", "OmicronCamera");
+		
+		int lStartPassword = cMath_RandRectl(0, gvOverridePasswords.length()-1);
+		for (int i = 0; i < gvOverridePasswords.length(); i++)
+		{
+			int lCodeIndex = cMath_Wrap(lStartPassword+i, -1, gvOverridePasswords.length()-1);
+			mvValidCodes.push_back(gvOverridePasswords[lCodeIndex]);
+		}
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event A *Go through sub station airlock (dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	int mlAirlockValveCount = 0;
+	bool mbInAirlockWater = true;
+
+	//-------------------------------------------------------
+	
+	bool Trigger_SubBaseAirlockEntrance(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1) return true;
+		
+		// Entered airlock
+		if (Entity_PlayerIsInFront(asChild))
+		{
+			if (asChild == "InsideSubBaseAirlockTrigger_Outer")
+			{
+				Entity_SetActive("SubBaseAirlockBlocker_Outer", true);
+			}
+			return true;
+		}
+		
+		// Left to outside
+		if (asChild == "InsideSubBaseAirlockTrigger_Outer")
+		{
+			if (mbLockdownOverridden) OpenShutters();
+
+		}
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	void Interact_ClimbSubBaseLadder(const tString &in asEntity)
+	{
+		Entity_SetActive("SubBaseAirlockBlocker_Outer", false);
+		Entity_CallEntityInteract("SubBaseLadder_Outer");
+	}
+
+	//-------------------------------------------------------
+	
+	bool Trigger_OverrideHatchTorn(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1) return true;
+		
+		Entity_SetActive("OverrideZoomArea", true);
+		
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	void OnChangeAirlockValve(const tString &in asEntity, int alState)
+	{
+		if (alState != 1) return;
+		
+		mlAirlockValveCount += 1;
+		cLux_AddDebugMessage("mlAirlockValveCount "+mlAirlockValveCount);
+		
+		AirlockEffectsOpenValves();
+		
+		Entity_FadeEffectBaseColor(asEntity+"_Lamp", cColor(0.1,1,0.1,1), 0.1);
+			
+		if (mlAirlockValveCount==2)
+		{
+			Entity_FadeEffectBaseColor("AirlockValveLamp", cColor_Green, 0.3);
+			DomeAirlockEnable();
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void OnChangeAirlockPumpSwitch(const tString &in asEntity, int alState)
+	{
+		if (alState != 1) return;
+		
+		Entity_SetActive("SubBaseLadder_Outer_Aux_*", false);
+		SlideDoor_SetClosed("SubBaseAirlockDoor_Outer", true);
+		Sound_CreateAtEntity("SubBaseAirlockDoor_Outer_Close", "Entities_OceanBottom/airlock/door/slide_hatch_dome_close", "SubBaseAirlockDoor_Outer", 0.0f, false, 1.0f);
+		Entity_FadeEffectBaseColor("AirlockPumpLamp", cColor_Green, 0.3);
+		
+		Entity_FadeEffectBaseColor(asEntity+"_Lamp", cColor(0.1,1,0.1,1), 0.1);
+		
+		Entity_SetActive("SubBaseLadder_Outer", false);
+		
+		cLux_AddDebugMessage("Hatch closing");
+		
+		AirlockEffectsTurnOnPumps();
+	}
+
+	//-------------------------------------------------------
+	
+	void DomeAirlockEnable()
+	{
+		Sound_CreateAtEntity("DomeAirlockActive", "03_01_omicron_outside/SFX/special/airlock_fail/dome_enable", "PumpsSource");
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerPushAirlockDoorClosed(const tString &in asTimer)
+	{
+		Map_RemoveTimer("PushAirlockDoorOpen");
+		if (SwingDoor_GetState("SubBaseAirlockDoor_Inner")==-1) 
+		{
+
+			SwingDoor_SetLocked("SubBaseAirlockDoor_Inner", true, true);
+			SwingDoor_SetDisableAutoClose("SubBaseAirlockDoor_Inner", false);			
+			return;
+		}
+		
+		Prop_SetStaticPhysics("SubBaseAirlockDoor_Inner", false);
+		Entity_AddForce("SubBaseAirlockDoor_Inner", cVector3f_Down*3500, true, true);
+		Map_AddTimer("PushAirlockDoorClosed", 0.05, "TimerPushAirlockDoorClosed");
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerPushAirlockDoorOpen(const tString &in asTimer)
+	{
+		Map_RemoveTimer("PushAirlockDoorClosed");
+		if (SwingDoor_GetState("SubBaseAirlockDoor_Inner")==1) 
+		{
+			Map_AddTimer("SubBaseAirlockDoor_Inner", 0.25, "TimerSetPhysicsStatic");
+			return;
+		}
+		
+		if (SwingDoor_GetLocked("SubBaseAirlockDoor_Inner"))
+		{
+			Entity_SetActive("SubBaseAirlockBlocker_Inner", false);
+			
+			SwingDoor_SetLocked("SubBaseAirlockDoor_Inner", false, true);
+			SwingDoor_SetClosed("SubBaseAirlockDoor_Inner", false, true);
+			SwingDoor_SetDisableAutoClose("SubBaseAirlockDoor_Inner", true);
+			
+			Map_AddTimer("Timer_AutoSaveEnterSubBase", 3, "Timer_AutoSaveEnterSubBase");
+		}
+		
+		Entity_AddForce("SubBaseAirlockDoor_Inner", cVector3f_Up*7000, true, true);
+		Map_AddTimer("PushAirlockDoorOpen", 0.05, "TimerPushAirlockDoorOpen");
+	}
+	
+	bool mbAutoSaveEnterSubBase = false;
+	void Timer_AutoSaveEnterSubBase(const tString &in asTimer)
+	{
+		if (mbAutoSaveEnterSubBase) return;
+		
+		mbAutoSaveEnterSubBase = true;
+		Game_AutoSave();
+	}
+ 
+    //-------------------------------------------------------
+	
+	cSequenceStatesData mAirlockEmptySequence;
+		
+	void Seq_AirlockEmpty(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_AirlockEmpty", mAirlockEmptySequence);
+			
+		if (Sequence_DoStepAndWait(0.66))
+		{
+			mbAirlockFull = false;
+			
+			Entity_SetActive("SubBaseLadder_Outer_Aux_*", false);
+			SlideDoor_SetClosed("SubBaseAirlockDoor_Outer", true);
+			Sound_CreateAtEntity("SubBaseAirlockDoor_Outer_Close", "Entities_OceanBottom/airlock/door/slide_hatch_dome_close", "SubBaseAirlockDoor_Outer", 0.0f, false, 1.0f);
+			AirlockEffectsOpenValves();
+			
+			Entity_SetActive("SubBaseLadder_Outer", false);
+		}
+		else if (Sequence_DoStepAndWait(0.66))
+		{
+			mbAirlockFull_Audio = true;
+		}
+		else
+		{
+			Map_AddTimer("Seq_AirlockEmpty_Flush", 0, "Seq_AirlockEmpty_Flush");
+		}
+		Sequence_End();
+	}
+ 
+    //-------------------------------------------------------
+	
+	cSequenceStatesData mAirlockEmpty_ManualSequence;
+		
+	void Seq_AirlockEmpty_Flush(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_AirlockEmpty_Flush", mAirlockEmpty_ManualSequence);
+			
+		if (Sequence_DoStepAndWait(1.0))
+		{
+			mbAirlockFull = false;
+			for (int i = 1; Entity_Exists("SubBaseAiriockVentArea_"+i);i++)
+			{
+				Map_AddTimer("VentBubbles_"+i, cMath_RandRectf(0, 1.5), "TimerCreateFlushBubbles");
+			}
+			/////////////////////////
+			//Pump Sounds
+			AirlockEffectsTurnOffPumps();
+			Sound_CreateAtEntity("PumpUW", "Entities_OceanBottom/airlock/uw/pump/pump_loop", "PumpsSource", 0.0f, false, 1.0f);
+			Entity_SetInteractionDisabled("AirlockFlushSwitch", true);
+		}
+		else if (Sequence_DoStepAndWait(7.25))
+		{
+			AirlockEffectsFlushWater();
+			mbAirlockFull_Audio = false;
+			Entity_SetActive("AirlockLiquidArea", true);
+			LiquidArea_MoveLinearTo("AirlockLiquidArea","AirlockLiquidArea_Down",0.1, 1, 0.5, false);
+			Map_SetUnderwater(false,false);
+			Visibility_SetTerrainActive(false);
+		}
+        else if (Sequence_DoStepAndWait(0.75))
+        {
+            Map_SetUnderwater(false);
+            Entity_SetInteractionDisabled("AirlockValve_*", true);
+			
+			ParticleSystem_CreateAtEntityExt("substation_airlock_drain_1", "03_01_substation_leak.ps", "substation_airlock_drain_1_area", false, cColor(1,1,1,1), 0.4);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_drain_2", "03_01_substation_leak.ps", "substation_airlock_drain_2_area", false, cColor(1,1,1,1), 0.5);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_drain_3", "03_01_substation_leak.ps", "substation_airlock_drain_3_area", false, cColor(1,1,1,0.379), 0.5);
+			
+			ParticleSystem_CreateAtEntityExt("substation_airlock_impact_1", "splash_continuous_med.ps", "substation_airlock_impact_1_area", false, cColor(1,1,1,0.488), 0.2);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_impact_2", "splash_continuous_med.ps", "substation_airlock_impact_2_area", false, cColor(1,1,1,0.488), 0.2);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_impact_3", "splash_continuous_med.ps", "substation_airlock_impact_3_area", false, cColor(1,1,1,0.488), 0.2);
+			
+			ParticleSystem_CreateAtEntityExt("substation_airlock_droplets_1", "drops_med_continuous.ps", "substation_airlock_droplets_1_area", false, cColor(1,1,1,1), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_droplets_2", "drops_med_continuous.ps", "substation_airlock_droplets_2_area", false, cColor(1,1,1,1), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_droplets_3", "drops_med_continuous.ps", "substation_airlock_droplets_3_area", false, cColor(1,1,1,1), 1);
+        }
+		else if (Sequence_DoStepAndWait(1))
+		{
+			//ground foam
+			ParticleSystem_CreateAtEntityExt("substation_foam_1", "03_01_substation_foam.ps", "substation_foam_1_area", false, cColor(1,1,1,0.387), 0.125);
+			ParticleSystem_CreateAtEntityExt("substation_foam_2", "03_01_substation_foam.ps", "substation_foam_2_area", false, cColor(1,1,1,0.473), 0.25);
+			ParticleSystem_CreateAtEntityExt("substation_foam_3", "03_01_substation_foam.ps", "substation_foam_3_area", false, cColor(1,1,1,0.473), 0.25);
+			ParticleSystem_CreateAtEntityExt("substation_foam_4", "03_01_substation_foam.ps", "substation_foam_4_area", false, cColor(1,1,1,0.473), 0.124);
+		}
+		else if (Sequence_DoStepAndWait(1))
+		{
+		    ParticleSystem_Destroy("substation_airlock_drain_1");
+		    ParticleSystem_Destroy("substation_airlock_impact_1");
+		}
+		else if (Sequence_DoStepAndWait(2))
+		{
+		    ParticleSystem_Destroy("substation_airlock_drain_*");
+		    ParticleSystem_Destroy("substation_airlock_impact_*");
+		}
+		else if (Sequence_DoStepAndWait(1))
+		{
+			Map_SetEnvironmentParticlesActive(false);
+            //Delay for hatch to open
+            Map_AddTimer("PushAirlockHatchOpen", 5.0f, "TimerPushAirlockDoorOpen");
+			Entity_SetActive("InsideSubStationMain", true);
+			Entity_SetActive("AirlockLiquidArea", false);
+			ParticleSystem_Destroy("substation_airlock_droplets_*");
+		}
+		else
+		{
+			Button_SetSwitchedOn("AirlockButton", false, true);
+			Entity_SetActive("AirlockOmniToolArea", true);
+		}
+		
+		Sequence_End();
+	}
+ 
+    //-------------------------------------------------------
+	
+	void TimerCreateFlushBubbles(const tString &in asTimer)
+	{
+		int lIndex = cString_GetNumericSuffixInt(asTimer);
+		ParticleSystem_CreateAtEntity(asTimer, "loop_waterbubbles_medium_stream.ps", "SubBaseAiriockVentArea_"+lIndex, false);
+		Map_AddTimer(asTimer, 1, "TimerDestroyParticleSystem");
+	}
+ 
+    //-------------------------------------------------------
+	
+	void AirlockEffectsOpenValves()
+	{
+		
+	}
+ 
+    //-------------------------------------------------------
+	
+	void AirlockEffectsTurnOnPumps()
+	{
+		if (mbAirlockFull_Audio==false)
+		{
+				//airlock not full, play non-underwater idle sound
+				Sound_CreateAtEntity("Pump_Idle_Loop_Air", "Entities_OceanBottom/airlock/air/pump/idle_loop", "PumpsSource", 1.0f, false, 1.0f); 
+		}
+		else if (mbAirlockFull_Audio==true)
+		{
+				//airlock is full play underwater idle sound
+				Sound_CreateAtEntity("Pump_Idle_Loop_Underwater", "Entities_OceanBottom/airlock/uw/pump/idle_loop", "PumpsSource", 1.0f, false, 1.0f);
+		}
+	}
+ 
+    //-------------------------------------------------------
+	
+	void AirlockEffectsTurnOffPumps()
+	{
+		if (mbAirlockFull_Audio==false)
+		{
+				//Airlock not full, play air idle sound
+				Sound_Stop("Pump_Idle_Loop_Air", 1.0f);
+		}
+		else if (mbAirlockFull_Audio==true)
+		{
+				//Airlock is full play underwater idle sound
+				Sound_Stop("Pump_Idle_Loop_Underwater", 1.0f);
+		}
+	}
+ 
+    //-------------------------------------------------------
+	
+	void AirlockEffectsFlushWater()
+	{
+		Depth_Audio_AirlockDrainLeadInUW();
+		Depth_Audio_AirlockDrainLoopUW();
+		Map_AddTimer("AirlockDrainUWStopTimer", 7.25f, "AirlockDrainUWStop");
+	}
+	
+	void AirlockEffectsFlushWaterFinalAirlock()
+	{
+		Depth_Audio_AirlockDrainLeadInUW();
+		Depth_Audio_AirlockDrainLoopUW();
+		Map_AddTimer("AirlockDrainUWStopTimer", 8.75f, "AirlockDrainUWStopFinalAirlock");
+	}
+ 
+    //-------------------------------------------------------
+	
+	void AirlockDrainUWStop(const tString &in asTimer)
+	{
+		AirlockSoundLogic();
+		Depth_Audio_PlayLeaveWater();
+		Sound_Stop("PumpUW", 0.55f);
+		Sound_CreateAtEntity("PumpingAirLoop", "Entities_OceanBottom/airlock/air/pump/pump_loop_nointro", "PumpsSource", 0.55f, false, 1.0f);
+		Depth_Audio_AirlockDrainLoopUWStop();
+		Depth_Audio_AirlockDrainLoopAir();
+		Map_AddTimer("AirlockDrainingAirStopTimer", 3.0f, "AirlockDrainingAirStop");
+	}
+	
+	void AirlockDrainUWStopFinalAirlock(const tString &in asTimer)
+	{
+		Depth_Audio_PlayLeaveWater();
+		Sound_Stop("FauxPump", 0.55f);
+		Sound_CreateAtEntity("PumpingAirLoop", "Entities_OceanBottom/airlock/air/pump/pump_loop_nointro", "FauxAirlockMotorSource", 0.55f, false, 1.0f);
+		Depth_Audio_AirlockDrainLoopUWStop();
+		Depth_Audio_AirlockDrainLoopAir();
+		Map_AddTimer("AirlockDrainingAirStopTimer", 3.0f, "AirlockDrainingAirStopFinalAirlock");
+	}
+	 
+    //-------------------------------------------------------
+	
+	void AirlockDrainingAirStop(const tString &in asTimer)
+	{
+		Depth_Audio_AirlockDrainLoopAirStop();
+		Depth_Audio_AirlockDrainLeadOutAir();
+		Sound_Stop("PumpingAirLoop", 0.25f);
+		Sound_CreateAtEntity("PumpAirLeadOut", "Entities_OceanBottom/airlock/air/pump/pump_end", "PumpsSource", 0.0f, false, 1.0f);
+		AirlockEffectsTurnOnPumps();
+	}
+	
+	void AirlockDrainingAirStopFinalAirlock(const tString &in asTimer)
+	{
+		Depth_Audio_AirlockDrainLoopAirStop();
+		Depth_Audio_AirlockDrainLeadOutAir();
+		Sound_Stop("PumpingAirLoop", 0.25f);
+		Sound_CreateAtEntity("PumpAirLeadOut", "Entities_OceanBottom/airlock/air/pump/pump_end", "FauxAirlockMotorSource", 0.0f, false, 1.0f);
+		AirlockEffectsTurnOnPumps();
+	}
+	 
+    //-------------------------------------------------------
+	
+	void AirlockEffectsFillWithWater()
+	{
+		Depth_Audio_AirlockFillingLeadInAir();
+		Depth_Audio_AirlockFillingLoopAir();
+		Map_AddTimer("AirlockFillingAirStopTimer", 10.f, "AirlockFillingAirStop");
+	}
+	 
+    //-------------------------------------------------------
+	
+	void AirlockFillingAirStop(const tString &in asTimer)
+	{
+		AirlockSoundLogic();
+		Depth_Audio_PlayEnterWater();
+		Depth_Audio_AirlockFillingLoopAirStop();
+		Depth_Audio_AirlockFillingLoopUW();
+		
+		///////////////////
+		//Pump Sounds
+		Sound_Stop("PumpingAirLoop", 0.5f);
+		Sound_CreateAtEntity("PumpUW", "Entities_OceanBottom/airlock/uw/pump/pump_loop_nointro", "PumpsSource", 0.0f, false, 1.0f);
+		Map_AddTimer("AirlockFillingLoopUWStopTimer", 5.0f, "AirlockFillingLoopUWStop");
+	}
+	 
+    //-------------------------------------------------------
+	
+	void AirlockFillingLoopUWStop(const tString &in asTimer)
+	{
+		Depth_Audio_AirlockFillingLoopUWStop();
+		Depth_Audio_AirlockFillingLeadOutUW();
+		
+		///////////////////
+		//Pump Sounds
+		Sound_CreateAtEntity("PumpUWLeadOut", "Entities_OceanBottom/airlock/uw/pump/pump_end", "PumpsSource", 0.0f, false, 1.0f);
+		Sound_Stop("PumpUW", 0.5f);
+		AirlockEffectsTurnOnPumps();		
+	}
+	 
+    //-------------------------------------------------------
+	
+	bool mbIsAirlockEmptySound = false;
+	
+	void AirlockSoundLogic()
+	{
+		if (mbIsAirlockEmptySound==false)
+		{
+			cLux_AddDebugMessage("Air Sound Areas Active");
+			Entity_SetActive("AMB_Airlock_Air", true);
+			Entity_SetActive("AMB_Dome", true);
+            Entity_SetActive("AMB_Global_1", false);
+			Entity_SetActive("AMB_Airlock_UW", false);
+            
+			Map_AddTimer("HatchSoundTimer", 7.05f, "HatchSound");
+			
+			KillFieldAmbienceMusic();
+			mbIsAirlockEmptySound = true;
+		}
+		
+		else if (mbIsAirlockEmptySound==true)
+		{
+			cLux_AddDebugMessage("Air Sound Areas Disabled");
+			Entity_SetActive("AMB_Airlock_UW", true);
+           Entity_SetActive("AMB_Global_1", true);
+			Entity_SetActive("AMB_Airlock_Air", false);
+			Entity_SetActive("AMB_Dome", false);
+			
+			mbIsAirlockEmptySound = false;
+		}
+	}
+	 
+    //-------------------------------------------------------
+	
+	void HatchSound(const tString &in asTimer)
+	{
+		if (SwingDoor_GetState("SubBaseAirlockDoor_Inner")==-1)
+		{
+			Sound_CreateAtEntity("AirlockHatchOpen", "Entities_OceanBottom/doors/hatch/air/open", "HatchSoundSource", 0.0f, false, 1.0f);
+			GeneratorSoundOn();
+			cLux_AddDebugMessage("Hatch Opening");
+		}
+		
+		else if (SwingDoor_GetState("SubBaseAirlockDoor_Inner")==1) 
+		{
+			Sound_CreateAtEntity("AirlockHatchClose", "Entities_OceanBottom/doors/hatch/air/close", "HatchSoundSource", 0.0f, false, 1.0f);
+			GeneratorSoundOff();
+			cLux_AddDebugMessage("Hatch Close");
+		}
+
+	}
+	 
+    //-------------------------------------------------------
+	
+	cSequenceStatesData mAirlockFillSequence;
+		
+	void Seq_AirlockFill(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_AirlockFill", mAirlockFillSequence);
+		
+		if(Sequence_DoStepAndWait(2.0))
+        {
+            //Slight delay for pacing
+			mbAirlockFull = true;
+        }
+        else if (Sequence_DoStepAndWait(0.66))
+		{
+			Map_AddTimer("HatchSoundTimer", 0.05f, "HatchSound");
+			TimerPushAirlockDoorClosed("");
+			Entity_SetActive("InsideSubStationMain", false);
+			Entity_SetActive("SubBaseAirlockBlocker_Inner", true);
+		}
+        else if (Sequence_DoStepAndWait(0.66))
+		{
+           AirlockEffectsOpenValves(); 
+        }
+		else if (Sequence_DoStepAndWait(0.66))
+		{
+			////////////////////
+			//Pump non underwater triggered
+			Sound_CreateAtEntity("PumpingAirLoop", "Entities_OceanBottom/airlock/air/pump/pump_loop", "PumpsSource", 0.0f, false, 1.0f);
+			
+			AirlockEffectsTurnOffPumps();
+			mbAirlockFull_Audio = true;
+		}
+		else if (Sequence_DoStepAndWait(2.5))
+		{
+			AirlockEffectsFillWithWater();
+		}
+		else if (Sequence_DoStepAndWait(3.5))
+		{
+			Entity_SetActive("AirlockLiquidArea", true);
+			LiquidArea_MoveLinearTo("AirlockLiquidArea","AirlockLiquidArea_Up",0.1, 1, 0.5, false);
+		}
+		else if (Sequence_DoStepAndWait(2))
+		{
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_1", "03_02_airlock_fill.ps", "substation_airlock_fill_1_area", false, cColor(1,1,1,1), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_2", "03_02_airlock_fill.ps", "substation_airlock_fill_2_area", false, cColor(1,1,1,1), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_3", "03_02_airlock_fill.ps", "substation_airlock_fill_3_area", false, cColor(1,1,1,1), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_4", "03_02_airlock_fill.ps", "substation_airlock_fill_4_area", false, cColor(1,1,1,1), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_5", "03_02_airlock_fill.ps", "substation_airlock_fill_5_area", false, cColor(1,1,1,1), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_6", "03_02_airlock_fill.ps", "substation_airlock_fill_6_area", false, cColor(1,1,1,1), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_7", "splash_continuous_med.ps", "substation_airlock_fill_7_area", false, cColor(1,0.865,0.766,0.488), 1, true, 1, 2, 100, 110);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_8", "splash_continuous_med.ps", "substation_airlock_fill_8_area", false, cColor(1,0.865,0.766,0.488), 1, true, 1, 2, 100, 110);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_9", "splash_continuous_med.ps", "substation_airlock_fill_9_area", false, cColor(1,0.865,0.766,0.488), 1, true, 1, 2, 100, 110);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_10", "splash_continuous_med.ps", "substation_airlock_fill_10_area", false, cColor(1,0.865,0.766,0.488), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_11", "splash_continuous_med.ps", "substation_airlock_fill_11_area", false, cColor(1,0.865,0.766,0.488), 1);
+			ParticleSystem_CreateAtEntityExt("substation_airlock_fill_12", "splash_continuous_med.ps", "substation_airlock_fill_12_area", false, cColor(1,0.865,0.766,0.488), 1);
+		}
+		else if (Sequence_DoStepAndWait(2))
+		{
+		    ParticleSystem_Destroy("substation_airlock_fill_*");
+		}
+        else if (Sequence_DoStepAndWait(4.5))
+		{
+			Map_SetUnderwater(true, true);  
+			ParticleSystem_CreateAtEntityExt("substation_airlock_bubbles", "oneshot_waterbubbles_huge.ps", "substation_airlock_bubbles_area", false, cColor(1,1,1,0.328), 0.5);
+        }
+		else if (Sequence_DoStepAndWait(3))
+		{
+			Entity_SetActive("AirlockLiquidArea", false);
+			Map_SetEnvironmentParticlesActive(true);
+		}
+		else
+		{
+			Visibility_SetTerrainActive(true);
+
+            Entity_SetActive("SubBaseLadder_Outer_Aux_*", true);
+            SlideDoor_SetClosed("SubBaseAirlockDoor_Outer", false);
+            Sound_CreateAtEntity("SubBaseAirlockDoor_Outer_Open", "Entities_OceanBottom/airlock/door/slide_hatch_dome_open", "SubBaseAirlockDoor_Outer", 0.0f, false, 1.0f);
+			
+            Entity_SetActive("SubBaseLadder_Outer", true);
+            
+            Button_SetSwitchedOn("AirlockButton", false, true);
+            Entity_SetActive("AirlockOmniToolArea", true);
+			
+			Map_AddTimer("Timer_AutoSaveLeaveSubBase", 3, "Timer_AutoSaveLeaveSubBase");
+        }
+		
+		Sequence_End();
+	}
+	
+	bool mbAutoSaveLeaveSubBase = false;
+	void Timer_AutoSaveLeaveSubBase(const tString &in asTimer)
+	{
+		if (mbPowerOn==false || mbAutoSaveLeaveSubBase) return;
+		
+		mbAutoSaveLeaveSubBase = true;
+		Game_AutoSave();
+	}
+
+	//-------------------------------------------------------
+
+	void CameraCollide_DomeAirlock(int alState)
+	{			
+		Map_SetEnvironmentParticlesActive(alState==1);
+		
+		if (alState==-1 && mbInAirlockWater)
+		{
+			mbInAirlockWater = false;
+			
+			if (!mbAirlockFull)
+			{
+				ParticleSystem_SetVisible("VentBubbles_*", false);
+				if (!ParticleSystem_Exists("AirlockDrip"))
+					ParticleSystem_CreateAtEntityExt("AirlockDrip", "03_01_airlock_drops.ps", "AirlockDripsArea", true, cColor_White, 0.00001f);
+			}
+			
+			Player_SetAmbientLight_Indoors(true);
+			Map_Preset_Fade("Dome", 0.5);
+		}
+		else if (alState==1 && mbInAirlockWater==false)
+		{
+			Effect_Screen_Start("water_splash_screen.mat", cVector2f(0.5, 0.5), cVector2f(1.8, 1.8), 1, 0.4f, 0.2f, 0.6f); 
+			mbInAirlockWater = true;
+			Player_SetAmbientLight_Outdoors(true);
+			Map_Preset_Fade("Outside", 0);
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void OnChangeActivateOverride(const tString &in asEntity, int alState)
+	{
+		Lever_SetStuckState("AirlockFlushSwitch", 0, true);
+		Lever_SetStuckState("AirlockPumpSwitch", 0, true);
+		Wheel_SetStuckState("AirlockValve_*", 0, true);
+		Entity_FadeEffectBaseColor("AirlockValve_1_Lamp", cColor(0.75,0.5,0.1,1), 0.1);
+		Entity_FadeEffectBaseColor("AirlockValve_2_Lamp", cColor(0.75,0.5,0.1,1), 0.1);
+		Entity_FadeEffectBaseColor("AirlockPumpSwitch_Lamp", cColor(0.75,0.5,0.1,1), 0.1);
+		
+		Lamp_SetLit("AirlockValveLamp", true, true);
+		Lamp_SetLit("AirlockPumpLamp", true, true);
+		Lamp_SetLit("AirlockFlushLamp", true, true);
+		
+		Lamp_SetLit("OverrideStandbyLamp", false, true);
+		
+		if (alState != 1) return;
+		Sound_CreateAtEntity("ButtonPress", "Entities_OceanBottom/button/plastic_red_push", asEntity);
+	}
+
+	//-------------------------------------------------------
+	
+	void OnChangeFlushSwitch(const tString &in asEntity, int alState)
+	{
+		if (alState != 1)
+		{
+			Lamp_SetFlickerActive("AirlockFlushLamp", false);
+			return;
+		}
+		
+		if (Lever_GetState("AirlockPumpSwitch") != 1 || mlAirlockValveCount < 2)
+		{
+			if (!SequenceStates_IsActive("Seq_AirlockUnstable"))
+			{
+				Seq_AirlockUnstable("");
+			}
+			
+			Lamp_SetFlickerActive("AirlockFlushLamp", true);
+			return;
+		}
+		
+		Lever_SetStuckState(asEntity, 1, true);
+		Entity_FadeEffectBaseColor("AirlockFlushLamp", cColor_Green, 0.3);
+		
+		Seq_AirlockEmpty_Flush("");
+	}
+	
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mAirlockUnstableSequence;
+	bool mbAirlockUnstableSequence = false;
+
+	//-------------------------------------------------------
+	
+	/////////////////////////
+	//added check to stop from spamming
+	void Seq_AirlockUnstable(const tString &in asTimer)
+	{
+		if (mbAirlockUnstableSequence == false)
+		{
+			AirlockUnstableSequence("");
+			mbAirlockUnstableSequence = true;
+		}
+		else if (mbAirlockUnstableSequence == true)
+		{
+			cLux_AddDebugMessage("Unstable Sequence already played");
+		}
+	}
+
+	//-------------------------------------------------------
+
+	void AirlockUnstableSequence(const tString &in asTimer)
+	{
+		Sequence_Begin("AirlockUnstableSequence", mAirlockUnstableSequence);
+			
+		if (Sequence_DoStepAndWait(3.4))
+		{		
+			cLux_AddDebugMessage("START");
+			Sound_CreateAtEntity("AirlockUnstable", "03_01_omicron_outside/SFX/special/airlock_fail/dome", "Player");
+			Music_FadeVolumeMul(0.3f, 2.5f);
+		}
+			
+		else if (Sequence_DoStepAndWait(2))
+		{
+			Sound_SetGlobalVolume(0.25);
+			Effect_Rumble_Start(0.5, 0.8, 0, 0.4);
+			Effect_Shake_Start(0.025, 0.4, 0.1, 0.25, cVector3f(1, 0.25, 1), 32);
+			Effect_Shake_Start(0.005, 0.5, 0.2, 3.0, cVector3f(1, 0.25, 1), 32);
+			Effect_Sway_FadeIn(0.05, 1, 1, 0, 1, 0.25f, 0.995f, 0);
+			cLux_AddDebugMessage("shaky");
+		}
+		
+		else
+		{
+			Sound_FadeGlobalVolume(1, 3.5);
+			Music_FadeVolumeMul(1.0f, 6.5f);
+			Map_AddTimer("3_WrongValveComment", 0.25, "TimerPlayVoice");
+			Effect_Sway_FadeOut(3);
+			cLux_AddDebugMessage("DONE");
+		}
+
+		Sequence_End();
+	}
+	
+	//-------------------------------------------------------
+	
+	void OnGuiAirlockPowerStatus(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("03_01_omicron_outside");
+		
+		StationGuiBG_Scanlines();
+		StationGuiBG_Backdrop();
+		
+		if (!mbPowerOn)
+		{
+			DoNoMainPowerScreen();
+			return;
+		}
+		
+		if (Button_IsSwitchedOn("AirlockButton"))
+		{
+			cStationGui_BigStatusMessageSettings statusMessage;
+			statusMessage.mfTextSizeMul = 2;
+			StationGui_BigStatusMessage(mbAirlockFull ? "AirlockFilling" : "AirlockFlushing", statusMessage);
+		}
+		else
+		{
+			cStationGui_BigStatusMessageSettings statusMessage;
+			statusMessage.mColor = gStationGuiColor_Highlight;
+			statusMessage.mfTextSizeMul = 2;
+			StationGui_BigStatusMessage("AirlockReady", statusMessage);
+		}
+		
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event B *Enter substation*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbHasEnteredSubbase = false;
+
+	//-------------------------------------------------------
+
+	bool Trigger_InsideSubStationMain(const tString &in asParent, const tString &in asChild, int alState)
+	{		
+		if (alState == 1)
+		{
+			ResumeSubStationIdleDialog(4);
+			AirlockEffectsTurnOffPumps();
+            if(mbLeakSoundFade==true)
+            {
+                //Sound_Fade("LeakSound", 0.75f, 2.0f);
+            }
+            else if(mbLeakSoundFade==false)
+            {
+               //Sound_Fade("LeakSound", 1.0f, 2.0f); 
+            }
+			
+			cLux_AddDebugMessage("turn off pumps");
+			if (mbHasEnteredSubbase) return true;
+			Map_AddTimer("SubBaseUnstable", 4, "SequenceSubBaseUnstable");
+		}
+		else
+		{
+			AirlockEffectsTurnOnPumps();
+			Sound_Fade("LeakSound", 0.35f, 3.0f);
+			cLux_AddDebugMessage("turn on pumps");
+			StopSubStationIdleDialog(/*false*/);
+			Map_RemoveTimer("SubBaseUnstable");
+		}
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSubBaseUnstableSequence;
+		
+	void SequenceSubBaseUnstable(const tString &in asTimer)
+	{
+		Sequence_Begin("SequenceSubBaseUnstable", mSubBaseUnstableSequence);
+			
+		if (Sequence_DoStepAndWait(1.25))
+		{
+			mbHasEnteredSubbase = true;
+			Sound_CreateAtEntity("SubBaseCreak", "03_01_omicron_outside/SFX/special/dome_tremor", "Player");
+			Sound_FadeGlobalVolume(0.6f, 1.5f, eSoundEntryType_World);
+            Entity_SetActive("hatch_omicron_substation_1", false);
+		}
+		else if (Sequence_DoStepAndWait(0.75))
+		{
+			Effect_Shake_Start(0.1, 0, 0.1, 1, cVector3f(1, 0.25, 1), 32);
+			Effect_Sway_FadeIn(0.15, 1, 1, 0, 1, 0.25f, 0.995f, 0);
+			Depth_Audio_Fear_MediumIntensity();
+		}
+		else if (Sequence_DoStepAndWait(2.25))
+		{
+			Sound_FadeGlobalVolume(1.0f, 4.0f, eSoundEntryType_World);
+		}
+		else if (Sequence_DoStepAndWait(2))
+		{
+			Effect_Sway_FadeOut(0.5);
+		}
+		else
+		{
+			PlaySubStationMusic();
+		}
+		Sequence_End();
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event C *Read blood note (text)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event D *Interact with corpse (dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbTriedDataminingCorpse_NoCatherine;
+	bool mbTriedDataminingCorpse_Catherine;
+
+	//-------------------------------------------------------
+	
+	void DataminingDone_SubBaseCorpse(const tString &in asEntity)
+	{
+		Map_AddTimer("", 0.75, "Timer_SubBaseCorpseDatamineDone");
+	}
+
+	//-------------------------------------------------------
+	
+	void Timer_SubBaseCorpseDatamineDone(const tString &in asEntity)
+	{
+		if ((mbCatherineActiveInSubBase && mbTriedDataminingCorpse_Catherine) || 
+		    (mbCatherineActiveInSubBase == false && mbTriedDataminingCorpse_NoCatherine))
+			return;
+			
+		StopSubStationIdleDialogImmediately();
+		
+		if (mbCatherineActiveInSubBase)
+		{
+			Voice_Play("3_InteractSubBaseCorpse_Catherine", -1, "VoiceAllowIdleDialog");
+			mbTriedDataminingCorpse_Catherine = true;
+		}
+		else
+		{
+			Voice_Play("3_InteractSubBaseCorpse_NoCatherine", -1, "VoiceAllowIdleDialog");
+			mbTriedDataminingCorpse_NoCatherine = true;
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void VoiceAllowIdleDialog(const tString&in asScene, const tString&in asSubject)
+	{
+		ResumeSubStationIdleDialog(5);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event E *Turn on Catherine; Talk and get objective (dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool PlugInCatherine()
+	{
+		CathTool_Insert("CathTool", "SubStationCathTerminal");
+        //Set source is set in voicehandler
+		//Voice_SetSource("Catherine", "SubStationCathTerminal", 4, 40, true, 40);
+				
+		Map_AddTimer("StartPluggedInConvo", 0.5, "TimerStartPluggedInConvo");
+				
+		mbCatherineActiveInSubBase = true;
+		Terminal_SetGuiActive("CathFaceTerminal", true, 0.5);
+		
+		Lamp_SetLit("CircuitBoardHighlightLamp", true, true);
+		Lamp_SetLit("ConnectionStartLamp", true, true);
+		Lamp_SetLit("PowerLevelLamp_0", true, true);
+		EvaluateAllPowerConnections();
+		TimerFadePowerMeter("");
+		
+		PlayerEnergy_SetAllowCathComment(true);
+		
+		LastOnSoma_SetText("03_01_omicron_outside_2");
+		
+		return true;
+	}
+    
+	//-------------------------------------------------------
+    
+    bool mbLeakSoundFade = false;
+    void LineStart_CathDomeConversation(const tString &in asScene, const tString &in asSubject, int alLineIndex, bool abStart)
+    {
+        if(abStart==false)
+            return;
+            
+        //Sound_Fade("LeakSound", 0.7, 5.0f);
+		Sound_FadeGlobalVolume(0.7f, 4.0f, eSoundEntryType_World);
+        mbLeakSoundFade = true;
+    }
+	
+	//-------------------------------------------------------
+	
+	void LineStart_Ducking(const tString &in asScene, const tString &in asSubject, int alLineIndex, bool abStart)
+    {
+        if(abStart==false)
+            return;
+        
+        cLux_AddDebugMessage("Ducking audio for conversation");
+		Sound_FadeGlobalVolume(0.65f, 4.0f, eSoundEntryType_World);
+	}
+	
+	void LineOver_Ducking(const tString &in asScene, const tString &in asSubject, int alLineIndex, bool abStart)
+    {
+        if(abStart==true)
+            return;
+        cLux_AddDebugMessage("Returning audio - conversation over");		
+		Sound_FadeGlobalVolume(1.0f, 4.0f, eSoundEntryType_World);
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerStartPluggedInConvo(const tString &in asTimer)
+	{
+		Dialog_StartConversation("Catherine", "CathTool");
+		Dialog_Begin();
+			Dialog_AddBranchAndSubject("3_CatherinePluggedIn", "", "SubjectCathPluggedIn");
+		Dialog_End();
+		
+		cLux_AddTodoMessage("ENABLE HINTS");
+		CathTool_SetHintsEnabled("CathTool",true);
+		CathTool_SetHintsCallback("CathTool","OnCathHints");
+	}
+
+	//-------------------------------------------------------
+	
+	void SubjectCathPluggedIn(const tString &in asSubject, bool abStartOfSubject)
+	{
+		if (abStartOfSubject) return;
+		
+		if (!Entity_GetCollide("Player", "InsideSubStationMain")) return;
+		if (mbIdleDialogAllowed) ResumeSubStationIdleDialog(4);
+	}
+	
+	//-------------------------------------------------------
+	
+	tString OnCathHints(const tString& in asEntityName) 
+	{
+		//////////////////////////////////
+		// If player has not gotten power up and running
+		if (mbPowerOn == false)
+		{
+			return "Hint_NoPower";
+		}
+		
+		//////////////////////////////////
+		// If player has not tried removing emergency lockdown
+		if (mbKeypadScreenSeen == false)
+		{
+			return "Hint_NoEmergLockTry";
+		}
+		
+		//////////////////////////////////
+		// If player has not found secret code
+		if (mbSecretCodeSeen == false)
+		{
+			return "Hint_NoSecretCode";
+		}
+		
+		//////////////////////////////////
+		// If player has not tried secret code (having found it)
+		if (mbLockdownOverridden == false)
+		{
+			return "Hint_HasSeenCode";
+		}
+		
+		// fallthrough
+		return "";
+	}
+
+	//-------------------------------------------------------
+	
+	void OnGuiCathFace(const tString&in asEntityName, float afTimeStep)
+	{
+		StationGuiBG_Scanlines();
+		StationGuiBG_Backdrop();
+		
+		Depth_ImGui_CathPortrait(afTimeStep);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event F *Catherine Conversation(dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	int mlIdleDialogSequence = 1;
+	int mlIdleDialogSubject = 1;
+	bool mbIdleDialogSequenceActive = false;
+	bool mbIdleDialogAllowed = true;
+
+	//-------------------------------------------------------
+	
+	void TimerSubStationIdleDialog(const tString &in asTimer)
+	{
+		if (mlIdleDialogSequence > 3 || 
+			!mbIdleDialogAllowed || 
+			mbIdleDialogSequenceActive ||
+			!mbCatherineActiveInSubBase)
+		{
+			return;
+		}
+		
+		///////////////////////////////////////////////////////////////////////
+		// Requeue if already speaking (i.e listening to hints) or datamining
+		if (Voice_CharacterIsSpeaking("Catherine") || Voice_CharacterIsSpeaking("Player") || Entity_IsInteractedWith("RelayCorpseArea"))
+		{
+			cLux_AddDebugMessage("Requeued dialogue");
+			Map_AddTimer("BeginSubStationIdleDialog", cMath_RandRectf(4, 5), "TimerSubStationIdleDialog");
+			return;
+		}
+		
+		mbIdleDialogSequenceActive = true;
+		
+		Dialog_Begin("SubStationIdleDialog");
+			Dialog_AddBranch("3_IdleDialog_"+mlIdleDialogSequence);
+				AddIdleDialogSequence(1, 3);
+				AddIdleDialogSequence(2, 2);
+				AddIdleDialogSequence(3, 2);		
+		Dialog_End();
+	}
+
+	//-------------------------------------------------------
+	
+	void AddIdleDialogSequence(int alSequence, int alSubjectCount)
+	{
+		if (mlIdleDialogSequence != alSequence) return;
+		
+		for (int i = 1; i <= alSubjectCount; i++)
+		{
+			if (mlIdleDialogSubject > i) continue;
+			
+			tString sCallback = (i == alSubjectCount) ? "SubjectIdleDialogSequenceOver" : 
+														"SubjectSubStationIdleDialog";
+			
+			Dialog_AddSubject("3_IdleDialog_"+alSequence+"_"+i, sCallback);
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void SubjectIdleDialogSequenceOver(const tString &in asSubject, bool abStartOfSubject)
+	{
+		if (abStartOfSubject)
+		{			
+			if (mbIdleDialogAllowed==false)
+			{
+				StopSubStationIdleDialogImmediately(false);
+			}
+			else
+			{
+				mlIdleDialogSequence++;
+				mlIdleDialogSubject=1;
+			}
+			return;
+		}
+	
+		mbIdleDialogSequenceActive = false;
+		Map_AddTimer("BeginSubStationIdleDialog", cMath_RandRectf(5, 10), "TimerSubStationIdleDialog");
+	}
+
+	//-------------------------------------------------------
+	
+	void SubjectSubStationIdleDialog(const tString &in asSubject, bool abStartOfSubject)
+	{
+		if (!abStartOfSubject) return;
+		
+			
+		if (mbIdleDialogAllowed==false)
+		{
+			StopSubStationIdleDialogImmediately(false);
+		}
+		else
+		{
+			mlIdleDialogSubject++;
+			cLux_AddDebugMessage("Subject "+mlIdleDialogSubject);
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void StopSubStationIdleDialog()
+	{
+		if (!mbCatherineActiveInSubBase) return;
+		
+		mbIdleDialogAllowed = false;
+		if (!mbIdleDialogSequenceActive)
+		{
+			Map_RemoveTimer("BeginSubStationIdleDialog");
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void StopSubStationIdleDialogImmediately(bool abSkipToNextSequence=true)
+	{
+		if (!mbCatherineActiveInSubBase) return;
+		
+		// Skip to next sequence if the current one has been started
+		if (mlIdleDialogSubject!=1 && abSkipToNextSequence)
+		{
+			mlIdleDialogSequence++;
+			mlIdleDialogSubject=1;
+		}
+		
+		mbIdleDialogSequenceActive = false;
+		mbIdleDialogAllowed = false;
+			
+		cLux_AddDebugMessage("Dialog_Stop");
+		Dialog_Stop("SubStationIdleDialog");
+		Map_RemoveTimer("BeginSubStationIdleDialog");
+	}
+
+	//-------------------------------------------------------
+	
+	void ResumeSubStationIdleDialog(float afDelay)
+	{
+		cLux_AddDebugMessage("ResumeSubStationIdleDialog");
+		if (!mbCatherineActiveInSubBase) return;
+		
+		mbIdleDialogAllowed = true;
+		mbResumeIdleDialogOnTerminalLeave = true;
+		
+		// Check if already active
+		if (mbIdleDialogSequenceActive) return;
+		
+		// Make sure dialog isn't already about to start
+		Map_RemoveTimer("BeginSubStationIdleDialog");	
+		Map_AddTimer("BeginSubStationIdleDialog", afDelay, "TimerSubStationIdleDialog");
+	}
+
+	//-------------------------------------------------------
+	
+	bool CollisionAtTopFloor(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		PlayCathMiniConvo("3_CathChatTopFloor");
+		return true;
+	}
+
+	//-------------------------------------------------------
+	
+	void PlayCathMiniConvo(const tString &in asSubject)
+	{
+		if (mbCatherineActiveInSubBase==false) return;
+		
+		if (Voice_AnySceneIsActive()==false)
+		{
+			float fTimeLeft = Map_GetTimerTime("BeginSubStationIdleDialog");
+			StopSubStationIdleDialog();
+			
+			Dialog_Begin("SubStationIdleDialog");
+				Dialog_AddBranchAndSubject(asSubject, "", "SubjectMiniConvoOver");
+			Dialog_End();
+			
+			if (Voice_AnySceneIsActive()==false)
+			{
+				ResumeSubStationIdleDialog(fTimeLeft);
+			}
+		}
+	}
+	
+	void SubjectMiniConvoOver(const tString &in asSubject, bool abStartOfSubject)
+	{
+		if (abStartOfSubject) return;
+		
+		cLux_AddDebugMessage("SubjectMiniConvoOver");
+		ResumeSubStationIdleDialog(5);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event G *Find metal bridge*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event H *Reroute power flow (text)*
+	/////////////////////////////////////////
+    
+    void PullOffPanel(const tString &in asEntity)
+    {
+        Sound_CreateAtEntity("PullOff_"+asEntity, "03_01_omicron_outside/SFX/remove_ppanel", asEntity);
+    }
+
+	//-------------------------------------------------------
+	
+	int mlPowerNodeCount = 0;
+	int mlPowerMeter = 1;
+	int mlPowerMeterTarget = 0;
+	bool mbSurgeActive = false;
+
+	//-------------------------------------------------------
+	
+	void OnChangeElectricSwitch(const tString &in asEntity, int alState)
+	{
+        Sound_CreateAtEntity("PowerSwitch", "Entities_OceanBottom/tech/fuse_puzzle/fuse_puzzle_switch", "FuseSoundSource");
+		if (!mbCatherineActiveInSubBase || mbSurgeActive) return;
+		
+		EvaluateAllPowerConnections();
+		TimerFadePowerMeter("");
+	}
+
+	//-------------------------------------------------------
+	
+	void EvaluateAllPowerConnections()
+	{
+		mlPowerNodeCount = 0;
+		Entity_SetVarBool("ElectricSwitch_*", "Powered", false);
+		Entity_SetVarBool("ConnectionLamp_*", "Powered", false);
+		Entity_SetEffectsActive("ElectricSwitch_*", false, true);
+		bool bAtEndNode = EvaluatePowerConnection(-1, cVector2l(0, 0));
+
+		if (bAtEndNode && mlPowerNodeCount <= glMaxPowerNodesActive)
+		{
+			Lamp_SetLit("ConnectionLamp_End", true, true);
+		}
+	  
+		array<iLuxEntity@> vLamps;
+		Map_GetEntityArray("ConnectionLamp_*", vLamps, eLuxEntityType_Prop);
+		for (int i = 0; i < vLamps.length(); i++)
+		{
+			iLuxEntity@ pLamp = vLamps[i];
+			tString sName = pLamp.GetName();
+		   
+			if (sName == "ConnectionLamp_End")
+				continue;
+		   
+			bool bLit = pLamp.GetVarBool("Powered");
+		   
+			if (bLit == Lamp_GetLit(sName))
+				continue;
+			else if (bLit)
+			{
+				Sound_CreateAtEntity("PowerBeep", "03_01_omicron_outside/Gameplay/fuse_puzzle/fuse_puzzle_beep", "FuseSoundSource", 0.0f, false, 1.0f);
+                Sound_CreateAtEntity(sName, "03_01_omicron_outside/SFX/fuse_flicker_loop", sName);
+			}
+			else
+			{
+                Sound_Stop(sName, 0.15f);
+			}
+
+			Lamp_SetLit(sName, bLit, true);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	bool EvaluatePowerConnection(const cVector2l &in avFrom, const cVector2l &in avTo)
+	{
+		tString sSwitch = "ElectricSwitch_"+avTo.x+"_"+avTo.y;
+		
+		if (!Entity_Exists(sSwitch))
+			return false;
+			
+		///////////////////////////////
+		// Turn on connection effect
+		if (avFrom != -1)
+		{
+			tString sLamp;
+			if (avFrom.x < avTo.x || avFrom.y < avTo.y) 
+				sLamp = "ConnectionLamp_"+avFrom.x+"_"+avFrom.y+"_"+avTo.x+"_"+avTo.y;
+			else										
+				sLamp = "ConnectionLamp_"+avTo.x+"_"+avTo.y+"_"+avFrom.x+"_"+avFrom.y;
+			Entity_SetVarBool(sLamp, "Powered", true);
+
+			bool bBroken = Entity_Exists(sLamp+"_Broken");
+			if (bBroken) 
+			{
+				if (Entity_IsActive(sLamp))
+				{
+					Map_AddTimer(sLamp, cMath_RandRectf(0, 0.4), "TimerOverloadNode");
+				}
+				return false;
+			}
+			
+			cColor col = MovingButton_IsSwitchedOn(sSwitch) ? cColor_Green : cColor_White;
+			//Entity_SetEffectBaseColor(sLamp, col);
+		}
+			
+		if (MovingButton_IsSwitchedOn(sSwitch)) 
+			return false;
+			
+		// Already checked this node
+		if (Entity_GetVarBool(sSwitch, "Powered")) return false;
+			
+		////////////////////////////
+		// Turn on node effects
+		Entity_SetEffectsActive(sSwitch, true, true);
+		
+		////////////////////////////////////////////////////////
+		// Tag as powered to avoid counting multiple times
+		Entity_SetVarBool(sSwitch, "Powered", true);
+		
+		/////////////////////////////
+		// Check connected nodes
+		bool bSuccess =
+		EvaluatePowerConnection(avTo, cVector2l(avTo.x-1, avTo.y)) ||
+		EvaluatePowerConnection(avTo, cVector2l(avTo.x+1, avTo.y)) ||
+		EvaluatePowerConnection(avTo, cVector2l(avTo.x, avTo.y-1)) ||
+		EvaluatePowerConnection(avTo, cVector2l(avTo.x, avTo.y+1));
+		
+		mlPowerNodeCount++;
+		
+		////////////////////////////////
+		// Special case for final node
+		if (avTo == cVector2l(3, 3))
+		{
+			return true;
+		}
+		
+		return bSuccess;
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerOverloadNode(const tString &in asTimer)
+	{
+		Entity_SetActive(asTimer, false);
+		Entity_SetActive(asTimer+"_Broken", true);
+		
+		Sound_CreateAtEntity(asTimer+"Burst", "Entities_OceanBottom/tech/fuse_puzzle/fuse_puzzle_break", "FuseSoundSource");
+		
+		cParticleSystem@ pParticles = ParticleSystem_CreateAtEntityExt(asTimer+"_PS", "elec_spark_physics_oneshot.ps", asTimer, false, cColor_White);
+		pParticles.SetWorldPosition(pParticles.GetWorldPosition() + cVector3f(-0.06, 0.15, 0));
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerFadePowerMeter(const tString &in asTimer)
+	{	
+		Map_RemoveTimer("FadePowerMeter");
+	
+		/////////////////////////////////////////
+		// Check if too many moves were made
+		if (mlPowerMeter==0 && !mbSurgeActive)
+		{
+			Seq_PowerSurge("");
+			
+			return;
+		}
+		
+		mlPowerMeterTarget = glMaxPowerNodesActive - mlPowerNodeCount;
+		if (mlPowerMeterTarget == mlPowerMeter)
+		{
+			if(Lamp_GetLit("ConnectionLamp_End"))
+			{
+				Player_ChangeStateToNormal();
+				Player_SetLookSpeedMul(0);
+				Player_FadeLookSpeedMulTo(1, 1);
+				Entity_SetInteractionDisabled("ElectricSwitch_*", true);
+				Sound_CreateAtEntity("PowerOn", "03_01_omicron_outside/Gameplay/fuse_puzzle/fuse_puzzle_success", "FuseSoundSource", 0.0f, false, 1.0f);
+				
+				Map_AddTimer("3_CathChatPowerPuzzleDone", 1, "PlayCathMiniConvo");				
+				
+				TurnOnPower();
+			}
+			return;
+		}
+		
+		mlPowerMeter += cMath_Sign(mlPowerMeterTarget-mlPowerMeter);
+		
+		for (int i = 1; i <= glMaxPowerNodesActive; i++)
+		{
+			Entity_SetEffectsActive("PowerLevelLamp_"+i, (i <= mlPowerMeter), true);
+		}
+		
+		Map_AddTimer("FadePowerMeter", mlPowerMeter == 10 ? 0.7 : 0.2, "TimerFadePowerMeter");
+	}
+
+	//-------------------------------------------------------
+
+	
+	void TurnOnPower()
+	{
+		SetCathPanelEnabled("AirlockButton", true, false);
+		cLux_AddTodoMessage("Sound: Power getting turned on.");
+		Sound_CreateAtEntity("PowerOn", "03_01_omicron_outside/Gameplay/fuse_puzzle/fuse_puzzle_success", "FuseSoundSource", 0.0f, false, 1.0f);
+		Sound_CreateAtEntity("DomeGeneratorSound", "Entities_OceanBottom/tech/fuse_puzzle/fuse_puzzle_machine", "GeneratorSoundSource");
+		
+		////////////////////
+		//slight delay to stop from sound overkill and to bulk out the power on sequence
+		Map_AddTimer("DomePowerTimer", 3.0f, "DomePowerSequence");
+		
+		Entity_PlayProcAnimation("GeneratorFan", "Spin", 4, true, 0, 4);
+		Light_FadeTo("FanLight", cColor(1,0.584,0,0.204), -1, 4);
+	}
+
+	//-------------------------------------------------------
+	
+	void DomePowerSequence (const tString &in asTimer)
+	{	
+		mbPowerOn = true;
+		
+		//Sound_CreateAtEntity("DomePowerOn", "03_01_omicron_outside/SFX/special/dome_poweron", "Player", 0.0f, false, 1.0);
+		
+		Terminal_SetAllowInteraction("BloodTerminal", true);
+		Terminal_SetAllowInteraction("StatusTerminal", true);
+		
+		Terminal_ForceCacheUpdate("DoorTerminal");
+		Terminal_ForceCacheUpdate("BloodTerminal");
+		Terminal_ForceCacheUpdate("StatusTerminal");
+		
+		Lamp_SetLit("SubBaseWallLamp_*", true, true);
+		
+		if (mbSubBaseFlowerDrained)
+			Lamp_SetLit("SubBaseWallLamp_5", false, false);
+
+		ActivateOutsidePower();
+
+		///////////////////
+		// Start preloading
+		Preload();
+	}
+
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mPowerSurgeSequence;
+		
+	void Seq_PowerSurge(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_PowerSurge", mPowerSurgeSequence);
+			
+		if (Sequence_DoStepAndWait(0.3))
+		{
+			mbSurgeActive = true;
+			Entity_SetInteractionDisabled("ElectricSwitch_*", true);
+			Sound_CreateAtEntity("PowerOverload_1", "03_01_omicron_outside/Gameplay/fuse_puzzle/fuse_puzzle_fail", "FuseSoundSource", 0.0f, false, 1.0f);
+		}	
+		else if (Sequence_DoStepAndWait(0.3))
+		{
+			MovingButton_SetSwitchedOn("ElectricSwitch_*", true, false);
+			EvaluateAllPowerConnections();
+			Lamp_SetLit("PowerLevelLamp_0", false, true);
+		}
+		else if (Sequence_DoStepAndWait(0.3)) Lamp_SetLit("PowerLevelLamp_0", true, true);
+		else if (Sequence_DoStepAndWait(0.3)) Lamp_SetLit("PowerLevelLamp_0", false, true);
+		else if (Sequence_DoStepAndWait(0.3)) Lamp_SetLit("PowerLevelLamp_0", true, true);
+		else if (Sequence_DoStepAndWait(0.3)) Lamp_SetLit("PowerLevelLamp_0", false, true);
+		else if (Sequence_DoStepAndWait(0.3)) Lamp_SetLit("PowerLevelLamp_0", true, true);
+		else if (Sequence_DoStepAndWait(0.3)) Lamp_SetLit("PowerLevelLamp_0", false, true);
+		else
+		{
+			Entity_SetInteractionDisabled("ElectricSwitch_*", false);
+			TimerFadePowerMeter("");
+			Lamp_SetLit("PowerLevelLamp_0", true, true);
+			mbSurgeActive = false;
+		}
+		Sequence_End();
+	}
+
+	//-------------------------------------------------------
+
+	///////////////////////////////
+	//Dome generator sound logic for use in airlock
+	void GeneratorSoundOn()
+	{
+		if(mbPowerOn==true)
+		{
+			Sound_CreateAtEntity("DomeGeneratorSound", "Entities_OceanBottom/tech/fuse_puzzle/fuse_puzzle_machine_nostartup", "GeneratorSoundSource");
+			//Sound_CreateAtEntity("LeakSound", "01_02_upsilon_inside_02/amb/spot/water_stream_from_roof_quieter", "SubStationLeakSoundSource");
+			cLux_AddDebugMessage("Power is on, generator sound triggering");
+		}
+		
+		else if (mbPowerOn==false)
+		{
+			cLux_AddDebugMessage("Power is not on, generator sound not triggering");
+		}
+	}
+
+	void GeneratorSoundOff()
+	{
+		if(mbPowerOn==true)
+		{
+			Sound_Stop("DomeGeneratorSound", 2.0f);
+			//Sound_Stop("LeakSound", 0.5f);
+			cLux_AddDebugMessage("Power is on, turning generator sound off");
+		}
+		
+		else if (mbPowerOn==false)
+		{
+			cLux_AddDebugMessage("Power is not on, generator sound not turning off");
+		}
+	}
+
+	/////////////////////////////////////////
+	// Scene 3 Event I *Interact with blood terminal*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event J *Interact with status terminal*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event K *Exit sub station through airlock*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void OnChangeAirlockButton(const tString &in asEntity, int alState)
+	{
+		if (alState == -1) return;
+		
+		Entity_SetActive("AirlockOmniToolArea", false);
+		
+		if (mbAirlockFull)
+			Seq_AirlockEmpty("");
+		else
+			Seq_AirlockFill("");
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Event L *Catherine comments (dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 3 Extra Event *Wau flower*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void EnergyDrained_SubBaseFlower(const tString &in asEntity)
+	{
+		mbSubBaseFlowerDrained = true;
+		
+		Lamp_SetLit("SubBaseFlowerLamp_*", false, false);
+		if (Lamp_GetLit("SubBaseWallLamp_5"))
+		{
+			Map_AddTimer("SubBaseWallLamp_5", 1, "TimerSetLampUnlit");
+		
+		}
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 4 *BRING DOWN OMICRON LOCKDOWN*
+	// ==============
+	/////////////////////////////////////////
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 4 Event A *New things have power.*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void ActivateOutsidePower()
+	{
+		Lamp_SetLit("path_marker_*", true, false);
+		Lamp_SetLit("subs_underlight_*", true, false);
+		Lamp_SetLit("fish_sphere_*", true, false);
+		
+		if (mbFishSphereFlowerDrained)
+		{
+			Lamp_SetLit("fish_sphere_7*", false, false);
+			Entity_SetEffectsActive("fish_sphere_7*", false, false);
+		}
+			
+		Lamp_SetLit("ThetaRedLamp_*", true, false);
+		Lamp_SetLit("ThetaSpotLamp_*", true, false);
+		Lamp_SetLit("OmicronDoorLamp_*", true, false);
+		
+		Sound_CreateAtEntity("Pump_Idle_Loop_OmicronMain", "Entities_OceanBottom/airlock/uw/pump/idle_loop", "AirlockFailSoundSource", 1.0f, false, 1.0f);
+		
+		Terminal_SetAllowInteraction("DoorTerminal", true);
+		
+		//////////////
+		// Cute bots
+		for (int i = 1; Entity_Exists("CuteBot_"+i+"_Off"); i++)
+		{
+			Entity_SetActive("CuteBot_"+i, true);
+			Entity_SetActive("CuteBot_"+i+"_Proximity", true);
+			Entity_SetActive("CuteBot_"+i+"_Off", false);
+			Entity_PlaceAtEntity("CuteBot_"+i, "CuteBot_"+i+"_Off", cVector3f_Up*0.75f);
+			Entity_PlaceAtEntity("CuteBot_"+i+"_Proximity", "CuteBot_"+i+"_Off", cVector3f_Up*0.75f);
+		}
+		Pathfinder_Track_Add("CuteBot_1", "PathNodeArea_1");
+		Pathfinder_Track_Add("CuteBot_1", "PathNodeArea_22");
+		Pathfinder_Track_Add("CuteBot_1", "PathNodeArea_17");
+		Pathfinder_Track_Add("CuteBot_1", "PathNodeArea_9");
+		Pathfinder_Track_Start("CuteBot_1", true, 0, "");
+		
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_24");
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_28");
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_31");
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_36");
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_38");
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_40");
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_43");
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_46");
+		Pathfinder_Track_Add("CuteBot_2", "PathNodeArea_48");
+		Pathfinder_Track_Start("CuteBot_2", true, 0, "");
+		
+		Pathfinder_Track_Add("CuteBot_3", "PathNodeArea_51");
+		Pathfinder_Track_Add("CuteBot_3", "PathNodeArea_56");
+		Pathfinder_Track_Add("CuteBot_3", "PathNodeArea_57");
+		Pathfinder_Track_Add("CuteBot_3", "PathNodeArea_58");
+		Pathfinder_Track_Add("CuteBot_3", "PathNodeArea_64");
+		Pathfinder_Track_Add("CuteBot_3", "PathNodeArea_65");
+		Pathfinder_Track_Start("CuteBot_3", true, 0, "");
+		
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 4 Event B *Near small cute robot.*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool Trigger_CloseToCuteBot(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		if (alState == 1)
+		{
+			Voice_SetSource("CuteBot", Entity_GetVarString(asChild, ""), 2, 15, true, 12);
+			Map_AddTimer("CuteBotSpeaks", 1, "TimerCuteBotSpeaks");
+		}
+		else
+		{
+			Map_RemoveTimer("CuteBotSpeaks");
+		}
+		return true;
+	}
+	
+	void TimerCuteBotSpeaks(const tString &in asTimer)
+	{
+		Voice_Play("4_CloseToCuteBot");
+		Map_AddTimer("CuteBotSpeaks", cMath_RandRectf(7, 10), "TimerCuteBotSpeaks");
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 4 Event C *Interact security shutters*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 4 Event D *Interact Door Terminal*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 4 Event E *Enter override code*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void Subject_CathOverrideDone(const tString &in asSubject, bool abStartOfSubject)
+	{
+		if (abStartOfSubject) return;
+		
+		CathTool_AllowDetach("CathTool");
+		mbCatherineActiveInSubBase = false;
+		Terminal_SetGuiActive("CathFaceTerminal", false, 0.5);
+		Entity_SetActive("ToolArea_1", false);
+		Entity_SetActive("SubStationCathTerminal_Aux", false);
+		
+		PlayerEnergy_SetAllowCathComment(false);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 4 Event F *Exit sub station and see shutters rise*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbShuttersOpened = false;
+
+	//-------------------------------------------------------
+	
+	void OpenShutters()
+	{
+		if (mbShuttersOpened) return;
+		mbShuttersOpened = true;
+		
+		for (int i = 1; Entity_Exists("Shutter_"+i); i++)
+		{
+			Map_AddTimer("Shutter_"+i, cMath_RandRectf(0, 2), "TimerOpenSlideDoor");
+		}
+		MovingButton_SetLocked("SideDoorButton", false);
+		
+		Entity_SetActive("SupportCollapseTrigger_*", true);
+		Entity_SetActive("DebrisCrossingLineTrigger_Normal", true);
+		Entity_SetActive("DebrisCrossingLineTrigger_Early", false);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 4 Event G *Catherine comments (dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// SCENE 5 *FIND AIRLOCK BROKEN; CLIMB OVER ABYSS TO SEC. ENTRANCE*
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void SetupEnterOmicron()
+	{
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 5 Event A *Open Main Entrance Door*
+	/////////////////////////////////////////
+
+		void OnChangeMainDoorButton(const tString &in asEntity, int alState)
+		 {
+				Entity_SetInteractionDisabled(asEntity, true);
+				TimerCheckMainDoorButtonLock(asEntity);
+				float fOpenAmount = SlideDoor_GetOpenAmount("Omicron_MainDoor");
+				
+				if (alState==-1)
+				{
+					OmicronMainDoorClose();
+				}
+				
+				else
+				{
+					OmicronMainDoorOpen();
+				}
+		 }
+
+	 //-------------------------------------------------------
+		 
+		void TimerCheckMainDoorButtonLock(const tString &in asTimer)
+		{
+			float fOpenAmount = SlideDoor_GetOpenAmount("Omicron_MainDoor");
+			bool bSwitchedOn = MovingButton_IsSwitchedOn("MainDoorButton");
+			if ((bSwitchedOn==true && fOpenAmount>0.99) || (bSwitchedOn==false && fOpenAmount<0.01))
+			{
+				Entity_SetInteractionDisabled("MainDoorButton", false);
+				return;	
+			}
+			  
+			Map_AddTimer(asTimer, 0.25, "TimerCheckMainDoorButtonLock");
+		}
+			 
+	/////////////////////////////////////////
+	// Scene 5 Event B *Turn on airlock, fail.*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void OnChangeMainAirlockButton(const tString &in asEntity, int alState)
+	{
+		Entity_SetActive("MainAirlockOmniToolArea", false);
+		Seq_MainBaseAirlockMalfunction("");
+	}
+ 
+    //-------------------------------------------------------
+	
+	cSequenceStatesData mMainBaseAirlockMalfunctionSequence;
+		
+	void Seq_MainBaseAirlockMalfunction(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_MainBaseAirlockMalfunction", mMainBaseAirlockMalfunctionSequence);
+		
+		if (Sequence_DoStepAndWait(3.4))
+		{			
+			OmicronMainDoorClose();
+			MovingButton_SetSwitchedOn("MainDoorButton", false, true);
+			MovingButton_SetLocked("MainDoorButton", true);
+			Sound_CreateAtEntity("OmicronPumpsFail", "03_01_omicron_outside/SFX/special/airlock_fail/omicron", "AirlockFailSoundSource", 0.0);
+			Sound_Stop("Pump_Idle_Loop_OmicronMain", 3.4f);
+			Sound_FadeGlobalVolume(0.7, 3.0f);
+			cLux_AddTodoMessage("Sound: Valves opening");
+			
+		}
+		else if (Sequence_DoStepAndWait(2.3))
+		{
+			Effect_Shake_Start(0.015, 0.75, 0.00f, 0.5f);
+			cLux_AddTodoMessage("Sound: Pumps running");
+		}
+		else if (Sequence_DoStepAndWait(1))
+		{
+			//int lShakeID = Effect_Shake_Start(0.1, 0.5, 0.0, 0.75);
+			//Effect_Shake_SetSourceEntity(lShakeID, "MainEntrancePumpsSource", 5, 7);
+			MovingButton_SetLocked("MainDoorButton", false);
+			Sound_FadeGlobalVolume(1.0, 2.0f);
+		}
+		else
+		{
+			Depth_Audio_Terminal_Error("MainAirlockButton");
+			Button_SetSwitchedOn("MainAirlockButton", false, false);
+			SetCathPanelEnabled("MainAirlockButton", false, true);
+			Terminal_ForceCacheUpdate("MainAirlockTerminal");
+			Entity_SetActive("MainAirlockOmniToolArea", true);
+		}
+		
+		Sequence_End();
+	}
+
+	//-------------------------------------------------------
+	
+	void OnGuiMainAirlock(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("03_01_omicron_outside");
+		
+		StationGuiBG_Scanlines();
+		StationGuiBG_Backdrop();
+		
+		cStationGui_BigStatusMessageSettings statusMessage;
+		if (Button_IsLocked("MainAirlockButton"))
+		{
+			statusMessage.mfTextSizeMul = 1.25;
+			StationGui_BigStatusMessage("BrokenAirlockError", statusMessage);
+		}
+		else if (Button_IsSwitchedOn("MainAirlockButton"))
+		{
+			statusMessage.mfTextSizeMul = 2;
+			StationGui_BigStatusMessage("AirlockFlushing", statusMessage);
+		}
+		else
+		{
+			statusMessage.mColor = gStationGuiColor_Highlight;
+			statusMessage.mfTextSizeMul = 2;
+			StationGui_BigStatusMessage("AirlockReady", statusMessage);
+		}
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 5 Event C *Look at map; find out about alternative entrance*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 5 Event D *Cross the abyss (dialog)*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool Trigger_SupportCollapse(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		Entity_SetActive("SupportCollapseTrigger_*", false);
+		Seq_SupportCollapse("");
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mSupportCollapseSequence;
+		
+	void Seq_SupportCollapse(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_SupportCollapse", mSupportCollapseSequence);
+		if (Sequence_DoStepAndWait(2.0f))
+		{
+			//////////////////////////
+			//Setpiece audio
+			Sound_CreateAtEntity("BridgeCollapse", "03_01_omicron_outside/SFX/special/structure_fall/bridge_collapse", "Player");
+		}	
+		
+		else if (Sequence_DoStepAndWait(1.1))
+		{
+			//////////////////////////
+			//Setpiece audio
+			Sound_CreateAtEntity("StructureCollapse", "03_01_omicron_outside/SFX/special/structure_fall/structure_fall", "Player");
+			
+			Depth_Audio_Fear_MediumIntensity(6.5f, 13.0f, 3, true, true);
+			
+			Entity_SetActive("CollapsedCrawlspace_Physics", true);
+			Entity_SetActive("CollapsedCrawlspace_Static", false);
+			Map_AddTimer("CollapseCrawlSpaceImpactTimer", 0.6f, "CollapseCrawlspaceImpact");
+		}
+		else if (Sequence_DoStepAndWait(0))
+		{
+			//Effect_Shake_Start(0.2, 0, 0, 0.5);
+			Effect_Sway_FadeIn(0.75, 1, 1, -90, 1, 0.25f, 0.995f, 0);
+			Entity_SetActive("SupportCollapse_Static_*", false);
+			Entity_SetActive("SupportCollapse_Physics_*", true);
+		}
+		Sequence_End();
+	}
+
+	void CollapseCrawlspaceImpact(const tString &in asTimer)
+	{
+		Effect_Shake_Start(0.1, 0, 0, 0.5);
+		Effect_Rumble_Start(0.75, 1, 0, 1);
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 5 Event E *Looking down the abyss*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Scene 5 Event F *Enter Omicron*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void OnGuiSideAirlock(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("03_01_omicron_outside");
+		
+		StationGuiBG_Scanlines();
+		StationGuiBG_Backdrop();
+		
+		cStationGui_BigStatusMessageSettings statusMessage;
+		if (Button_IsSwitchedOn("SideAirlockButton"))
+		{
+			statusMessage.mfTextSizeMul = 2;
+			StationGui_BigStatusMessage("AirlockFlushing", statusMessage);
+		}
+		else
+		{
+			statusMessage.mColor = gStationGuiColor_Highlight;
+			statusMessage.mfTextSizeMul = 2;
+			StationGui_BigStatusMessage("AirlockReady", statusMessage);
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void OnChangeEndLevel(const tString &in asEntity, int alState)
+	{
+		Entity_SetActive("SideAirlockOmniToolArea", false);
+		Entity_SetInteractionDisabled(asEntity, true);
+		SlideDoor_SetClosed("Omicron_SideDoor", true);
+		Seq_EndOfLevel("");
+	}
+
+	//-------------------------------------------------------
+	
+	cSequenceStatesData mEndOfLevelSequence;
+		
+	void Seq_EndOfLevel(const tString &in asTimer)
+	{
+		Sequence_Begin("Seq_EndOfLevel", mEndOfLevelSequence);
+		
+		if (Sequence_DoStepAndWait(4))
+		{
+			//Small delay to allow for door to close
+			Prop_SetAllowMapTransfer("slidedoor_medium_vertical_airlock_1", false);
+		}
+		else if (Sequence_DoStepAndWait(1.5))
+		{
+			PreloadDeload();	
+		}
+		else if (Sequence_DoStepAndWait(3.5))
+		{
+			////////////////////
+			//faux airlock sounds
+			Sound_Stop("side_airlock_idle", 1.0f);
+			Sound_CreateAtEntity("FauxPump", "Entities_OceanBottom/airlock/uw/pump/pump_loop", "FauxAirlockMotorSource", 0.0f, false, 1.0f);
+			AirlockEffectsFlushWaterFinalAirlock();
+				
+			Entity_SetActive("LiquidArea_1", true);
+			FogArea_SetVisible("LiquidArea_1_Fog", false);
+			
+			for (int i = 1; Entity_Exists("AuxAirlockBubbleArea_"+i);i++)
+			{
+				Map_AddTimer("AuxAirlockBubbleArea_"+i, cMath_RandRectf(0, 1), "TimerCreateEndFlushBubbles");
+			}
+		}
+
+		else if (Sequence_DoStepAndWait(5.0))
+		{
+			LiquidArea_MoveLinearTo("LiquidArea_1", "LiquidArea_Target", 0.5, 0.5, 1);
+		}
+		
+		else if (Sequence_DoStepAndWait(4.0))
+		{
+			Map_SetUnderwater(false);
+			
+			ParticleSystem_Destroy("first_airlock_drain_particles_*");
+			Entity_SetActive("AMB_Airlock_SideEntrance", false);
+			Entity_SetActive("AMB_Airlock_SideEntrance_Air", true);
+			
+			cLux_AddDebugMessage("Air areas");
+		}
+		else if (Sequence_DoStepAndWait(7.5))
+		{
+			ParticleSystem_Destroy("second_airlock_drain_particles_*");
+			ParticleSystem_Destroy("EndAirlockSplashParticles_*");
+		}
+		else if (Sequence_DoStepAndWait(0.3))
+		{
+			//Effect_Shake_Start(0.0175, 0.3, 0.05, 0.15);
+			
+			// Failsafe for abyss effects not clearing
+			Player_FadeFOVMulTo(1, 10);
+			Effect_ImageTrail_Clear();
+			Entity_SetActive("BridgeLookDownTrigger_*", false);
+			Map_RemoveTimer("AbyssDangerEffect");
+			Entity_SetEffectsActive("WauLight_*", false, false);
+			Entity_SetActive("WauLight_*", false);
+			for (int i = 1; i <= mlWauLightCount; i++)
+			{
+				Map_RemoveTimer("WauLight_"+i);
+			}
+		}
+		else
+		{
+			//cLux_SetGamePaused(true);
+			PreloadChangeOfMap();
+		}
+		
+		Sequence_End();
+	}
+ 
+    //-------------------------------------------------------
+	
+	void TimerCreateEndFlushBubbles(const tString &in asTimer)
+	{
+		int lIndex = cString_GetNumericSuffixInt(asTimer);
+		ParticleSystem_CreateAtEntityExt(asTimer, "loop_waterbubbles_medium_stream.ps", "AuxAirlockBubbleArea_"+lIndex, false, cColor(0.487,0.628,0.7,0.25), 0.25);
+		Map_AddTimer(asTimer, 0.75, "TimerDestroyParticleSystem"); cLux_AddDebugMessage("TimerCreateEndFlushBubbles");
+	}
+
+	//-------------------------------------------------------
+	
+	void CollideAirlockWater(int alState)
+	{
+		if(alState == -1)
+		{
+			ParticleSystem_SetActive("first_airlock_drain_particles_*", true);
+			ParticleSystem_SetActive("second_airlock_drain_particles_*", true);
+			ParticleSystem_SetVisible("first_airlock_drain_particles_*", true);
+			ParticleSystem_SetVisible("second_airlock_drain_particles_*", true);
+			
+			for (int i = 1; Entity_Exists("EndAirlockSplashPSArea_"+i); i++)
+			{
+				if (ParticleSystem_Exists("EndAirlockSplashParticles_"+i))
+					continue;
+
+				ParticleSystem_CreateAtEntity("EndAirlockSplashParticles_"+i, "03_01_substation_leak_impact", "EndAirlockSplashPSArea_"+i, true);
+			}
+			
+			for (int i = 1; ParticleSystem_Exists("AuxAirlockBubbleArea_"+i); i++)
+			{
+				ParticleSystem_SetVisible("AuxAirlockBubbleArea_"+i, false);
+			}
+			
+			Map_Preset_Fade("3.2Preset", 0.25);
+			Map_AddTimer("FadeGlobal", 0.5, "PreloadTimer");
+			
+			Entity_SetActive("AMB_Airlock_SideEntrance_NoWater", true);
+			Entity_SetActive("AMB_Airlock_SideEntrance", false);
+			
+			Map_SetEnvironmentParticlesActive(false);
+			
+			Depth_Audio_PlayLeaveWater();
+		}
+		
+		else
+		{
+			ParticleSystem_SetVisible("first_airlock_drain_particles_*", false);
+			ParticleSystem_SetVisible("second_airlock_drain_particles_*", false);
+			if (ParticleSystem_Exists("EndAirlockSplashParticles_1"))
+				ParticleSystem_SetVisible("EndAirlockSplashParticles_*", false);
+			
+			for (int i = 1; ParticleSystem_Exists("AuxAirlockBubbleArea_"+i); i++)
+			{
+				ParticleSystem_SetVisible("AuxAirlockBubbleArea_"+i, true);
+			}
+			
+			Entity_SetActive("AMB_Airlock_SideEntrance", true);
+			Entity_SetActive("AMB_Airlock_SideEntrance_NoWater", false);
+			
+			Map_SetEnvironmentParticlesActive(true);
+			
+			Depth_Audio_PlayEnterWater();
+		}
+	}
+	
+	//-------------------------------------------------------
+ 
+    /////////////////////////////////////////
+    // ==============
+    // PRELOAD
+    // ==============
+    /////////////////////////////////////////
+ 
+    //-------------------------------------------------------
+	
+	bool PreloadDisabled(bool abCheckIfPreloading = true)
+	{
+		if(cLux_ScriptDebugOn())
+		{
+			cLux_AddDebugMessage("PRELOAD DISABLED!"); 
+			
+			return true;
+		}
+
+		if(abCheckIfPreloading == true && Map_IsPreloading() == false)
+			return true;
+			
+		return false;
+	}
+	
+	//-------------------------------------------------------
+	
+	void Preload()
+	{
+		if(PreloadDisabled(false)) return;
+		
+		Map_Preload("03_02_omicron_inside.hpm");
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadDeload()
+	{
+		if(PreloadDisabled()) return;
+		
+		Map_Deload("transfer3132");
+		Map_SetPreloadPriority(eWorldStreamPriority_High);
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadChangeOfMap()
+	{
+		if(PreloadDisabled()) 
+		{
+			PreloadManualChangeMap();
+			return;
+		}
+		
+		Map_AddTimer("ChangeMap", 0, "PreloadTimer");
+		Map_AddTimer("ChangeMapNotReady", 3, "PreloadTimer");
+	}
+	
+	//-------------------------------------------------------
+	
+	bool mbGlobalCopyCompleted = false;
+	void PreloadTimer(const tString &in asTimer)
+	{
+		////////////////////////////
+		//Preload - Change map globals when possible.
+		if(asTimer == "FadeGlobal")
+		{
+			if(mbGlobalCopyCompleted)
+			{
+				Map_Preset_Fade("Omicron3.2", 0.1); 
+				return;
+			}
+			
+			mbGlobalCopyCompleted = Map_CopyGlobalSettings(Map_GetPreloadMap(), 0.2);
+			
+			Map_AddTimer("FadeGlobal", 0.3, "PreloadTimer");
+		}
+
+		////////////////////////////
+		//Preload - Change map when possible
+		if(asTimer == "ChangeMap")
+		{
+			if(Map_IsPreloadCompleted())
+			{				
+				Description_SetForceFading(true);
+				Map_ChangeMap("03_02_omicron_inside.hpm", "", "transfer3132", "", "");
+			}
+			else Map_AddTimer("ChangeMap", 0.6f, "PreloadTimer");
+		}
+		
+		if(asTimer == "ChangeMapNotReady")
+		{
+			Description_Add("02_05_theta_inside", "ScanRoom_Legacy_Loading", 10, false);
+			Map_SetPreloadPriority(eWorldStreamPriority_VeryHigh);
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void PreloadManualChangeMap()
+	{
+		Map_ChangeMap("03_02_omicron_inside.hpm", "PlayerStartArea_1", "", "");
+	}
+	
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// ==============
+	// AUDIO
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void KillFieldAmbienceMusic()
+	{
+        Map_AddTimer("StopAmbientMusic", 1.0f, "AmbientMusicHandler");
+	}
+
+	//-------------------------------------------------------
+	
+	void PlaySubStationMusic()
+	{
+		Music_Play("03_01_subbuilding", 0.25, false, eMusicPrio_BgAmb);
+	}
+	
+	//-------------------------------------------------------
+	bool OmicronApproachMusic(const tString &in asParent, const tString &in asChild, int alState)
+	{
+		cLux_AddDebugMessage("Omicron Approach Music Triggered");
+		Music_Play("03_01_omicronentrance", 0.75f, false, eMusicPrio_BigEvent);
+		Sound_FadeGlobalVolume(0.75f, 5.0f, eSoundEntryType_WorldClean);
+		Map_AddTimer("ApproachMusicFadeUpTimer", 12.0f, "ApproachMusicFadeUp");
+		return false;
+	}
+		
+	//-------------------------------------------------------
+	
+		void ApproachMusicFadeUp(const tString &in asTimer)
+	{
+		Sound_FadeGlobalVolume(1.0f, 10.0f,eSoundEntryType_WorldClean);
+		cLux_AddDebugMessage("Return mix to normal");
+	}
+		
+	//-------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ==============
+	// TERMINALS
+	// ==============
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void DoNoMainPowerScreen(bool abBlinking=false)
+	{		
+		cStationGui_BigStatusMessageSettings statusMessage;
+		statusMessage.mColor = gStationGuiColor_Warning;
+		statusMessage.mfTextSizeMul = 1.5f;
+		statusMessage.mbBlinking = abBlinking;
+		StationGui_BigStatusMessage("NoPower", statusMessage);
+	}
+	
+	//-------------------------------------------------------
+	
+	bool DoMainMenuSelectionButton(const tString &in asText, int alState, float afPosition, float afHeight)
+	{
+		if (ImGui_DoButton(asText, asText, ImGui_NrmPosGroup(cVector3f(0, afPosition, 1)), ImGui_NrmSizeGroup(cVector2f(1, afHeight))))
+		{
+			if (alState != -1) ImGui_SetStateInt("CurrentState", alState);
+			Depth_Audio_Terminal_Forward(ImGui_GetName());
+			return true;
+		}
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	bool DoBackButton(const cVector3f &in avPos, int alState = 0, const cVector2f &in avSize=cVector2f(0.275, 0.1))
+	{
+		if (ImGui_DoButton("BackButton", "Back", ImGui_NrmPosGroup(avPos), ImGui_NrmSizeGroup(avSize)))
+		{
+			ImGui_SetStateInt("CurrentState", alState);
+			Depth_Audio_Terminal_Back(ImGui_GetName());
+			return true;
+		}
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	void OnEnterSubStationTerminal(const tString&in asEntityName)
+	{
+		cLux_AddDebugMessage("OnEnterSubStationTerminal");
+		if (mbCatherineActiveInSubBase)
+			StopSubStationIdleDialog();
+	}
+
+	//-------------------------------------------------------
+	
+	void OnLeaveSubStationTerminal(const tString&in asEntityName)
+	{
+		if (mbCatherineActiveInSubBase && mbResumeIdleDialogOnTerminalLeave)
+			ResumeSubStationIdleDialog(4);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Terminal *Door Terminal*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+
+	bool mbTriedDoorTerminalOpen = false;
+	bool mbTriedDoorTerminalStatus = false;
+
+	//-------------------------------------------------------
+
+	void OnGuiDoorTerminal(const tString&in asEntityName, float afTimeStep)
+	{			
+		ImGui_SetTransCategory("03_01_omicron_outside");
+				
+		// Draw background
+		StationGuiBG_Scanlines();
+		StationGuiBG_Backdrop();
+		
+		if (!mbLockdownOverridden)
+		{
+			if (ImGui_GetStateBool("ButtonWasPressed", false))
+			{
+				ImGui_SetStateBool("ButtonWasPressed", false);
+				ImGui_AddTimer("ButtonBlinkingActive", 2);
+			}
+			bool bBlinking = ImGui_TimerExists("ButtonBlinkingActive");
+			DoNoMainPowerScreen(bBlinking);
+			return;
+		}
+		
+		ImGui_SetTransCategory("StationGUI");
+		
+		cStationGui_BigStatusMessageSettings statusMessage;
+		statusMessage.mColor = gStationGuiColor_Highlight;
+		statusMessage.mfTextSizeMul = 2;
+		StationGui_BigStatusMessage("DoorControlApp_Unlocked", statusMessage);
+	}
+
+	//-------------------------------------------------------
+	
+	void DoorTerminalMainMenu()
+	{	
+		bool bMainDoorOpen = MovingButton_IsSwitchedOn("MainDoorButton");
+		float fOpenAmount = SlideDoor_GetOpenAmount("Omicron_MainDoor");
+	
+		StationGui_AddApp("OpenDoorButton", !bMainDoorOpen && fOpenAmount==0 && !SequenceStates_IsActive("Seq_MainBaseAirlockMalfunction"), false);
+		StationGui_AddApp("CloseDoorButton", bMainDoorOpen && fOpenAmount==1, false);
+		StationGui_AddApp("DoorStatusButton", true, 1);
+		int lSelection = StationGui_MainMenu();
+		
+		if (lSelection == 0)
+		{
+			mbTriedDoorTerminalOpen = true;
+			if (mbLockdownOverridden)
+			{
+				OmicronMainDoorOpen();
+			}
+			else
+			{
+				StationGui_SetError("DoorOpenFail");
+			}
+		}
+		else if (lSelection == 1)
+		{
+			OmicronMainDoorClose();
+		}
+	}
+	
+	//-------------------------------------------------------
+	
+	void OmicronMainDoorClose()
+	{
+		/////////////////////////
+		//Door Close
+		Sound_CreateAtEntity("OmicronDoorClose", "03_01_omicron_outside/Gameplay/door/omicron_front_door_close", "OmicronDoorSoundSource", 0.0f, false, 1.0f);
+		Sound_Stop("OmicronDoorOpen", 1.0f);
+		SlideDoor_SetClosed("Omicron_MainDoor", true);
+		MovingButton_SetSwitchedOn("MainDoorButton", false, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void OmicronMainDoorOpen()
+	{
+		/////////////////////////
+		//Door Open
+		Sound_CreateAtEntity("OmicronDoorOpen", "03_01_omicron_outside/Gameplay/door/omicron_front_door_open", "OmicronDoorSoundSource", 0.0f, false, 1.0f);
+		Sound_Stop("OmicronDoorClose", 1.0f);
+		SlideDoor_SetClosed("Omicron_MainDoor", false);
+		MovingButton_SetSwitchedOn("MainDoorButton", true, false);
+	}
+	
+	//-------------------------------------------------------
+	
+	void DoorTerminalStatus()
+	{			
+		mbTriedDoorTerminalStatus = true;
+		tString sStatus = mbLockdownOverridden ? "DoorTerminalStatus_Inactive" : "DoorTerminalStatus_Active";
+		StationGui_TextReaderSingle("DoorStatusButton", sStatus);
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Terminal *Blood Terminal*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	int mlCatherineOverrideState = 0;
+	bool mbOverridingCorrectLockdown = false;
+	bool mbBlackboxCutOutHeard = false;
+	bool mbKeypadScreenSeen = false;
+
+	//-------------------------------------------------------
+	
+	void OnGuiBloodTerminal(const tString&in asEntityName, float afTimeStep)
+	{	
+		ImGui_SetTransCategory("03_01_omicron_outside");
+		
+		// Draw background
+		StationGuiBG_Scanlines();
+		StationGuiBG_Backdrop();
+		
+		if (!mbPowerOn)
+		{
+			DoNoMainPowerScreen();
+			return;
+		}
+		
+		if (ImGui_TimerOver("VoiceBegin"))
+		{
+			StopSubStationIdleDialog();
+			Map_AddTimer("Timer_LockdownLiftedDialog", 0, "Timer_LockdownLiftedDialog");
+		}
+		
+		///////////////////////
+		// Data
+/*		cImGuiButtonData buttonData = StationGui_CreateDefaultButtonData();
+		buttonData.mFont.mvSize = ImGui_NrmSizeGroupKeepRatio(0.045);
+		ImGui_SetDefaultButton(buttonData);*/
+				
+		// Draw background
+		StationGuiBG_Taskbar("omicron");
+		
+		///////////////////////
+		// Error messages
+		if (StationGui_DrawAndCheckErrors())
+			return;
+		
+		bool bBackButton = false;
+		int lBackApp = eBloodTerminalApp_MainMenu;
+		int lState = StationGui_GetActiveApp();
+		
+		/////////////////////////
+		// States
+		switch (lState)
+		{
+			case eBloodTerminalApp_MainMenu:
+				StationGui_AddApp("RecordedMessage");
+				StationGui_AddApp("LockdownStatus");
+				StationGui_MainMenu();
+				break;
+			case eBloodTerminalApp_Message:
+				Depth_ImGui_AddAudioFile_Voice("CommandLogHeader", "3_BloodTerminalRecording", "VoiceBloodTerminalRecording");
+				if (StationGui_AudioPlaybackApp()!=-1 && mbIdleDialogSequenceActive)
+				{
+					StopSubStationIdleDialogImmediately();
+					Voice_Play("3_CancelIdleDialog");
+				}
+				bBackButton = true;
+				break;
+			case eBloodTerminalApp_LockdownStatus:
+				BloodTerminalLockdownStatus();
+				bBackButton = true;
+				break;
+			case eBloodTerminalApp_LockdownInput:
+				BloodTerminalLockdownInput();
+				bBackButton = true;
+				lBackApp = eBloodTerminalApp_LockdownStatus;
+				break;
+			case eBloodTerminalApp_LockdownOverride:
+				BloodTerminalLockdownOverride();
+				break;
+		}
+		
+		if (StationGui_BackButton(bBackButton, lBackApp))
+		{
+			if (lState==eBloodTerminalApp_Message)
+			{
+				Depth_ImGui_StopAudioFilePlayback(ImGui_GetName(), true);
+			}
+			StationGui_SetNumpadInput("");
+		}
+	}
+	
+	void Timer_LockdownLiftedDialog(const tString &in asTimer)
+	{
+		if (Voice_AnySceneIsActive())
+		{
+			Map_AddTimer("Timer_LockdownLiftedDialog", 1, "Timer_LockdownLiftedDialog");
+			return;
+		}
+		
+		mbResumeIdleDialogOnTerminalLeave = false;
+		StopSubStationIdleDialogImmediately();
+		Dialog_Begin();
+			Dialog_AddBranch("4_OverrideCodeEntered");
+				if (mbSecretCodeSeen==false) Dialog_AddSubject("4_OverrideCodeEntered_NoHint");
+				Dialog_AddSubject("4_OverrideCodeEntered_CathReacts");
+				if (mbSecretCodeSeen) Dialog_AddSubject("4_OverrideCodeEntered");
+				Dialog_AddPause(0.75);
+				Dialog_AddSubject("4_OverrideCodeEntered_End", "Subject_CathOverrideDone");
+		Dialog_End();
+	}
+
+	//-------------------------------------------------------
+	
+	void LineOver_SetRadioMessageDiscovered(const tString &in asScene, const tString &in asSubject, int alLineIndex, bool abStart)
+	{
+		/////////////////////////////////////////
+		// Set radio discovered for 3.2
+		if (abStart) return;
+		
+		cScript_SetGlobalVarBool("SubstationRadioPlayed", true);
+	}
+	
+	//-------------------------------------------------------
+	
+	void LineOver_VoiceCutOutBlackbox(const tString &in asScene, const tString &in asSubject, int alLineIndex, bool abStart)
+	{
+		if (abStart)
+			return;
+		mbBlackboxCutOutHeard = true;
+	}
+
+	//-------------------------------------------------------
+	
+	void VoiceBloodTerminalRecording(const tString&in asScene, const tString&in asSubject)
+	{
+		if (mbBlackboxCutOutHeard)
+			Voice_Play("3_AfterBloodTerminalRecording");
+	}
+
+	//-------------------------------------------------------
+	
+	void BloodTerminalLockdownStatus()
+	{
+		cImGuiButtonData button = StationGui_CreateDefaultButtonData();
+		
+		cImGuiLabelData label = ImGui_GetDefaultLabel();
+		label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large_Additive));
+		label.mFont.mMaterial = eGuiMaterial_Additive;
+		label.mFont.mvSize = button.mFont.mvSize;
+		label.mFont.mColor = gStationGuiColor_Normal;
+		label.mFontAlign = eFontAlign_Center;
+		
+		cImGuiWindowData window = StationGui_CreateDefaultWindowData();
+		
+		ImGui_DoWindowStart("", window, ImGui_NrmPosGroup(0.125, 0.025, 1), ImGui_NrmSizeGroup(0.75, 0.2));
+		
+			ImGui_DoLabelExt("DoorStatusButton", label, ImGui_NrmPosGroup(0, 0.19, 1), ImGui_NrmSizeGroup(0.35, -1));
+		
+			ImGui_SetModUseInput(mbLockdownOverridden==false);
+			tString sStatusText = "LockdownStatusOuter_" + (mbLockdownOverridden ? "Off" : "On");
+			ImGui_ResizeFontToFit(sStatusText, button.mFont, ImGui_GetCurrentGroupSize().x*0.55);
+			if (ImGui_DoButtonExt("LockdownUnlock", sStatusText, button,
+							  ImGui_NrmPosGroup(0.35, 0.1, 1), ImGui_NrmSizeGroup(0.6, 0.6)))
+			{
+				mbOverridingCorrectLockdown = true;
+				Depth_Audio_Terminal_Forward(ImGui_GetName());
+				StationGui_SetActiveApp(eBloodTerminalApp_LockdownInput);
+			}
+			ImGui_SetModUseInput(true);
+		ImGui_DoWindowEnd();
+		
+		window.mbUseHeader = false;
+		ImGui_DoWindowStart("", window, ImGui_NrmPosGroup(0.2, 0.25, 1), ImGui_NrmSizeGroup(0.6, 0.6), false);
+			ImGui_SetAlignment(eImGuiAlign_CenterCenter);
+			cImGuiGfx camera("OmicronCamera", eImGuiGfx_Special);
+			cVector2f vFeedSize = ImGui_GetRatioCorrectSizeByRect(camera, ImGui_NrmSizeGroup(0.9, 0.9));
+			ImGui_DoImage(camera, ImGui_NrmPosGroup(0.5,0.5,1.0f), vFeedSize);
+			
+			// Static overlay
+			ImGui_SetModColorMul(gStationGuiColor_Normal*cColor(0.4, 0.5));
+			cImGuiGfx staticAnim = cImGuiGfx("static_anim_01", eImGuiGfx_TextureAnimated);
+			staticAnim.mfAnimationTime = 0.08;
+			ImGui_DoImage(staticAnim, ImGui_NrmPosGroup(0.5,0.5,2.0f), vFeedSize);
+			ImGui_ResetModifiers();
+					
+			ImGui_SetAlignment(eImGuiAlign_TopLeft);
+		ImGui_DoWindowEnd();
+	}
+
+	//-------------------------------------------------------
+	
+	void BloodTerminalLockdownInput()
+	{		
+		// First time the keypads are displayed
+		if (!mbKeypadScreenSeen)
+		{
+			mbKeypadScreenSeen = true;
+			
+			Terminal_SetEnterCallback("StatusTerminal", "OnEnterStatusTerminal_StartGlitching");
+			Map_AddTimer("StatusTerminalGlitch", 15, "TimerStatusTerminalGlitch");
+			
+			Map_AddTimer("Timer_BlodTerminalKeypadComment", 2, "Timer_BlodTerminalKeypadComment");
+		}
+		
+		if (StationGui_Numpad("LockdownStatus", 4))
+		{
+			tString sCode = StationGui_GetNumpadInput();
+			
+			if (CodeIsValid(sCode))
+			{
+				Depth_Audio_Terminal_Confirm(ImGui_GetName());
+				StationGui_SetActiveApp(eBloodTerminalApp_LockdownOverride);
+				StationGui_SetNumpadInput("");
+				mbLockdownOverridden = true;
+				mbOverridingCorrectLockdown = false;
+			}
+			else
+			{	
+				StationGui_SetError("InvalidCode");
+				StationGui_SetNumpadInput("");
+			}
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	bool CodeIsValid(const tString &in asCode)
+	{
+		cLux_AddDebugMessage("Current code "+mvValidCodes[0]);
+		////////////////////////////////////////////////////////////////////////////////
+		// Check if it's the code that has been displayed or the last remaining code
+		if (mbSecretCodeSeen || mvValidCodes.length()==1)
+		{
+			return asCode == mvValidCodes[0];
+		}
+		
+		/////////////////////////////////
+		// Remove from valid codes
+		else
+		{
+			for (int i = 0; i < mvValidCodes.length(); i++)
+			{
+				if (asCode != mvValidCodes[i])
+					continue;
+				
+				cLux_AddDebugMessage("Removed code "+mvValidCodes[i]);
+				mvValidCodes.removeAt(i);
+				cLux_AddDebugMessage("Codes left "+mvValidCodes.length());
+				break;
+			}
+		}
+		return false;
+	}
+
+	//-------------------------------------------------------
+	
+	void Timer_BlodTerminalKeypadComment(const tString &in asTimer)
+	{
+		mbResumeIdleDialogOnTerminalLeave = false;
+		StopSubStationIdleDialog();
+		Voice_PlayWhenPossible("3_LockdownCodeUnknown", "VoiceCondition_BloodTerminalKeypadComment", -1, 1, "VoiceAllowIdleDialog");
+	}
+		
+	bool VoiceCondition_BloodTerminalKeypadComment(const tString &in asSubject)
+	{	
+		return Entity_IsInteractedWith("StatusTerminal") == false;
+	}
+
+	//-------------------------------------------------------
+	
+	void BloodTerminalLockdownOverride()
+	{	
+		cGuiDialogBoxSettings dialogBox = StationGui_CreateDefaultDialogBox();
+		dialogBox.mType = eGuiDialogBoxType_OK;
+		eGuiDialogCode returnCode = Depth_ImGui_DialogBox("Success", "LockdownOverrideConfirmation", dialogBox);
+		if (returnCode==eGuiDialogCode_OK)
+		{
+			StationGui_SetActiveApp(eBloodTerminalApp_LockdownStatus);
+			Depth_Audio_Terminal_Confirm(ImGui_GetName());
+			OpenShutters();
+				
+			/////////////////////////////
+			//add approach music area
+			cLux_AddDebugMessage("Omicron Approach Music trigger enabled");
+			Entity_SetActive("OmicronApproachMusic", true);
+			
+			ImGui_AddTimer("VoiceBegin", 1);
+		}
+		return;
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Terminal *Status Terminal*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	bool mbShowHiddenButton = false;
+	eHiddenButtonGlitchState mHiddenButtonGlitchState = eHiddenButtonGlitchState_None;
+
+	//-------------------------------------------------------
+	
+	void OnGuiStatusTerminal(const tString&in asEntityName, float afTimeStep)
+	{	
+		// Failsafe to avoid displaying hidden button after door has been overridden.
+		mbShowHiddenButton = mbShowHiddenButton && !mbLockdownOverridden; 
+		
+		// Display secret button if the player is using the terminal, 
+		// otherwise stop glitching for a bit
+		if (ImGui_TimerOver("HiddenButtonDelay"))
+		{
+			ImGui_StopTimer("HiddenButtonDelay");
+			mHiddenButtonGlitchState = eHiddenButtonGlitchState_None;
+			if  (ImGui_InFocus())
+			{
+				Terminal_SetUpdateWhenOutOfView(ImGui_GetName(), false);
+				mbShowHiddenButton = true;
+				Map_AddTimer("4_HiddenButtonAppears", 0.5, "TimerPlayVoice");
+				return;
+			}
+			else
+			{
+				PlayCathMiniConvo("3_CathChatGlitchSound");
+			}
+		}
+		
+		ImGui_SetTransCategory("03_01_omicron_outside");
+		
+		// Draw background
+		StationGuiBG_Scanlines();
+		StationGuiBG_Backdrop();
+		
+		if (!mbPowerOn)
+		{
+			DoNoMainPowerScreen();
+			return;
+		}
+		
+		CheckHiddenButton();
+				
+		StationGuiBG_Taskbar("omicron");
+		
+		// Force main menu to display if the glitches are happening
+		if (!mbShowHiddenButton && ImGui_TimerOver("HiddenButtonGlitch"))
+			StationGui_SetActiveApp(eStatusTerminalApp_MainMenu);
+			
+		bool bBackButton = true;
+		int lState = StationGui_GetActiveApp();
+		
+		/////////////////////////
+		// States
+		switch (lState)
+		{
+			case eStatusTerminalApp_MainMenu:
+				StatusTerminalMainMenu();
+				bBackButton=false;
+				break;
+			case eStatusTerminalApp_BlackBoxStatus:
+				StationGui_TextReaderSingle("BlackboxStatusButton", "BlackboxStatus");
+				break;
+			case eStatusTerminalApp_SystemUpdates:
+				StatusTerminalSystemUpdates();
+				break;
+			case eStatusTerminalApp_HiddenMenu:
+				StatusTerminalHiddenMenu();
+				break;
+		}
+		
+		if (StationGui_BackButton(bBackButton) && lState==eStatusTerminalApp_HiddenMenu)
+		{
+			Terminal_SetUpdateWhenOutOfView(ImGui_GetName(), false);
+		}
+	}
+
+	//-------------------------------------------------------
+	
+	void StatusTerminalMainMenu()
+	{
+		cVector3f vOffset = cVector3f_Zero;
+		if (ImGui_TimerExists("HiddenButtonDelay") && ImGui_TimerOver("HiddenButtonGlitch"))
+		{
+			mHiddenButtonGlitchState = eHiddenButtonGlitchState(cMath_RandRectl(eHiddenButtonGlitchState_None, eHiddenButtonGlitchState_LastEnum));
+			if (mHiddenButtonGlitchState == eHiddenButtonGlitchState_Offset)
+				ImGui_SetStateVector3f("Offset", cMath_RandRectVector3f(cVector3f(-0.5, -0.5, 0), cVector3f(0.5, 0.5, 0)));
+			ImGui_AddTimer("HiddenButtonGlitch", cMath_RandRectf(0.025, 0.1f));		
+		
+			Sound_CreateAtEntity("StatusTerminalGlitch", "03_01_omicron_outside/Gameplay/wau_glitch/wau_glitch_burst", ImGui_GetName());
+		}
+		if (mHiddenButtonGlitchState == eHiddenButtonGlitchState_NoRender) return;
+		if (mHiddenButtonGlitchState == eHiddenButtonGlitchState_Offset)
+			vOffset = ImGui_GetStateVector3f("Offset", cVector3f_Zero);
+			
+		
+		
+		ImGui_GroupBegin(ImGui_NrmPos(cVector3f(0, 0, 1)+vOffset), ImGui_NrmSize(1, 1));
+			StationGui_AddApp("BlackboxStatusButton");
+			StationGui_AddApp("SystemUpdatesButton");
+			if (mbShowHiddenButton) StationGui_AddApp("HiddenButton");
+			StationGui_MainMenu();
+		ImGui_GroupEnd();
+	}
+
+	//-------------------------------------------------------
+	
+	void StatusTerminalSystemUpdates()
+	{		
+		cStationGui_TextReaderSettings settings;
+		settings.msCustomHeader = "SystemUpdatesButton";
+		settings.mbDrawAppIcon = false;
+		
+		int lPrevSelection = ImGui_GetStateInt("SystemUpdateSelection", -1);
+		
+		for (int i = 1; i <= 7; i++)
+			Depth_ImGui_AddTextFile("SystemUpdateName_"+i, "SystemUpdate_"+i);
+		int lSelection = StationGui_TextReaderMulti(settings);
+		
+		if (lPrevSelection != lSelection && lSelection == 4)
+		{
+			//Map_AddTimer("3_CathChatWauSystemUpdate", 0.25, "PlayCathMiniConvo");
+		}
+		
+		ImGui_SetStateInt("SystemUpdateSelection", lSelection);
+	}
+
+	//-------------------------------------------------------
+	
+	void StatusTerminalHiddenMenu()
+	{			
+		if (mbSecretCodeSeen==false)
+		{
+			Voice_AbortIfQueued("3_LockdownCodeUnknown");
+			mbResumeIdleDialogOnTerminalLeave = true;
+		}
+		mbSecretCodeSeen = true;
+		
+		tString sPasswordRepeat = "";
+		int lRepeatFade = int(ImGui_GetStateFloat("PasswordRepeat", -1));
+		int lRepetitionTimes = 165;
+		if (lRepeatFade < 0)
+		{
+			ImGui_SetStateFloat("PasswordRepeat", 0);
+			ImGui_FadeStateFloat("PasswordRepeat", lRepetitionTimes, 3, eEasing_Linear);
+			Sound_CreateAtEntity("PasswordRepeat", "03_01_omicron_outside/Gameplay/wau_glitch/wau_glitch_number", "StatusTerminal_SoundSource", 0.0f, false, 1.0f);
+			Sound_FadeGlobalVolume(0.45, 0.25);
+			Map_AddTimer("FadeQuickReturnTimer", 3.5, "FadeQuickReturn");
+			Map_AddTimer("3_CathChatSecretButtonClicked", 4.5, "PlayCathMiniConvo");
+		}
+		Terminal_SetUpdateWhenOutOfView(ImGui_GetName(), lRepeatFade < lRepetitionTimes);
+		for (int i = 0; i < lRepeatFade; i++) sPasswordRepeat = sPasswordRepeat + mvValidCodes[0]+" ";
+		StationGui_TextReaderSingle("", "", sPasswordRepeat);
+	}
+
+	//-------------------------------------------------------
+	
+	void CheckHiddenButton()
+	{		
+		if (mbShowHiddenButton) return;
+		if (mbLockdownOverridden) return;
+				
+		if (ImGui_GetStateInt("StartGlitch") != 1) return;
+		ImGui_SetStateInt("StartGlitch", 0);
+		
+		if (ImGui_TimerExists("HiddenButtonDelay")) return;
+		
+		Terminal_SetUpdateWhenOutOfView(ImGui_GetName(), true);
+		
+		ImGui_AddTimer("HiddenButtonDelay", 1.75);
+		ImGui_AddTimer("HiddenButtonGlitch", 1.25);
+	}
+
+	//-------------------------------------------------------
+	
+	void TimerStatusTerminalGlitch(const tString &in asTimer)
+	{
+		Terminal_SetImGuiStateInt("StatusTerminal", "StartGlitch", 1);
+		
+		Map_RemoveTimer("GlitchRepeatTimer"); 
+		Map_AddTimer("GlitchRepeatTimer", cMath_RandRectf(0.25, 4), "TimerStatusTerminalGlitch");
+	}
+
+	//-------------------------------------------------------
+	
+	void OnEnterStatusTerminal_StartGlitching(const tString&in asEntityName)
+	{
+		OnEnterSubStationTerminal(asEntityName);
+		
+		Map_RemoveTimer("StatusTerminalGlitch");
+		TimerStatusTerminalGlitch("");
+		
+		Terminal_SetEnterCallback(asEntityName, "OnEnterSubStationTerminal");
+	}
+
+	//-------------------------------------------------------
+
+	/////////////////////////////////////////
+	// Terminal *Fish sphere status*
+	/////////////////////////////////////////
+
+	//-------------------------------------------------------
+	
+	void OnGuiFishSphere(const tString&in asEntityName, float afTimeStep)
+	{
+		ImGui_SetTransCategory("03_01_omicron_outside");
+		
+		StationGuiBG_Scanlines();
+		StationGuiBG_Backdrop();
+		
+		if (!mbPowerOn)
+		{
+			DoNoMainPowerScreen();
+			return;
+		}
+		
+		// Data
+		cImGuiLabelData label = ImGui_GetDefaultLabel();
+		label.mFontAlign = eFontAlign_Left;
+		label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large));
+		label.mFont.mvSize = ImGui_NrmSizeKeepRatio(0.06);
+		ImGui_SetDefaultLabel(label);
+		
+		cImGuiTextFrameData textFrame = StationGui_CreateDefaultTextFrameData();
+		textFrame.mFont.mvSize = ImGui_NrmSizeKeepRatio(0.04);
+		textFrame.mColorText = cColor_Red;
+		
+		int lSphereIndex = cString_GetNumericSuffixInt(asEntityName);
+		
+		ImGui_DoWindowStart("", StationGui_CreateDefaultWindowData(), ImGui_NrmPos(cVector3f(0.05, 0.05, 1.5)), ImGui_NrmSize(cVector2f(0.9, 0.9)));
+			ImGui_DoLabel("Species", ImGui_NrmPosGroup(cVector3f(0.05, 0.125, 0)), ImGui_NrmSizeGroup(cVector2f(0.9, -1)), 1);
+			ImGui_DoLabel("FishSpecies_"+lSphereIndex+"_Latin", ImGui_NrmPosGroup(cVector3f(0.05, 0.35, 0)), ImGui_NrmSizeGroup(cVector2f(0.9, -1)), 1.0);
+			ImGui_DoLabel("Population", ImGui_NrmPosGroup(cVector3f(0.05, 0.5, 0)), ImGui_NrmSizeGroup(cVector2f(0.9, -1)), 1);
+			ImGui_DoLabel("PopulationCount", ImGui_NrmPosGroup(cVector3f(0.05, 0.56, 0)), ImGui_NrmSizeGroup(cVector2f(0.9, -1)), 2.6);
+			ImGui_DoTextFrameExt("FishSphereError", cVector2f_Zero, 4, 0, textFrame,
+							  ImGui_NrmPosGroup(cVector3f(0.05, 0.85, 0)), ImGui_NrmSizeGroup(cVector2f(0.9, 0.2)));
+			
+			ImGui_ResizeFontToFit("FishSpecies_"+lSphereIndex, label.mFont, ImGui_GetCurrentGroupSize().x*0.9, 2);
+			ImGui_DoLabelExt("FishSpecies_"+lSphereIndex, label, ImGui_NrmPosGroup(cVector3f(0.05, 0.2, 0)), ImGui_NrmSizeGroup(cVector2f(0.9, -1)), 2.0);
+		ImGui_DoWindowEnd();
+	}
+    	
+	//---------------------------------------------------------------------
+
+    /////////////////////////////////////////
+	// AUDIO
+	//{//////////////////////////////////////
+	
+	//---------------------------------------------------------------------
+
+	/**
+	*Simple ambient music player that fades the ambience randomly whilst playing to stop it from getting repetitive
+	**/
+	
+	bool mbAmbientMusicPlaying = false;
+	bool mbAmbientMusicAllowed = true;
+	float gfAmbientMusicMul = 1.0f;
+	
+	void AmbientMusicHandler(const tString &in asTimer)
+	{		
+		if (asTimer=="StartAmbient" && mbAmbientMusicPlaying==false && mbAmbientMusicAllowed==true)
+		{
+            Music_PlayExt(gsOmicronExtMusic, true, 0.65f, 1.0f, cMath_RandRectf(3.f,5.f), 0.0f, eMusicPrio_BgAmb, true);
+			
+			cLux_AddDebugMessage("Ambient music triggering");
+			
+			mbAmbientMusicPlaying = true;
+			
+			//Dynamic fades
+			Map_AddTimer("RandomFadeRider", cMath_RandRectf(10.f,20.f), "AmbientMusicHandler");
+			Map_AddTimer("FadeOut", cMath_RandRectf(120.f,180.f), "AmbientMusicHandler");
+			Map_RemoveTimer("StopAmbientMusic");
+			Map_RemoveTimer("StopAmbientMusicQuickly");
+		}
+		
+		else if (asTimer=="StartAmbient" && mbAmbientMusicPlaying==false && mbAmbientMusicAllowed==false)
+		{
+			Map_AddTimer("StartAmbient", cMath_RandRectf(10.f,20.f), "AmbientMusicHandler");
+		}
+		
+		else if (asTimer=="StopAmbientMusic" && mbAmbientMusicPlaying==true)
+		{
+			Music_Stop(4.5f, eMusicPrio_BgAmb);
+			Map_RemoveTimer("RandomFadeRider");
+			Map_RemoveTimer("FadeOut");
+			Map_RemoveTimer("StartAmbient");
+			Music_FadeVolumeMul(1.0f,1.0f);
+			mbAmbientMusicPlaying = false;
+		}
+		else if (asTimer=="StopAmbientMusicQuickly" && mbAmbientMusicPlaying==true)
+		{
+			cLux_AddDebugMessage("Stop Ambient Music Quickly Triggered");
+			Music_Stop(1.5f, eMusicPrio_BgAmb);
+			Map_RemoveTimer("StartAmbient");
+			Map_RemoveTimer("RandomFadeRider");
+			Map_RemoveTimer("FadeOut");
+			Music_FadeVolumeMul(1.0f,1.0f);
+			mbAmbientMusicPlaying = false;
+		}
+		
+		else if(asTimer=="RandomFadeRider")
+		{
+            Music_PlayExt(gsOmicronExtMusic, true, 0.5f*gfAmbientMusicMul, 1.0f, cMath_RandRectf(5.f,8.f), 0.0f, eMusicPrio_BgAmb, true);
+			
+            cLux_AddDebugMessage("Ambient Music Fading");
+            gfAmbientMusicMul = cMath_RandRectf(0.35f, 1.2f);
+            Map_AddTimer("RandomFadeRider", cMath_RandRectf(10.f,15.f), "AmbientMusicHandler");
+		}
+		
+		else if(asTimer=="FadeOut")
+		{	
+			cLux_AddDebugMessage("Ambient Music Fading Out");
+			Music_Stop(cMath_RandRectf(8.f,12.f), eMusicPrio_BgAmb);
+			mbAmbientMusicPlaying = false;
+			
+			Map_RemoveTimer("RandomFadeRider");
+			Map_AddTimer("StartAmbient", cMath_RandRectf(120.f,180.f), "AmbientMusicHandler");
+		}
+		
+		cLux_AddDebugMessage("Ambient Music Playing is "+mbAmbientMusicPlaying);
+	}
+		
+	//}--------------------------------------------------------------------	
+	
+}

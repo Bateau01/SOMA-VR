@@ -237,7 +237,13 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 	{
 		VR_RestoreSavedPhysicalRead();
 		if (apBody is null || !CanInteract(0,apBody) || mbVRReading) return false;
-		if (mpOpenEntity is null && msOpenEntityFile != GetBase().GetFileName())
+        // A bare OpenEntityFile can name this very asset while GetFileName
+        // returns its full path. Remote pulling must not create an overlapping
+        // non-colliding display prop that its own ray then treats as a blocker.
+        // Direct reading and genuinely different open models retain their path.
+        bool bVRRemoteSource=cScript_RunGlobalFunc("VRREAD","","REMOTE") &&
+            (msOpenEntityFile==GetBase().GetFileName() || msOpenEntityFile==cString_GetFileName(GetBase().GetFileName()));
+		if (!bVRRemoteSource && mpOpenEntity is null && msOpenEntityFile != GetBase().GetFileName())
 		{
 			cLux_GetCurrentMap().CreateEntity(GetBase().GetName()+"_open", msOpenEntityFile, mBaseObj.GetMatrix(), cVector3f(1));
 			@mpOpenEntity = cLux_GetCurrentMap().GetLatestEntity();
@@ -291,11 +297,16 @@ class cScrPropReadable : iScrProp, iScrProp_Interface
 		cScript_RunGlobalFunc("State_Interact_Grab","","_Global_VRSetReadableOwner");
         }
 		mbVRReading = true;
-		if (mpOpenEntity !is null)
+		if (mpOpenEntity !is null && !bVRRemoteSource)
 		{
 			mpOpenEntity.SetMatrix(mBaseObj.GetMatrix()); mpOpenEntity.SetActive(true);
 			mBaseObj.GetMeshEntity().SetVisible(false);
 		}
+        else if(bVRRemoteSource)
+        {
+            if(mpOpenEntity !is null)mpOpenEntity.SetActive(false);
+            mBaseObj.GetMeshEntity().SetVisible(true);
+        }
 		if (!mbIsRead) HeroStat_IncreaseAmount(eHeroStats_ReadDocuments,1);
 		if (msOpenSound != "") Sound_PlayGui(msOpenSound,1.0f);
         // Publish the actual readable body, including auxiliary-area forwards.

@@ -314,6 +314,20 @@ static void s26hg_pull_velocity(float* v,const float* gc,const float* cp,float m
     for(i32 i=0;i<3;i++)v[i]+=delta[i]*(dv>cap?cap/dv:1.0f);
 }
 
+/* Observation only: bounded one-line outcomes, no changes to pull policy. */
+static u32 g_s26hnOutcomes;
+static char g_s26hnName[2][96];
+static void s26hn_outcome(i32 hand,const char* reason,float gap,const void* blocker){
+    S26HDPull* p=&g_s26hdPull[hand];
+    if(!g_s26hdRemoteEnabled||!p->body||g_s26hnOutcomes>=48u)return;
+    char blockName[96]={0};void* w=blocker&&p_h14GetUserData?p_h14GetUserData(blocker):0;
+    if(w&&h20_mem_readable(w,0x2f0u)&&*(const void**)((u8*)w+0x2e8)==blocker){
+        const char* name=*(const char**)((u8*)w+0x10);if(name)h21_copy_ascii(name,blockName,sizeof(blockName));
+    }
+    g_s26hnOutcomes++;
+    ext_Log(">>> S26HN REMOTE OUTCOME #%u hand %d name %s reason %s age %.3f gap %.4f readStage %u raw %p blocker %p blockerName %s held %p pending %u nativeBusy %d state %s",
+       g_s26hnOutcomes,hand,g_s26hnName[hand],reason,p->age,gap,g_s26hlReadStage[hand],p->body,blocker,blockName,g_h14GripBody[hand],g_h25PendingValid[hand],s26hk_remote_native_busy(),g_h5729LastClassName);
+}
 static void s26hd_grab(i32 hand,const float* handM,const void* scanPtr,i32 edge,i32 pressed,float dt){
     g_s26hlHeld[hand]=(u8)pressed;
     if(!g_s26hdPull[hand].body){g_s26hlReadStage[hand]=0;g_s26hlReadId[hand]=0;}
@@ -321,26 +335,29 @@ static void s26hd_grab(i32 hand,const float* handM,const void* scanPtr,i32 edge,
     S26HDPull* p=&g_s26hdPull[hand];const H14Scan* scan=(const H14Scan*)scanPtr;
     float metric=h5755ea_world_units_per_meter();
     if(!g_s26hdRemoteEnabled||!p2_xr_running()||!s26hk_remote_state()||g_s26CutsceneHandsHidden||!visual_pose_valid(hand)||g_h14GripBody[hand]||s26hk_remote_native_busy()||g_h25PendingValid[hand]||g_s26hdLaserHand==hand||h5730_exact_terminal_state(0,0,0,0)){
-        zero_bytes(p,sizeof(*p));zero_bytes(&g_s26hgFocus[hand],sizeof(g_s26hgFocus[hand]));g_s26hdHover[hand]=0;return;
+        s26hn_outcome(hand,"state/input ownership",-1,0);zero_bytes(p,sizeof(*p));zero_bytes(&g_s26hgFocus[hand],sizeof(g_s26hgFocus[hand]));g_s26hdHover[hand]=0;return;
     }
     if(p->body){
         if(g_s26hlReadStage[hand]==1)return;
-        if(!pressed||!(dt>0&&dt<0.1f)||p->age>3.0f||!s26hd_live(p,metric)){zero_bytes(p,sizeof(*p));return;}
+        if(!pressed||!(dt>0&&dt<0.1f)||p->age>3.0f||!s26hd_live(p,metric)){s26hn_outcome(hand,!pressed?"grip released":(!(dt>0&&dt<0.1f)?"invalid timestep":(p->age>3.0f?"timeout":"body lifetime")),-1,0);zero_bytes(p,sizeof(*p));return;}
         void* wrapper=0,*owner=0;float mass=0;
-        if(!s26hd_loose(p->body,&wrapper,&owner,&mass)||wrapper!=p->wrapper||owner!=p->owner){zero_bytes(p,sizeof(*p));return;}
+        if(!s26hd_loose(p->body,&wrapper,&owner,&mass)||wrapper!=p->wrapper||owner!=p->owner){s26hn_outcome(hand,"eligibility changed",-1,0);zero_bytes(p,sizeof(*p));return;}
         p->age+=dt;float gc[3],cp[3],gap,bm[16];
-        if(!h15_grip_center_world(hand,handM,gc)||!h14_point_to_body(p->body,gc,&gap,cp)){zero_bytes(p,sizeof(*p));return;}
+        // Only an already-authorized remote pull uses the validated interior
+        // result. An interior catch point has zero gap, not a failed query.
+        // Ordinary contact selection and hand collision helpers are unchanged.
+        if(!h15_grip_center_world(hand,handM,gc)||!s26eq_return_point(p->body,gc,&gap,cp)){s26hn_outcome(hand,"closest point failed",-1,0);zero_bytes(p,sizeof(*p));return;}
         p_h14GetMatrix(p->body,bm);h10_copy_f(p->last,bm+12,3);
         S26HDHit path=s26hd_ray(gc,cp);
-        if(!s26hl_same_free_prop(p->body,path.body,p->owner)){zero_bytes(p,sizeof(*p));return;}
+        if(!s26hl_same_free_prop(p->body,path.body,p->owner)){s26hn_outcome(hand,"obstructed",gap,path.body);zero_bytes(p,sizeof(*p));return;}
         s26hd_beam(hand,gc,cp,1);
         /* Only the previously selected body can complete this delayed pickup.
            Existing contact eligibility, callbacks and grab solver own handoff. */
-        if(gap<0.08f*metric&&h560_try_loose_latch(hand,p->body,scan,handM,0)){zero_bytes(p,sizeof(*p));return;}
+        if(gap<0.08f*metric&&h560_try_loose_latch(hand,p->body,scan,handM,0)){s26hn_outcome(hand,"caught",gap,0);zero_bytes(p,sizeof(*p));return;}
         s26he_nominate(hand,p->body,wrapper,owner);
         float v[4]={0};p_h14GetVelocity(p->body,v);
         s26hg_pull_velocity(v,gc,cp,metric,dt);
-        S26HLAssembly assembly;if(!s26hl_assembly(p->body,p->owner,&assembly)){zero_bytes(p,sizeof(*p));return;}
+        S26HLAssembly assembly;if(!s26hl_assembly(p->body,p->owner,&assembly)){s26hn_outcome(hand,"assembly changed",gap,0);zero_bytes(p,sizeof(*p));return;}
         float original[4]={0};p_h14GetVelocity(p->body,original);
         for(u32 k=0;k<assembly.count;k++){
             float velocity[4]={0};p_h14GetVelocity(assembly.body[k],velocity);
@@ -361,6 +378,8 @@ static void s26hd_grab(i32 hand,const float* handM,const void* scanPtr,i32 edge,
     s26he_nominate(hand,hit.body,wrapper,owner);
     if(!edge||g_s26hdPull[1-hand].owner==owner)return;
     p->body=hit.body;p->wrapper=wrapper;p->owner=owner;p->age=0;
+    g_s26hnName[hand][0]=0;
+    if(h20_mem_readable(wrapper,0x18u)){const char* name=*(const char**)((u8*)wrapper+0x10);if(name)h21_copy_ascii(name,g_s26hnName[hand],sizeof(g_s26hnName[hand]));}
     i32 icon=-1;void* on=0;void* w=0,*o=0;
     if(s26hd_target(hit.body,&w,&o,&icon,&on)&&icon==22){
         g_s26hlReadStage[hand]=1;h10_copy_f(g_s26hlReadPoint[hand],b,3);

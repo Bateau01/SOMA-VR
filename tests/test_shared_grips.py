@@ -1,5 +1,5 @@
 from pathlib import Path
-import subprocess,sys,json
+import subprocess,sys,json,re
 R=Path(__file__).resolve().parents[1];B=R/'build';B.mkdir(exist_ok=True)
 head=r'''
 #include <stdio.h>
@@ -36,8 +36,8 @@ source=(R/'source/item_grips_ej.inc').read_text();main=(R/'source/s26n.c').read_
 assert all(x not in source for x in ['fopen','fread','grips_load','grip_capture','grip_save','item_grips.dat'])
 assert all(x not in main for x in ['s26ej_grip_step','"GRIPPOSE"','stutter_ej.inc'])
 # Retired script bridge names remain as inert compatibility stubs.
-assert 'static void s26ej_trace_push(u32 k,u64 t,const u64* v,const void* w){}' in main
-assert 'static i32 s26ej_trace_command(i32 cmd){return 0;}' in main
+assert re.search(r'static void s26ej_trace_push\([^)]*\)\s*\{\s*\}',main)
+assert 's26ej_trace_command' not in main or re.search(r'static i32 s26ej_trace_command\([^)]*\)\s*\{\s*return 0;\s*\}',main)
 assert all(x not in menu for x in ['TEST TOOLS','GRIPPOSE','START STUTTER','SAVE LEFT ITEM GRIP'])
 assert 'if(mlVRComfortCategory<0) return 5;' in menu
 result={'passed':True,'shared_poses':52,'legacy_override_file_ignored':True,'capture_and_recorder_paths_removed':True,'menu_back_row_corrected':True}

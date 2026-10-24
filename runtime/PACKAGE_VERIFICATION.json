@@ -1,18 +1,9 @@
 {
-  "version": "1.0.8-S26HQ",
-  "build": 2026101615,
-  "tests": {
-    "real_GL_pixels_state_eye_immutability_transition_guards": "PASS four resolution/MSAA configurations",
-    "Steam_Epic_GOG_compile": "PASS",
-    "menu_observer": "PASS",
-    "monitor_bounds_geometry": "PASS 765 cases; taskbar work-area exclusion removed",
-    "live_headset_desktop_pause_resume": "PASS user confirmed improved framing, bottom strip gone, pause/resume correct on 2026-10-16"
-  },
-  "limitations": [
-    "GPU times are isolated synthetic mirror-only timings, not whole-game FPS.",
-    "Binocular blending can show close-object parallax; not a depth-correct third camera."
-  ],
-  "observations": [
-    "Renderer-refresh warnings and intermittent stale gaze samples remain in the session log; no mirror initialization failure. No claim of a warning-free session."
+  "version": "1.0.9-S26IW",
+  "status": "candidate; headset comparison pending",
+  "change": "Unified anti-aliasing selection and VIDEO ordering; no gameplay changes",
+  "tests": "docs/FOLLOWUP_IV.md",
+  "open": [
+    "Human comfort/quality comparison and other GPU vendors remain unverified"
   ]
 }

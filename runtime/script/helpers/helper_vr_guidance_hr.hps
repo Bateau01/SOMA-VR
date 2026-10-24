@@ -1,0 +1,155 @@
+// Graphics-only guide. The caller owns native eligibility and world lifetime.
+// No Lux entity, script callbacks, Newton body, inventory or gameplay interaction.
+class cVRGuideMesh
+{
+    cMeshEntity@ mpMesh=null;
+    tString msMeshFile="";
+    tID mMeshID=tID_Invalid;
+    bool Live(){return mpMesh !is null && cLux_ID_MeshEntity(mMeshID) is mpMesh;}
+    void Hide(){if(Live()) mpMesh.SetVisible(false);}
+    // Must run while the owning world is alive. Never carry this across maps.
+    void Dispose(cWorld@ world)
+    {
+        if(Live() && world !is null)
+        {
+            for(int i=0;i<mpMesh.GetSubMeshEntityNum();i++)
+                mpMesh.GetSubMeshEntity(i).SetCustomMaterial(null,true);
+            world.DestroyMeshEntity(mpMesh);
+        }
+        @mpMesh=null;msMeshFile="";mMeshID=tID_Invalid;
+    }
+    bool Show(cWorld@ world,const tString &in name,const tString &in meshFile,const cMatrixf &in transform)
+    {
+        if(world is null || meshFile=="") { Hide();return false; }
+        if(mpMesh !is null && !Live()){@mpMesh=null;msMeshFile="";mMeshID=tID_Invalid;}
+        if(mpMesh !is null && msMeshFile!=meshFile) Dispose(world);
+        if(mpMesh is null)
+        {
+            cMesh@ mesh=cResources_CreateMesh(meshFile);
+            if(mesh is null)return false;
+            @mpMesh=world.CreateMeshEntity(name,mesh,false);
+            if(mpMesh is null){cResources_DestroyMesh(mesh);return false;}
+            msMeshFile=meshFile;mMeshID=mpMesh.GetID();
+            mpMesh.SetScriptableIsSaved(false);mpMesh.SetVisible(false);
+            mpMesh.SetIsOccluder(false);
+            mpMesh.SetRenderFlagBit(eRenderableFlag_ShadowCaster,false);
+            mpMesh.SetRenderFlagBit(eRenderableFlag_VisibleInReflection,false);
+            mpMesh.SetRenderFlagBit(eRenderableFlag_VisibleInNonReflection,true);
+            mpMesh.Stop();
+            for(int i=0;i<mpMesh.GetSubMeshEntityNum();i++)
+            {
+                // Separate resource-manager acquisition for each custom owner.
+                cMaterial@ mat=cResources_CreateMaterial("entities/soma_vr/guidance/guide.mat");
+                if(mat is null){Dispose(world);return false;}
+                mpMesh.GetSubMeshEntity(i).SetCustomMaterial(mat,true);
+            }
+        }
+        mpMesh.SetWorldMatrix(transform);mpMesh.SetVisible(true);return true;
+    }
+    // HT: copy the visible native destination, not the physics/container origin.
+    // delta maps current world geometry to the authored final world geometry.
+    // All writes below target this graphics-only clone. No native body is moved.
+    bool ShowNative(cWorld@ world,const tString &in name,const tString &in file,
+                    cMeshEntity@ source,const cMatrixf &in delta,const tString &in onlySubMesh="")
+    {
+        if(source is null){Hide();return false;}
+        if(!Show(world,name,file,cMath_MatrixMul(delta,source.GetWorldMatrix())))return false;
+        if(mpMesh.GetSubMeshEntityNum()!=source.GetSubMeshEntityNum() ||
+           mpMesh.GetBoneStateNum()!=source.GetBoneStateNum()){Hide();return false;}
+        for(int b=0;b<mpMesh.GetBoneStateNum();b++){
+            mpMesh.GetBoneState(b).SetActive(false);
+            mpMesh.GetBoneState(b).SetMatrix(source.GetBoneState(b).GetLocalMatrix());
+        }
+        if(mpMesh.GetBoneStateNum()>0){
+            mpMesh.GetBoneStateRoot().UpdateMatrix(true);
+            mpMesh.PostUpdateLogic(0.0f);
+        }
+        bool visible=false;
+        for(int s=0;s<mpMesh.GetSubMeshEntityNum();s++){
+            cSubMeshEntity@ src=source.GetSubMeshEntity(s);
+            cSubMeshEntity@ dst=mpMesh.GetSubMeshEntity(s);
+            bool show=onlySubMesh=="" || src.GetSubMesh().GetName()==onlySubMesh;
+            dst.SetWorldMatrix(cMath_MatrixMul(delta,src.GetWorldMatrix()));
+            dst.SetVisible(show);visible=visible || show;
+        }
+        if(!visible)Hide();
+        return visible;
+    }
+}
+
+// Uses the same family/rig as the current player, without sampling tracked curls.
+float VRGuide_Metric(){if(!cScript_RunGlobalFunc("VRGUIDE","","SCALE"))return 1.0f;return cScript_GetGlobalReturnVector3f().x;}
+class cVRHandGuide
+{
+    cVRGuideMesh mGuide;
+    bool ShowFlower(cWorld@ world,const tString &in name,const cVector3f &in rim,const cVector3f &in axis,int hand,bool fist)
+    {
+        float metric=VRGuide_Metric();
+        cMatrixf frame=VRGuide_FlowerFrame(rim,axis,fist);
+        if(!Show(world,name,frame,hand,fist,!fist))return false;
+        if(!cScript_RunGlobalFunc("VRGUIDEH","","CONTACT")){Hide();return false;}
+        // IM: global return storage is shared. Snapshot CONTACT before any
+        // other bridge call; SCALE otherwise replaces it during expression evaluation.
+        cVector3f local=cScript_GetGlobalReturnVector3f();
+        local*=metric;
+        cVector3f anchor=cMath_MatrixMul(frame,local);
+        // Index distal joint ends just behind the fingertip skin. Fist knuckle
+        // enters 15mm; the palm remains outside. Native healing target untouched.
+        cVector3f target=rim+axis*((fist ? -.015f : .014f)*metric);
+        frame.SetTranslation(frame.GetTranslation()+target-anchor);
+        mGuide.mpMesh.SetWorldMatrix(cMath_MatrixMul(frame,cMath_MatrixScale(metric)));
+        return true;
+    }
+    void Hide(){mGuide.Hide();}
+    void Dispose(cWorld@ world){mGuide.Dispose(world);}
+    bool Show(cWorld@ world,const tString &in name,const cMatrixf &in transform,int hand,bool fist,bool pointing=false)
+    {
+        if(!cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true) ||
+           !cScript_RunGlobalFunc("VRGUIDE","","ACTIVE")){Hide();return false;}
+        int family=-1;
+        for(int f=0;f<4;f++)if(cScript_RunGlobalFunc("VRMESH",""+f,"F")){family=f;break;}
+        if(family<0 || hand<0 || hand>1){Hide();return false;}
+        array<tString> names={"human","diving","deepsea","deepsea_mutilated"};
+        tString side=hand==0 ? "left" : "right";
+        cMatrixf scaled=cMath_MatrixMul(transform,cMath_MatrixScale(VRGuide_Metric()));
+        if(!mGuide.Show(world,name,"entities/soma_vr/s26f/hand_"+names[family]+"_"+side+".dae",scaled))return false;
+        for(int b=0;b<mGuide.mpMesh.GetBoneStateNum();b++)mGuide.mpMesh.GetBoneState(b).SetActive(false);
+        bool ok=false;
+        if(cScript_RunGlobalFunc("VRGUIDEH",""+hand,pointing ? "P" : (fist ? "F" : "O"))){
+            mGuide.mpMesh.SetCoverageAmount(1.0f);
+            ok=cScript_RunGlobalFunc("VRGUIDEH","","R");
+        }
+        if(ok){mGuide.mpMesh.GetBoneStateRoot().UpdateMatrix(true);mGuide.mpMesh.PostUpdateLogic(0.0f);}
+        else Hide();
+        return ok;
+    }
+}
+
+// Hand meshes extend along local -Y and bend toward local -Z.
+// Open palm faces the surface; closed knuckles point into its opening.
+cMatrixf VRGuide_HandFrame(const cVector3f &in point,const cVector3f &in outward,bool fist)
+{
+    cVector3f n=cMath_Vector3Normalize(outward);
+    cVector3f reference=cVector3f(0,1,0);
+    if(cMath_Abs(n.y)>0.9f)reference=cVector3f(0,0,1);
+    cVector3f right=cMath_Vector3Normalize(cMath_Vector3Cross(reference,n));
+    cVector3f tangent=cMath_Vector3Normalize(cMath_Vector3Cross(n,right));
+    cMatrixf frame=cMatrixf_Identity;
+    frame.SetRight(right);frame.SetUp(fist ? n : tangent);
+    frame.SetForward(fist ? tangent*(-1.0f) : n);
+    frame.SetTranslation(point+n*((fist ? 0.04f : 0.025f)*VRGuide_Metric()));return frame;
+}
+
+
+// IK: flower guides point along -local Y into the mouth. Unlike the legacy
+// palm-on-seat frame, write local-to-world axes as columns. Visual only.
+cMatrixf VRGuide_FlowerFrame(const cVector3f &in rim,const cVector3f &in outward,bool fist)
+{
+    cVector3f y=cMath_Vector3Normalize(outward);
+    cVector3f up(0,1,0);if(cMath_Abs(y.y)>.9f)up=cVector3f(0,0,1);
+    cVector3f x=cMath_Vector3Normalize(cMath_Vector3Cross(y,up));
+    cVector3f z=cMath_Vector3Normalize(cMath_Vector3Cross(x,y));
+    cMatrixf m=cMatrixf_Identity;
+    m.SetRight(cVector3f(x.x,y.x,z.x));m.SetUp(cVector3f(x.y,y.y,z.y));m.SetForward(cVector3f(x.z,y.z,z.z));
+    m.SetTranslation(rim+y*((fist ? .105f : .205f)*VRGuide_Metric()));return m;
+}

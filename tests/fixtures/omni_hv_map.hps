@@ -1,0 +1,38 @@
+    void HVCheck(bool ok,const tString &in label){LogNewLine((ok ? "HV_PASS|" : "HV_FAIL|")+label);}
+    void HVHeld(bool held){cScript_SetGlobalArgBool(0,held);cScript_RunGlobalFunc("PlayerToolHandler","","_Global_HVHeld");}
+    bool HVGuide(){cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("cath_terminal_1","cScrPropOmniSlot","_Global_HVProbe");return cScript_GetGlobalReturnBool();}
+    void HVProbe(const tString &in timer){
+        // Native acquisition is invoked through its real entity callback.
+        // Controller tracking/held observation is synthetic; no physical grip proof.
+        panel_techroom_power_OnConnectionStateChange("panel_techroom_power",1);
+        HVCheck(mbPowerOn && Entity_IsActive("cath_terminal_1"),"native power-on enables slot");
+        HVHeld(false);HVCheck(!HVGuide(),"before acquisition");
+        Entity_CallEntityInteract("OmniTool");
+        HVCheck(Player_ToolIsInInventory("OmniTool"),"native pickup inventory");
+        HVCheck(mbOmniToolPickedUp,"native pickup callback");
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_HVInventory");
+        cScript_RunGlobalFunc("OmniTool","cScrPropCatherineTool","_Global_VRShoulderStore");HVCheck(cScript_GetGlobalReturnBool(),"native shoulder store");
+        HVCheck(!HVGuide(),"stowed hidden");
+        cScript_RunGlobalFunc("OmniTool","cScrPropCatherineTool","_Global_VRShoulderDraw");HVCheck(cScript_GetGlobalReturnBool(),"native shoulder draw");
+        cLuxProp@ tool=Map_GetProp("OmniTool");
+        // Place the tracked carrier near the socket; do not insert it.
+        cMatrixf pose=tool.GetMatrix();pose.SetTranslation(Map_GetEntity("cath_terminal_1").GetMatrix().GetTranslation()+cVector3f(0,.3f,0));tool.SetMatrix(pose);
+        HVHeld(true);HVCheck(HVGuide(),"retrieved guide");
+        HVHeld(false);HVCheck(!HVGuide(),"released hidden");
+        HVHeld(true);Entity_SetActive("AreaInsertOmniTool_TechRoom",false);HVCheck(!HVGuide(),"inactive target hidden");
+        Entity_SetActive("AreaInsertOmniTool_TechRoom",true);Entity_SetInteractionDisabled("AreaInsertOmniTool_TechRoom",true);HVCheck(!HVGuide(),"disabled target hidden");
+        Entity_SetInteractionDisabled("AreaInsertOmniTool_TechRoom",false);HVCheck(HVGuide(),"recovery guide");
+        HVCheck(!mbOmniToolInserted && !mbOmnitoolPlacedOnce,"guide did not use item");
+        HVCheck(OmniTool_CanBeUsed("OmniTool","AreaInsertOmniTool_TechRoom"),"native authorization");
+        // Execute the production script transaction with a supplied held observation.
+        tString useTarget="AreaInsertOmniTool_TechRoom";cScript_SetGlobalArgString(0,useTarget);
+        cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRPhysicalOmniUseSlot");
+        HVCheck(cScript_GetGlobalReturnBool(),"native use transaction");
+        HVCheck(!Player_ToolIsInInventory("OmniTool"),"consumed initial inventory");
+        HVCheck(mbOmniToolInserted && mbOmnitoolPlacedOnce && mbTerminalsUnlocked,"native progression");
+        HVCheck(!HVGuide(),"completed target hidden");
+        cScript_RunGlobalFunc("cath_terminal_1","cScrPropOmniSlot","_Global_HVAlignment");
+        HVCheck(cScript_GetGlobalReturnBool(),"guide matches inserted native mesh");
+        LogNewLine("HV_DONE");cEngine_Exit();
+    }
+

@@ -1,8 +1,11 @@
 /* Story phone only. Exact GetMainBody capture, bounded script lease, no scans. */
+typedef struct {float p[3];u32 step;i32 valid;} S26HRPhoneSample;
+static S26HRPhoneSample g_s26hrPhoneSample[2];
 static i32 s26x_phone_gate(void){
     return g_h576mScriptRuntimePublished==1&&p2_xr_on()&&p2_xr_running()&&!g_h576bfMapTransitionActive&&g_h5753cAuthorityEnabled&&!h5754h_pause_active()&&g_lastSyncResult==0;
 }
 static void s26x_phone_reset(void){
+    zero_bytes(g_s26hrPhoneSample,sizeof(g_s26hrPhoneSample));
     g_s26xPhoneActive=0;g_s26xPhonePending=0;g_s26xPhoneRequest=0;g_s26xPhoneCapture=0;
     g_s26xPhoneRaw=0;g_s26xPhoneWrapper=0;g_s26xPhoneWorld=0;g_s26xPhoneCaptured=0;
     g_s26xPhoneTap=0;g_s26xPhoneAnswered=0;g_s26xPhoneGripArmed=0;
@@ -30,7 +33,7 @@ static i32 s26x_phone_token(const H5730TString* command){
     if(h5748t_sso_eq(command,"D",1u)){
         g_s26xPhoneCapture=0;
         if(!g_s26xPhoneCaptured)return 0;
-        if(g_s26xPhoneRaw!=g_s26xPhoneCaptured)g_s26xPhoneTapArmed[0]=g_s26xPhoneTapArmed[1]=0;
+        if(g_s26xPhoneRaw!=g_s26xPhoneCaptured){g_s26xPhoneTapArmed[0]=g_s26xPhoneTapArmed[1]=0;zero_bytes(g_s26hrPhoneSample,sizeof(g_s26hrPhoneSample));}
         g_s26xPhoneRaw=g_s26xPhoneCaptured;g_s26xPhoneWrapper=p_h14GetUserData(g_s26xPhoneRaw);g_s26xPhoneWorld=g_h14NewtonWorld;
         return s26x_phone_body_valid();
     }
@@ -73,10 +76,28 @@ static void s26x_phone_grip(i32 valid,i32 occupied,i32 active,float squeeze){
     if(squeeze<.28f){g_s26xPhoneGripArmed=1;g_s26xPhoneRequest=0;}
     if(squeeze>.55f&&g_s26xPhoneGripArmed){g_s26xPhoneGripArmed=0;g_s26xPhoneRequest=1;}
 }
+/* Phone-body-local metres. Intersect only consecutive, bounded front-to-back
+   samples with the existing fingertip contact band, retaining its UV/rearm
+   rules. This handles a fast tap without enlarging either GUI button. */
+static i32 s26hr_phone_sample(float x,float y,float z,float radius,i32* armed,S26HRPhoneSample* prev,u32 step){
+    if(!h9_good(x,100.0f)||!h9_good(y,100.0f)||!h9_good(z,100.0f)||!h9_good(radius,.1f)||radius<0){prev->valid=0;*armed=0;return 0;}
+    float plane=.00689458f+radius+.012f;
+    i32 hit=0;
+    if(prev->valid&&(u32)(step-prev->step)==1u&&*armed&&prev->p[1]>plane&&y<=plane){
+        float dx=x-prev->p[0],dy=y-prev->p[1],dz=z-prev->p[2];
+        if(dx*dx+dy*dy+dz*dz<=.15f*.15f){
+            float t=(plane-prev->p[1])/dy;
+            hit=s26x_phone_hit(prev->p[0]+dx*t,plane-.000001f,prev->p[2]+dz*t,radius,armed);
+        }
+    }
+    prev->p[0]=x;prev->p[1]=y;prev->p[2]=z;prev->step=step;prev->valid=1;
+    return hit?hit:s26x_phone_hit(x,y,z,radius,armed);
+}
 static void s26x_phone_step(float dt){
     if(!g_s26xPhoneActive)return;
     if(g_h576bfMapTransitionActive||g_h14PhysicsSteps-g_s26xPhoneLease>s26gd_steps(60u)){s26x_phone_reset();return;}
     if(!s26x_phone_gate()){
+        zero_bytes(g_s26hrPhoneSample,sizeof(g_s26hrPhoneSample));
         g_s26xPhoneGripArmed=0;g_s26xPhoneRequest=0;g_s26xPhoneTap=0;g_s26xPhoneTapArmed[0]=g_s26xPhoneTapArmed[1]=0;return;
     }
     if(g_s26xPhonePending){
@@ -89,14 +110,14 @@ static void s26x_phone_step(float dt){
     if(g_s26xPhoneAnswered||g_s26xPhoneTap||!s26x_phone_body_valid()||!p_h14GetMatrix)return;
     float bm[16];p_h14GetMatrix(g_s26xPhoneRaw,bm);
     for(i32 h=0;h<2;++h){
-        if(g_h14GripBody[h]||!visual_pose_valid(h)||h10_raw_finger_input(h,1)>H48_POKE_INDEX_CURL_MAX){g_s26xPhoneTapArmed[h]=0;continue;}
+        if(g_h14GripBody[h]||!visual_pose_valid(h)||h10_raw_finger_input(h,1)>H48_POKE_INDEX_CURL_MAX){g_s26xPhoneTapArmed[h]=0;g_s26hrPhoneSample[h].valid=0;continue;}
         float visible[16],c[4],pts[5][3];i32 len=0;
-        if(!h5755cu_render_hand_model(h,visible)){g_s26xPhoneTapArmed[h]=0;continue;}
+        if(!h5755cu_render_hand_model(h,visible)){g_s26xPhoneTapArmed[h]=0;g_s26hrPhoneSample[h].valid=0;continue;}
         for(i32 j=0;j<4;++j)c[j]=h18_joint_input(h,1,j);
-        if(!h18_finger_points_world(h,1,c,visible,pts,&len)||len<1||len>4)continue;
+        if(!h18_finger_points_world(h,1,c,visible,pts,&len)||len<1||len>4){g_s26xPhoneTapArmed[h]=0;g_s26hrPhoneSample[h].valid=0;continue;}
         float d[3]={pts[len][0]-bm[12],pts[len][1]-bm[13],pts[len][2]-bm[14]};
         float x=d[0]*bm[0]+d[1]*bm[1]+d[2]*bm[2],y=d[0]*bm[4]+d[1]*bm[5]+d[2]*bm[6],z=d[0]*bm[8]+d[1]*bm[9]+d[2]*bm[10];
-        i32 hit=s26x_phone_hit(x,y,z,h572_index_skin_radius(h,len),&g_s26xPhoneTapArmed[h]);
+        i32 hit=s26hr_phone_sample(x,y,z,h572_index_skin_radius(h,len),&g_s26xPhoneTapArmed[h],&g_s26hrPhoneSample[h],g_h14PhysicsSteps);
         if(hit){g_s26xPhoneTap=hit;h576ac_queue_haptic(h,H576AC_HAPTIC_CONFIRM);ext_Log(">>> S26X PHONE: screen tap hand %d action %d",h,hit);break;}
     }
 }

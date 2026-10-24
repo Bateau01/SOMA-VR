@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/RichPresenceHandler_Types.hps"
 #include "helpers/helper_game.hps"
@@ -71,6 +72,8 @@ float gfScienceSlideTime_2 = 4;
 
 class cScrMap : iScrMap
 {
+ [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
 	//------------------------------------------------------------
 	
 	/////////////////////////////////////////
@@ -411,8 +414,24 @@ class cScrMap : iScrMap
 
 	////////////////////////////
 	// Run when entering map
-	void OnEnter()
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("LadderArea_1",cVector3f(0.1130297f,-2.4715840f,0.0313772f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(-0.0000000f,0.0119088f,0.9999291f));
+
+        mVRTraversalHY.Add("LadderArea_1",cVector3f(-0.3390303f,4.0035467f,-0.2968620f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.7018274f,0.7123471f,-0.0000000f));
+
+    }
+
+void OnEnter()
 	{
+        // HY ladder surfaces: source triangles recorded in ladder_coverage_hy.json.
+        mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        
+        
+
+
 		MainMenu_SetBGPhase(eMainMenuPhase_1_3_To_2_4);
 		
 		//Effect_Fade_In(2);
@@ -430,12 +449,14 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+ mVRTraversalHY.Dispose();
 	}
 	
 	//-------------------------------------------------------
 	
 	void Update(float afTimeStep)
 	{
+ EnsureVRTraversalIA();mVRTraversalHY.Update(afTimeStep);
 		if (EyeTracking_IsEnvironmentReactive() && EyeTracking_IsEntityBeingLookedAt("AmyTalkTrigger") && mbSpottedAmy == false)
 		{
 			Audio_SpotAmy();

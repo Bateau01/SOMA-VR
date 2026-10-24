@@ -1,7 +1,9 @@
 from pathlib import Path
 import subprocess,sys,json
 R=Path(__file__).resolve().parents[1];s=(R/'source/s26n.c').read_text(encoding='utf-8')
-a=s.index('static i32 s26cr_refresh_native_gui(');b=s.index('static void s26cr_rebuild_native_menu(',a)
+a=s.index('static i32 s26cr_refresh_native_gui(');b=s.index('{',a);depth=1;b+=1
+while depth:
+ depth+=(s[b]=='{')-(s[b]=='}');b+=1
 c=r'''
 #include <windows.h>
 #include <stdio.h>

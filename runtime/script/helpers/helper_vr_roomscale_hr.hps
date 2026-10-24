@@ -1,0 +1,41 @@
+// Horizontal physical movement only. No force, velocity, input or story mutation.
+// A 1 cm maximum substep is far smaller than the active character's width.
+cVector3f HPL3VR_RoomscaleMove(iCharacterBody@ body,const cVector3f &in delta, bool vrCommit=false)
+{
+    if(body is null || delta.Length()>.101f || cMath_Abs(delta.y)>.00001f)return cVector3f_Zero;
+    cVector3f start=body.GetPosition(),at=start,push;
+    if(!body.CheckCharacterFits(start,false,-1,push))return cVector3f_Zero;
+    int steps=int(delta.Length()/.01f)+1;
+    if(steps<1 || steps>11)return cVector3f_Zero;
+    cVector3f step=delta/float(steps);
+    for(int i=0;i<steps;i++){
+        cVector3f previous=at;
+        cVector3f next=at+step;
+        if(body.CheckCharacterFits(next,false,-1,push))at=next;
+        else {
+            // Native overlap correction supplies a contact direction. Slide in
+            // its horizontal tangent, never a fixed world-X/world-Z order.
+            // Every candidate is checked; ambiguous/vertical-only contact stops.
+            cVector3f slide=step;
+            for(int plane=0;plane<2;plane++){
+                push.y=0;
+                float n2=push.x*push.x+push.z*push.z;
+                if(!(n2>.0000000001f && n2<100.0f))break;
+                float dot=slide.x*push.x+slide.z*push.z;
+                if(dot>=0)break;
+                slide=slide-push*(dot/n2);
+                if(!(slide.Length()>.000001f && slide.Length()<=step.Length()+.000001f))break;
+                next=at+slide;
+                if(body.CheckCharacterFits(next,false,-1,push)){at=next;break;}
+            }
+        }
+        if(cMath_Vector3Dist(previous,at)<.000001f)break;
+    }
+    if(cMath_Vector3Dist(start,at)>.000001f){
+        if(vrCommit){
+            cVector3f d=at-start;
+            if(!cScript_RunGlobalFunc("VRROOM",""+d.x+","+d.y+","+d.z,"APPLY"))return cVector3f_Zero;
+        }else body.SetPosition(at,false);
+    }
+    return body.GetPosition()-start;
+}

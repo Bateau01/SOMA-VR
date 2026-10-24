@@ -1,0 +1,13 @@
+    bool VR_WorldControlsAllowed()
+    {
+        if(mlPreviousState!=ePlayerState_Normal)return false;
+        if(!mbVRLeaveOwnsSequence)return true;
+        cLuxMap@ map=cLux_GetCurrentMap();
+        cLuxProp@ terminal=cLux_ID_Prop(mPropID);
+        if(map is null || terminal is null)return false;
+        tString signature="bool VR_CanLeaveTerminalForPhysicalPickup(const tString &in asEntityName)";
+        if(!map.ScriptMethodExists(signature) || !map.ScriptPrepare(signature))return false;
+        tString name=terminal.GetName();map.SetArgString(0,name);
+        return map.ScriptExecute() && map.GetReturnBool();
+    }
+	void Exit()

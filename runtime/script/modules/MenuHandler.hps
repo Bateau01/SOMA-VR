@@ -1000,6 +1000,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     [nosave] bool mbVRHideShake=false;
     [nosave] bool mbVRHideMovementBob=false;
     [nosave] bool mbVRTextureBudget=false;
+    [nosave] bool mbVRSMAA=false, mbVRSMAAOverride=false;
+    [nosave] tString msVRAALast="";
     [nosave] bool mbVR120Mode=false;
     [nosave] bool mbVR120Pending=false;
     [nosave] bool mbVR120Target=false;
@@ -1051,6 +1053,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(profile==2) { buttons[0]="RIGHT PAD CLICK";buttons[1]="RIGHT MENU";buttons[2]="LEFT MENU";buttons[3]="UNAVAILABLE";buttons[4]="LEFT PAD CLICK";buttons[5]="UNAVAILABLE"; }
         if(profile==3) { buttons[0]="RIGHT MENU";buttons[1]="RIGHT PAD CLICK";buttons[2]="LEFT MENU";buttons[3]="LEFT PAD CLICK"; }
         if(profile==4) { buttons[0]="UNAVAILABLE";buttons[1]="RIGHT MENU";buttons[2]="LEFT MENU";buttons[3]="UNAVAILABLE";buttons[4]="UNAVAILABLE";buttons[5]="UNAVAILABLE"; }
+        if(profile<0 && src<4)return "CONTROLLER NOT DETECTED";
         return buttons[src];
     }
     tString HPL3VR_BindingLabel(int role)
@@ -1094,6 +1097,13 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 
     void HPL3VR_LoadComfort()
     {
+        { cConfigFile@ p=cLux_GetUserConfig();
+            // One-time migration from the independent IU switch. Native preference is authoritative afterward.
+            if(gbHPL3VRRuntimeActive && !p.GetBool("SOMA_VR_Comfort","UnifiedAA",false)) {
+                if(p.GetBool("SOMA_VR_Comfort","SMAA",false)) p.SetString("Graphics","AntiAliasing","SMAA");
+                p.SetBool("SOMA_VR_Comfort","UnifiedAA",true);p.Save();
+            }
+        }
         if(!mbVRComfortLoaded)
         {
             cConfigFile@ p=cLux_GetUserConfig();
@@ -1136,6 +1146,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             if(!valid) for(int i=0;i<7;i++) mvVRButtonMap[i]=i==6 ? 14 : i;
             mbVRFingerTracking=p.GetBool("SOMA_VR_Comfort","FingerTrackingEnabled",true);
             mbVRDesktopMirror=p.GetBool("SOMA_VR_Comfort","DesktopMirror",true);
+            mbVRSMAA=p.GetString("Graphics","AntiAliasing","FXAA")=="SMAA";
             mbVRTextureBudget=p.GetBool("SOMA_VR_Comfort","TextureBudgetBoost",false);
             mbVRDynamicFoveation=p.GetBool("SOMA_VR_Comfort","DynamicFoveation",false);
             mlVRDFRPreset=p.GetInt("SOMA_VR_DFR","Preset",0);
@@ -1168,6 +1179,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         cScript_RunGlobalFunc("VRCOMFORT","A",""+mlVRMoveHand);
         cScript_RunGlobalFunc("VRCOMFORT","F",mbVRFingerTracking ? "1" : "0");
         cScript_RunGlobalFunc("VRCOMFORT","MIRROR",mbVRDesktopMirror ? "1" : "0");
+        cScript_RunGlobalFunc("VRCOMFORT","SMAA",mbVRSMAA ? "1" : "0");
+        HPL3VR_UpdateSMAA();
         cScript_RunGlobalFunc("VRCOMFORT","TB",mbVRTextureBudget ? "1" : "0");
         HPL3VR_ValidateDFR();
         cScript_RunGlobalFunc("VRCOMFORT","DFCFG",""+(10+mlVRDFRInner)+(25+mlVRDFROuter)+mlVRDFRRate+(mbVRDFRProtection?"1":"0"));
@@ -1207,6 +1220,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         p.SetBool("SOMA_VR_Comfort","DoubleTapSprint",mbVRDoubleTapSprint);
         p.SetBool("SOMA_VR_Comfort","FingerTrackingEnabled",mbVRFingerTracking);
         p.SetBool("SOMA_VR_Comfort","DesktopMirror",mbVRDesktopMirror);
+        p.SetBool("SOMA_VR_Comfort","SMAA",mbVRSMAA);
         p.SetBool("SOMA_VR_Comfort","TextureBudgetBoost",mbVRTextureBudget);
         p.SetBool("SOMA_VR_Comfort","DynamicFoveation",mbVRDynamicFoveation);
         p.SetInt("SOMA_VR_DFR","Preset",mlVRDFRPreset);
@@ -1235,8 +1249,34 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     }
     void HPL3VR_MenuHoldBegin() { mbVRMenuHeld=mbMenuActive && mbPauseMenuEnabled; mfVRMenuHoldTime=0; }
     void HPL3VR_MenuHoldEnd() { mbVRMenuHeld=false; mfVRMenuHoldTime=0; }
+    int HPL3VR_AASelection() {
+        tString value=cLux_GetUserConfig().GetString("Graphics","AntiAliasing","FXAA");
+        return value=="SMAA" ? 2 : (value=="FXAA" ? 1 : 0);
+    }
+    void HPL3VR_SetAA(int selection) {
+        cLux_GetUserConfig().SetString("Graphics","AntiAliasing",selection==2 ? "SMAA" : (selection==1 ? "FXAA" : "Off"));
+        HPL3VR_UpdateSMAA();
+    }
+    // Acquire effect each time; never retain a post-effect across map replacement.
+    void HPL3VR_UpdateSMAA()
+    {
+        if(!gbHPL3VRRuntimeActive) return;
+        tString aa=cLux_GetUserConfig().GetString("Graphics","AntiAliasing","FXAA");
+        bool changed=aa!=msVRAALast;
+        mbVRSMAA=aa=="SMAA";
+        if(changed){msVRAALast=aa;cScript_RunGlobalFunc("VRCOMFORT","SMAA",mbVRSMAA ? "1" : "0");}
+        if(!changed && !mbVRSMAA && !mbVRSMAAOverride) return;
+        bool ready=mbVRSMAA && cScript_RunGlobalFunc("VRCOMFORT","SMAA","READY");
+        iPostEffect@ effect=cLux_GetViewport().GetPostEffectComposite().GetPostEffectFromType("FXAA");
+        if(effect is null){msVRAALast="";cScript_RunGlobalFunc("VRCOMFORT","SMAA","DISARM");return;}
+        // Native AA preference controls the separate disabled flag as well as activity.
+        if(changed)effect.SetDisabled(aa!="FXAA");
+        if(ready){effect.SetActive(false);mbVRSMAAOverride=true;cScript_RunGlobalFunc("VRCOMFORT","SMAA","ARM");}
+        else if(mbVRSMAAOverride || changed){if(aa=="FXAA")effect.SetActive(true);else effect.SetActive(false);mbVRSMAAOverride=false;cScript_RunGlobalFunc("VRCOMFORT","SMAA","DISARM");}
+    }
     void HPL3VR_UpdateComfort(float dt)
     {
+        HPL3VR_UpdateSMAA();
         if(mbVRFingerResetPending && (!mbMenuActive || !mbVRComfortOpen || mlVRComfortCategory!=6))
         {
             cScript_RunGlobalFunc("VRCOMFORT","FTRESET","CANCEL");mbVRFingerResetPending=false;
@@ -1366,10 +1406,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     int HPL3VR_BackRow()
     {
         if(mlVRComfortCategory<0) return 5;
-        if(mlVRComfortCategory==2) return 10;
+        if(mlVRComfortCategory==2) return 11;
         if(mlVRComfortCategory==1) return 9;
         if(mlVRComfortCategory==7) return 8;
-        if(mlVRComfortCategory==0) return 12;
+        if(mlVRComfortCategory==0) return 14;
         if(mlVRComfortCategory==10)return 3;
         if(mlVRComfortCategory==8) return 2;
         if(mlVRComfortCategory==3) return 8;
@@ -1512,7 +1552,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             OptionMenu_UpdateExtraWidth("CALIBRATE STANDING HEIGHT",true);
             OptionMenu_UpdateExtraWidth("CENTER CAMERA",true);
         }
-        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE COLOUR SEPARATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); OptionMenu_UpdateExtraWidth("TEXTURE BUDGET BOOST",true); OptionMenu_UpdateExtraWidth("120HZ PHYSICS",true); size.y=550; }
+        if(mlVRComfortCategory==2) { OptionMenu_UpdateExtraWidth("HIDE CHROMATIC ABERRATION",true); OptionMenu_UpdateExtraWidth("HIDE HEAD AND HAND BOBBING",true); OptionMenu_UpdateExtraWidth("TEXTURE BUDGET BOOST",true); OptionMenu_UpdateExtraWidth("120HZ PHYSICS",true); size.y=550; }
         if(mlVRComfortCategory==9) { size.x=650;size.y=360; }
         if(mlVRComfortCategory==3) { size.y=470;for(int i=0;i<7;i++) OptionMenu_UpdateExtraWidth(HPL3VR_BindingLabel(i),true); }
         if(mlVRComfortCategory<0 || mlVRComfortCategory==4) size.y=440;
@@ -1584,6 +1624,13 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             if(HPL3VR_Option("CENTER CAMERA",10)) cScript_RunGlobalFunc("VRCOMFORT","R","C");
             bool interaction=HPL3VR_Toggle("INTERACTION LASER POINTER",11,mbVRInteractionLaser);
             changed=changed || interaction!=mbVRInteractionLaser;mbVRInteractionLaser=interaction;
+            bool guides=cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true);
+            bool nextGuides=HPL3VR_Toggle("INTERACTION GUIDES",12,guides);
+            if(nextGuides!=guides){cLux_GetUserConfig().SetBool("SOMA_VR","InteractionGuides",nextGuides);cLux_GetUserConfig().Save();}
+            bool roomscale=cLux_GetUserConfig().GetBool("SOMA_VR","Roomscale",true);
+            bool nextRoomscale=HPL3VR_Toggle("ROOMSCALE MOVEMENT",13,roomscale);
+            if(nextRoomscale!=roomscale){cLux_GetUserConfig().SetBool("SOMA_VR","Roomscale",nextRoomscale);cLux_GetUserConfig().Save();}
+
 
 
 
@@ -1676,24 +1723,28 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         else if(mlVRComfortCategory==2)
         {
             bool distortion=HPL3VR_Toggle("HIDE DISTORTION",0,mbVRHideDistortion);
-            bool chromatic=HPL3VR_Toggle("HIDE COLOUR SEPARATION",1,mbVRHideChromatic);
+            bool chromatic=HPL3VR_Toggle("HIDE CHROMATIC ABERRATION",1,mbVRHideChromatic);
             bool trails=HPL3VR_Toggle("HIDE IMAGE TRAILS",2,mbVRHideTrails);
             bool blur=HPL3VR_Toggle("HIDE RADIAL BLUR",3,mbVRHideBlur);
             array<tString> modes={"OFF","MOVEMENT LOW","MOVEMENT HIGH","ALWAYS"};
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(modes,"");
             ImGui_SetTransCategory("");
-            int vignette=HPL3VR_Multi("VIGNETTE",4,modes,mlVRVignette);
+            int vignette=HPL3VR_Multi("VIGNETTE",10,modes,mlVRVignette);
             ImGui_SetTransCategory("");
             
-            bool shake=HPL3VR_Toggle("HIDE SCREEN SHAKE",5,mbVRHideShake);
+            bool shake=HPL3VR_Toggle("HIDE SCREEN SHAKE",4,mbVRHideShake);
             changed=distortion!=mbVRHideDistortion || chromatic!=mbVRHideChromatic || trails!=mbVRHideTrails || blur!=mbVRHideBlur || vignette!=mlVRVignette || shake!=mbVRHideShake;
-            bool bob=HPL3VR_Toggle("HIDE HEAD AND HAND BOBBING",6,mbVRHideMovementBob);
+            bool bob=HPL3VR_Toggle("HIDE HEAD AND HAND BOBBING",5,mbVRHideMovementBob);
             changed=changed || bob!=mbVRHideMovementBob;mbVRHideMovementBob=bob;
-            bool budget=HPL3VR_Toggle("TEXTURE BUDGET BOOST",7,mbVRTextureBudget);
+            array<tString> aaValues={"OFF","FXAA","SMAA"};
+            int aa=HPL3VR_AASelection();
+            int newAA=HPL3VR_Multi("ANTI-ALIASING",6,aaValues,aa);
+            if(newAA!=aa){HPL3VR_SetAA(newAA);changed=true;}
+            bool budget=HPL3VR_Toggle("TEXTURE BUDGET BOOST",9,mbVRTextureBudget);
             changed=changed || budget!=mbVRTextureBudget;mbVRTextureBudget=budget;
             bool mirror=HPL3VR_Toggle("DESKTOP MIRROR",8,mbVRDesktopMirror);
             changed=changed || mirror!=mbVRDesktopMirror;mbVRDesktopMirror=mirror;
-            bool rate=HPL3VR_Toggle("120HZ PHYSICS",9,mbVR120Mode);
+            bool rate=HPL3VR_Toggle("120HZ PHYSICS",7,mbVR120Mode);
             if(rate!=mbVR120Mode)HPL3VR_RequestSimulationMode(rate);
             mbVRHideShake=shake;
             mbVRHideDistortion=distortion; mbVRHideChromatic=chromatic; mbVRHideTrails=trails;mbVRHideBlur=blur;mlVRVignette=vignette;
@@ -3867,10 +3918,11 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 				}
 				
 				cColor titleCol = ImGui_GetStateColor("TitleColor", cColor(1.0, 1.0));
+                if(!HPL3VR_WelcomePending())
 				ImGui_DrawGfx(gfxTitle, OptionMenu_GetTopLeftOffset(kTitlePos, 0.0), OptionMenu_GetScaledSize(kTitleSize), titleCol*colorMul);
 				
 				if(bTitleGlitching)
-					ImGui_DrawGfx(cImGuiGfx("startmenu_title.tga", eImGuiGfx_Texture), OptionMenu_GetTopLeftOffset(kTitlePos+cVector2f(20.0f), 1.0), OptionMenu_GetScaledSize(kTitleSize), cColor(1.0, 0.5f)*colorMul);
+					if(!HPL3VR_WelcomePending()) ImGui_DrawGfx(cImGuiGfx("startmenu_title.tga", eImGuiGfx_Texture), OptionMenu_GetTopLeftOffset(kTitlePos+cVector2f(20.0f), 1.0), OptionMenu_GetScaledSize(kTitleSize), cColor(1.0, 0.5f)*colorMul);
 			}
 			
 			mfBGAnimationTime += afTimeStep;
@@ -4270,8 +4322,142 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 	
 	//-------------------------------------------------------
 
+    [nosave] bool mbVRGuideDismissed=false;
+    [nosave] int mlVRWelcomePage=0;
+    [nosave] tString msVRGuideFocus="VR SETTINGS";
+    [nosave] int mlVRGuideClicked=-1;
+    [nosave] uint mlVRWelcomeProfileQuery=0;
+    bool HPL3VR_WelcomeButton(const tString &in text,const cVector2f &in pos)
+    {
+        cImGuiButtonData data=ImGui_GetDefaultButton();
+        data.mbUseBackgroundGfx=false;data.mbUseInFocusGfx=false;data.mbUseTriggeredGfx=false;
+        data.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large_Bold));
+        data.mFont.mvSize=cVector2f(32,32);data.mFontAlign=eFontAlign_Center;
+        bool selected=msVRGuideFocus==text;data.mFont.mColor=selected ? cColor(0,1) : cColor(1,1);
+        if(selected){cImGuiGfx bg;ImGui_DrawGfx(bg,OptionMenu_GetTopLeftOffset(pos,0.7f),OptionMenu_GetScaledSize(cVector2f(360,42)),kOptionMenu_ButtonBgColor);}
+        return ImGui_DoButtonExt(text,text,data,OptionMenu_GetTopLeftOffset(pos,1),OptionMenu_GetScaledSize(cVector2f(360,42)));
+    }
+    bool HPL3VR_WelcomePending(){return gbHPL3VRRuntimeActive && mbMainMenuActive && !mbPremenuActive && !mbVRGuideDismissed;}
+    void HPL3VR_StorageLabel(const tString &in text,const cVector2f &in pos,float fontSize,bool accent=false)
+    {
+        cImGuiLabelData label;
+        label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
+        label.mFont.mvSize=OptionMenu_GetScaledSize(cVector2f(fontSize,fontSize));
+        label.mFont.mColor=accent ? cColor(.2f,.8f,1,1) : cColor(1,1);
+        cLux_GetCurrentImGui().DoLabel(cString_To16Char(text),label,OptionMenu_GetTopLeftOffset(pos,1));
+    }
+    void HPL3VR_DrawStoragePage(const cVector2f &in pos)
+    {
+        // Existing welcome box stays 1040x525. Character alpha is tightly cropped.
+        ImGui_DrawGfx(cImGuiGfx("graphics/soma_vr/welcome_body.png",eImGuiGfx_Texture),
+            OptionMenu_GetTopLeftOffset(pos+cVector2f(429,75),1),
+            OptionMenu_GetScaledSize(cVector2f(182,300)),cColor(1,1));
+        HPL3VR_StorageLabel("YOUR RIGHT SHOULDER",pos+cVector2f(35,85),22,true);
+        HPL3VR_StorageLabel("OMNI-TOOL",pos+cVector2f(35,113),26,true);
+        HPL3VR_StorageLabel("YOUR LEFT SHOULDER",pos+cVector2f(665,85),22,true);
+        HPL3VR_StorageLabel("KEY ITEMS",pos+cVector2f(665,113),26,true);
+        HPL3VR_StorageLabel("Store eligible story items only.",pos+cVector2f(665,148),19);
+        HPL3VR_StorageLabel("Loose props cannot be stowed.",pos+cVector2f(665,171),19);
+        for(int side=0;side<2;side++){
+            float x=side==0 ? 35 : 665;
+            HPL3VR_StorageLabel("STOW",pos+cVector2f(x,205),22,true);
+            HPL3VR_StorageLabel("Bring item and hand behind the",pos+cVector2f(x,232),19);
+            HPL3VR_StorageLabel("shoulder. Feel the buzz; release grip.",pos+cVector2f(x,255),19);
+            HPL3VR_StorageLabel("RETRIEVE",pos+cVector2f(x,290),22,true);
+            HPL3VR_StorageLabel("Reach behind with grip released.",pos+cVector2f(x,317),19);
+            HPL3VR_StorageLabel("Feel the cue, then hold grip and",pos+cVector2f(x,340),19);
+            HPL3VR_StorageLabel("bring your hand forward.",pos+cVector2f(x,363),19);
+        }
+        HPL3VR_StorageLabel("FLASHLIGHT: Hand beside your head + grip or trigger (once unlocked).",pos+cVector2f(35,400),19,true);
+        // Connector marks point to the illustrated shoulders, not exact storage volumes.
+        cImGuiGfx line;
+        ImGui_DrawGfx(line,OptionMenu_GetTopLeftOffset(pos+cVector2f(325,135),1),OptionMenu_GetScaledSize(cVector2f(165,2)),cColor(.2f,.8f,1,1));
+        ImGui_DrawGfx(line,OptionMenu_GetTopLeftOffset(pos+cVector2f(550,135),1),OptionMenu_GetScaledSize(cVector2f(100,2)),cColor(.2f,.8f,1,1));
+    }
+    bool HPL3VR_DrawWelcome()
+    {
+        if(!gbHPL3VRRuntimeActive || !mbMainMenuActive || mbPremenuActive || mfMainAlpha<0.99f || mbVRGuideDismissed) return false;
+        tString cat=ImGui_GetTransCategory();ImGui_SetTransCategory("");
+        cVector2f pos(120,95),size(1040,525);
+        cImGuiGfx shade;
+        ImGui_DrawGfx(shade,OptionMenu_GetTopLeftOffset(pos,0.5f),OptionMenu_GetScaledSize(size),cColor(0.015f,0.035f,0.04f,0.96f));
+        cImGuiLabelData heading;
+        heading.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large_Bold));
+        heading.mFont.mvSize=OptionMenu_GetScaledSize(cVector2f(32,32));heading.mFont.mColor=cColor(1,1);
+        heading.mFontAlign=eFontAlign_Center;
+        ImGui_DoLabelExt(mlVRWelcomePage==0 ? "WELCOME TO SOMA VR" : (mlVRWelcomePage==1 ? "YOUR CONTROLLER BUTTONS" : "STORAGE & GESTURES"),heading,OptionMenu_GetTopLeftOffset(pos+cVector2f(30,20),1),OptionMenu_GetScaledSize(cVector2f(980,40)));
+        ImGui_DrawFrame(mGfxFrame,OptionMenu_GetTopLeftOffset(pos,0.6f),OptionMenu_GetScaledSize(size));
+        array<tString> lines={
+            "If this is your first time playing SOMA VR, I strongly suggest that you",
+            "take a look at the VR settings and button layout to adjust things to your preference.",
+            "VIDEO: Comfort settings, 120Hz Physics, Desktop Mirror.",
+            "GAMEPLAY: VR movement, remote interactions, World Scale, VR hints,",
+            "subtitle distance and 2D screen distance.",
+            "CONTROLS: Button bindings, sprinting and finger tracking.",
+            "EYE TRACKING: Gaze features and dynamic foveated rendering.",
+            "AUDIO: Spatial sound settings."
+        };
+        if(mlVRWelcomePage==1)
+        {
+            uint now=cSystem_GetApplicationTime();
+            if(mlVRWelcomeProfileQuery==0 || now-mlVRWelcomeProfileQuery>=500){
+                cScript_RunGlobalFunc("VRBIND","","PROFILE");mlVRWelcomeProfileQuery=now;
+            }
+            HPL3VR_ReadBindings();
+            lines.resize(0);
+            for(int r=0;r<7;r++)lines.insertLast(HPL3VR_BindingLabel(r));
+            lines.insertLast("GRIP: Grab / interact. Change bindings in CONTROLS > BUTTON BINDINGS.");
+        }
+        if(mlVRWelcomePage==2){lines.resize(0);HPL3VR_DrawStoragePage(pos);}
+        cImGuiLabelData label;
+        label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
+        label.mFont.mvSize=OptionMenu_GetScaledSize(cVector2f(22,22));label.mFont.mColor=cColor(1,1);
+        for(int i=0;i<lines.length();i++)
+            cLux_GetCurrentImGui().DoLabel(cString_To16Char(lines[i]),label,
+                OptionMenu_GetTopLeftOffset(pos+cVector2f(35,85+36*i),1));
+        tString left=mlVRWelcomePage==0 ? "VR SETTINGS" : "BACK";
+        tString right=mlVRWelcomePage<2 ? "NEXT PAGE" : "CONTINUE";
+        bool leftClick=HPL3VR_WelcomeButton(left,pos+cVector2f(40,430));
+        msVRGuideFocus=OptionMenu_UpdateFocus(left,msVRGuideFocus);
+        bool rightClick=HPL3VR_WelcomeButton(right,pos+cVector2f(610,430));
+        msVRGuideFocus=OptionMenu_UpdateFocus(right,msVRGuideFocus);
+        bool cancel=ImGui_ActionTriggered(eImGuiAction_Cancel,true);
+        bool settings=leftClick && mlVRWelcomePage==0;
+        bool done=rightClick && mlVRWelcomePage==2;
+        if(mlVRWelcomePage>0 && (leftClick || cancel))
+        {mlVRWelcomePage--;msVRGuideFocus="NEXT PAGE";}
+        else if(mlVRWelcomePage<2 && rightClick)
+        {mlVRWelcomePage++;msVRGuideFocus=mlVRWelcomePage==2 ? "CONTINUE" : "NEXT PAGE";}
+        if(settings || done || (cancel && mlVRWelcomePage==0 && left=="VR SETTINGS"))
+        {
+            mbVRGuideDismissed=true;
+            ImGui_StopTimer("ButtonClicked");mlVRGuideClicked=-1;mlClickedMainMenuButton=-1;
+            if(settings)HPL3VR_OpenSettings();
+            else msFocusNextFrame="VR SETTINGS";
+        }
+        ImGui_SetTransCategory(cat);return true;
+    }
+	void HPL3VR_DrawVersion()
+	{
+        if (!gbHPL3VRRuntimeActive || !mbMainMenuActive || mbPremenuActive) return;
+        cImGuiLabelData label;
+        label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
+        label.mFont.mvSize=OptionMenu_GetScaledSize(cVector2f(18,18));
+        label.mFont.mColor=cColor(0.85f,0.9f,0.9f,mfMainAlpha);
+        label.mFontAlign=eFontAlign_Center;
+        tString cat=ImGui_GetTransCategory();ImGui_SetTransCategory("");
+        ImGui_DoLabelExt("SOMA VR v1.0.9 - S26IW",label,
+            OptionMenu_GetBotRightOffset(cVector2f(-340,58),1),OptionMenu_GetScaledSize(cVector2f(320,22)));
+        ImGui_DoLabelExt("CREATED BY: Bateau1",label,
+            OptionMenu_GetBotRightOffset(cVector2f(-340,34),1),OptionMenu_GetScaledSize(cVector2f(320,22)));
+        ImGui_SetTransCategory(cat);
+	}
+
 	void GuiMainMenuSelection()
 	{				
+
+        HPL3VR_DrawVersion();
+        if(HPL3VR_DrawWelcome())return;
 
 		// @jgarcia
 		if (Platform_IsXBO())
@@ -6602,6 +6788,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 		array<tString> vDisplayValues = { "Fullscreen", "Windowed", "Borderless" };
 		array<tString> vVSyncValues = { "On", "Adaptive", "Off" };
 		array<tString> vAAValues = { "Off", "FXAA" };
+        if(gbHPL3VRRuntimeActive)vAAValues.insertLast("SMAA");
 	
 		OptionMenu_UpdateExtraWidth("Resolution", false);
 		OptionMenu_UpdateExtraWidth("DisplayMode", false);
@@ -6713,13 +6900,14 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 			// Draw multi select box and update config
 			tString sValue = mpConfig.GetString("Graphics", "AntiAliasing", "FXAA");
 
-			int lValue = (sValue == "FXAA") ? 1 : 0;
-			int lNewValue = OptionMenu_ButtonOptionsMultiSelect("AA", kMainMenuButtonPos, lY, msSelectedVideoDisplayButton, vAAValues, lValue, true, mlActionHorizontal);
+			int lValue = gbHPL3VRRuntimeActive && sValue=="SMAA" ? 2 : ((sValue == "FXAA") ? 1 : 0);
+			int lNewValue = OptionMenu_ButtonOptionsMultiSelect("AA", kMainMenuButtonPos, lY, msSelectedVideoDisplayButton, vAAValues, lValue, true, mlActionHorizontal, gbHPL3VRRuntimeActive ? "" : "Menu");
 			
 			if(lValue != lNewValue)
 			{
 				mlOptionChanges++;
 				mpConfig.SetString("Graphics", "AntiAliasing", vAAValues[lNewValue]);
+                if(gbHPL3VRRuntimeActive)HPL3VR_UpdateSMAA();
 			}
 
 			msSelectedVideoDisplayButton = OptionMenu_UpdateFocus("AA", msSelectedVideoDisplayButton);
@@ -7514,7 +7702,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 		GetQualityAndMemoryFromRenderer(lBaseQuality, lVRAM);
 		
 		/////////////////
-		// Get qÃºality based on vram and GPU card
+		// Get qúality based on vram and GPU card
 		eGraphicSettings setting = eGraphicSettings_High;
 
 		if(lVRAM > 0) //valid VRAM?

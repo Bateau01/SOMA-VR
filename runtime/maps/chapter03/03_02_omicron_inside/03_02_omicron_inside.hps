@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_seat_hu.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/AchievementHandler_Types.hps"
 #include "base/RichPresenceHandler_Types.hps"
@@ -267,6 +268,19 @@ const tString gsLockdownReleaseInitial = "03_02_poweron";
  
 class cScrMap : iScrMap
 {
+    // S26IO: permission for unrelated physical world controls only.
+    // Native exit callbacks, GUI ownership, B/distance exit and pickups are unchanged.
+    bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)
+    {
+        return asEntityName=="TerminalBiomech" ||
+               asEntityName=="SecurityTerminal_3" ||
+               asEntityName=="SecurityTerminal_15" ||
+               asEntityName=="SecurityTerminal_17" ||
+               asEntityName=="RobotRepairTerminal_WorkBench";
+    }
+
+ [nosave] cVRSeatGuideHU mVRSeatHU;
+
 	//--------------------------------------------
 	
 	//////////////////////////////////////////
@@ -1031,6 +1045,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+        mVRSeatHU.Dispose();
 	}
 
 	//-------------------------------------------------------
@@ -1045,6 +1060,7 @@ class cScrMap : iScrMap
 	
 	void Update(float afTimeStep)
 	{
+        mVRSeatHU.Update(afTimeStep);
 		if (mbInteractingWithBiomechJoystick)
 			ResetBiomechLever();
 	}
@@ -7734,6 +7750,7 @@ class cScrMap : iScrMap
 	
 	void InteractScanChair(const tString &in asEntity)
 	{
+        if(!VRSeatHU_Ready())return;
 		/*	notes
 		    if (mlDataFlowType == 2) msDataFlow = "TransferContBurst";
 			if (mlDataAlignmentType == 3) msDataAlignment = "Data2048BE";

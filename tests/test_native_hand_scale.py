@@ -31,6 +31,7 @@ static int h31_virtual_hand_model(int h,float*m){memcpy(m,source[h],64);return p
 static int h5755cu_render_hand_model(int h,float*m){memcpy(m,source[h],64);return poseOK;}
 static void h576bt_probe_rocker_render_tip(int h,float*m){(void)h;(void)m;}
 static void h10_build_rig(int h){(void)h;}
+static int s26hr_guide_pose(void*m){(void)m;return 0;}
 static void s26_local_hand_pose(int h,int j,float*m){(void)h;(void)j;memset(m,0,64);m[0]=m[5]=m[10]=m[15]=1;m[12]=2;m[13]=3;m[14]=4;}
 static void h5730_literal_string(H5730TString*s,const char*n){(void)s;(void)n;}
 static void* boneNamed(void*m,const H5730TString*s){(void)s;return m;}

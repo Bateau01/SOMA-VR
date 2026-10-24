@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_traversal_hy.hps"
 #include "base/InputHandler_Types.hps"
 #include "interfaces/Map_Interface.hps"
 #include "helpers/helper_game.hps"
@@ -20,6 +21,10 @@ const tString gsCurieMusicLevel2 = "02_02_mscurieinside";
 
 class cScrMap : iScrMap
 {
+ void Update(float dt){EnsureVRTraversalIA();mVRTraversalHY.Update(dt);}
+
+ [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
 
 	//-------------------------------------------------------
 		
@@ -468,8 +473,22 @@ class cScrMap : iScrMap
 			Entity_SetPlayerInteractCallback("BreakableGlass_1_Minor", "", false);
 	}
 
-	void OnEnter()
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("CrewQuarterLadderArea",cVector3f(0.1383672f,-2.2410163f,0.0504427f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0035100f,-0.0000002f,0.9999938f));
+
+        mVRTraversalHY.Add("CrewQuarterLadderArea",cVector3f(-0.3807364f,3.5385111f,-0.2415451f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(-0.0018638f,0.8473727f,-0.5309954f));
+
+    }
+
+void OnEnter()
 	{
+ mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        
+        
+
         // S26BB: physical socket and authored use area are distinct entities.
         Entity_SetVarString("cath_terminal_escapepod_3", "VRUseTarget", "Area_PlaceCatherine_Pod");
 		VR_RemoveUnusedRigidPrompts();
@@ -520,6 +539,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+ mVRTraversalHY.Dispose();
 	}
 	
 	//-------------------------------------------------------

@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 //#include "base/AchievementHandler_Types.hps"
 #include "base/InputHandler_Types.hps"
@@ -122,6 +123,19 @@ enum eStatusTerminalState
  
 class cScrMap : iScrMap
 {
+    bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)
+    {
+        // Walk-up UI bookkeeping, not chair ownership. No callback is invoked
+        // here; B and native distance exit retain their authored side effects.
+        if(asEntityName=="ScanRoomTerminal" || asEntityName=="LegacyTerminal")return true;
+        // A running Brandon simulation owns its exit/abort sequence.
+        if(asEntityName=="BrainScanSimulationTerminal")
+            return mSimulationTerminalState!=eSimulationTerminalState_SimulationRunning;
+        return false;
+    }
+
+    [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
 	//--------------------------------------------
 
 	/////////////////////////////////////////
@@ -236,8 +250,19 @@ class cScrMap : iScrMap
 
 	////////////////////////////
 	// Run when entering map
-	void OnEnter()
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("ClimbArea_2",cVector3f(0.187537f,-0.016983f,-0.028207f),cVector3f(0.000000f,0.000000f,-1.000000f),cVector3f(0.000000f,1.000000f,0.000000f));
+
+    }
+
+void OnEnter()
 	{
+        mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        
+
 		MainMenu_SetBGPhase(eMainMenuPhase_2_4_To_3_3);
 	}
 
@@ -247,6 +272,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+        mVRTraversalHY.Dispose();
 		Player_SetSlowStandupMotion(false);
 		PlayerEnergy_SetAllowCathComment(false);
 	}
@@ -363,6 +389,7 @@ class cScrMap : iScrMap
 
 	void Update(float afTimeStep)
 	{
+        EnsureVRTraversalIA();mVRTraversalHY.Update(afTimeStep);
 		if (mbDunbatCameraActive)
 		{
 			UpdateDunbatCamera(afTimeStep);

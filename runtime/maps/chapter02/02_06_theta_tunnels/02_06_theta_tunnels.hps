@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/InputHandler_Types.hps"
 #include "base/RichPresenceHandler_Types.hps"
@@ -143,6 +144,17 @@ const tString gsThetaArkLabMusic = "02_06_arklab_ambient";
 
 class cScrMap : iScrMap
 {
+    // S26IO: permission for unrelated physical world controls only.
+    // Native exit callbacks, GUI ownership, B/distance exit and pickups are unchanged.
+    bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)
+    {
+        return asEntityName=="SecurityOfficeTerminal";
+    }
+
+ void Update(float dt){EnsureVRTraversalIA();mVRTraversalHY.Update(dt);}
+
+ [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
 	//-------------------------------------------------------
 	
 	/////////////////////////////////////////
@@ -288,8 +300,24 @@ class cScrMap : iScrMap
 
 	////////////////////////////
 	// Run when entering map
-	void OnEnter()
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("LadderArea_2",cVector3f(0.1510299f,-0.7215840f,0.0317019f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0000063f,-0.0119137f,0.9999290f));
+
+        mVRTraversalHY.Add("LadderArea_2",cVector3f(-0.3315882f,1.7906267f,-0.1337866f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.4997994f,0.8661412f,-0.0000031f));
+
+    }
+
+void OnEnter()
 	{
+        // HY ladder surfaces: source triangles recorded in ladder_coverage_hy.json.
+        mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        
+        
+
+
 		MainMenu_SetBGPhase(eMainMenuPhase_2_4_To_3_3);
 		
 		GetBase().SetDisplayNameEntry("02-06-theta-tunnels");
@@ -302,6 +330,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+ mVRTraversalHY.Dispose();
 		PlayerEnergy_SetAllowCathComment(false);
 	}
 

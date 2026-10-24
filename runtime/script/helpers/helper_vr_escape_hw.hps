@@ -1,0 +1,37 @@
+#include "helpers/helper_vr_guidance_hr.hps"
+// Read-only guide for the authored Upsilon escape. No grip/callback forwarding.
+class cVREscapeGuideHW
+{
+    cVRHandGuide mHand;
+    float mfPoll=0;
+    int mlLastReport=-1;
+    void Report(int state){if(state==mlLastReport)return;mlLastReport=state;cScript_RunGlobalFunc("VRESCAPE","",""+state);}
+    bool Ready(bool introOver,bool escaped)
+    {
+        iLuxEntity@ area=Map_GetEntity("AreaClimbHole");
+        return introOver && !escaped && area !is null && area.IsActive() &&
+            !area.GetInteractionDisabled() && cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Normal;
+    }
+    void Hide(){mHand.Hide();}
+    void Dispose(){mHand.Dispose(cLux_GetCurrentMap().GetWorld());}
+    void Update(float dt,bool introOver,bool escaped)
+    {
+        if(!Ready(introOver,escaped)){Hide();Report(1);return;}
+        if(!cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true)){Hide();Report(2);return;}
+        mfPoll-=dt;if(mfPoll>0)return;mfPoll=.125f;Hide();
+        iLuxEntity@ area=Map_GetEntity("AreaClimbHole");if(area is null)return;
+        // HZ: lower, player-facing wall contact requested in headset review.
+        // Front rotated walls_pplant_dome_90_4 surface; all nearby instances checked.
+        cVector3f at=cVector3f(19.5139f,253.78f,-130.30f);
+        if(cMath_Vector3Dist(at,cLux_GetPlayer().GetCamera().GetPosition())>4.0f){Report(3);return;}
+        cMatrixf pose=cMatrixf_Identity;
+        // Open palm on the wall, fingertips upward; local-to-world axes in rows.
+        pose.SetRight(cVector3f(-.1564311f,0,-.9876889f));
+        pose.SetUp(cVector3f(0,-1,0));
+        pose.SetForward(cVector3f(-.9876889f,0,.1564311f));
+        float metric=VRGuide_Metric();
+        pose.SetTranslation(at+cVector3f(-.9876889f,0,.1564311f)*(.10f*metric));
+        bool shown=mHand.Show(cLux_GetCurrentMap().GetWorld(),"VREscapeLedgeHW",pose,1,false);
+        Report(shown ? 5 : 4);
+    }
+}

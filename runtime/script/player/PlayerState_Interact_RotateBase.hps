@@ -23,6 +23,10 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   
  //------------------------------------------------------------ 
   
+ // S26IP_DIAG_BEGIN
+ [nosave] int mlIPRows=0;[nosave] int mlIPSteps=0;[nosave] int mlIPInputs=0;
+ [nosave] float mfIPTime=0;[nosave] float mfIPInput=0;[nosave] float mfIPMaxTorque=0;
+ // S26IP_DIAG_END
  void Init() 
  {
   // Shared initialization also resets the VR-only transient input fields.
@@ -43,6 +47,7 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   mfHPL3VRWheelOmega = 0;
   mbHPL3VRLeverInputThisStep = false;
   mfHPL3VRLeverSpeedAdd = 0;
+  mbIQLeverSampleGaps=false;mfIQLeverSampleAge=0;
   mfMovementToMoveAddFactor = 0; 
    
   InitRotateBase(); 
@@ -135,7 +140,8 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
   mbHPL3VRWheelDirect = false;
   mfHPL3VRWheelOmega = 0;
   mbHPL3VRLeverInputThisStep = false;
-  mfHPL3VRLeverSpeedAdd = 0; 
+  mfHPL3VRLeverSpeedAdd = 0;
+  mbIQLeverSampleGaps=false;mfIQLeverSampleAge=0; 
  
   ///////////////////////////////// 
   //Setup body 
@@ -314,7 +320,15 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
    mfRotSpeed += afTimeStep * fSlowDownSpeed; 
    if(mfRotSpeed > 0) mfRotSpeed = 0; 
   } 
-  if(mbResetSpeedWhenNoMouseMovement && mvMoveAdd == cVector2f(0) && mbHPL3VRLeverInputThisStep==false) 
+  // A missing packet is not a stopped hand between tracked samples. Retain
+  // the existing target (with native slowdown), never replay displacement.
+  // Fresh zero input stops immediately; absent input expires after 50 ms.
+  if(mbIQLeverSampleGaps){
+   mfIQLeverSampleAge+=afTimeStep;
+   if(mbHPL3VRLeverInputThisStep)mfIQLeverSampleAge=0;
+   if(mfIQLeverSampleAge>=0.05f || (mbHPL3VRLeverInputThisStep && mfHPL3VRLeverSpeedAdd==0))mfRotSpeed=0;
+  }
+  if(mbResetSpeedWhenNoMouseMovement && mvMoveAdd == cVector2f(0) && mbHPL3VRLeverInputThisStep==false && !(mbIQLeverSampleGaps && mfIQLeverSampleAge<0.05f)) 
   { 
    mfRotSpeed = 0; 
   } 
@@ -381,6 +395,20 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
    fTorqueCap *= fVRCapMul;
   }
   vTorque = cMath_Vector3MaxLength(vTorque, fTorqueCap); 
+  // S26IP_DIAG_BEGIN
+  if(cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Lever && mlIPRows<120){
+   mlIPSteps++;mfIPTime+=afTimeStep;
+   if(mbHPL3VRLeverInputThisStep){mlIPInputs++;mfIPInput+=mfHPL3VRLeverSpeedAdd;}
+   float torque=cMath_Vector3Dot(vTorque,vRotateDir);
+   if(cMath_Abs(torque)>mfIPMaxTorque)mfIPMaxTorque=cMath_Abs(torque);
+   if(mfIPTime>=.25f){
+    mlIPRows++;cLuxProp@ diagnosticProp=cLux_ID_Prop(mPropID);
+    tString diagnosticName=diagnosticProp is null?"<missing>":diagnosticProp.GetName();
+    LogNewLine("S26IP LEVER MOTOR name="+diagnosticName+" row="+mlIPRows+" dt="+afTimeStep+" window="+mfIPTime+" steps="+mlIPSteps+" inputs="+mlIPInputs+" sumInput="+mfIPInput+" target="+mfRotSpeed+" actual="+cMath_Vector3Dot(vBodyVel,vRotateDir)+" angle="+cPhysics_ToJointHinge(pJoint).GetAngle()+" torque="+torque+" maxTorque="+mfIPMaxTorque+" cap="+fTorqueCap+" mass="+fVRMass+" p="+fAuthoredPidP+" d="+fAuthoredPidD);
+    mlIPSteps=0;mlIPInputs=0;mfIPTime=0;mfIPInput=0;mfIPMaxTorque=0;
+   }
+  }
+  // S26IP_DIAG_END
   pBody.AddTorque(vTorque);
   mvLastMouseAdd = mvMoveAdd; 
   mvMoveAdd = cVector2f(0);
@@ -471,6 +499,7 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
    bool bHPL3VRLeverPacket = avAmount.z > 2.5f;
    if(bHPL3VRLeverPacket)
    {
+    mbIQLeverSampleGaps=avAmount.z==3.0f && avAmount.y==1.0f && cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Lever;
     mfHPL3VRLeverSpeedAdd = cMath_Clamp(mfHPL3VRLeverSpeedAdd + avAmount.x, -0.20f, 0.20f);
     mbHPL3VRLeverInputThisStep = true;
     return false;
@@ -551,6 +580,9 @@ class iScrPlayerState_Interact_RotateBase : iScrPlayerState_Interact
  [nosave] float mfHPL3VRSwingOmega;
  [nosave] bool mbHPL3VRWheelDirect;
  [nosave] float mfHPL3VRWheelOmega;
+ // S26IQ_VR_LEVER_SAMPLE_GAPS: y=1 on exact z=3 marks optional 120Hz input.
+ [nosave] bool mbIQLeverSampleGaps=false;
+ [nosave] float mfIQLeverSampleAge=0;
  bool mbHPL3VRLeverInputThisStep;
  float mfHPL3VRLeverSpeedAdd;
  float mfMovementToMoveAddFactor; 

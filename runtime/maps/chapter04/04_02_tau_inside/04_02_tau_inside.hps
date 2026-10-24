@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/Inputhandler_Types.hps"
 #include "base/AchievementHandler_Types.hps"
@@ -175,6 +176,10 @@ tString gsRossPassword = "2768";
  
 class cScrMap : iScrMap
 {
+ void Update(float dt){EnsureVRTraversalIA();mVRTraversalHY.Update(dt);}
+
+ [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
 	//--------------------------------------------
 
 	/////////////////////////////////////////
@@ -270,8 +275,42 @@ class cScrMap : iScrMap
 
 	////////////////////////////
 	// Run when entering map
-	void OnEnter()
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("LadderArea_3",cVector3f(0.1120297f,-0.9705840f,0.0303772f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(-0.0000002f,0.0119088f,0.9999291f));
+
+        mVRTraversalHY.Add("LadderArea_3",cVector3f(-0.3422226f,2.5065933f,-0.3389111f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.7018274f,0.7123471f,0.0000001f));
+
+        mVRTraversalHY.Add("LadderArea_5",cVector3f(0.1130297f,-1.4715840f,0.0313772f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(-0.0000000f,0.0119088f,0.9999291f));
+
+        mVRTraversalHY.Add("LadderArea_5",cVector3f(-0.3650717f,2.9807200f,-0.1754433f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(-0.0000000f,0.9396866f,0.3420368f));
+
+        mVRTraversalHY.Add("LadderArea_6",cVector3f(0.1130296f,-1.4715840f,0.0413772f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0000000f,0.0119088f,0.9999291f));
+
+        mVRTraversalHY.Add("LadderArea_6",cVector3f(-0.3849284f,2.9951800f,-0.2051697f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(-0.0000000f,0.9396866f,0.3420368f));
+
+    }
+
+void OnEnter()
 	{
+        // HY ladder surfaces: source triangles recorded in ladder_coverage_hy.json.
+        mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        
+        
+
+
+
+
+        
+        
+
+
+        
+        
+
+
 		// S26P: this map's entity metadata names InteractArk,
 		// but no such callback exists. Remove only this stale generic interaction
 		// hook in VR. The separate Pickup/Use/CanBeUsed callbacks still own the story.
@@ -288,6 +327,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+ mVRTraversalHY.Dispose();
 	}
 
 	//-------------------------------------------------------

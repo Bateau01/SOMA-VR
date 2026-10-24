@@ -53,7 +53,10 @@ const void* s26hg_select(int,const float*a,const float*d,float range,float,float
 int p2_xr_running(){return running;}int visual_pose_valid(int h){return pose[h];}
 int h5730_exact_terminal_state(void*,int,void*,int){return terminal;}
 int h15_grip_center_world(int,const float*,float*p){p[0]=p[1]=p[2]=0;return 1;}
-int h14_point_to_body(const void*,const float*,float*g,float*p){*g=gap;p[0]=gap;p[1]=p[2]=0;return 1;}
+// Match the real Newton/production contracts, including interior rejection.
+int pointCalls=0;
+int h14_point_to_body(const void*,const float*,float*g,float*p){pointCalls++;if(gap<=0)return 0;*g=gap;p[0]=gap;p[1]=p[2]=0;return 1;}
+int s26eq_return_point(const void*,const float*,float*g,float*p){pointCalls++;*g=gap;p[0]=gap;p[1]=p[2]=0;return gap>=0;}
 void p_h14GetMatrix(const void*,float*m){memset(m,0,64);m[0]=m[5]=m[10]=m[15]=1;m[12]=gap;}
 void p_h14GetVelocity(const void*,float*v){memcpy(v,velocity,16);}
 void p_h14SetVelocity(const void*,const float*v){memcpy(velocity,v,16);writes++;}
@@ -88,6 +91,17 @@ void reset(){
  g_h576boTerminalSurface={{-.5f,.5f,0},{1,0,0},{0,-1,0},{0,0,1}};
 }
 int main(){float m[16]={0};H14Scan scan;
+ // A valid interior point must not retire an authorized pull at the catch.
+ for(int hz:{60,120})for(int hand:{0,1}){
+  reset();s26hd_grab(hand,m,&scan,1,1,1.f/hz);gap=0;latch=1;
+  s26hd_grab(hand,m,&scan,0,1,1.f/hz);
+  CHECK(grabs==1&&g_h14GripBody[hand]==body&&!g_s26hdPull[hand].body);
+  reset();s26hd_grab(hand,m,&scan,1,1,1.f/hz);gap=0;latch=0;
+  s26hd_grab(hand,m,&scan,0,1,1.f/hz);CHECK(g_s26hdPull[hand].body==body&&grabs==0);
+  s26hd_grab(hand,m,&scan,0,0,1.f/hz);CHECK(!g_s26hdPull[hand].body);
+  reset();g_s26hdRemoteEnabled=0;pointCalls=0;
+  s26hd_grab(hand,m,&scan,1,1,1.f/hz);CHECK(pointCalls==0&&grabs==0);
+ }
  // Release/hold without a fresh edge cannot start a pull. Hover is read-only.
  reset();s26hd_grab(0,m,&scan,0,0,.016f);CHECK(!g_s26hdPull[0].body&&writes==0&&haptics==1);
  s26hd_grab(0,m,&scan,0,0,.016f);CHECK(haptics==1);
@@ -197,6 +211,7 @@ struct S26HLAssembly{const void* body[32];u32 count;float mass;};
 int s26hl_assembly(const void*b,void*,S26HLAssembly*a){a->count=1;a->body[0]=b;a->mass=1;return 1;}
 int s26hl_same_free_prop(const void*b,const void*hit,void*){return !hit||hit==b;}
 '''
+header+='\nchar g_s26hnName[2][96];void s26hn_outcome(int,const char*,float,const void*){} int h20_mem_readable(void*,unsigned){return 0;}void h21_copy_ascii(const char*,char*,unsigned){}\n'
 code=header+fn('s26hk_remote_state')+fn('s26hk_remote_native_busy')+fn('s26he_nominate')+fn('s26he_outline_postupdate')+fn('s26hd_reset')+fn('s26hd_screen_ray')+fn('s26hg_pull_velocity')+fn('s26hd_grab')+fn('s26hd_step')+body
 # Globals used only by the real renderer are reset here as well.
 code=code.replace('int checks=0;','int checks=0;u32 g_s26hdBeamKind[2];')

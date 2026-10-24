@@ -9,12 +9,12 @@ public static class CurrentUpgradeTests {
  File.WriteAllText(Path.Combine(root,"hpl3vr_frame_finger_rest.dat"),"personal calibration");
  Engine.Install(root,a[2],"",Console.WriteLine,-1);
  if(File.ReadAllText(Path.Combine(root,"hpl3vr_simulation_rate.txt"))!="120\n")throw new Exception("Simulation preference lost during update");
- if(Engine.Load(root).Version!="1.0.8-S26HQ")throw new Exception("Wrong version");
+ if(Engine.Load(root).Version!="1.0.9-S26IW")throw new Exception("Wrong version");
  if(File.ReadAllText(Path.Combine(root,"hpl3vr_frame_finger_rest.dat"))!="personal calibration")throw new Exception("Personal file changed");
  if(File.ReadAllText(Path.Combine(root,"hpl3vr_item_grips.dat"))!="personal grips")throw new Exception("Personal grips changed");
  if(!File.ReadAllText(Path.Combine(root,"script/modules/MenuHandler.hps")).Contains("FINGER TRACKING"))throw new Exception("Missing toggle");
  if(!File.Exists(Path.Combine(root,"hpl3vr-store.dll")))throw new Exception("Missing store runtime");
- Console.WriteLine("PASS: "+previousVersion+" to 1.0.8-S26HQ; personal data preserved; store runtime installed");return 0;
+ Console.WriteLine("PASS: "+previousVersion+" to 1.0.9-S26IW; personal data preserved; store runtime installed");return 0;
  }catch(Exception e){Console.WriteLine(e);return 1;}}
 }
 

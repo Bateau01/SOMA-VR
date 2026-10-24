@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_guidance_hr.hps"
 #include "helpers/helper_vr_phone_q.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/InputHandler_Types.hps"
@@ -43,6 +44,13 @@ const cVector2f gvDavidReminderTimeSpan = cVector2f(15.0f,25.0f);
 
 class cScrMap : iScrMap
 {
+    // S26IO: permission for unrelated physical world controls only.
+    // Native exit callbacks, GUI ownership, B/distance exit and pickups are unchanged.
+    bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)
+    {
+        return asEntityName=="security_keypad_1";
+    }
+
     cVRPhoneQ mVRPhone;
     void VRPhoneW_Gui(const tString &in entity,float dt)
     {
@@ -229,9 +237,31 @@ class cScrMap : iScrMap
 	
 	//-------------------------------------------------------
 	
-	void Update(float afTimeStep)
-	{
-	}
+	[nosave] cVRHandGuide mVRChairGuide;
+    [nosave] float mfVRChairGuidePoll=0;
+    bool mbVRChairGuideReady=false;
+    void Update(float afTimeStep)
+    {
+        mfVRChairGuidePoll-=afTimeStep;if(mfVRChairGuidePoll>0)return;mfVRChairGuidePoll=.125f;
+        mVRChairGuide.Hide();
+        if(mbDavidGreetingDone && !Dialog_CharacterIsActive("David"))mbVRChairGuideReady=true;
+        if(!mbVRChairGuideReady || !cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true))return;
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        if(!cScript_GetGlobalReturnBool() || !cScript_RunGlobalFunc("VRGUIDE","","ACTIVE"))return;
+        iLuxEntity@ chair=Map_GetEntity("ScanChair");
+        if(chair is null || !chair.IsActive() || chair.GetInteractionDisabled() ||
+           cLux_GetPlayer().GetCurrentStateId()!=ePlayerState_Normal ||
+           cMath_Vector3Dist(chair.GetPosition(),cLux_GetPlayer().GetCamera().GetPosition())>2.5f)return;
+        // Visible armrest triangle surface in the original DAE (before its
+        // entity's 1.625 mesh scale). GetMatrix is the physics-body frame.
+        cLuxProp@ chairProp=Map_GetProp("ScanChair");
+        if(chairProp is null || chairProp.GetMeshEntity() is null || chairProp.GetMeshEntity().GetSubMeshEntityNum()==0)return;
+        cMatrixf surface=chairProp.GetMeshEntity().GetSubMeshEntity(0).GetWorldMatrix();
+        cVector3f at=cMath_MatrixMul(surface,cVector3f(.25,.66695,.05198));
+        mVRChairGuide.Show(cLux_GetCurrentMap().GetWorld(),"VRChairGuide",
+            VRGuide_HandFrame(at,cMath_Vector3Normalize(surface.GetUp()),false),1,false);
+    }
 	
 	//-------------------------------------------------------
 	
@@ -281,6 +311,7 @@ class cScrMap : iScrMap
 	
 	void OnLeave() 
 	{
+        mVRChairGuide.Dispose(cLux_GetCurrentMap().GetWorld());
         mVRPhone.End();
 	}
 	
@@ -1559,7 +1590,7 @@ class cScrMap : iScrMap
 		if(abStartOfSubject) return;
 
 		cLux_AddDebugMessage("End David dialogue:"+mlCurrentDavidSubjectIndex);
-        if(asSubject=="7_GreetDavid"){cScript_SetGlobalArgInt(0,27);cScript_SetGlobalArgFloat(1,0.5f);
+        if(asSubject=="7_GreetDavid"){mbVRChairGuideReady=true;cScript_SetGlobalArgInt(0,27);cScript_SetGlobalArgFloat(1,0.5f);
         cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRQueueStoryHint");}
 		
 		Map_AddTimer("timer_reminder",cMath_RandRectf(gvDavidReminderTimeSpan.x,gvDavidReminderTimeSpan.y),"Timer_DavidRemindsPlayer");

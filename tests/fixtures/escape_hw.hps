@@ -1,0 +1,29 @@
+    void HWCheck(bool ok,const tString &in label){LogNewLine((ok ? "HW_PASS|" : "HW_FAIL|")+label);}
+    void HRSmokeExit(const tString &in timer){
+        HWCheck(mlHXUpdateCalls>0,"native map Update is running");
+        Player_ChangeStateToNormal();
+        cVector3f local=cMath_MatrixMul(cMath_MatrixInverse(Map_GetEntity("AreaClimbHole").GetMatrix()),cMath_MatrixMul(Map_GetEntity("AreaClimbHole").GetMatrix(),cVector3f(0,-2.12f,.42f)));
+        LogNewLine("HW_GEOMETRY|local="+local);
+        HWCheck(cMath_Abs(local.x)<1.474945f && cMath_Abs(local.y)<2.331805f && cMath_Abs(local.z)<.58303f,"guide contact inside native interaction box");
+        HWCheck(!mVREscapeGuide.Ready(false,false),"intro gate");
+        CollideHoleArea("player","AreaClimbHole_FloorZone",1);
+        HWCheck(mVREscapeGuide.Ready(true,false),"native floor-zone enables guide");
+        HWCheck(!mVREscapeGuide.Ready(true,true),"completed escape hidden");
+        Entity_SetInteractionDisabled("AreaClimbHole",true);
+        HWCheck(!mVREscapeGuide.Ready(true,false),"disabled target hidden");
+        Entity_SetInteractionDisabled("AreaClimbHole",false);
+        CollideHoleArea("player","AreaClimbHole_FloorZone",-1);
+        HWCheck(!mVREscapeGuide.Ready(true,false),"withdrawal hidden");
+        CollideHoleArea("player","AreaClimbHole_FloorZone",1);
+        HWCheck(mVREscapeGuide.Ready(true,false),"reentry recovers");
+        cVector3f at=cMath_MatrixMul(Map_GetEntity("AreaClimbHole").GetMatrix(),cVector3f(0,-2.12f,.42f));
+        cLux_GetPlayer().GetCamera().SetPosition(at+cVector3f(-1,0,0));
+        mVREscapeGuide.Update(.2f,true,false);
+        HWCheck(mVREscapeGuide.mHand.mGuide.Live() && mVREscapeGuide.mHand.mGuide.mpMesh.IsVisible(),"native guide mesh visible with supplied runtime/pose acknowledgement");
+        AreaClimbHole_OnPlayerInteract("AreaClimbHole");
+        HWCheck(!Map_GetEntity("AreaClimbHole").IsActive(),"native acceptance disables trigger");
+        HWCheck(!mVREscapeGuide.Ready(true,false),"accepted climb guide hidden");
+        mVREscapeGuide.Dispose();
+        LogNewLine("HR_STORY_DONE|01_03_upsilon_outside");cEngine_Exit();
+    }
+

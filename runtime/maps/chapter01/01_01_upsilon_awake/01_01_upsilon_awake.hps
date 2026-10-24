@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_traversal_hy.hps"
 /*==================================================================================
  * 
  * -------------------
@@ -69,6 +70,8 @@ enum ePilotTerminalState
 	
 class cScrMap : iScrMap
 {
+    [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
 	//--------------------------------------------
 
 	/////////////////////////////////////////
@@ -231,8 +234,18 @@ class cScrMap : iScrMap
 		Entity_SetPlayerInteractCallback("HatchClimb_2", "", false);
 	}
 
-	void OnEnter()
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("ClimbArea_1",cVector3f(0.292642f,-0.036826f,-0.121136f),cVector3f(0.000000f,0.000000f,-1.000000f),cVector3f(0.000000f,1.000000f,0.000000f),"exithatch");
+    }
+
+void OnEnter()
 	{
+        mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        
+
         // S26BC: physical surface -> exact native tool-use target; refreshed on save entry.
         Entity_SetVarString("AreaInsertOmniTool_ObsTunnel", "VRUseTarget", "ObservationTunnelTerm");
 
@@ -246,6 +259,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+        mVRTraversalHY.Dispose();
 		if(mlImageTrailID>=0)
 		{
 			cLux_AddDebugMessage("FadeOutImageTrail!");
@@ -258,6 +272,7 @@ class cScrMap : iScrMap
 	
 	void Update(float afTimeStep)
 	{
+        EnsureVRTraversalIA();mVRTraversalHY.Update(afTimeStep);
 		////////////////////////////
 		// Activate hanging robot scare on gaze
 		if (mbInfectedRobotReleased == false &&

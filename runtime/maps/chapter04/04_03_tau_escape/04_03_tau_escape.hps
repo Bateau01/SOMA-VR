@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_guidance_hr.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/Inputhandler_Types.hps"
 #include "base/RichPresenceHandler_Types.hps"
@@ -182,6 +183,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+        mVRAlphaGuide.Dispose(cLux_GetCurrentMap().GetWorld());
 		Music_Stop(2,eMusicPrio_BgAmb);
 	}
 
@@ -1219,6 +1221,7 @@ class cScrMap : iScrMap
 		//-------------------------------------------------------
 		
 
+	[nosave] cVRHandGuide mVRAlphaGuide;
 	[nosave] float mfVRAlphaPoll = 0;
 	[nosave] bool mbVRAlphaAuthorized = false;
 	bool mbVRAlphaStarted = false;
@@ -1233,6 +1236,7 @@ class cScrMap : iScrMap
         mfVRAlphaPoll-=afTimeStep;
         if(mfVRAlphaPoll>0) return;
         mfVRAlphaPoll=0.05f; // S26CX: match flower contact polling.
+        mVRAlphaGuide.Hide();
         if(!_HPL3VR_AlphaActive() || !HPL3VR_AlphaEligible()) return;
         iLuxEntity@ entity=Map_GetEntity("04_03_wau_monster_mouth_1");
         if(entity is null) return;
@@ -1256,6 +1260,7 @@ class cScrMap : iScrMap
         // S26DB: j_lip endpoints belong to the inner jaw. The outer fleshy
         // opening in anus_low is farther forward; keep insertion behind it.
         cVector3f target=rim+axis*0.22f;
+        mVRAlphaGuide.ShowFlower(cLux_GetCurrentMap().GetWorld(),"VRAlphaHandGuide",target,axis,0,true);
         cScript_RunGlobalFunc("VRHEAL","Alpha","C");
         iPhysicsBody@ body=mouth.GetMainBody();
         cScript_RunGlobalFunc("VRHEAL","Alpha","D");

@@ -1,0 +1,33 @@
+#include "helpers/helper_vr_guidance_hr.hps"
+// Campaign armrest regions forward to Area_ScanChair; never start a scan directly.
+bool VRSeatHU_Ready()
+{
+    iLuxEntity@ gate=Map_GetEntity("Area_ScanChair");
+    return gate !is null && gate.IsActive() && !gate.GetInteractionDisabled();
+}
+class cVRSeatGuideHU
+{
+    cVRHandGuide mGuide;
+    float mfPoll=0;
+    void Dispose(){mGuide.Dispose(cLux_GetCurrentMap().GetWorld());}
+    void Update(float dt)
+    {
+        mfPoll-=dt;if(mfPoll>0)return;mfPoll=.125f;
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        bool enabled=cScript_GetGlobalReturnBool() && VRSeatHU_Ready() &&
+            cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Normal;
+        for(int h=0;h<2;h++){
+            iLuxEntity@ area=Map_GetEntity("VRSeatArm_"+h);
+            if(area !is null)area.SetActive(enabled);
+        }
+        mGuide.Hide();
+        if(!enabled || !cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true))return;
+        iLuxEntity@ arm=Map_GetEntity("VRSeatArm_1");if(arm is null)return;
+        cVector3f at=arm.GetMatrix().GetTranslation();
+        if(cMath_Vector3Dist(at,cLux_GetPlayer().GetCamera().GetPosition())>2.5f)return;
+        mGuide.Show(cLux_GetCurrentMap().GetWorld(),"VRSeatGuideHU",
+            VRGuide_HandFrame(at,cVector3f(0,1,0),false),1,false);
+    }
+}
+

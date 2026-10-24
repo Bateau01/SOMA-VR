@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_escape_hw.hps"
 #include "base/InputHandler_Types.hps"
 #include "interfaces/Map_Interface.hps"
 #include "helpers/helper_game.hps"
@@ -21,6 +22,9 @@ const cColor gOceanFogColor = cColor(0.009,0.028,0.035,1);
 
 class cScrMap : iScrMap
 {
+    [nosave] cVREscapeGuideHW mVREscapeGuide;
+    void Update(float dt){mVREscapeGuide.Update(dt,true,mbFirstTimeClimb);}
+
 	//-------------------------------------------------------
 	
 	/////////////////////////////////////////
@@ -174,6 +178,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+        mVREscapeGuide.Dispose();
 		Music_Stop(1.0f, eMusicPrio_BgAmb);
 	}
 	
@@ -601,6 +606,7 @@ class cScrMap : iScrMap
 	
 	void AreaClimbHole_OnPlayerInteract(const tString &in asEntity)
 	{
+        mVREscapeGuide.Hide();
         cScript_SetGlobalArgInt(0,28);cScript_RunGlobalFunc("HintHandler","cScrHintHandler","_Global_VRCompleteStoryHint");		
 		Entity_AttachToEntity("ExitStartAnimation_2", "ExitStartAnimation_1", "", true);
 		CameraAnimation_Begin("ExitStartAnimation", "", false);
@@ -674,6 +680,7 @@ class cScrMap : iScrMap
 		
 	void HandAnimOver_ClimbedOut(const tString&in asAnim)
 	{
+        mVREscapeGuide.Hide();
 		Player_SetGravityEnabled(true);
 		Player_Teleport("PlayerStart_DomeExit");
 		Player_SetActive(false);

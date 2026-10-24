@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_roomscale_hr.hps"
 #include "interfaces/Player_Interface.hps"
 #include "base/InputHandler_Types.hps"
 #include "base/Base_Types.hps"
@@ -190,8 +191,32 @@ class cScrPlayer : iScrPlayerBase, iScrPlayer_Interface
 	
 	//------------------------------------------------------------
 	
+	
+    void HPL3VR_UpdateRoomscale()
+    {
+        if(!_HPL3VR_RuntimeActive_Player())return;
+        int state=mBaseObj.GetCurrentStateId();
+        if(!mBaseObj.IsActive() ||
+           mBaseObj.GetCurrentMoveStateId()!=eMoveState_Normal ||
+           (state!=ePlayerState_Normal && state!=ePlayerState_Grab) ||
+           mfMoveSpeedMul<=.05f || mfMoveSpeedMulTarget<=.05f ||
+           !cLux_GetUserConfig().GetBool("SOMA_VR","Roomscale",true)){
+            cScript_RunGlobalFunc("VRROOM","","RESET");
+            cScript_RunGlobalFunc("MoveState_Normal","","_Global_VRRoomscaleStepReset");return;
+        }
+        if(!cScript_RunGlobalFunc("VRROOM","","QUERY"))return;
+        cVector3f requested=cScript_GetGlobalReturnVector3f();
+        cVector3f accepted=HPL3VR_RoomscaleMove(mBaseObj.GetCharacterBody(),requested,true);
+        tString movement=""+accepted.x+","+accepted.y+","+accepted.z;
+        if(cScript_RunGlobalFunc("VRROOM",movement,"ACK")){
+            cScript_SetGlobalArgVector3f(0,accepted);
+            cScript_RunGlobalFunc("MoveState_Normal","","_Global_VRRoomscaleStep");
+        }
+    }
+
 	void Update(float afTimeStep)
-	{		
+	{
+        HPL3VR_UpdateRoomscale();		
 		////////////////////////////
 		// Under water in liquid check
 		if(cScript_GetGlobalVarBool("MapUnderwater")==false)

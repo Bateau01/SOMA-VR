@@ -18,6 +18,14 @@ enum ePositionState
 	ePositionState_Leaving
 }
 
+// Session gate: flatscreen retains the authored camera behavior.
+bool HPL3VR_ConversationActive()
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+    return cScript_GetGlobalReturnBool();
+}
+
 const float gfConvHeadRotateAcc = 6.0f;
 const float gfConvHeadRotateMaxSpeed = 1.5f;
 const float gfConvHeadRotateSpeedMul = 2;
@@ -237,7 +245,7 @@ class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
 			mvStartFeetPos.y = pPositionArea.GetAreaBody().GetBoundingVolume().GetMin().y;
 			
 			mvFocusPos = CalcCameraTarget();
-			cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
+			if (!HPL3VR_ConversationActive()) cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
 			mfDirectLookCount = 2.0f;
 			mlFailedToMoveCount=0;
 		}
@@ -251,6 +259,7 @@ class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
 	
 	void ZoomIn()
 	{
+        if (HPL3VR_ConversationActive()) return;
 		cCamera@ pCam = cLux_GetPlayer().GetCamera();
 		cVector3f vFocusPos = CalcCameraTarget();
 		float fDistToFocus = cMath_Vector3Dist(pCam.GetPosition(), vFocusPos);
@@ -302,7 +311,7 @@ class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
 		// Disable crosshair
 		Player_SetCrossHairState(eCrossHairState_None);
 		
-		if (mePositionState==ePositionState_Ready)
+		if (mePositionState==ePositionState_Ready && !HPL3VR_ConversationActive())
 		{
 			///////////////////////////
 			// Check if look at should continue
@@ -311,7 +320,7 @@ class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
 			{
 				mvFocusPos = vFocusPos;
 				mfDirectLookCount=2.0f;
-				cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
+				if (!HPL3VR_ConversationActive()) cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
 			}
 				
 			if (mfDirectLookCount>0)
@@ -400,12 +409,12 @@ class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
 			mfHeadBobCount += afTimeStep * cMath_PiMul2 * 6.1f * 0.25f;
 			mvHeadBob.x = cMath_Sin(mfHeadBobCount/2.0f - cMath_PiDiv4) * 0.06f;
 			mvHeadBob.y = cMath_Sin(mfHeadBobCount) * 0.06f - 0.06f;
-			cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Conversation, mvHeadBob);
+			cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Conversation, HPL3VR_ConversationActive() ? cVector3f_Zero : mvHeadBob);
 		
 			if (bDone)
 			{
 				// Make sure we're looking at the person
-				cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
+				if (!HPL3VR_ConversationActive()) cLux_GetPlayer().RotateCameraTowards(gfConvHeadRotateAcc, gfConvHeadRotateMaxSpeed, gfConvHeadRotateSpeedMul, mvFocusPos, false);
 				mfDirectLookCount = 2.0f;
 				mePositionState = ePositionState_Ready;
 			}
@@ -415,7 +424,7 @@ class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
 		{
 			// Blend any added headbob back to 0
 			mvHeadBob*=0.95f;
-			cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Conversation,mvHeadBob);
+			cLux_GetPlayer().SetCameraPosAdd(eCameraAddType_Conversation,HPL3VR_ConversationActive() ? cVector3f_Zero : mvHeadBob);
 		}
 	
 		///////////////////////////
@@ -634,8 +643,8 @@ class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
 				
 				iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
 				
-				pCharBody.AddYaw(avAmount.x*-1*fMul);
-				cLux_GetPlayer().GetCamera().AddPitch(avAmount.y*-1*fMul);
+				if (!HPL3VR_ConversationActive()) { pCharBody.AddYaw(avAmount.x*-1*fMul);
+				cLux_GetPlayer().GetCamera().AddPitch(avAmount.y*-1*fMul); }
 				
 				return false;
 			}
@@ -653,8 +662,8 @@ class cScrPlayerState_Conversation : iScrPlayerState, iScrPlayerState_Interface
 				
 				iCharacterBody@ pCharBody = cLux_GetPlayer().GetCharacterBody();
 				
-				pCharBody.AddYaw(avAmount.x*-1*fMul);
-				cLux_GetPlayer().GetCamera().AddPitch(avAmount.y*-1*fMul);
+				if (!HPL3VR_ConversationActive()) { pCharBody.AddYaw(avAmount.x*-1*fMul);
+				cLux_GetPlayer().GetCamera().AddPitch(avAmount.y*-1*fMul); }
 				
 				return false;
 			}

@@ -85,6 +85,9 @@ static i32 s26ei_read_foveation_gaze(float* gaze){
     float forward[3]={0,0,-1},raw[3];s26s_quat_rotate(&sample.eye.orientation,forward,raw);s26s_quat_rotate(&inv,raw,gaze);s26ei_gaze_guard(now,sample.time,gaze,1);return 1;
 }
 static i32 s26ef_foveation_gaze(float* gaze){
+#ifdef S26IU_TEST
+    if(g_s26iuTestMode==3){gaze[0]=gaze[1]=0;gaze[2]=-1;return 1;} /* test-only fixed gaze, no controller/HMD substitution */
+#endif
     i32 valid=s26ei_read_foveation_gaze(gaze);if(!valid)s26ei_gaze_guard(0,0,gaze,0);return valid;
 }
 /* The light fix has already replaced bf4 with asymmetric-eye coefficients.

@@ -81,11 +81,13 @@ class cScrPlayerState_Interact_Terminal : iScrPlayerState_Interact, iScrPlayerSt
 	
 	void OnMapEnter(cLuxMap @apMap)
 	{
+        cScript_RunGlobalFunc("VRWCTRL","","N");
 		mbVRLeavePolicyChecked=false;
 		mfVRNoTouchTime=0;
 	}
 	void OnMapLeave(cLuxMap @apMap)
 	{
+        cScript_RunGlobalFunc("VRWCTRL","","N");
 		mbVRLeavePolicyChecked=false;
 	}
 	
@@ -217,6 +219,27 @@ class cScrPlayerState_Interact_Terminal : iScrPlayerState_Interact, iScrPlayerSt
         }
         mBaseObj.mpPlayer.ChangeState(mlPreviousState);
     }
+    bool VR_WorldControlsAllowed()
+    {
+        if(mlPreviousState!=ePlayerState_Normal)return false;
+        if(!mbVRLeaveOwnsSequence)return true;
+        cLuxMap@ map=cLux_GetCurrentMap();
+        cLuxProp@ terminal=cLux_ID_Prop(mPropID);
+        if(map is null || terminal is null)return false;
+        // A world-button permission does not grant exit or physical pickup.
+        // Unknown callback-owned terminals still fail closed.
+        tString controls="bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)";
+        if(map.ScriptMethodExists(controls))
+        {
+            if(!map.ScriptPrepare(controls))return false;
+            tString name=terminal.GetName();map.SetArgString(0,name);
+            return map.ScriptExecute() && map.GetReturnBool();
+        }
+        tString signature="bool VR_CanLeaveTerminalForPhysicalPickup(const tString &in asEntityName)";
+        if(!map.ScriptMethodExists(signature) || !map.ScriptPrepare(signature))return false;
+        tString name=terminal.GetName();map.SetArgString(0,name);
+        return map.ScriptExecute() && map.GetReturnBool();
+    }
 	void Exit()
 	{
 		mbExit=true;
@@ -234,6 +257,7 @@ class cScrPlayerState_Interact_Terminal : iScrPlayerState_Interact, iScrPlayerSt
 	{
 		mbExit = false;
         mfVRNoTouchTime=0;
+        cScript_RunGlobalFunc("VRWCTRL","","N");
         mbVRLeavePolicyChecked=false;
         mbVRCursorSaved=false;
 		EnterInteractState(alPrevStateId);
@@ -248,6 +272,7 @@ class cScrPlayerState_Interact_Terminal : iScrPlayerState_Interact, iScrPlayerSt
 	void OnLeaveState(int alNextStateId)
 	{	
 		bool bHPL3VR = _HPL3VR_RuntimeActive_TerminalState();
+        cScript_RunGlobalFunc("VRWCTRL","","N");
 
 		//////////////
 		// Restore fov only for the literal flatscreen path. VR never changed it.
@@ -332,6 +357,9 @@ class cScrPlayerState_Interact_Terminal : iScrPlayerState_Interact, iScrPlayerSt
                     "void " + msLeaveCallback + "(const tString &in asEntityName)");
                 mbVRLeavePolicyChecked=true;
             }
+            // Ordinary walk-up terminal focus need not suppress a different physical button.
+            // Script-owned terminals and non-Normal return states retain exclusivity.
+            cScript_RunGlobalFunc("VRWCTRL","",VR_WorldControlsAllowed() ? "Y" : "N");
             if(cScript_RunGlobalFunc("VRTPRES","","")) mfVRNoTouchTime=0;
             else mfVRNoTouchTime+=afTimeStep;
             // S26AW: callback-owned terminals can control a chair or story sequence.

@@ -22,7 +22,14 @@ function Test-SomaVrDownloadedUpdate([string]$Path,$Plan) {
     if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Plan.Hash) { throw 'Downloaded installer checksum does not match the release.' }
 }
 function Get-SomaVrUpdateJson([string]$Url) {
-    Invoke-RestMethod -Uri $Url -Headers @{'User-Agent'='SOMA-VR-Updater';'Accept'='application/vnd.github+json'} -TimeoutSec 8 -ErrorAction Stop
+    # Decode raw bytes explicitly: Windows PowerShell misdecodes octet-stream UTF-8 as Latin-1.
+    $response=Invoke-WebRequest -UseBasicParsing -Uri $Url -Headers @{'User-Agent'='SOMA-VR-Updater';'Accept'='application/vnd.github+json'} -TimeoutSec 8 -ErrorAction Stop
+    $stream=$response.RawContentStream
+    if (!$stream) { throw 'Update response has no content stream.' }
+    $stream.Position=0
+    $reader=New-Object IO.StreamReader($stream,(New-Object Text.UTF8Encoding($false,$true)),$true)
+    try { $json=$reader.ReadToEnd() } finally { $reader.Dispose() }
+    return ($json | ConvertFrom-Json -ErrorAction Stop)
 }
 function Confirm-SomaVrUpdate([string]$Current,[string]$Next) {
     Add-Type -AssemblyName System.Windows.Forms

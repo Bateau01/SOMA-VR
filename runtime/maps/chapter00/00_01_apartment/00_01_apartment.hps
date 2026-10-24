@@ -34,6 +34,14 @@ bool _HPL3VR_TracerActive()
 }
 class cScrMap : iScrMap
 {
+    // S26IO: permission for unrelated physical world controls only.
+    // Native exit callbacks, GUI ownership, B/distance exit and pickups are unchanged.
+    bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)
+    {
+        return asEntityName=="laptop_touchscreen_1" ||
+               asEntityName=="televison_small_1";
+    }
+
     cVRPhoneQ mVRPhone;
     void VRPhoneW_Gui(const tString &in entity,float dt)
     {

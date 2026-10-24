@@ -566,16 +566,16 @@ class cScrHintHandler : iScrUserModule, iScrUserModule_Interface, iScrHintHandle
 		}
 		if (mpVRFont is null) @mpVRFont = cResources_CreateFontData(Helper_Font_GetFontName(eLuxFontType_Default_Medium_Outline));
 		if(mbHintsEnabled==false || mCurrentHint.IsEmpty() || mfTextAlpha==0 || mpVRFont is null) return;
-		// Prepare the same native 3D surface and per-eye route as VR subtitles.
+		// Separate upper-view surface: subtitles keep their comfort anchor.
 		// Use an explicit set handle; no global HUD redirection survives this call.
 		cScript_RunGlobalFunc("VRHINT", "", "P");
-		cGuiSet@ pHintSet = cGui_GetSetFromName("VR_Subtitles");
+		cGuiSet@ pHintSet = cGui_GetSetFromName("VR_Hints");
 		if(pHintSet is null) @pHintSet = cLux_GetGameHudSet();
 		cColor currentCol = mTextColor;
 		currentCol.a *= mfTextAlpha;
-		cVector2f vHud = cLux_GetHudVirtualCenterSize();
+		cVector2f vHud = cVector2f(1024,768);
 		float fCenterX = vHud.x * 0.5f;
-		float fHeaderY = vHud.y * 0.32f;
+		float fHeaderY = vHud.y * 0.08f;
 		float fLineHeight = mfLineHeight > gfFontSize ? mfLineHeight : gfFontSize * 1.15f;
 		// Text-only VR presentation is intentional: keyboard/gamepad sprite icons
 		// are desktop affordances and are omitted alongside the crosshair icons.

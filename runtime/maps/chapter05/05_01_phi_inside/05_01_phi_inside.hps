@@ -1,3 +1,5 @@
+#include "helpers/helper_vr_traversal_hy.hps"
+#include "helpers/helper_vr_seat_hu.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/Inputhandler_Types.hps"
 #include "base/AchievementHandler_Types.hps"
@@ -78,6 +80,10 @@ enum eSatFrameState
  
 class cScrMap : iScrMap
 {
+ [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
+ [nosave] cVRSeatGuideHU mVRSeatHU;
+
 	//--------------------------------------------
 
 	/////////////////////////////////////////
@@ -343,8 +349,22 @@ class cScrMap : iScrMap
 
 	////////////////////////////
 	// Run when entering map
+	void EnsureVRTraversalHZ()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Dispose();
+        mVRTraversalHY.Add("Ladder",cVector3f(0.1425538f,-2.7290638f,0.0378726f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(-0.0006826f,0.0119141f,0.9999288f));
+
+        mVRTraversalHY.Add("Ladder",cVector3f(-0.3140455f,4.2450715f,-0.3329326f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.7018272f,0.7123471f,0.0004753f));
+
+    }
+
 	void OnEnter()
 	{
+        // HY ladder surfaces: source triangles recorded in ladder_coverage_hy.json.
+        EnsureVRTraversalHZ();
+
+
 		MainMenu_SetBGPhase(eMainMenuPhase_3_3_To_End);
 	}
     
@@ -378,6 +398,8 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+ mVRTraversalHY.Dispose();
+        mVRSeatHU.Dispose();
         mbVRLaunchButtonWindow=false; VRLaunchHands(-1);
 		Player_SetLadderMoveMul(1.0f);
 		PlayerEnergy_SetAllowCathComment(false);
@@ -544,6 +566,14 @@ class cScrMap : iScrMap
 	
 
     // S26DC: only the authored final-button window replaces the seated arms.
+    // Final launch is authorized only when the authored dialogue enables this button.
+    // All VR physical/auxiliary routes share this guard; no loading flags are set here.
+    bool VR_CanPressLaunchButton()
+    {
+        iLuxEntity@ button=Map_GetEntity("LaunchButton");
+        return button !is null && button.IsActive() && !button.GetInteractionDisabled() &&
+               mbVRLaunchButtonWindow && !mbARKLaunched && !mbControllingLoaderArm;
+    }
     bool mbVRLaunchButtonWindow=false;
     [nosave] int mlVRLaunchHandsPublished=-2;
     void VRLaunchHands(int state)
@@ -559,6 +589,9 @@ class cScrMap : iScrMap
 
 	void Update(float afTimeStep)
 	{
+ EnsureVRTraversalHZ();
+ mVRTraversalHY.Update(afTimeStep);
+        mVRSeatHU.Update(afTimeStep);
         // Recover the authored waiting window from saves made before S26DC.
         if(!mbVRLaunchButtonWindow && !mbARKLaunched && !mbControllingLoaderArm &&
            cLux_GetPlayer().GetCurrentStateId()==ePlayerState_InteractiveCameraAnimation &&
@@ -2953,6 +2986,7 @@ class cScrMap : iScrMap
 		
 		void InteractScanChair(const tString &in asEntity)
 		{
+            if(!VRSeatHU_Ready())return;
 			EyeTracking_SetExtendedViewMul(0.07);
 			//////////////////////////////////////////////
 			// Player sits down after interacting with chair
@@ -3984,7 +4018,7 @@ class cScrMap : iScrMap
 		
 		void InteractionFromSeat(const tString &in asEntity)
 		{
-			if(asEntity=="LaunchButton"||asEntity=="TerminalLaunchInteract")
+			if((asEntity=="LaunchButton"||asEntity=="TerminalLaunchInteract") && VR_CanPressLaunchButton())
 			{
 				Entity_CallEntityInteract(asEntity);
 			}
@@ -3992,6 +4026,7 @@ class cScrMap : iScrMap
 		
 		void OnChangeStateLaunchButton(const tString &in asEntity, int alState)
 		{
+            if(!VR_CanPressLaunchButton())return;
 			if (alState==1)
 			{
 				CameraAnimation_Begin("SitAnimBackFromArmControl", "", false);
@@ -4001,6 +4036,7 @@ class cScrMap : iScrMap
 
 		void TerminalLaunchInteract_OnPlayerInteract(const tString &in asEntity)
 		{
+            if(!VR_CanPressLaunchButton())return;
 			mbVRLaunchButtonWindow=false; VRLaunchHands(-1);
             cLux_AddDebugMessage("Launch button pressed");
 			Sound_CreateAtEntity("LaunchButton", "05_01_phi_inside/SFX/spacegun_sequence/launch_button", "Player");

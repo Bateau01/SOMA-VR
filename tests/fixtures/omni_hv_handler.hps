@@ -1,0 +1,5 @@
+    bool mbHVHeld=false;
+    void _Global_HVHeld(){mbHVHeld=cScript_GetGlobalArgBool(0);}
+    void _Global_HVInventory(){
+        LogNewLine("HV_INVENTORY|count="+mvInventory.length()+"|owned="+VR_GetOwnedPhysicalOmniName());
+    }

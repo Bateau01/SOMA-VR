@@ -199,6 +199,7 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 		mbJumpingDisabled = false;
 		mbCrouchingDisabled = false;
 		mbStandingDisabled = false;
+        mvVRRoomStepTravel=cVector3f(0);
 		mbCrouchActionDisabled = false;
 		mfJumpCount = gfJumpDuration;
 		mfJumpDelayCount = gfJumpFatigueDelay;
@@ -632,6 +633,31 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 	
 	//------------------------------------------------------------
 	
+    // Accepted physical travel only. A net-displacement accumulator cancels
+    // tracking noise and small out-and-back leans instead of summing jitter.
+    // This drives native material/AI footsteps, never camera bob or locomotion.
+    [nosave] cVector3f mvVRRoomStepTravel=cVector3f(0);
+    void _Global_VRRoomscaleStep()
+    {
+        iCharacterBody@ body=mBaseObj.mpPlayer.GetCharacterBody();
+        cVector3f d=cScript_GetGlobalArgVector3f(0); d.y=0;
+        if(!cLux_GetUserConfig().GetBool("SOMA_VR","Roomscale",true) ||
+           !body.IsOnGround() || body.GetMovedLastUpdate() ||
+           (mBaseObj.mpPlayer.GetCurrentStateId()!=ePlayerState_Normal &&
+            mBaseObj.mpPlayer.GetCurrentStateId()!=ePlayerState_Grab)){
+            mvVRRoomStepTravel=cVector3f(0);return;
+        }
+        if(d.Length()>.101f)return;
+        mvVRRoomStepTravel+=d;
+        float stride=mbCrouching || mbCrawling ? .45f : .65f;
+        float distance=mvVRRoomStepTravel.Length();
+        if(distance>=stride){
+            mvVRRoomStepTravel*=((distance-stride)/distance);
+            FootSound(eFootSound_Step,0);
+        }
+    }
+    void _Global_VRRoomscaleStepReset(){mvVRRoomStepTravel=cVector3f(0);}
+
 	void UpdateHeadBob(float afTimeStep, float afMaxSpeed)
 	{
 		iCharacterBody @pCharBody = mBaseObj.mpPlayer.GetCharacterBody();

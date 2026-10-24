@@ -1,0 +1,38 @@
+    void _Global_HVAudit(){
+        tString name=cScript_GetGlobalArgString(0), can=cScript_GetGlobalArgString(1), use=cScript_GetGlobalArgString(2);
+        tString slotName=cScript_GetGlobalArgString(3), targetName=cScript_GetGlobalArgString(4);
+        cLuxMap@ map=cLux_GetCurrentMap();iLuxEntity@ slot=map.GetEntityByName(slotName,eLuxEntityType_LastEnum,"");iLuxEntity@ target=map.GetEntityByName(targetName,eLuxEntityType_LastEnum,"");
+        if(slot is null || target is null){LogNewLine("HV_FAIL|missing audit target "+slotName);return;}
+        cScript_RunGlobalFunc(slotName,"cScrPropOmniSlot","_Global_GetAttachAllowed");
+        bool attach=cScript_GetGlobalReturnBool();
+        if(!attach && !(map.GetName()=="02_01_ms_curie_outside" && slotName=="OmniToolSlotLifeBoat")){
+            LogNewLine("HV_PASS|outer attach gate suppresses "+slotName);return;
+        }
+        array<cToolData> saved=mvInventory;mvInventory.resize(0);
+        cToolData tool;tool.msPickedEntityName=name;tool.msCanBeUsedCallback=can;tool.msUseCallback=use;tool.msHandAnimationSuffix="omnitool";
+        mvInventory.push_back(tool);mbHVHeld=true;
+        // Supplied inventory/held state. Native callback and slot restrictions
+        // remain real. This is permission coverage, not acquisition coverage.
+        bool activeSlot=slot.IsActive(),disabledSlot=slot.GetInteractionDisabled();
+        bool activeTarget=target.IsActive(),disabledTarget=target.GetInteractionDisabled();
+        for(int phase=0;phase<2;phase++){
+        if(phase==1){slot.SetActive(true);target.SetActive(true);slot.SetInteractionDisabled(false);target.SetInteractionDisabled(false);}
+        mbHVHeld=true;
+        bool expected=false;
+        if(slot.IsActive() && !slot.GetInteractionDisabled() && target.IsActive() && !target.GetInteractionDisabled()){
+            if(map.ScriptPrepare("bool "+can+"(const tString &in, const tString &in)")){
+                map.SetArgString(0,name);map.SetArgString(1,targetName);
+                expected=map.ScriptExecute() && map.GetReturnBool();
+            }else LogNewLine("HV_FAIL|cannot prepare "+can);
+        }
+        cScript_SetGlobalArgString(0,slotName);_Global_VRCanGuideOmniSlot();bool actual=cScript_GetGlobalReturnBool();
+        LogNewLine((actual==expected ? "HV_PASS|" : "HV_FAIL|")+"audit phase="+phase+" "+slotName+"/"+name+" expected="+expected+" actual="+actual);
+        if(actual){
+            mbHVHeld=false;cScript_SetGlobalArgString(0,slotName);_Global_VRCanGuideOmniSlot();
+            if(cScript_GetGlobalReturnBool())LogNewLine("HV_FAIL|released audit guide");
+        }
+        }
+        slot.SetActive(activeSlot);slot.SetInteractionDisabled(disabledSlot);
+        target.SetActive(activeTarget);target.SetInteractionDisabled(disabledTarget);
+        mvInventory=saved;mbHVHeld=false;
+    }

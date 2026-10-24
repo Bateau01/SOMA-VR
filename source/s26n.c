@@ -1,5 +1,6 @@
 /* H57.55CB: VR interaction screen-edge semantic fix. Runtime delta is verification/logging only; gameplay correction lives in packaged script/player/PlayerState_Interact.hps. */
 typedef unsigned char u8;
+#include "provenance_hy.inc"
 typedef unsigned int u32;
 typedef unsigned long long u64;
 typedef long long i64;
@@ -596,6 +597,8 @@ static const void* g_s26ckPadBody;
 static char g_s26ckPadName[192];
 static i32 g_h576boPointerHand=-1,g_h576boEntryHand=-1;
 static u8 g_h576boPointerDown,g_h576boHaveLast;
+typedef struct { float u,v,p,r;u32 frame,generation;const void* gui;u8 valid;float sweepSide; } S26HRTerminalSample;
+static S26HRTerminalSample g_s26hrTerminalSamples[2];
 static float g_h576boPointerSide=1.0f,g_h576boLastU,g_h576boLastV;
 static i32 g_h576boLastX,g_h576boLastY,g_h576boLastW,g_h576boLastH;
 static i32 g_h576boDownStartX,g_h576boDownStartY,g_h576boLastTapX,g_h576boLastTapY;
@@ -1556,7 +1559,16 @@ typedef void  (__attribute__((ms_abi)) *PFN_H5755DU_Set3DVec)(void*,const float*
 typedef void  (__attribute__((ms_abi)) *PFN_H5755DU_Set3DMatrix)(void*,const float*);
 typedef void  (__attribute__((ms_abi)) *PFN_H5755DU_SetVirtualSize)(void*,const float*,float,float,const float*);
 static void* g_h5755duGui;
+// IK: both eyes must view one world-space panel per XR frame. The first
+// eligible final replay owns the transform; subsequent eye replay reuses it.
+static float g_s26ikSubtitleModel[16];
+static u32 g_s26ikSubtitleFrame,g_s26ikSubtitleEpoch;
+static u8 g_s26ikSubtitleValid;
 static void* g_h5755duSubtitleSet;
+static void* g_s26hrHintSet;
+static void* g_s26hrHintGui;
+static void* g_s26hrHintViewport;
+static u8 g_s26hrHintReplayPending;
 static void* g_h5755duAttachedViewport;
 static u8 g_h5755duCreated,g_h5755duAttached,g_h5755duRedirectLogged,g_h5755duFallbackLogged;
 static u32 g_h5755duCreateCalls,g_h5755duReuseCalls,g_h5755duAttachCalls,g_h5755duTransformUpdates,g_h5755duRedirectReplays,g_h5755duFallbackReplays,g_h5755duRejects;
@@ -2570,6 +2582,8 @@ static i32 g_lastLocateResult[2];
 
 
 static u64 g_lastFlags[2];
+// IQ: scalar epoch of a completed controller locate, distinct from physics/render ticks.
+static u32 g_s26iqPoseEpoch[2],g_s26iqLeverPoseEpoch[2];
 static u32 g_lastActive[2];
 static XrPosef g_lastPose[2];
 // H514: independent /input/aim/pose fallback. When grip/pose goes inactive but
@@ -3482,6 +3496,7 @@ static i32 h5755an_push_button(i32 down){
    The terminal GuiSet cursor is still hidden by the VR-only script focus branch.
    The host cursor position is captured once per Terminal lifetime and restored on
    authored leave/state teardown. */
+static u32 g_s26huWorldControlAllowed; // State-owned, no engine pointers.
 static i32 h576bo_terminal_event_gate(void){
     if(!__atomic_load_n(&g_h576boTerminalSurfaceValid,__ATOMIC_ACQUIRE))return 0;
     if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running())return 0;
@@ -3490,7 +3505,7 @@ static i32 h576bo_terminal_event_gate(void){
 
 /* S26E: terminal events are consumed once per native ImGui Begin, after its
    frame setup and before widgets. Fast down/up edges cannot collapse between draws. */
-typedef struct { i32 down,up,held; float downPos[2],upPos[2],pos[2]; } S26GuiQueue;
+typedef struct { i32 held,inputDown,read,count,heldDirect; float pos[2]; struct {i32 kind,direct;float pos[2];} edges[8]; } S26GuiQueue;
 static S26GuiQueue g_s26GuiQueue;
 static void* g_s26TerminalImGui;
 static i32 g_s26GuiCapture,g_s26GuiReady,g_s26GuiTried;
@@ -3504,31 +3519,42 @@ static S26GuiBegin o_s26GuiBegin;
 static S26GuiMotion o_s26GuiMotion;
 static S26GuiAction p_s26GuiAction;
 static i32 s26_gui_enqueue(S26GuiQueue* q,i32 down,float x,float y){
-    // S26AW: retain the physical down until withdrawal. Fast taps still
-    // deliver DOWN and UP on distinct GUI frames; sustained contact can drag.
-    if(down){if(q->down||q->up||q->held)return 0;q->down=1;
-        q->downPos[0]=x;q->downPos[1]=y;}
-    else if(q->down||q->held){q->up=1;q->upPos[0]=x;q->upPos[1]=y;}
+    // Preserve ordered taps across simulation/render cadence. Reserve a slot
+    // for release so capacity pressure cannot strand an accepted DOWN.
+    if(down){if(q->inputDown||q->count>=7)return 0;}
+    else if(!q->inputDown)return 1;
+    if(q->count>=8)return 0;
+    i32 at=(q->read+q->count)&7;
+    q->edges[at].kind=down?1:2;q->edges[at].direct=0;q->edges[at].pos[0]=x;q->edges[at].pos[1]=y;
+    q->count++;q->inputDown=down?1:0;
     return 1;
 }
 static i32 s26_gui_consume(S26GuiQueue* q,float* pos){
     i32 kind=0;const float* p=q->pos;
-    if(q->down){q->down=0;q->held=1;kind=1;p=q->downPos;}
-    else if(q->up){q->up=0;q->held=0;kind=2;p=q->upPos;}
+    if(q->count){
+        kind=q->edges[q->read].kind;p=q->edges[q->read].pos;
+        q->held=kind==1;q->heldDirect=q->held?q->edges[q->read].direct:0;q->read=(q->read+1)&7;q->count--;
+    }
     else if(q->held)kind=3;
     pos[0]=p[0];pos[1]=p[1];return kind;
 }
+static void s26hr_gui_cancel(S26GuiQueue* q){
+    q->read=0;q->count=0;q->inputDown=q->held;
+    if(q->held)s26_gui_enqueue(q,0,q->pos[0],q->pos[1]);
+}
 static i32 g_s26GuiOwnFrame;
+#include "terminal_touch_hs.inc"
 #include "terminal_cursor_an.inc"
 static void __attribute__((ms_abi)) s26_gui_action_detour(void* self,i32 action,u8 down,u8 edge){
     if(g_s26GuiReady&&self==g_s26TerminalImGui&&action==1&&g_s26GuiOwnFrame&&h576bo_terminal_event_gate())return;
     if(p_s26GuiAction)p_s26GuiAction(self,action,down,edge);
 }
-static void s26_gui_clear(void){g_s26anTerminalSet=0;g_s26GuiOwnFrame=0;g_s26GuiHavePos=0;g_s26TerminalImGui=0;g_s26GuiCapture=0;zero_bytes(&g_s26GuiQueue,sizeof(g_s26GuiQueue));}
+static void s26_gui_clear(void){g_s26hsTouch.remaining=0;g_s26anTerminalSet=0;g_s26GuiOwnFrame=0;g_s26GuiHavePos=0;g_s26TerminalImGui=0;g_s26GuiCapture=0;zero_bytes(&g_s26GuiQueue,sizeof(g_s26GuiQueue));}
 static void __attribute__((ms_abi)) s26_gui_motion_detour(void* self,const float* pos,const float* rel){
     if(g_s26GuiCapture==2&&g_s26GuiReady){s26bv_register_terminal(self);return;}
     if(g_s26GuiCapture&&g_s26GuiReady){
-        if(self!=g_s26TerminalImGui){g_s26GuiHavePos=0;zero_bytes(&g_s26GuiQueue,sizeof(g_s26GuiQueue));g_s26TerminalImGui=self;}
+        s26bv_register_terminal(self); // Renew cursor ownership with each exact live terminal handshake.
+        if(self!=g_s26TerminalImGui){g_s26hsTouch.remaining=0;g_s26GuiHavePos=0;zero_bytes(&g_s26GuiQueue,sizeof(g_s26GuiQueue));g_s26TerminalImGui=self;}
         return; /* Script handshake only; never move the real pointer to zero. */
     }
     if(g_s26GuiReady&&self==g_s26TerminalImGui&&g_s26GuiOwnFrame&&h576bo_terminal_event_gate())return;
@@ -3539,17 +3565,18 @@ static void __attribute__((ms_abi)) s26_gui_begin_detour(void* self,float dt){
     // A pause GUI may be the only GUI drawn until resume. Cancel pending
     // presses there too, without dereferencing the captured terminal pointer.
     if(g_s26GuiReady&&(h5754h_pause_active()||g_s26CutsceneHandsHidden||g_h576bfMapTransitionActive)){
-        g_s26GuiQueue.down=0;g_s26GuiQueue.up=g_s26GuiQueue.held?1:0;
+        s26hr_gui_cancel(&g_s26GuiQueue);
+        g_s26hsTouch.remaining=0;
     }
     if(!g_s26GuiReady||self!=g_s26TerminalImGui)return; if(g_s26anCursorReady)g_s26anTerminalSet=*(const void**)((u8*)self+0x18);
     g_s26GuiOwnFrame=0;
     if(!h576bo_terminal_event_gate()||h5754h_pause_active()||g_s26CutsceneHandsHidden||g_h576bfMapTransitionActive){
         if(g_s26GuiQueue.held)p_s26GuiAction(self,1,0,0);
-        zero_bytes(&g_s26GuiQueue,sizeof(g_s26GuiQueue));return;
+        g_s26hsTouch.remaining=0;zero_bytes(&g_s26GuiQueue,sizeof(g_s26GuiQueue));return;
     }
     float pos[2],rel[2]={0,0};i32 kind=s26_gui_consume(&g_s26GuiQueue,pos);
     if(!kind&&g_h576boPointerDown&&g_h576boHaveLast)kind=4;
-    if(!kind)return;
+    if(!kind){g_s26hsTouch.remaining=0;return;}
     g_s26GuiOwnFrame=1;
     // The first contact must also publish motion: Omicron's circuit puzzle
     // reads the new absolute position only when CheckMouseHasMoved is true.
@@ -3560,7 +3587,8 @@ static void __attribute__((ms_abi)) s26_gui_begin_detour(void* self,float dt){
     // Soma 1402f9b70 hit-tests the previous position. 1402f9880 shifts
     // current into previous, so prime both through the verified public method.
     o_s26GuiMotion(self,pos,rel);
-    p_s26GuiAction(self,1,(kind==1||kind==3)?1:0,kind==1?1:0);
+    i32 edge=s26hs_touch_edge(&g_s26hsTouch,kind,g_s26anCursorReady&&g_s26GuiQueue.heldDirect,dt);
+    p_s26GuiAction(self,1,(kind==1||kind==3)?1:0,edge?1:0);
     if((kind==1||kind==2)&&g_s26GuiLogs<24u){g_s26GuiLogs++;ext_Log(">>> S26N TERMINAL NATIVE TAP: %s at virtual %.1f/%.1f | exact terminal ImGui Begin",kind==1?"DOWN":"UP",pos[0],pos[1]);}
 }
 static i32 s26_gui_install(void){
@@ -3610,9 +3638,12 @@ static i32 h576bo_push_button(i32 down){
     if(down ? (!h576bo_terminal_event_gate()||!g_h576boHaveLast||!g_s26GuiReady||!g_s26TerminalImGui) : !g_h576boPointerDown){g_h576boButtonRejects++;return 0;}
     g_h576boButtonAttempts++;
     if(!s26_gui_enqueue(&g_s26GuiQueue,down,g_s26GuiQueue.pos[0],g_s26GuiQueue.pos[1])){g_h576boButtonRejects++;return 0;}
+    if(down)g_s26GuiQueue.edges[(g_s26GuiQueue.read+g_s26GuiQueue.count-1)&7].direct=g_s26hdLaserHand<0;
     g_h576boButtonPass++;if(down)g_h576boPointerDowns++;else g_h576boPointerUps++;return 1;
 }
 static void h576bo_release_pointer(i32 keepSurface,const char* why){
+    if(!keepSurface)zero_bytes(g_s26hrTerminalSamples,sizeof(g_s26hrTerminalSamples));
+    else for(i32 h=0;h<2;h++)g_s26hrTerminalSamples[h].valid=0;
     if(g_h576boPointerDown){(void)h576bo_push_button(0);g_h576boPointerDown=0;}
     if(g_h576boPointerHand>=0&&g_h576boPointerHand<2&&why&&g_h576boPointerUps<=12u)ext_Log(">>> S6-HANDS5756BW TERMINAL FINGER UP %s: %s | release queued for exact terminal GUI frame",g_h576boPointerHand==0?"L":"R",why);
     g_h576boPointerHand=-1;g_h576boPointerSide=1.0f;g_h576boHaveLast=0;if(!keepSurface){__atomic_store_n(&g_h576boTerminalSurfaceValid,0u,__ATOMIC_RELEASE);h576bq_restore_host_cursor();}
@@ -4556,6 +4587,9 @@ static i32 s26cp_flat_submission(u32* tex,i32* w,i32* h){
     if(!g_s26cqStageReady||!h5750y_resolve_ready_for_eye(0))return 0;
     *tex=g_h5750yResolveFbo[0];*w=g_h5750yResolveW;*h=g_h5750yResolveH;return 1;
 }
+#ifdef S26IU_TEST
+static void s26iu_test_eye(i32,u32,i32,i32);
+#endif
 void __attribute__((ms_abi,noinline,used)) h5750x_submit_eye_wrapper(void* sess,i32 eye,u32 tex,i32 srcW,i32 srcH){
     PFN_H5750X_SubmitEye p=h5750x_p2_submit_eye();
     if(eye>=0&&eye<=1&&s26cp_flat_submission(&tex,&srcW,&srcH)){
@@ -4567,6 +4601,9 @@ void __attribute__((ms_abi,noinline,used)) h5750x_submit_eye_wrapper(void* sess,
        be shorter than the eye texture. Restore the caller's state afterward. */
     u8 flatScissor=g_s26cqStageReady?ext_glIsEnabled(0x0C11u):0;
     if(flatScissor)ext_glDisable(0x0C11u);
+#ifdef S26IU_TEST
+    s26iu_test_eye(eye,tex,srcW,srcH);
+#endif
     if(p)p(sess,eye,tex,srcW,srcH);
     if(flatScissor)ext_glEnable(0x0C11u);
     if(eye==1&&g_s26cqStageReady)s26cq_restore_desktop_menu();
@@ -4632,6 +4669,15 @@ static u8 g_s26nHeadHeightFresh;
 static u8 g_s26nHeightValid,g_s26nCrouchLow;
 static float g_s26nStandingY;
 static i32 h5754h_pause_active(void);
+static i32 s26hr_calibrate_height(void){
+    // Capture the pose at the user's request, including while paused. Deferring
+    // to the first unpaused crouch tick can calibrate an already lowered head.
+    if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||
+       !p2_xr_origin_set()||!g_s26nHeadHeightFresh||
+       (u32)(g_frameCounter-g_s26nHeadValidFrame)>2u)return 0;
+    float y=p2_eye_mid()[1];if(!(y>-100.0f&&y<100.0f))return 0;
+    g_s26nStandingY=y;g_s26nHeightValid=1;g_s26nCrouchLow=0;return 1;
+}
 static void s26n_dispatch_crouch(void){
     if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||h5754h_pause_active())return;
     if(g_s26nCrouchMode!=2u&&!g_s26nCrouchOwned)return;
@@ -7653,6 +7699,7 @@ void __attribute__((ms_abi)) s6_h11_visual_get_hand_pose(i32 hand, float* outPos
     g_visualPoseHits[hand]++;
 }
 
+static i32 s26_phone_guide_frame(const float* basis9,const float* center,float* frame);
 static void quat_to_game_basis(i32 hand, float* B) {
     float x=g_lastPose[hand].orientation.x, y=g_lastPose[hand].orientation.y;
     float z=g_lastPose[hand].orientation.z, w=g_lastPose[hand].orientation.w;
@@ -9036,8 +9083,9 @@ static void h576ah_reset_subtitle_world_refs(const char* why){
     __atomic_store_n(&g_s26CutsceneHandsHidden,0u,__ATOMIC_RELEASE);
     void* oldVoice=g_h5755dgVoiceHandler;void* oldSet=g_h5755duSubtitleSet;void* oldHud=g_h5755feGameHud;void* oldCtx=g_h5755feRenderContext;
     g_h5755dgVoiceHandler=0;__atomic_store_n(&g_h5755dgReplayScope,0u,__ATOMIC_RELEASE);g_h5755dgMovedActive=0;
+    g_s26hrHintSet=0;g_s26hrHintGui=0;g_s26hrHintViewport=0;g_s26hrHintReplayPending=0;
     g_h5755duGui=0;g_h5755duSubtitleSet=0;g_h5755duAttachedViewport=0;g_h5755duCreated=0;g_h5755duAttached=0;
-    g_h5755feGameHud=0;g_h5755feRenderContext=0;g_h5755feProjectionValid=0;__atomic_store_n(&g_h5755fhFinalReplayScope,0u,__ATOMIC_RELEASE);
+    g_s26ikSubtitleValid=0;g_h5755feGameHud=0;g_h5755feRenderContext=0;g_h5755feProjectionValid=0;__atomic_store_n(&g_h5755fhFinalReplayScope,0u,__ATOMIC_RELEASE);
     g_h5755flSubtitleRenderable=0;g_h5755flSubtitleFingerprintValid=0;g_h5755flSubtitleFingerprint=0;
     g_h5755ebSubtitleAnchorValid=0;g_h5755ebSubtitleYawFollow=0;g_h5755ebSubtitlePitchFollow=0;
     g_h5755fmSubtitleAnchorFx=0.0f;g_h5755fmSubtitleAnchorFz=0.0f;g_h5755fmSubtitleAnchorPitch=0.0f;g_h5755fmSubtitleLatePoseValid=0;
@@ -9069,7 +9117,14 @@ static i32 h5755fm_refresh_subtitle_final_translation(void* set,void* renderCont
     float cz=-(V[2]*tx+V[6]*ty+V[10]*tz);
     float fx=g_h5755fmSubtitleAnchorFx,fz=g_h5755fmSubtitleAnchorFz,apitch=g_h5755fmSubtitleAnchorPitch;
     float fm=ext_Sqrtf(fx*fx+fz*fz);if(!(fm>0.5f&&fm<1.5f)){g_h5755fmSubtitleLateSyncRejects++;return 0;}fx/=fm;fz/=fm;
-    float M[16];s26bb_subtitle_matrix(M,cx,cy,cz,fx,fz,apitch,h5755ea_world_units_per_meter());
+    float M[16];
+    u32 epoch=__atomic_load_n(&g_h5755ebSubtitleAnchorEpoch,__ATOMIC_RELAXED);
+    if(g_s26ikSubtitleValid && g_s26ikSubtitleFrame==g_frameCounter && g_s26ikSubtitleEpoch==epoch){
+        h10_copy_f(M,g_s26ikSubtitleModel,16);
+    }else{
+        s26bb_subtitle_matrix(M,cx,cy,cz,fx,fz,apitch,h5755ea_world_units_per_meter());
+        h10_copy_f(g_s26ikSubtitleModel,M,16);g_s26ikSubtitleFrame=g_frameCounter;g_s26ikSubtitleEpoch=epoch;g_s26ikSubtitleValid=1;
+    }
     u8* soma=(u8*)ext_GetModuleHandleA(0);if(!soma)return 0;PFN_H5755DU_Set3DMatrix setM=(PFN_H5755DU_Set3DMatrix)(void*)(soma+H5755DU_SET_3D_TRANSFORM_RVA);
     if(!h20_mem_executable((void*)setM)){g_h5755fmSubtitleLateSyncRejects++;return 0;}setM(set,M);g_h5755fmSubtitleLateSyncs++;
     if(!g_h5755fmSubtitleLateSyncLogged){g_h5755fmSubtitleLateSyncLogged=1;ext_Log(">>> S6-HANDS5755FM SUBTITLE FINAL-REPLAY ORBIT SYNC ACTIVE: late camera center refreshes fixed-radius pitched panel; existing horizontal trim, dead zone and depth route retained");}
@@ -9128,12 +9183,58 @@ static void* h5755du_ensure_subtitle_set(void* gameHud){
     if(g_h5755duAttachedViewport!=vp){addSet(vp,set);g_h5755duAttachedViewport=vp;g_h5755duAttached=1;g_h5755duAttachCalls++;ext_Log(">>> S6-HANDS5755DU VR_SUBTITLES VIEWPORT ATTACH #%u: viewport %p <- set %p | native cViewport::AddGuiSet only; no manual RemoveGuiSet/destroy path",g_h5755duAttachCalls,vp,set);}
     if(!h5755du_update_subtitle_3d(set,hud)){g_h5755duRejects++;return 0;}return set;
 }
+// HR: HPL GUI coordinates run right/down; 3D size negates GUI Y in native
+// FUN_140219D70. Place the top-left at (-.9,+.75,-1.65) in view metres.
+// Row-major inverse rigid view; no subtitle dead-zone state is read or changed.
+static i32 s26hr_hint_matrix(const float* V,float metric,float* M){
+    if(!V||!M||!h9_good(metric,100.0f)||metric<=0.0f)return 0;
+    for(i32 i=0;i<16;++i)if(!h9_good(V[i],100000.0f))return 0;
+    h10_identity(M);
+    for(i32 a=0;a<3;++a){
+        M[a*4]=V[a];M[a*4+1]=V[4+a];M[a*4+2]=V[8+a];
+        M[a*4+3]=-(V[a]*V[3]+V[4+a]*V[7]+V[8+a]*V[11])+
+            metric*(-.9f*V[a]+.75f*V[4+a]-H5755DU_SUBTITLE_DISTANCE_M*V[8+a]);
+    }
+    return 1;
+}
+#include "hint_anchor_hs.inc"
+static i32 s26hr_hint_pose(void* set,void* context){
+    if(!set||set!=g_s26hrHintSet||!context||
+       context!=__atomic_load_n(p2_main_frustum_ptr(),__ATOMIC_ACQUIRE)||
+       !h20_mem_readable((u8*)context+0x158,64))return 0;
+    float M[16],view[16];if(!s26hs_hint_view(&g_s26hsHintAnchor,(const float*)((u8*)context+0x158),view,g_frameCounter,g_h5748oFrameSyncEpoch)||!s26hr_hint_matrix(view,h5755ea_world_units_per_meter(),M))return 0;
+    u8* soma=(u8*)ext_GetModuleHandleA(0);if(!soma)return 0;
+    PFN_H5755DU_Set3DMatrix setM=(PFN_H5755DU_Set3DMatrix)(soma+H5755DU_SET_3D_TRANSFORM_RVA);
+    if(!h20_mem_executable((void*)setM))return 0;setM(set,M);return 1;
+}
 static void s26_prepare_hint_surface(void){
     if(g_h576mScriptRuntimePublished!=1||!h5755dg_gameplay_vr())return;
-    void* gui=0;void** slot=0;void* hud=0;
-    if(!h5755du_get_roots(&gui,&slot,&hud))return;
+    void* gui=0;void** slot=0;void* hud=0;if(!h5755du_get_roots(&gui,&slot,&hud))return;
+    u8* soma=(u8*)ext_GetModuleHandleA(0);if(!soma)return;
+    PFN_H5755DU_GetViewport getVp=(PFN_H5755DU_GetViewport)(soma+H5755DU_GET_VIEWPORT_RVA);
+    PFN_H5755DU_GetSet getSet=(PFN_H5755DU_GetSet)(soma+H5755DU_GET_SET_RVA);
+    PFN_H5755DU_CreateSet createSet=(PFN_H5755DU_CreateSet)(soma+H5755DU_CREATE_SET_RVA);
+    PFN_H5755DU_AddGuiSet addSet=(PFN_H5755DU_AddGuiSet)(soma+H5755DU_ADD_GUISET_RVA);
+    PFN_H5755DU_SetVirtualSize virtualSize=(PFN_H5755DU_SetVirtualSize)(soma+H5755DU_SET_VIRTUAL_SIZE_RVA);
+    PFN_H5755DU_Set3DVec size=(PFN_H5755DU_Set3DVec)(soma+H5755DU_SET_3D_SIZE_RVA);
+    PFN_H5755DU_SetIs3D is3D=(PFN_H5755DU_SetIs3D)(soma+H5755DU_SET_IS3D_RVA);
+    if(!h20_mem_executable((void*)getVp)||!h20_mem_executable((void*)getSet)||!h20_mem_executable((void*)createSet)||
+       !h20_mem_executable((void*)addSet)||!h20_mem_executable((void*)virtualSize)||!h20_mem_executable((void*)size)||!h20_mem_executable((void*)is3D))return;
+    if(g_s26hrHintGui!=gui){g_s26hrHintGui=gui;g_s26hrHintSet=0;g_s26hrHintViewport=0;g_s26hrHintReplayPending=0;}
+    if(!g_s26hrHintSet){
+        H5755DUTString name;h5755du_small_string(&name,"VR_Hints");
+        g_s26hrHintSet=getSet(gui,&name);
+        if(!g_s26hrHintSet)g_s26hrHintSet=createSet(gui,&name,*(void**)((u8*)hud+0x18));
+    }
+    void* set=g_s26hrHintSet;if(!set||!h20_mem_readable(set,0x188))return;
+    void* vp=getVp();if(!vp||!h20_mem_readable(vp,0xA0))return;
+    if(g_s26hrHintViewport!=vp){addSet(vp,set);g_s26hrHintViewport=vp;}
+    float v[2]={1024,768},off[2]={0,0},metric=h5755ea_world_units_per_meter();
+    float phys[3]={1.8f*metric,1.35f*metric,metric};
+    virtualSize(set,v,-1000.0f,1000.0f,off);size(set,phys);is3D(set,1);
+    *(u8*)((u8*)set+0x138)=0;
+    (void)s26hr_hint_pose(set,__atomic_load_n(p2_main_frustum_ptr(),__ATOMIC_ACQUIRE));
     g_h5755feGameHud=hud;
-    (void)h5755du_ensure_subtitle_set(hud);
 }
 /* H57.55EA: DY's FUN_140219D70 census hook is physically retired. Supplied
    Ghidra proved FUN_14029D930 is the native Is3D traversal and calls
@@ -9217,6 +9318,16 @@ static i32 h5755fe_prepare_cached_perspective(void){
 }
 static void __attribute__((ms_abi)) h5755ez_guiset_draw_detour(void* set,void* renderContext){
     u64 count=0;if(set&&h20_mem_readable((u8*)set+0xE0,8u))count=*(volatile u64*)((u8*)set+0xE0);
+    if(set&&set==g_s26hrHintSet){
+        // Auxiliary cameras must neither display hints nor retire an eye replay.
+        if(!h5755dg_gameplay_vr()){g_s26hrHintReplayPending=0;return;}
+        if(!h5755fh_main_eye_cache_eligible(renderContext))return;
+        g_s26hrHintReplayPending=0;
+        if(count&&g_h5755feGameHud&&h5755fe_capture_final_surface_state(set,renderContext)){
+            g_s26hrHintReplayPending=1;return;
+        }
+        if(o_h5755ezGuiSetDraw)o_h5755ezGuiSetDraw(set,renderContext);return;
+    }
     if(set==g_h5755duSubtitleSet){
         g_h5755ezGuiCalls++;g_h5755ezLastRenderCount=count;
         /* FE only suppresses the intermediate custom traversal after it has
@@ -9245,10 +9356,20 @@ static void __attribute__((ms_abi)) h5755ez_guiset_draw_detour(void* set,void* r
             }
         }
     }
+    if(set&&set==g_h5755feGameHud&&g_s26hrHintReplayPending){
+        g_s26hrHintReplayPending=0;
+        if(g_s26hrHintSet&&o_h5755ezGuiSetDraw&&h5755dg_gameplay_vr()&&
+           h5755fh_main_eye_cache_eligible(g_h5755feRenderContext)&&h5755fe_prepare_cached_perspective()&&
+           s26hr_hint_pose(g_s26hrHintSet,g_h5755feRenderContext)){
+            __atomic_store_n(&g_h5755fhFinalReplayScope,1u,__ATOMIC_RELEASE);
+            o_h5755ezGuiSetDraw(g_s26hrHintSet,g_h5755feRenderContext);
+            __atomic_store_n(&g_h5755fhFinalReplayScope,0u,__ATOMIC_RELEASE);
+        }
+    }
     if(o_h5755ezGuiSetDraw)o_h5755ezGuiSetDraw(set,renderContext);
 }
 static void __attribute__((ms_abi)) h5755fh_render_objects_detour(void* set){
-    if(set==g_h5755duSubtitleSet&&__atomic_load_n(&g_h5755fhFinalReplayScope,__ATOMIC_ACQUIRE)){
+    if((set==g_h5755duSubtitleSet||set==g_s26hrHintSet)&&__atomic_load_n(&g_h5755fhFinalReplayScope,__ATOMIC_ACQUIRE)){
         void* low=g_h5755feLow;void** vt=0;PFN_H5755FH_SetBool setDepth=0;
         if(low&&h20_mem_readable(low,8u)){vt=*(void***)low;if(vt&&h20_mem_readable((u8*)vt+0x278u,8u))setDepth=(PFN_H5755FH_SetBool)vt[0x278/8];}
         if(setDepth&&h20_mem_executable((void*)setDepth)){
@@ -9584,6 +9705,10 @@ static i32 s26cb_flat_drawable_extent(i32* w,i32* h){
     *w=dw;*h=dh;return 1;
 }
 static i32 s26ee_copy_eye(i32,u32,i32,i32,i32,i32,i32,i32,i32,i32);
+#include "smaa_iu.inc"
+#ifdef S26IU_TEST
+#include "../tests/smaa_observer_iu.inc"
+#endif
 static i32 h5750v_capture_finished_eye(i32 eye){
     /* H57.55EQ: EP final-frustum stereo probe retired; shared frustum is restored by capture time. */
     if(eye<0||eye>1||!h5750v_targets_ready()){g_h5750vCaptureRejects++;return 0;}
@@ -9631,6 +9756,10 @@ static i32 h5750v_capture_finished_eye(i32 eye){
         if(!s26ee_copy_eye(eye,dst,sw,sh,crop[0],crop[1],crop[2],crop[3],dw,dh)){g_h5750vCaptureRejects++;return 0;}g_h5750xCropFrames[eye]++;if(yDirect)g_h5750yResolveFrames[eye]++;}
         else{if(!s26ee_copy_eye(eye,dst,sw,sh,0,0,sw,sh,dw,dh)){g_h5750vCaptureRejects++;return 0;}g_h5750xCropRejects[eye]++;}
     }
+    if(s26iu_should_process(g_s26iuEnabled,eye,
+        __atomic_load_n(&g_h5755bhPresentationState,__ATOMIC_ACQUIRE)==H5755BH_GAMEPLAY_VR,
+        h5754d_menu_wanted(),h5754h_pause_active(),g_h576bfMapTransitionActive,yDirect))
+        s26iu_process(g_h5750yResolveTex[eye],dst,dw,dh,g_s26iuArmed);
     bind(0x8D40u,0u);
     g_h5750vCaptures[eye]++;
     if(eye==0&&yDirect)g_s26fiMirrorReady=1;
@@ -9669,6 +9798,9 @@ static void __attribute__((ms_abi)) h5750v_viewport_post_detour(void* owner,void
         }
     }
 
+#ifdef S26IU_TEST
+    s26iu_test_begin();
+#endif
     __atomic_store_n(&g_h5750vReentry,1u,__ATOMIC_RELEASE);
     volatile i32* alt=p2_alt_eyes_ptr();volatile i32* frame=p2_frame_ptr();volatile i32* captured=p2_captured_ptr();
     i32 oldAlt=__atomic_load_n(alt,__ATOMIC_ACQUIRE);
@@ -9746,6 +9878,9 @@ static void __attribute__((ms_abi)) h5750v_viewport_post_detour(void* owner,void
         g_h5750vCaptureRejects++;
         if(temporalReady)g_h5750vPrimeRejects++;
     }
+#ifdef S26IU_TEST
+    s26iu_test_end();
+#endif
     __atomic_store_n(&g_h5750vReentry,0u,__ATOMIC_RELEASE);
 }
 static void h5750v_try_install_native_post(void){
@@ -10147,7 +10282,7 @@ void __attribute__((ms_abi,naked,used)) s26gj_swap_entry(void){
         "add $184, %rsp\nmov $1, %eax\nret\n");
 }
 static void s26cq_install_swap(void){
-    ext_Log(">>> S26HB: diagnostic recording retired; verified 120 Hz due-only timing retained");
+    
     ext_Log(">>> S26GJ PRE-MIRROR ROUTE: fixed call in owned swap body; independent of runtime entry detours; bounded menu observer retained");
 }
 /* H57.55bk source cleanup: retired compiler-dead static h5754ar_ensure_stage_target. */
@@ -10191,18 +10326,17 @@ enum {
     H5755EG_P_POSTLOOSE,H5755EG_P_POSTCONTACT,H5755EG_P_POSTHELD,
     H5755EG_P_COUNT
 };
+/* Retired timing callsites are constant/no-op, optimized away; native call order retained. */
 static void h5755eg_prof_try_init(void){}
 static u64 h5755eg_tick(void){return 0;}
 static u64 h5755em_outer_tick(void){return 0;}
 static void h5755em_outer_add(i32 pass,u64 t0){}
-static void h5755eg_phys_add_ticks(i32 b,u64 d){}
+static void h5755eg_phys_add_since(i32 b,u64 t0){}
 static void h5755ei_phys_frame_begin(void){}
 static void h5755ei_phys_spike_finish(const void* world){}
-static void h5755eg_phys_add_since(i32 b,u64 t0){}
 static void h5755eg_phys_reset(const void* world){}
 static void h5755eg_phys_finish_sample(const void* world){}
 static void h5755eg_render_finish(u64 t0,u64 xrTicks,u64 sceneTicks){}
-static void s26ej_trace_push(u32 kind,u64 start,const u64* values,const void* world){}
 /* H57.55GL: hardware-proven cFrustum spatial-origin repair.
    GK hardware mapped +0x38 as the exact authored-camera vector at every 2.5 cm
    head-displacement bucket while +0x158's rigid view center followed the HMD,
@@ -10278,14 +10412,7 @@ void __attribute__((ms_abi,noinline,used)) s6_h5755gn_scene_entry_wrapper(void* 
     g_s26doLightRenderer=0;g_s26doLightFrustum=0;
     if(dmLive){s26ef_install_foveation();s26do_install_light_setup();g_s26doLightRenderer=a;g_s26doLightFrustum=c;}
     
-    u64 gkRenderStart=h5755eg_tick();
     render(a,b,c,d,e,f,g,h);
-    if(gkRenderStart){
-        u64 v[H5755EG_P_COUNT]={0};v[0]=h5755eg_tick()-gkRenderStart;
-        v[1]=(u64)dmEye;v[2]=(u64)dmLive;v[3]=dmLeases;v[4]=dmNative;
-        v[5]=(u64)c;v[6]=(u64)a;v[7]=(u64)gqRole;
-        s26ej_trace_push(6u,gkRenderStart,v,d);
-    }
     static u32 gqReports=0,gqLastFrame=0;
     if(gqRole==2 && gqReports<8u && (u32)(g_frameCounter-gqLastFrame)>=180u){
         ++gqReports;gqLastFrame=g_frameCounter;
@@ -10673,7 +10800,7 @@ static void h576az_verify_wheel_script(void){
 static u8 g_h576bdLeverScriptChecked,g_h576bdLeverScriptOK;
 static void h576bd_verify_lever_script(void){
     if(g_h576bdLeverScriptChecked)return;g_h576bdLeverScriptChecked=1;
-    g_h576bdLeverScriptOK=(u8)(h576a_verify_one_omnitool_script("script\\player\\PlayerState_Interact_RotateBase.hps","H5756BD_VR_LEVER_SIGNED_TAG")?1:0);
+    g_h576bdLeverScriptOK=(u8)(h576a_verify_one_omnitool_script("script\\player\\PlayerState_Interact_RotateBase.hps","S26IQ_VR_LEVER_SAMPLE_GAPS")?1:0);
     ext_Log(">>> S6-HANDS5756BD LEVER ROTATEBASE SCRIPT GATE %s: matched RotateBase must consume z=3 signed hinge-angle packets directly; missing/stale script fails exact Lever motion closed before any camera/generic impulse fallback",g_h576bdLeverScriptOK?"READY":"REJECT");
 }
 static u8 g_h576mDualModeScriptsChecked,g_h576mDualModeScriptsOK;
@@ -10961,6 +11088,23 @@ static i32 h576az_try_begin_wheel_hinge_brace(i32 hand){
     return 1;
 }
 
+/* IL: GW can adopt a synchronously entered Grab between observer polls.
+   If it also exits between polls, pointer-equality is not proof that the
+   semantic shell is still live. Retire only committed, non-pending metadata
+   after resolving a known non-Grab native state. No body dereference, release,
+   callback, input mutation or native state transition belongs in this repair. */
+static void s26il_reconcile_grab_shell(i32 resolvedKind){
+    if(resolvedKind<=0||resolvedKind==7||!g_h5755chGrabStateActive||g_h5755chGrabExpected)return;
+    /* IM: a mount extraction can return to Normal while its exact physical
+       hold still owns detached native input. Preserve its look/input lifetime
+       until both hands release; never retain it merely because an owner exists. */
+    if(resolvedKind==4&&(h5755cj_hand_matches_grab_owner(0)||h5755cj_hand_matches_grab_owner(1)))return;
+    static u32 reports;
+    if(reports++<16u)ext_Log(">>> S26IL STALE GRAB SHELL RETIRED: native kind %d owner %p; physical holds and native input unchanged",resolvedKind,g_h5755chGrabStateOwner);
+    g_h5755chGrabStateActive=0;g_h5755chGrabStateBody=0;g_h5755chGrabStateWrapper=0;g_h5755chGrabStateOwner=0;
+    g_h5755chGrabPrimaryHand=-1;g_h5755chGrabButtonDetached=0;g_h5755cjGrabExpectedStep=0;
+}
+
 static void h5729_state_boundary_observe(const char* phase){
     void *st=0,*mod=0,*sobj=0;g_h5729Polls++;if(!h5729_state_key(&st,&mod,&sobj))return;
     if(!g_h5729HaveBaseline){
@@ -10968,7 +11112,7 @@ static void h5729_state_boundary_observe(const char* phase){
         g_h5729LastState=st;g_h5729LastModule=mod;g_h5729LastScriptObject=sobj;h5720_strcpy(g_h5729LastModuleName,sizeof(g_h5729LastModuleName),mp);h5720_strcpy(g_h5729LastClassName,sizeof(g_h5729LastClassName),cn);g_h5729HaveBaseline=1;
         ext_Log(">>> S6-HANDS5729 STATE BASELINE [%s]: state %p module %p script %p | '%s' / '%s' | observer is pointer-only between transitions; H57.28 hot hooks RETIRED",phase?phase:"?",st,mod,sobj,mp[0]?mp:"<unresolved>",cn[0]?cn:"<unresolved>");return;
     }
-    if(st==g_h5729LastState&&mod==g_h5729LastModule&&sobj==g_h5729LastScriptObject)return;
+    if(st==g_h5729LastState&&mod==g_h5729LastModule&&sobj==g_h5729LastScriptObject){s26il_reconcile_grab_shell(h5729_kind_names(g_h5729LastModuleName,g_h5729LastClassName));return;}
     char newMp[160],newCn[160];newMp[0]=newCn[0]=0;h5720_player_state(newMp,sizeof(newMp),newCn,sizeof(newCn));
     i32 oldKind=h5729_kind_names(g_h5729LastModuleName,g_h5729LastClassName),newKind=h5729_kind_names(newMp,newCn);g_h5729Transitions++;
     if((oldKind==1||oldKind==2||oldKind==5)&&newKind!=oldKind)g_h5729SpecialExits++;if((newKind==1||newKind==2||newKind==5)&&oldKind!=newKind)g_h5729SpecialEntries++;
@@ -11084,6 +11228,7 @@ static void h5729_state_boundary_observe(const char* phase){
         
         g_h5755chGrabStateActive=0;g_h5755chGrabExpected=0;g_h5755chGrabStateBody=0;g_h5755chGrabStateWrapper=0;g_h5755chGrabStateOwner=0;g_h5755chGrabPrimaryHand=-1;g_h5755chGrabButtonDetached=0;g_h5755cjGrabExpectedStep=0;
     }
+    s26il_reconcile_grab_shell(newKind);
     if(oldKind==1||oldKind==2||oldKind==5)ext_Log(">>> S6-HANDS5729 SPECIAL EXIT OBSERVED: %s -> '%s' / '%s' while nativeUse down %u hand %d and squeeze L/R %.3f/%.3f; this records SOMA's actual state boundary, not an inferred B/Exit route",oldKind==1?"MovingButton":(oldKind==2?"Slide":"Terminal"),newMp[0]?newMp:"<unresolved>",newCn[0]?newCn:"<unresolved>",(u32)g_h30NativeMouseDown,g_h30NativeUseHand,g_lastSqueeze[0],g_lastSqueeze[1]);
     g_h5729LastState=st;g_h5729LastModule=mod;g_h5729LastScriptObject=sobj;h5720_strcpy(g_h5729LastModuleName,sizeof(g_h5729LastModuleName),newMp);h5720_strcpy(g_h5729LastClassName,sizeof(g_h5729LastClassName),newCn);
 }
@@ -11789,7 +11934,7 @@ static i32 h25_soma_code_ptr(const void* fn);
 
 static i32 s26o_socket_held(const H5730TString* text,i32 release);
 static i32 s26q_phone_near(const H5730TString* text,i32 near);
-typedef struct {u32 id;i32 used,active,blocked;void *owner,*mainWrapper,*wrapper;const void *mainRaw,*raw;} S26YRocker;
+typedef struct {u32 id;i32 used,active,blocked,frontAxis,handMask;void *owner,*mainWrapper,*wrapper;const void *mainRaw,*raw;} S26YRocker;
 static S26YRocker g_s26yRocker[64];static i32 g_s26yCount,g_s26yCapture,g_s26yCalling;static u32 g_s26yLogs;
 static void *g_s26yMainWrapper,*g_s26yOwner;static const void* g_s26yMainRaw;
 static i32 s26y_token(const H5730TString* text,const H5730TString* cmd);
@@ -12828,6 +12973,7 @@ static i32 s26_native_hand_allowed(i32 hand){
         !g_h576bfMapTransitionActive&&!g_s26CutsceneHandsHidden&&visual_pose_valid(hand)&&
         !g_h5748SwitchStage&&p2_skin()[hand].valid;
 }
+#include "guide_hand_hr.inc"
 static void s26_refresh_native_held_pose(void){
     // Native world meshes are prepared before the legacy per-eye hand draw.
     // Refresh held hands from the current body-relative weld at the player view
@@ -12844,6 +12990,7 @@ static void s26_refresh_native_held_pose(void){
 }
 static void __attribute__((ms_abi)) s26_mesh_coverage_detour(void* mesh,float coverage){
     if(o_s26MeshCoverage)o_s26MeshCoverage(mesh,coverage);
+    if(s26hr_guide_pose(mesh))return;
     i32 h=g_s26MeshCapture;g_s26MeshCapture=-1;g_s26MeshSuccess=0;
     if(!mesh||!s26_native_hand_allowed(h))return;
     H10Skin* hs=&p2_skin()[h];if(hs->jointCount<1||hs->jointCount>32)return;
@@ -12950,6 +13097,7 @@ static i32 s26_install_native_hands(void){
 }
 #include "signatures_s.inc"
 #include "eye_bridge_s.inc"
+#include "roomscale_hr.inc"
 #include "audio_bridge_s.inc"
 #include "audio_menu_u.inc"
 static volatile u32 g_s26EffectMask;
@@ -13023,6 +13171,7 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
         }
         return 0;
     }
+    if(h5748t_sso_eq(objectName,"VRROOM",6u))return s26hr_room_token(className,functionName);
     if(h5748t_sso_eq(objectName,"VREYES",6u))return s26s_eye_token(className,functionName);
     if(h5748t_sso_eq(objectName,"VRAUDIO",7u))return s26s_audio_token(className,functionName);
     if(h5748t_sso_eq(objectName,"VRMECHPREP",10u)){
@@ -13041,6 +13190,27 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
     }
     if(h5748t_sso_eq(objectName,"VRSIMRATE",9u))return s26ge_rate_token(functionName);
     if(h5748t_sso_eq(objectName,"VRCFG",5u))return s26u_apply_audio_config();
+    if(h5748t_sso_eq(objectName,"VRESCAPE",8u)){
+        static u32 reports; if(reports>=16u)return 1;
+        for(i32 i=1;i<=5;i++){char v[2]={(char)('0'+i),0};if(h5748t_sso_eq(functionName,v,1u)){
+            const char* reasons[5]={"native gate closed","guide option off","outside 4m range","hand guide creation/pose rejected","hand guide visible"};
+            reports++;ext_Log(">>> S26HX ESCAPE GUIDE %u: %s",reports,reasons[i-1]);return 1;
+        }}return 0;
+    }
+    if(h5748t_sso_eq(objectName,"VRGUIDEH",8u)){
+        if(h5748t_sso_eq(functionName,"CONTACT",7u))return (g_s26hrGuideSuccess&&g_s26ikGuideContactValid)?s26s_set_vector(g_s26ikGuideContact):0;
+        if(h5748t_sso_eq(functionName,"R",1u)){g_s26hrGuideHand=-1;return g_s26hrGuideSuccess;}
+        g_s26hrGuideHand=-1;g_s26hrGuideSuccess=0;
+        if(g_h576bfMapTransitionActive||h5754h_pause_active()||g_s26CutsceneHandsHidden)return 0;
+        for(i32 h=0;h<2;h++){
+            char name[2]={(char)('0'+h),0};if(!h5748t_sso_eq(className,name,1u))continue;
+            i32 fist=h5748t_sso_eq(functionName,"F",1u)?1:(h5748t_sso_eq(functionName,"P",1u)?2:0);
+            if(!fist&&!h5748t_sso_eq(functionName,"O",1u))return 0;
+            if(!s26_native_hand_allowed(h)||!s26_install_native_hands())return 0;
+            g_s26hrGuideHand=h;g_s26hrGuideFist=fist;return 1;
+        }
+        return 0;
+    }
     if(h5748t_sso_eq(objectName,"VRMESH",6u))return s26_native_hand_token(className,functionName);
     if(h5748t_sso_eq(objectName,"VRFX",4u)){
         if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running())return 0;
@@ -13068,6 +13238,7 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
     if(h5748t_sso_eq(objectName,"VRREAD",6u)){
         i32 hand=g_h576avActiveInteractHand;
         if(hand<0||hand>1||!g_h576avActiveInteractBody)return 0u;
+        if(h5748t_sso_eq(functionName,"REMOTE",6u))return g_s26hdRemoteEnabled&&g_s26hlReadScope;
         if(h5748t_sso_eq(functionName,"S",1u))return
             g_s26hlReadScope||(g_h30NativeMouseDown&&g_h30NativeUseHand==1-hand)||g_h14GripBody[1-hand];
         if(h5748t_sso_eq(functionName,"B",1u)){
@@ -13159,6 +13330,20 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
         s26ch_bob_reset();return 0u;
     }
     if(h5748t_sso_eq(objectName,"VRCOMFORT",9u)){
+#ifdef S26IU_TEST
+        if(h5748t_sso_eq(className,"IUTEST",6u)){
+            for(i32 i=0;i<10;i++){char t[2]={(char)('0'+i),0};if(h5748t_sso_eq(functionName,t,1u)){g_s26iuTestMode=i;ext_Log(">>> IU_PHASE %d",i);return 1;}}return 0;
+        }
+#endif
+        if(h5748t_sso_eq(className,"SMAA",4u)){
+            if(h5748t_sso_eq(functionName,"READY",5u))return g_s26iuEnabled&&g_s26iuReady;
+            if(h5748t_sso_eq(functionName,"ARM",3u)){g_s26iuArmed=1;return 1;}
+            if(h5748t_sso_eq(functionName,"DISARM",6u)){g_s26iuArmed=0;return 1;}
+            g_s26iuEnabled=h5748t_sso_eq(functionName,"1",1u);
+            if(!g_s26iuEnabled)g_s26iuArmed=0;
+            return 1;
+        }
+
 
         if(h5748t_sso_eq(className,"GRIPMODEL",9u))return (u64)s26el_grip_model_command(functionName);
 
@@ -13256,7 +13441,7 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
                 static u32 crouchLogs=0;
                 if(h5748t_sso_eq(functionName,"D",1u)){if(!g_s26nCrouchOwned&&crouchLogs++<64u)ext_Log(">>> S26P PHYSICAL CROUCH CONFIRMED: movement script accepted lowered stance");g_s26nCrouchOwned=1;}
                 else if(h5748t_sso_eq(functionName,"U",1u)){if(g_s26nCrouchOwned&&crouchLogs++<64u)ext_Log(">>> S26P PHYSICAL CROUCH RELEASED: movement script released physical ownership");g_s26nCrouchOwned=0;}
-                else if(h5748t_sso_eq(functionName,"R",1u))g_s26nHeightValid=0;
+                else if(h5748t_sso_eq(functionName,"R",1u))return (u64)s26hr_calibrate_height();
                 else for(u32 i=0;i<3u;++i){char v[2]={(char)('0'+i),0};if(h5748t_sso_eq(functionName,v,1u)&&i!=g_s26nCrouchMode){g_s26nCrouchMode=i;g_s26nHeightValid=0;if(crouchLogs++<64u)ext_Log(">>> S26P CROUCH MODE: %u (0 seated/button, 1 standing/button, 2 physical)",i);}}
             }else if(h5748t_sso_eq(className,"V",1u)){
                 for(u32 i=0;i<4u;++i){char c[2]={(char)('0'+i),0};if(h5748t_sso_eq(functionName,c,1u))g_s26VignetteMode=i;}
@@ -13308,12 +13493,51 @@ static u64 __attribute__((ms_abi)) h5730_run_global_detour(void* handler,H5730TS
     }
     const i32 runtimeAck=h576m_decode_runtime_gate_ack(objectName,className,functionName);
     if(runtimeAck>0)return 1u;if(runtimeAck<0)return 1u;
+    if(h5748t_sso_eq(objectName,"VRGUIDE",7u)){
+        /* Immediate script-only snapshot: Newton column-major -> HPL rows.
+           No body references or retrieval-state writes belong in this query. */
+        static float phoneGuideFrame[16];static u32 phoneGuideRows;
+        if(g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||
+           g_h5755bhPresentationState!=H5755BH_GAMEPLAY_VR||g_h576bfMapTransitionActive||
+           g_s26CutsceneHandsHidden||h5754h_pause_active()){phoneGuideRows=0;return 0;}
+        if(h5748t_sso_eq(functionName,"ACTIVE",6u))return 1;
+        if(h5748t_sso_eq(functionName,"SCALE",5u)){float m=h5755ea_world_units_per_meter(),v[3]={m,m,m};return s26s_set_vector(v);}
+        if(h5748t_sso_eq(functionName,"PHONE",5u)){
+            phoneGuideRows=0;
+            float pos[3],m[16],center[3];
+            if(!g_s26xPhoneActive||!g_s26xPhonePending||g_h14GripBody[1]||!visual_pose_valid(1)||
+               !h14_hand_pose_raw(1,pos,m)||!h15_grip_center_world(1,m,center))return 0;
+            float basis9[9];quat_to_game_basis(1,basis9);
+            if(!s26_phone_guide_frame(basis9,center,phoneGuideFrame)||!s26s_set_vector(center))return 0;
+            phoneGuideRows=7;return 1;
+        }
+        i32 phoneRow=h5748t_sso_eq(functionName,"PHONE_ROW0",10u)?0:
+            h5748t_sso_eq(functionName,"PHONE_ROW1",10u)?1:
+            h5748t_sso_eq(functionName,"PHONE_ROW2",10u)?2:-1;
+        if(phoneRow>=0){
+            if(!g_s26xPhoneActive||!g_s26xPhonePending||g_h14GripBody[1]||!visual_pose_valid(1)){
+                phoneGuideRows=0;return 0;
+            }
+            u32 bit=1u<<phoneRow;if(!(phoneGuideRows&bit))return 0;phoneGuideRows&=~bit;
+            float row[3]={phoneGuideFrame[phoneRow],phoneGuideFrame[4+phoneRow],phoneGuideFrame[8+phoneRow]};
+            return s26s_set_vector(row);
+        }
+        phoneGuideRows=0;
+        if(h5748t_sso_eq(functionName,"HELD",4u)){
+            char name[96];if(!h5748n_copy_tstring((void*)className,name,sizeof(name)))return 0;
+            return s26_tool_hand_authorized(h576aa_inv_find_logical(name));
+        }
+        return 0;
+    }
     if(h5748t_sso_eq(objectName,"VRAUX",5u)){s26ay_aux_token(functionName);return 1u;}
     if(h5748t_sso_eq(objectName,"VROUTLINE",9u)){
         if(h5748t_sso_eq(className,"POST",4u)&&h5748t_sso_eq(functionName,"Q",1u))s26he_outline_postupdate();
         return 1u;
     }
     if(h5748t_sso_eq(objectName,"VRACCESS",8u))return g_s26hdRemoteEntry;
+    if(h5748t_sso_eq(objectName,"VRWCTRL",7u)){
+        __atomic_store_n(&g_s26huWorldControlAllowed,h5748t_sso_eq(functionName,"Y",1u)?1u:0u,__ATOMIC_RELEASE);return 1u;
+    }
     if(h5748t_sso_eq(objectName,"VRTPRES",7u))return s26v_terminal_present()?1u:0u;
     if(h5748t_sso_eq(objectName,"VRDRETRY",8u))return __atomic_exchange_n(&g_s26vDeathRetry,0u,__ATOMIC_ACQ_REL)?1u:0u;
     if(h5748t_sso_eq(objectName,"VRDEATH",7u)){
@@ -14840,6 +15064,7 @@ static i32 h14_hand_pose_raw(i32 hand,float* pos,float* M){
     h5748o_tracking_horizontal_to_game(side,reach,&offx,&offz);if(h5748o_yaw_zero_active())g_h5748oFrameSyncOffsetCalls++;
     pos[0]+=offx;pos[1]+=height;pos[2]+=offz;h10_make_model(hand,pos,1.0f,M);
     h10_copy_f(g_h531TrackedTarget[hand],M,16);g_h531TrackedTargetValid[hand]=1;g_h531TargetPublishes[hand]++;
+    static u32 ieStep[2],ieLogs[2];if(g_s26ieRoomLog&&ieLogs[hand]<160u&&ieStep[hand]!=g_h14PhysicsSteps){ieStep[hand]=g_h14PhysicsSteps;ieLogs[hand]++;ext_Log("S26IE HAND frame=%u step=%u hand=%d controller=%.6f,%.6f origin=%.6f,%.6f camera=%.6f,%.6f target=%.6f,%.6f",g_frameCounter,g_h14PhysicsSteps,hand,(double)g_lastPose[hand].position.x,(double)g_lastPose[hand].position.z,(double)origin[0],(double)origin[2],(double)body[0],(double)body[2],(double)pos[0],(double)pos[2]);}
     return 1;
 }
 static i32 h531_physics_target(i32 hand,float* pos,float* M){
@@ -15111,6 +15336,7 @@ typedef void (__attribute__((ms_abi)) *S26EFBounds)(const void*,const float*,flo
 static S26EFBounds p_s26efBounds;
 #include "item_grips_ej.inc"
 #include "holster_runtime_ef.inc"
+#include "phone_guide_frame.inc"
 static i32 h576an_try_omni_shoulder_retrieve(i32 hand){
     if(g_h576anOmniStorageMode!=H576AN_OMNI_STORAGE_RIGHT_SHOULDER||hand<0||hand>1||g_h576bOmniState!=H576B_OMNI_HOLSTER||g_h14GripBody[hand]||!g_h576cCanonicalEntityName[0])return 0;
     float gc[3],hm[16],dist=999.0f;if(!h576an_hand_near_omni_shoulder(hand,gc,hm,&dist))return 0;
@@ -16085,6 +16311,7 @@ static void h34_zero_hand_state(i32 h){
     g_h576buRockerNormalValid[h]=0;g_s26RockerPlaneValid[h]=0;g_h576buRockerNormalBody[h]=0;g_h576buRockerNormalStep[h]=0;g_h576buRockerNormal[h][0]=g_h576buRockerNormal[h][1]=g_h576buRockerNormal[h][2]=0.0f;
 }
 static void h576bf_detach_world_bound_refs(const char* why){
+    s26y_reset(); // Registry belongs to this world, including ordinary story transfers.
     s26gb_recall_reset();
     s26dd_forget_button_contacts();
     g_h576avActiveInteractHand=-1;g_h576avActiveInteractBody=0;g_h576avThetaPendingHand=-1;g_h576avThetaPendingLogical[0]=0;g_h576avThetaPendingStartStep=g_h576avThetaPendingLastStep=0;
@@ -16710,15 +16937,7 @@ static void __attribute__((ms_abi)) h530_self_scan_cb(const void* body,void* use
 static void h530_refresh_self_filter(const void* world,const float* handM){
     if(!world||!handM||!p_h14WorldAABB||!p_h14GetMaterial||!p_h530MaterialSetCollisionCallback||g_h35HandMaterial<0)return;
     float r=1.60f,p0[4]={handM[12]-r,handM[13]-r,handM[14]-r,0},p1[4]={handM[12]+r,handM[13]+r,handM[14]+r,0};H530SelfScan sc;sc.world=world;sc.visited=0;sc.count=0;sc.hits=0;sc.misses=0;
-    u64 eoStart=h5755eg_tick();u32 eoPairs=g_h530PairCount,eoSelf=g_h530SelfCount;
-    u32 eoReason=(!g_h5755dbSelfFilterCenterValid||g_h5755dbSelfFilterWorld!=world)?1u:
-        ((g_h14PhysicsSteps-g_h5755dbSelfFilterLastStep)>=s26gd_steps(600u)?3u:2u);
     p_h14WorldAABB(world,p0,p1,h530_self_scan_cb,&sc);
-    if(eoStart){u64 eoEnd=h5755eg_tick();if(eoEnd>=eoStart){
-        u64 eo[H5755EG_P_COUNT]={0};eo[0]=eoEnd-eoStart;eo[1]=sc.visited;eo[2]=eoReason;
-        eo[3]=(u64)(g_h530PairCount-eoPairs);eo[4]=(u64)(g_h530SelfCount-eoSelf);eo[5]=g_s26eoRootScanScope;eo[6]=sc.hits;eo[7]=sc.misses;
-        s26ej_trace_push(4u,eoStart,eo,world);
-    }}
     g_h5755dbSelfFilterWorld=world;g_h5755dbSelfFilterCenter[0]=handM[12];g_h5755dbSelfFilterCenter[1]=handM[13];g_h5755dbSelfFilterCenter[2]=handM[14];g_h5755dbSelfFilterLastStep=g_h14PhysicsSteps;g_h5755dbSelfFilterCenterValid=1;
 }
 static void h5755db_maybe_refresh_self_filter(const void* world,const float* handM){
@@ -18419,26 +18638,18 @@ static i32 h5755ho_gesture_candidate_matches(i32 hand,u8 sq,u8 tr,const float* b
     if(hand<0||hand>1||!bodyToHand||!g_h5755hoGestureCandidateValid[hand]||!g_h5755hoGestureCandidateShape[hand]||g_h5755hoGestureCandidateSq[hand]!=sq||g_h5755hoGestureCandidateTr[hand]!=tr)return 0;
     for(i32 i=0;i<16;++i)if(h9_abs(g_h5755hoGestureCandidateBodyToHand[hand][i]-bodyToHand[i])>0.000001f)return 0;return 1;
 }
-/* S26ES: optional per-call rebuild phase timings, no change to lifecycle. */
-typedef struct {u64 values[H5755EG_P_COUNT],stamp;u32 phase;} S26ESRebuildTiming;
-static void s26er_rebuild_stage(S26ESRebuildTiming* timer,u32 phase){
-    if(!timer->stamp)return;u64 now=h5755eg_tick();timer->values[timer->phase]+=now-timer->stamp;timer->stamp=now;timer->phase=phase;
-}
-static i32 s26eq_rebuild_pose_body_impl(i32 hand,S26ESRebuildTiming* timer){
+static i32 s26eq_rebuild_pose_body_impl(i32 hand){
     if(hand>=0&&hand<2&&h5748_is_stump(hand)){h5755ho_discard_gesture_candidate(hand);g_h545Pending[hand]=0;g_h545CandidateStable[hand]=0;return 1;}
     if(hand<0||hand>1||!g_h545Pending[hand]||!g_h34PhysicsWorldWrapper||!g_h34HandWrapper[hand]||!g_h34HandNewton[hand]||!g_h34BodyToHandValid[hand])return 0;
     if(g_h549AcquireTicks[hand]){g_h549AcquireRebuildDefers[hand]++;return 0;}
     if(g_h14GripBody[hand]){g_h545GestureDeferredHeld[hand]++;return 0;}
     if(g_h532Dormant[hand]||g_h532ArmState[hand]!=2)return 0;
     if(g_h545NoContactSteps[hand]<H545_CONTACT_CLEAR_STEPS){g_h545GestureDeferredContact[hand]++;return 0;}
-
-    s26er_rebuild_stage(timer,3);
     /* Preserve physical continuity. A gesture change must never teleport the hand
        to the controller target: replace the compound at the CURRENT Newton root,
        then let the normal root constraint resume tracking after warm-up. */
     float oldBodyM[16],rawM[16];p_h14GetMatrix(g_h34HandNewton[hand],oldBodyM);h10_matmul(oldBodyM,g_h34BodyToHand[hand],rawM);
     u8 pendingSq=g_h545PendingSqueezeLevel[hand],pendingTr=g_h545PendingTriggerLevel[hand];float nextCurl[5][4];h545_levels_to_curl(pendingSq,pendingTr,nextCurl);
-    s26er_rebuild_stage(timer,4);
     float sx=0,sy=0,sz=0;i32 children=0;void* newShape=0;
     if(h5755ho_gesture_candidate_matches(hand,pendingSq,pendingTr,g_h34BodyToHand[hand])&&s26q_roots_equal(g_s26qRootShape[hand],g_s26qRootPending[hand])){
         newShape=g_h5755hoGestureCandidateShape[hand];children=g_h5755hoGestureCandidateChildren[hand];sx=g_h5755hoGestureCandidateDims[hand][0];sy=g_h5755hoGestureCandidateDims[hand][1];sz=g_h5755hoGestureCandidateDims[hand][2];g_h5755hoGestureCandidateReuses[hand]++;
@@ -18453,15 +18664,12 @@ static i32 s26eq_rebuild_pose_body_impl(i32 hand,S26ESRebuildTiming* timer){
        blocked. HO retains that immutable candidate shape and merely rechecks it at
        the CURRENT physical root. No body exists yet, so this is allocation cleanup,
        not a new collision/acquisition authority. */
-    s26er_rebuild_stage(timer,5);
     if(!h545_pose_shape_clear(hand,newShape,oldBodyM)){g_h5755hoGestureCandidateBlocked[hand]++;g_h545GestureDeferredContact[hand]++;return 0;}
-    s26er_rebuild_stage(timer,6);
     if(h548_pose_expands(hand,nextCurl)||!s26q_roots_near(g_s26qRootPending[hand],g_s26qRootApplied[hand])){
         void* marginShape=g_h5755hoGestureMarginShape[hand];if(!marginShape){marginShape=s26q_create_margin_pose(hand,g_h34BodyToHand[hand],nextCurl,H548_PREFLIGHT_MARGIN_M,g_s26qRootPending[hand]);g_h548MarginPreflightTests[hand]++;if(marginShape)g_h5755hoGestureMarginShape[hand]=marginShape;}
         if(!marginShape){g_h548MarginPreflightBlocks[hand]++;g_h5755hoGestureCandidateBlocked[hand]++;g_h545GestureDeferredContact[hand]++;return 0;}
         if(!h545_pose_shape_clear(hand,marginShape,oldBodyM)){g_h548MarginPreflightBlocks[hand]++;g_h5755hoGestureCandidateBlocked[hand]++;g_h545GestureDeferredContact[hand]++;return 0;}
     }
-    s26er_rebuild_stage(timer,7);
     if(g_h5755hoGestureMarginShape[hand]){p_h34DestroyShape(g_h34PhysicsWorldWrapper,g_h5755hoGestureMarginShape[hand]);g_h5755hoGestureMarginShape[hand]=0;}
 
     /* The candidate is now consumed by the new HPL body. Clear the cache pointer
@@ -18471,19 +18679,13 @@ static i32 s26eq_rebuild_pose_body_impl(i32 hand,S26ESRebuildTiming* timer){
     s26av_capture_gesture_motion(hand);
     void* oldWrapper=g_h34HandWrapper[hand];h526_destroy_joint_now(hand);g_h540RigReady[hand]=0;g_h34HandWrapper[hand]=0;g_h34HandNewton[hand]=0;g_h536NativePalmShape[hand]=0;g_h528ManagedCollision[hand]=0;
     p_h34DestroyBody(g_h34PhysicsWorldWrapper,oldWrapper);g_h34DestroyCount[hand]++;g_h526BodyDestroys[hand]++;
-
-    s26er_rebuild_stage(timer,8);
     H25TString name;h34_small_string(&name,hand==0?"vrhand_L":"vrhand_R");void* wrapper=p_h34CreateBody(g_h34PhysicsWorldWrapper,&name,newShape,H34_HAND_MASS);const void* nb=0;
-    s26er_rebuild_stage(timer,9);
     if(wrapper&&h20_mem_readable((u8*)wrapper+0x2e8,8)){nb=*(const void**)((u8*)wrapper+0x2e8);if(nb)g_h526BodyCreates[hand]++;}
-    s26er_rebuild_stage(timer,10);
     if(wrapper&&nb&&h545_configure_rebuilt_body(hand,wrapper,nb,newShape,sx,sy,sz,rawM,oldBodyM)){
         s26av_bind_gesture_motion(hand);
         s26q_roots_copy(g_s26qRootStaged[hand],g_s26qRootPending[hand]);g_h548GestureVisualStaged[hand]=1;g_h548GestureWarmupRootLock[hand]=1;g_h548StagedSqueezeLevel[hand]=pendingSq;g_h548StagedTriggerLevel[hand]=pendingTr;g_h545CandidateStable[hand]=0;g_h545NoContactSteps[hand]=0;g_h545BodyRebuildSuccess[hand]++;
         if(g_h545BodyRebuildSuccess[hand]<=24u)ext_Log(">>> S6-HANDS557 GESTURE PHYSICS STAGED %s: squeeze %u trigger/index %u | NEW 24-child body %p / Newton %p at PREVIOUS PHYSICAL ROOT | visual remains previous safe pose until dormant warm-up arms; post-warmup raw-controller teleport DISABLED",hand==0?"L":"R",(u32)g_h548StagedSqueezeLevel[hand],(u32)g_h548StagedTriggerLevel[hand],wrapper,nb);return 1;
     }
-
-    s26er_rebuild_stage(timer,11);
     /* A failed replacement must not strand the hand. Destroy any partial body,
        then recreate the previously-applied rigid pose at the exact old root. */
     g_s26avGestureMotion[hand].valid=0;
@@ -18494,14 +18696,7 @@ static i32 s26eq_rebuild_pose_body_impl(i32 hand,S26ESRebuildTiming* timer){
     if(fw&&fnb&&h545_configure_rebuilt_body(hand,fw,fnb,fallback,fsx,fsy,fsz,rawM,oldBodyM)){g_h545FallbackRestores[hand]++;g_h545NoContactSteps[hand]=0;ext_Log(">>> S6-HANDS557 GESTURE REBUILD FALLBACK %s: requested pose failed; previous rigid pose restored at old physical root; pending gesture retained",hand==0?"L":"R");return 0;}
     if(fw)p_h34DestroyBody(g_h34PhysicsWorldWrapper,fw);else if(fallback)p_h34DestroyShape(g_h34PhysicsWorldWrapper,fallback);g_h34HandWrapper[hand]=0;g_h34HandNewton[hand]=0;g_h536NativePalmShape[hand]=0;g_h528ManagedCollision[hand]=0;g_h545FallbackFails[hand]++;ext_Log(">>> S6-HANDS557 GESTURE REBUILD FATAL FALLBACK %s: both requested and previous pose recreation failed; normal create path will retry next physics step",hand==0?"L":"R");return 0;
 }
-static i32 h545_rebuild_pose_body(i32 hand){
-    u64 t=h5755eg_tick();S26ESRebuildTiming timer;zero_bytes(&timer,sizeof(timer));timer.stamp=t;timer.phase=12;
-    u64 before=(g_s26CutsceneHandsHidden?1u:0u)|((hand>=0&&hand<2&&g_h532Dormant[hand])?2u:0u);
-    i32 result=s26eq_rebuild_pose_body_impl(hand,&timer);s26er_rebuild_stage(&timer,0);
-    if(t){timer.values[0]=h5755eg_tick()-t;timer.values[1]=(u64)hand;timer.values[2]=(u64)result;
-        timer.values[13]=before|((u64)((g_s26CutsceneHandsHidden?1u:0u)|((hand>=0&&hand<2&&g_h532Dormant[hand])?2u:0u))<<2);
-        s26ej_trace_push(5u,t,timer.values,g_h14NewtonWorld);}return result;
-}
+static i32 h545_rebuild_pose_body(i32 hand){return s26eq_rebuild_pose_body_impl(hand);}
 static void h545_flush_pose_rebuilds(void* worldWrapper){if(!worldWrapper||worldWrapper!=g_h34PhysicsWorldWrapper)return;for(i32 h=0;h<2;++h){if(g_h545Pending[h])h545_rebuild_pose_body(h);else h5755ho_discard_gesture_candidate(h);}}
 
 static i32 h510_palm_world_push(i32 hand,const float* bodyM,float* outPush){
@@ -19042,25 +19237,40 @@ static void s26_dispatch_head_flashlight(void){
     if(g_s26FlashActionLogs<16u){g_s26FlashActionLogs++;ext_Log(">>> SOMA-VR S26A FLASHLIGHT ACTION #%u: head-touch press sent to native eAction_Flashlight; native disabled/discovery rules remain authoritative",(u32)g_s26FlashActionLogs);}
 }
 
-static void h5711_dispatch_semantic_actions(void){
-    s26_dispatch_head_flashlight();
-    u32 cq=g_h5711CrouchPending,bq=g_h5711BackPending,jq=g_h5755djJumpPending,sq=g_h5735SprintDirty;if(!cq&&!bq&&!jq&&!sq)return;
-    // H57.42 Sprint is a held-state poll, not an OnAction dispatch. OpenXR B
-    // updates g_h5735SprintDesired; the exact native cInput::IsTriggered hook
-    // observes it when SOMA asks for eAction_Run. This handoff only commits/logs
-    // the edge and deliberately performs no gameplay call.
-    if(sq){u32 desired=g_h5735SprintDesired;(void)h5735_resolve_run_action_id();if(g_h5742HookReady){g_h5735SprintApplied=desired;g_h5735SprintDirty=0;if(desired)g_h5735SprintPressDispatches++;else g_h5735SprintReleaseDispatches++;}else{g_h5735SprintRejects++;g_h5735SprintApplied=0;g_h5735SprintDirty=0;ext_Log(">>> S6-HANDS5742 SPRINT SEMANTIC REJECT: native cInput::IsTriggered hook unavailable; no OnAction, script patch, or keyboard fallback");}}
-    if(!cq&&!bq&&!jq)return;void* pi=0;PFN_H5711_PlayerExit ex=0;PFN_H5711_PlayerAction ac=0;
-    if(!h5711_native_player_callbacks(&pi,&ex,&ac)){g_h5711CrouchPending=0;g_h5711BackPending=0;g_h5755djJumpPending=0;ext_Log(">>> S6-HANDS5719 NATIVE ACTION REJECT: known-good player OnAction/OnAnalogInput vtable validation failed; no keyboard/mouse fallback was attempted");return;}
-    if(cq&&ac){if(h5711_resolve_crouch_action_id()){
+static void s26ig_dispatch_crouch_pre(float timestep){
+    if(!g_h5711CrouchPending)return;
+    if(g_h576bfMapTransitionActive||g_h5755bhPresentationState!=H5755BH_GAMEPLAY_VR||
+       g_h5755asUiIslandActive||g_h5755asResumeClassifyActive||g_h5755azExitPending||
+       g_h5755bbTitlePresentationLatch)return;
+    void* pi=0;PFN_H5711_PlayerExit ex=0;PFN_H5711_PlayerAction ac=0;
+    if(!h5711_native_player_callbacks(&pi,&ex,&ac)||!ac){
+        g_h5711CrouchPending=0;g_h5711NativeRejects++;return;
+    }
+    /* Consume before native dispatch: subsequent Newton substeps cannot replay it.
+       Native OnAction still owns crouch permissions and character collision. */
+    g_h5711CrouchPending=0;
+    if(ac){if(h5711_resolve_crouch_action_id()){
         float beforeY=0.0f,afterY=0.0f;void* cam=p2_camera_obj();if(cam&&h20_mem_readable((u8*)cam+0x14,4))beforeY=*(float*)((u8*)cam+0x14);
         /* MoveState_Normal::OnAction ignores release events. Send one real press
            pulse per XR click instead of CY's alternating press/no-op clicks. */
         ac(pi,g_h5711CrouchActionId,1);ac(pi,g_h5711CrouchActionId,0);g_h5711CrouchDispatches++;
         if(cam&&h20_mem_readable((u8*)cam+0x14,4))afterY=*(float*)((u8*)cam+0x14);float jump=afterY-beforeY;
-        if(h9_abs(jump)>=0.005f&&h9_abs(jump)<=0.060f){u8* xr=(u8*)p2_xr_obj();i64 t=xr?*(i64*)(xr+0xE8):0;float dt=g_h14LastPhysicsDt;if(dt<0.005f||dt>0.050f)dt=1.0f/60.0f;g_h5755czCrouchViewDeltaY=-jump;g_h5755czCrouchViewDurationSec=2.0f*dt;g_h5755czCrouchViewStartTime=t;__atomic_store_n(&g_h5755czCrouchViewActive,t?1u:0u,__ATOMIC_RELEASE);g_h5755czCrouchViewEvents++;ext_Log(">>> S6-HANDS5755CZ CROUCH VIEW SOFTEN #%u: native first camera-add step %+.4f m | render-only compensation %+.4f m eases over %.4f s (~2 measured Newton intervals) | physics/character/held bodies untouched",g_h5755czCrouchViewEvents,jump,-jump,g_h5755czCrouchViewDurationSec);}else if(h9_abs(jump)>0.060f){g_h5755czCrouchViewRejects++;}
+        if(h9_abs(jump)>=0.005f&&h9_abs(jump)<=0.060f){u8* xr=(u8*)p2_xr_obj();i64 t=xr?*(i64*)(xr+0xE8):0;float dt=timestep;if(dt<0.005f||dt>0.050f)dt=1.0f/60.0f;g_h5755czCrouchViewDeltaY=-jump;g_h5755czCrouchViewDurationSec=2.0f*dt;g_h5755czCrouchViewStartTime=t;__atomic_store_n(&g_h5755czCrouchViewActive,t?1u:0u,__ATOMIC_RELEASE);g_h5755czCrouchViewEvents++;ext_Log(">>> S6-HANDS5755CZ CROUCH VIEW SOFTEN #%u: native first camera-add step %+.4f m | render-only compensation %+.4f m eases over %.4f s (~2 measured Newton intervals) | physics/character/held bodies untouched",g_h5755czCrouchViewEvents,jump,-jump,g_h5755czCrouchViewDurationSec);}else if(h9_abs(jump)>0.060f){g_h5755czCrouchViewRejects++;}
         ext_Log(">>> S6-HANDS5711 NATIVE CROUCH PRESS PULSE: OnAction(eAction_Crouch=%d, 1 -> 0) | click parity %u; MoveState_Normal ignores release and toggles internally",g_h5711CrouchActionId,g_h5710CrouchToggle);
     }else g_h5711NativeRejects++;g_h5711CrouchPending=0;}
+}
+
+static void h5711_dispatch_semantic_actions(void){
+    s26_dispatch_head_flashlight();
+    u32 bq=g_h5711BackPending,jq=g_h5755djJumpPending,sq=g_h5735SprintDirty;if(!bq&&!jq&&!sq)return;
+    // H57.42 Sprint is a held-state poll, not an OnAction dispatch. OpenXR B
+    // updates g_h5735SprintDesired; the exact native cInput::IsTriggered hook
+    // observes it when SOMA asks for eAction_Run. This handoff only commits/logs
+    // the edge and deliberately performs no gameplay call.
+    if(sq){u32 desired=g_h5735SprintDesired;(void)h5735_resolve_run_action_id();if(g_h5742HookReady){g_h5735SprintApplied=desired;g_h5735SprintDirty=0;if(desired)g_h5735SprintPressDispatches++;else g_h5735SprintReleaseDispatches++;}else{g_h5735SprintRejects++;g_h5735SprintApplied=0;g_h5735SprintDirty=0;ext_Log(">>> S6-HANDS5742 SPRINT SEMANTIC REJECT: native cInput::IsTriggered hook unavailable; no OnAction, script patch, or keyboard fallback");}}
+    if(!bq&&!jq)return;void* pi=0;PFN_H5711_PlayerExit ex=0;PFN_H5711_PlayerAction ac=0;
+    if(!h5711_native_player_callbacks(&pi,&ex,&ac)){g_h5711BackPending=0;g_h5755djJumpPending=0;ext_Log(">>> S6-HANDS5719 NATIVE ACTION REJECT: known-good player OnAction/OnAnalogInput vtable validation failed; no keyboard/mouse fallback was attempted");return;}
+
     if(jq){
         g_h5755djJumpPending=0;
         if(ac&&h5755dj_resolve_jump_action_id()){ac(pi,g_h5755djJumpActionId,1);ac(pi,g_h5755djJumpActionId,0);g_h5755djJumpDispatches++;ext_Log(">>> S6-HANDS5755DJ NATIVE JUMP PRESS PULSE: OnAction(eAction_Jump=%d, 1 -> 0); MoveState_Normal retains authored jump eligibility/velocity/state rules",g_h5755djJumpActionId);}
@@ -20084,9 +20294,15 @@ static i32 h48_hinge_frame(const void* rawJoint,float* pin,float* pivot,void** o
 // torque-cap/AddTorque path remains the sole angular motor. H57.56BD sends the
 // already-signed hinge-angle scalar with a dedicated z=3 tag so RotateBase can
 // preserve both directions without invoking camera-space Lever::GetSpeedAdd().
-static i32 h5755gb_drive_authored_lever(i32 hand,const float* handVel,float dt){
+// S26IP_DIAG_BEGIN
+// Temporary observation only; scalar snapshots, no retained engine references.
+typedef struct {u32 lines,calls,packets,fresh,frame;float elapsed,raw,tan,rad,axis,angle,radius; i32 stage;} S26IPLever;
+static S26IPLever g_s26ipLever[2];
+// S26IP_DIAG_END
+static i32 s26ip_lever_impl(i32 hand,const float* handVel,float dt){
     if(hand<0||hand>1||!handVel||dt<=0.0005f||!p_h34PlayerAnalog||g_h5755gbLeverNativeFailClosed[hand])return 0;
     if(!h5755fn_exact_lever_names(g_h5729LastModuleName,g_h5729LastClassName))return 0;
+    g_s26ipLever[hand].stage=1;
     if(g_h5755gbLeverNativeWarmup[hand]){g_h5755gbLeverNativeWarmup[hand]--;return 1;}
     void* pi=h34_player_input_interface();if(!pi||!g_h37aAnalogGuardReady){g_h5755gbLeverNativeFailClosed[hand]=1;ext_Log(">>> S6-HANDS5755GF LEVER NATIVE ROTATEBASE FAIL-CLOSED %s: native cLuxPlayer/analog guard unavailable; generic hinge impulse remains structurally unreachable",hand==0?"L":"R");return 0;}
 
@@ -20097,12 +20313,20 @@ static i32 h5755gb_drive_authored_lever(i32 hand,const float* handVel,float dt){
     const void* body=(g_h482ArticulatedValid[hand]&&g_h482DriveBody[hand])?g_h482DriveBody[hand]:g_h14GripBody[hand];
     const void* joint=(g_h482ArticulatedValid[hand]&&g_h482DriveJoint[hand])?g_h482DriveJoint[hand]:g_h15GripJoint[hand];
     const float* anchor=(g_h482ArticulatedValid[hand]&&g_h482DriveBody[hand])?g_h482DriveBodyAnchor[hand]:g_h15GripBodyAnchor[hand];
+    g_s26ipLever[hand].stage=2;
     if(!body||!joint||!anchor||!p_h14GetMatrix)return 1;
     float pin[3],pivot[3];void* jw=0;if(!h48_hinge_frame(joint,pin,pivot,&jw))return 1;
     float bm[16],current[3];p_h14GetMatrix(body,bm);h14_transform_point(bm,anchor,current);
     float radial[3]={current[0]-pivot[0],current[1]-pivot[1],current[2]-pivot[2]};float axial=h10_dot(radial,pin);radial[0]-=pin[0]*axial;radial[1]-=pin[1]*axial;radial[2]-=pin[2]*axial;float radius=h10_len3(radial[0],radial[1],radial[2]);if(radius<0.025f)return 1;float ir=1.0f/radius;radial[0]*=ir;radial[1]*=ir;radial[2]*=ir;
     float tangent[3];h10_cross(pin,radial,tangent);if(!h10_norm3(tangent))return 1;
 
+    // IQ: only optional higher-rate Lever packets distinguish a fresh stop
+    // from an extra physics tick between controller samples. No pose is predicted.
+    i32 gapAware=g_s26gdRateMultiplier==2u;
+    i32 freshPose=g_s26iqLeverPoseEpoch[hand]!=g_s26iqPoseEpoch[hand];
+    g_s26iqLeverPoseEpoch[hand]=g_s26iqPoseEpoch[hand];
+    i32 trackingOK=g_lastActive[hand]&&((g_lastFlags[hand]&3ULL)==3ULL);
+    g_s26ipLever[hand].stage=3;
     float d[3]={handVel[0]*dt,handVel[1]*dt,handVel[2]*dt};float rawDm=h10_len3(d[0],d[1],d[2]);
     float tangentStep=h10_dot(d,tangent);float radialStep=h10_dot(d,radial),axialStep=h10_dot(d,pin);
     /* GF: a hinge responds to angular travel, not meters.  Normalize the valid
@@ -20111,7 +20335,13 @@ static i32 h5755gb_drive_authored_lever(i32 hand,const float* handVel,float dt){
     // S26GG: RotateBase integrates this speed input by dt again. Express it
     // in authored 60-Hz units before thresholds, preserving response per second.
     float angleStep=(tangentStep/radius)*(float)g_s26gdRateMultiplier;float aas=h9_abs(angleStep);
-    if(aas<H5755GF_LEVER_ANGLE_DEADZONE_RAD){if(rawDm>0.00040f)g_h5755geLeverRadialAxialRejects[hand]++;return 1;}
+    // S26IP_DIAG_BEGIN
+    g_s26ipLever[hand].raw+=rawDm;g_s26ipLever[hand].tan+=tangentStep;
+    g_s26ipLever[hand].rad+=radialStep;g_s26ipLever[hand].axis+=axialStep;
+    g_s26ipLever[hand].angle+=angleStep;g_s26ipLever[hand].radius=radius;
+    // S26IP_DIAG_END
+    if(gapAware&&!trackingOK){angleStep=0.0f;aas=0.0f;freshPose=1;}
+    if(aas<H5755GF_LEVER_ANGLE_DEADZONE_RAD){if(rawDm>0.00040f)g_h5755geLeverRadialAxialRejects[hand]++;if(!gapAware||!freshPose)return 1;angleStep=0.0f;}
     if(aas>H5755GF_LEVER_ANGLE_STEP_CAP_RAD)angleStep=(angleStep<0.0f)?-H5755GF_LEVER_ANGLE_STEP_CAP_RAD:H5755GF_LEVER_ANGLE_STEP_CAP_RAD;
     if(!g_h576bdLeverScriptOK){g_h5755gbLeverNativeFailClosed[hand]=1;ext_Log(">>> S6-HANDS5756BD LEVER SIGNED PACKET FAIL-CLOSED %s: matched RotateBase script marker missing; no camera-space fallback and no direct body impulse emitted",hand==0?"L":"R");return 0;}
     /* H57.56BD: angleStep already has the physically correct sign around the
@@ -20121,14 +20351,35 @@ static i32 h5755gb_drive_authored_lever(i32 hand,const float* handVel,float dt){
        with z=3; the matched RotateBase script injects it directly as fSpeedAdd. */
     float signedSpeedAdd=angleStep*H5755GF_LEVER_ANGLE_LOOK_GAIN;
     if(signedSpeedAdd>H5755GF_LEVER_AXIS_CAP)signedSpeedAdd=H5755GF_LEVER_AXIS_CAP;if(signedSpeedAdd<-H5755GF_LEVER_AXIS_CAP)signedSpeedAdd=-H5755GF_LEVER_AXIS_CAP;
-    if(h9_abs(signedSpeedAdd)<0.0025f)return 1;
-    float a[4]={signedSpeedAdd,0.0f,H576BD_LEVER_ANALOG_TAG,0.0f};
+    if(h9_abs(signedSpeedAdd)<0.0025f){if(!gapAware)return 1;signedSpeedAdd=0.0f;}
+    g_s26ipLever[hand].stage=4;
+    float a[4]={signedSpeedAdd,gapAware?1.0f:0.0f,H576BD_LEVER_ANALOG_TAG,0.0f};
     g_h37aSyntheticAnalogHand=hand;g_h37aSyntheticFellThrough=0;g_h37aSyntheticAnalogDepth++;p_h34PlayerAnalog(pi,H34_ANALOG_LOOK,a);
     if(g_h37aSyntheticAnalogDepth)g_h37aSyntheticAnalogDepth--;g_h37aSyntheticAnalogHand=-1;g_h34AnalogCalls++;g_h30NativeMotionEvents++;g_h5755gbLeverNativePackets[hand]++;g_h5755geLeverTangentPackets[hand]++;
     if(g_h37aSyntheticFellThrough){g_h5755gbLeverNativeFallthrough[hand]++;g_h5755gbLeverNativeFailClosed[hand]=1;ext_Log(">>> S6-HANDS5756BD LEVER SIGNED PACKET FAIL-CLOSED %s: exact Lever did not consume z=3 signed packet; camera fallback blocked and no direct body impulse emitted",hand==0?"L":"R");return 0;}
     if(g_h5755geLeverTangentLogs[hand]<16u){g_h5755geLeverTangentLogs[hand]++;ext_Log(">>> S6-HANDS5756BD LEVER SIGNED ANGULAR PACKET %s #%u: rawStep %.4f m -> tangent %+.4f m (radial %+.4f axial %+.4f) radius %.3f m -> signed angle %+.4f rad -> RotateBase speedAdd %+.4f tag %.1f | positive/negative hinge motion preserved directly",hand==0?"L":"R",g_h5755geLeverTangentPackets[hand],(double)rawDm,(double)tangentStep,(double)radialStep,(double)axialStep,(double)radius,(double)angleStep,(double)signedSpeedAdd,(double)H576BD_LEVER_ANALOG_TAG);}
     return 1;
 }
+// S26IP_DIAG_BEGIN
+static i32 h5755gb_drive_authored_lever(i32 hand,const float* handVel,float dt){
+ if(hand<0||hand>1)return s26ip_lever_impl(hand,handVel,dt);
+ S26IPLever* d=&g_s26ipLever[hand];d->stage=0;
+ u32 before=g_h5755gbLeverNativePackets[hand];
+ i32 result=s26ip_lever_impl(hand,handVel,dt);
+ if(d->lines>=120u)return result;
+ d->calls++;d->packets+=g_h5755gbLeverNativePackets[hand]-before;
+ if(d->frame!=g_frameCounter){d->fresh++;d->frame=g_frameCounter;}
+ if(dt>0&&dt<0.25f)d->elapsed+=dt;
+ if(d->elapsed>=0.25f){
+  d->lines++;
+  ext_Log("S26IP LEVER INPUT hand=%d row=%u frame=%u step=%u rate=%u dt=%.6f window=%.4f calls=%u fresh=%u packets=%u stage=%d ret=%d graph=%d use=%d owner=%d guard=%d fail=%d script=%d raw=%.6f tangent=%+.6f radial=%+.6f axial=%+.6f angle=%+.6f radius=%.5f",
+   hand,d->lines,g_frameCounter,g_h14PhysicsSteps,g_s26gdRateMultiplier,(double)dt,(double)d->elapsed,d->calls,d->fresh,d->packets,d->stage,result,g_h482ArticulatedValid[hand],g_h30NativeMouseDown,g_h30NativeUseHand,g_h37aAnalogGuardReady,g_h5755gbLeverNativeFailClosed[hand],g_h576bdLeverScriptOK,(double)d->raw,(double)d->tan,(double)d->rad,(double)d->axis,(double)d->angle,(double)d->radius);
+  d->calls=d->packets=d->fresh=0;d->elapsed=d->raw=d->tan=d->rad=d->axis=d->angle=0;
+ }
+ return result;
+}
+// S26IP_DIAG_END
+
 
 // H57.56AZ: exact authored Wheel adapter. PlayerState_Interact_Wheel expects a
 // circular 2-D mouse/Look gesture and then lets the shared RotateBase recurrence
@@ -20161,19 +20412,25 @@ static i32 h576ba_sample_authored_wheel_hand(i32 hand,const float* handVel,float
         float vm=h10_len3(dq.x,dq.y,dq.z);if(vm>0.000001f){float ang=2.0f*p_h5755blAtan2f(vm,dq.w),tx=dq.x/vm,ty=dq.y/vm,tz=dq.z/vm,wx,wy,wz;tracking_vector_to_game_unscaled(tx,ty,tz,&wx,&wy,&wz);float ax[3]={wx,wy,wz};if(h10_norm3(ax))wrist=ang*h10_dot(ax,pin);}
     }
     g_h576baWheelPrevQ[hand]=g_lastPose[hand].orientation;g_h576baWheelPrevQValid[hand]=1;
-    if(h9_abs(orbit)>H576AZ_WHEEL_ANGLE_STEP_CAP_RAD)orbit=(orbit<0.0f)?-H576AZ_WHEEL_ANGLE_STEP_CAP_RAD:H576AZ_WHEEL_ANGLE_STEP_CAP_RAD;
-    if(h9_abs(wrist)>H576AZ_WHEEL_ANGLE_STEP_CAP_RAD)wrist=(wrist<0.0f)?-H576AZ_WHEEL_ANGLE_STEP_CAP_RAD:H576AZ_WHEEL_ANGLE_STEP_CAP_RAD;
+    // S26IN: these are per-step angles, not angular speeds. Preserve the
+    // native 60-Hz acceptance/cap in radians per second at optional 120 Hz.
+    // Do not scale the resulting angle: the emitter divides it by actual dt.
+    float stepCap=s26gd_tick_amount(H576AZ_WHEEL_ANGLE_STEP_CAP_RAD);
+    float orbitDeadzone=s26gd_tick_amount(H576AZ_WHEEL_ANGLE_DEADZONE_RAD);
+    float wristDeadzone=s26gd_tick_amount(H576BA_WHEEL_WRIST_DEADZONE_RAD);
+    if(h9_abs(orbit)>stepCap)orbit=(orbit<0.0f)?-stepCap:stepCap;
+    if(h9_abs(wrist)>stepCap)wrist=(wrist<0.0f)?-stepCap:stepCap;
     float ao=h9_abs(orbit),aw=h9_abs(wrist),angle=0.0f;const char* mode="idle";
-    if(ao<H576AZ_WHEEL_ANGLE_DEADZONE_RAD&&aw<H576BA_WHEEL_WRIST_DEADZONE_RAD){angle=0.0f;}
-    else if(aw<H576BA_WHEEL_WRIST_DEADZONE_RAD){angle=orbit;mode="orbit";g_h576baWheelOrbitPackets++;}
-    else if(ao<H576AZ_WHEEL_ANGLE_DEADZONE_RAD){angle=wrist;mode="wrist";g_h576baWheelWristPackets++;}
+    if(ao<orbitDeadzone&&aw<wristDeadzone){angle=0.0f;}
+    else if(aw<wristDeadzone){angle=orbit;mode="orbit";g_h576baWheelOrbitPackets++;}
+    else if(ao<orbitDeadzone){angle=wrist;mode="wrist";g_h576baWheelWristPackets++;}
     else{
         float ww=0.0f;if(radius<=H576BA_WHEEL_WRIST_BLEND_INNER_M)ww=1.0f;else if(radius>=H576BA_WHEEL_WRIST_BLEND_OUTER_M)ww=0.0f;else ww=(H576BA_WHEEL_WRIST_BLEND_OUTER_M-radius)/(H576BA_WHEEL_WRIST_BLEND_OUTER_M-H576BA_WHEEL_WRIST_BLEND_INNER_M);
         /* Geometry decides the preferred gesture, not an entity name: tiny knobs
            favor wrist twist, broad valve rims favor orbital hand travel. If the
            preferred channel is nearly stationary, the other channel takes over. */
-        if(ww>0.75f&&aw>=H576BA_WHEEL_WRIST_DEADZONE_RAD)angle=wrist;
-        else if(ww<0.25f&&ao>=H576AZ_WHEEL_ANGLE_DEADZONE_RAD)angle=orbit;
+        if(ww>0.75f&&aw>=wristDeadzone)angle=wrist;
+        else if(ww<0.25f&&ao>=orbitDeadzone)angle=orbit;
         else angle=orbit*(1.0f-ww)+wrist*ww;
         mode="blend";g_h576baWheelBlendPackets++;
     }
@@ -20348,10 +20605,8 @@ static void h15_drive_jointed_anchor(i32 hand,const float* handM,float dt){
         if(g_h30NativeMouseDown&&h576ba_hand_matches_active_wheel(hand))(void)h576ba_sample_authored_wheel_hand(hand,handV,dt);
         g_h576azWheelLegacyImpulseSuppress[hand]++;return;
     }
-    if(g_h482ArticulatedValid[hand]&&g_h30NativeMouseDown&&g_h30NativeUseHand==hand){
-        if(g_h5755ceSwingDoorPendingNative[hand]++<2u)ext_Log(">>> S6-HANDS5755CD GRAPH DOOR PENDING %s: native OnInteract handshake live; waiting for exact SwingDoor state | legacy graph-door impulse motor DELETED, fail closed",hand==0?"L":"R");
-        return;
-    }
+    // S26IO: exact Lever ownership outranks a geometric door graph, just as Wheel does.
+    // Otherwise the pending-SwingDoor guard swallows valid lever motion.
     /* H57.55GC: GB correctly retired the Lever's historical H48 tangent impulse
        but accidentally returned from this live jointed-anchor owner without
        dispatching h5755gb_drive_authored_lever(). Hardware therefore logged
@@ -20364,6 +20619,10 @@ static void h15_drive_jointed_anchor(i32 hand,const float* handM,float dt){
         if(g_h30NativeMouseDown&&g_h30NativeUseHand==hand)
             (void)h5755gb_drive_authored_lever(hand,handV,dt);
         g_h5755gbLeverLegacyImpulseSuppress[hand]++;
+        return;
+    }
+    if(g_h482ArticulatedValid[hand]&&g_h30NativeMouseDown&&g_h30NativeUseHand==hand){
+        if(g_h5755ceSwingDoorPendingNative[hand]++<2u)ext_Log(">>> S6-HANDS5755CD GRAPH DOOR PENDING %s: native OnInteract handshake live; waiting for exact SwingDoor state | legacy graph-door impulse motor DELETED, fail closed",hand==0?"L":"R");
         return;
     }
     if(!p_h14AddImpulse)return;
@@ -20724,6 +20983,9 @@ static void h576ad_update_omni_holster_ready(i32 hand){
     }
     float hip[3],bm[16];if(!h576b_hip_anchor(hip)||!p_h14GetMatrix){g_h576adOmniHolsterInside[hand]=0;return;}p_h14GetMatrix(g_h576bOmniBody,bm);float d=h10_len3(bm[12]-hip[0],bm[13]-hip[1],bm[14]-hip[2]);i32 inside=d<=g_h576cReholsterRadius*h5755ea_world_units_per_meter();if(inside&&!g_h576adOmniHolsterInside[hand]){g_h576adOmniHolsterReadyPulses[hand]++;h576ac_queue_haptic(hand,H576AC_HAPTIC_READY);if(g_h576adOmniHolsterReadyPulses[hand]<=12u)ext_Log(">>> S6-HANDS5756AD OMNITOOL HOLSTER READY %s #%u: held Catherine entered legacy right-hip radius at %.3f m | light haptic; release still required to reholster",hand==0?"L":"R",g_h576adOmniHolsterReadyPulses[hand],(double)(d/h5755ea_world_units_per_meter()));}g_h576adOmniHolsterInside[hand]=(u8)(inside?1:0);
 }
+// Distance along the normalized ray avoids world-coordinate cancellation at
+// the exact 4-cm endpoint (including native zero-distance interior hits).
+static float s26hr_shell_ray_gap(float dist){float gap=dist-H483_CURTAIN_RAY_M*0.5f;return gap<0.0f?-gap:gap;}
 static i32 s26v_is_area(void* entity){char rt[96];return h25_owner_kind(entity,rt,sizeof(rt))==2;}
 static i32 s26v_authored_surface_shell(i32 hand,const float* handM,i32 commit){
     if(hand<0||hand>1||!handM||g_h25PendingValid[hand]||g_h30NativeMouseDown||g_h14GripBody[hand])return 0;PFN_H37_GetClosestEntity fn=0;void* helper=h37_map_helper(&fn);if(!helper||!fn)return 0;
@@ -20750,7 +21012,7 @@ static i32 s26v_authored_surface_shell(i32 hand,const float* handM,i32 commit){
         }
     }
     void* bestW=0;void* bestE=0;const void* bestRaw=0;void* bestCan=0;void* bestOn=0;float bestGap=999.0f,bestFocus[3]={0,0,0},secondGap=999.0f;void* secondE=0;i32 bestIcon=-1,bestJointed=0;
-    for(i32 ray=0;ray<originCount*6;++ray){i32 i=ray%6;for(i32 k=0;k<3;++k)center[k]=origins[ray/6][k];if(!h10_norm3(dirs[i]))continue;float start[3]={center[0]-dirs[i][0]*(H483_CURTAIN_RAY_M*0.5f),center[1]-dirs[i][1]*(H483_CURTAIN_RAY_M*0.5f),center[2]-dirs[i][2]*(H483_CURTAIN_RAY_M*0.5f)};float dist=9999999.0f;void* w=0;void* e=0;g_h483CurtainShellQueries[hand]++;u8 ok=fn(helper,start,dirs[i],H483_CURTAIN_RAY_M,0,0,&dist,&w,&e);if(!ok||!w||!e||dist<0.0f||dist>H483_CURTAIN_RAY_M)continue;float hit[3]={start[0]+dirs[i][0]*dist,start[1]+dirs[i][1]*dist,start[2]+dirs[i][2]*dist};float dx=hit[0]-center[0],dy=hit[1]-center[1],dz=hit[2]-center[2],gap=h10_len3(dx,dy,dz);if(gap>H483_CURTAIN_SHELL_M)continue;i32 icon=-1;const void* raw=0;void* can=0;void* on=0;if(!h483_surface_target_info(w,e,&icon,&raw,&can,&on)||(icon==17||!s26v_is_area(e))){if(icon>=0)g_h483CurtainShellWrongIcon[hand]++;continue;}if(commit==2&&!s26db_aux_cable(hand,e,0,0,0))continue;if(icon==H482_POKE_SWITCH_ICON)g_h485AuthoredShellIcon13[hand]++;g_h483CurtainShellHits[hand]++;if(e==bestE){if(gap<bestGap){bestGap=gap;bestW=w;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}continue;}if(gap<bestGap){secondGap=bestGap;secondE=bestE;bestGap=gap;bestW=w;bestE=e;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}else if(gap<secondGap){secondGap=gap;secondE=e;}}
+    for(i32 ray=0;ray<originCount*6;++ray){i32 i=ray%6;for(i32 k=0;k<3;++k)center[k]=origins[ray/6][k];if(!h10_norm3(dirs[i]))continue;float start[3]={center[0]-dirs[i][0]*(H483_CURTAIN_RAY_M*0.5f),center[1]-dirs[i][1]*(H483_CURTAIN_RAY_M*0.5f),center[2]-dirs[i][2]*(H483_CURTAIN_RAY_M*0.5f)};float dist=9999999.0f;void* w=0;void* e=0;g_h483CurtainShellQueries[hand]++;u8 ok=fn(helper,start,dirs[i],H483_CURTAIN_RAY_M,0,0,&dist,&w,&e);if(!ok||!w||!e||dist<0.0f||dist>H483_CURTAIN_RAY_M)continue;float hit[3]={start[0]+dirs[i][0]*dist,start[1]+dirs[i][1]*dist,start[2]+dirs[i][2]*dist};float gap=s26hr_shell_ray_gap(dist);if(gap>H483_CURTAIN_SHELL_M)continue;i32 icon=-1;const void* raw=0;void* can=0;void* on=0;if(!h483_surface_target_info(w,e,&icon,&raw,&can,&on)||(icon==17||!s26v_is_area(e))){if(icon>=0)g_h483CurtainShellWrongIcon[hand]++;continue;}if(commit==2&&!s26db_aux_cable(hand,e,0,0,0))continue;if(icon==H482_POKE_SWITCH_ICON)g_h485AuthoredShellIcon13[hand]++;g_h483CurtainShellHits[hand]++;if(e==bestE){if(gap<bestGap){bestGap=gap;bestW=w;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}continue;}if(gap<bestGap){secondGap=bestGap;secondE=bestE;bestGap=gap;bestW=w;bestE=e;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}else if(gap<secondGap){secondGap=gap;secondE=e;}}
     if(!bestW||!bestE||!bestRaw)return 0;if(secondE&&secondE!=bestE&&secondGap-bestGap<H483_CURTAIN_TIE_M){g_h483CurtainShellAmbiguous[hand]++;if(commit)ext_Log(">>> S6-HANDS483 CURTAIN/SCRIPTED SHELL %s: ambiguous authored-control surfaces best %.4f second %.4f (< %.3f tie); acquisition rejected",hand==0?"L":"R",bestGap,secondGap,H483_CURTAIN_TIE_M);return 0;}
     if(!commit){h576ad_mark_interact_ready(hand,bestRaw,bestE,"shared live selection for haptic and Grip");return 1;}
     if(g_h25AttemptBody[hand]==bestRaw)return 0;g_h25AttemptBody[hand]=bestRaw;H25PendingInteract* p=&g_h25Pending[hand];zero_bytes(p,sizeof(*p));p->newtonBody=bestRaw;p->bodyWrapper=bestW;p->entity=bestE;p->canFn=bestCan;p->onFn=bestOn;p->contact[0]=bestFocus[0];p->contact[1]=bestFocus[1];p->contact[2]=bestFocus[2];p->authoredAreaShell=1;p->meshGap=bestGap;p->broadGap=bestGap;p->ownerOffset=0x2c0;p->physicsStep=g_h14PhysicsSteps;p->jointed=(u8)(bestJointed?1:0);g_h25PendingValid[hand]=1;g_h25Queued[hand]++;g_h483CurtainShellQueued[hand]++;g_h483CurtainLastGap[hand]=bestGap;ext_Log(">>> S26V SHARED AREA GRIP %s: icon %d exact owner %p wrapper %p jointed %d queued from bounded 3D palm shell gap %.4f m; no global interaction radius expansion",hand==0?"L":"R",bestIcon,bestE,bestW,bestJointed,bestGap);return 1;
@@ -20759,7 +21021,7 @@ static i32 h483_try_authored_surface_shell(i32 hand,const float* handM){
     if(hand<0||hand>1||!handM||g_h25PendingValid[hand]||g_h30NativeMouseDown||g_h14GripBody[hand])return 0;PFN_H37_GetClosestEntity fn=0;void* helper=h37_map_helper(&fn);if(!helper||!fn)return 0;
     float center[3];h15_grip_center_world(hand,handM,center);float dirs[6][3]={{handM[0],handM[1],handM[2]},{-handM[0],-handM[1],-handM[2]},{handM[4],handM[5],handM[6]},{-handM[4],-handM[5],-handM[6]},{handM[8],handM[9],handM[10]},{-handM[8],-handM[9],-handM[10]}};
     void* bestW=0;void* bestE=0;const void* bestRaw=0;void* bestCan=0;void* bestOn=0;float bestGap=999.0f,bestFocus[3]={0,0,0},secondGap=999.0f;void* secondE=0;i32 bestIcon=-1,bestJointed=0;
-    for(i32 i=0;i<6;++i){if(!h10_norm3(dirs[i]))continue;float start[3]={center[0]-dirs[i][0]*(H483_CURTAIN_RAY_M*0.5f),center[1]-dirs[i][1]*(H483_CURTAIN_RAY_M*0.5f),center[2]-dirs[i][2]*(H483_CURTAIN_RAY_M*0.5f)};float dist=9999999.0f;void* w=0;void* e=0;g_h483CurtainShellQueries[hand]++;u8 ok=fn(helper,start,dirs[i],H483_CURTAIN_RAY_M,0,0,&dist,&w,&e);if(!ok||!w||!e||dist<0.0f||dist>H483_CURTAIN_RAY_M)continue;float hit[3]={start[0]+dirs[i][0]*dist,start[1]+dirs[i][1]*dist,start[2]+dirs[i][2]*dist};float dx=hit[0]-center[0],dy=hit[1]-center[1],dz=hit[2]-center[2],gap=h10_len3(dx,dy,dz);if(gap>H483_CURTAIN_SHELL_M)continue;i32 icon=-1;const void* raw=0;void* can=0;void* on=0;if(!h483_surface_target_info(w,e,&icon,&raw,&can,&on)||(icon!=H483_CURTAIN_ICON&&icon!=H482_POKE_SWITCH_ICON)){if(icon>=0)g_h483CurtainShellWrongIcon[hand]++;continue;}if(icon==H482_POKE_SWITCH_ICON)g_h485AuthoredShellIcon13[hand]++;g_h483CurtainShellHits[hand]++;if(e==bestE){if(gap<bestGap){bestGap=gap;bestW=w;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}continue;}if(gap<bestGap){secondGap=bestGap;secondE=bestE;bestGap=gap;bestW=w;bestE=e;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}else if(gap<secondGap){secondGap=gap;secondE=e;}}
+    for(i32 i=0;i<6;++i){if(!h10_norm3(dirs[i]))continue;float start[3]={center[0]-dirs[i][0]*(H483_CURTAIN_RAY_M*0.5f),center[1]-dirs[i][1]*(H483_CURTAIN_RAY_M*0.5f),center[2]-dirs[i][2]*(H483_CURTAIN_RAY_M*0.5f)};float dist=9999999.0f;void* w=0;void* e=0;g_h483CurtainShellQueries[hand]++;u8 ok=fn(helper,start,dirs[i],H483_CURTAIN_RAY_M,0,0,&dist,&w,&e);if(!ok||!w||!e||dist<0.0f||dist>H483_CURTAIN_RAY_M)continue;float hit[3]={start[0]+dirs[i][0]*dist,start[1]+dirs[i][1]*dist,start[2]+dirs[i][2]*dist};float gap=s26hr_shell_ray_gap(dist);if(gap>H483_CURTAIN_SHELL_M)continue;i32 icon=-1;const void* raw=0;void* can=0;void* on=0;if(!h483_surface_target_info(w,e,&icon,&raw,&can,&on)||(icon!=H483_CURTAIN_ICON&&icon!=H482_POKE_SWITCH_ICON)){if(icon>=0)g_h483CurtainShellWrongIcon[hand]++;continue;}if(icon==H482_POKE_SWITCH_ICON)g_h485AuthoredShellIcon13[hand]++;g_h483CurtainShellHits[hand]++;if(e==bestE){if(gap<bestGap){bestGap=gap;bestW=w;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}continue;}if(gap<bestGap){secondGap=bestGap;secondE=bestE;bestGap=gap;bestW=w;bestE=e;bestRaw=raw;bestCan=can;bestOn=on;bestIcon=icon;bestJointed=(p_h14GetFirstJoint&&p_h14GetFirstJoint(raw))?1:0;bestFocus[0]=hit[0];bestFocus[1]=hit[1];bestFocus[2]=hit[2];}else if(gap<secondGap){secondGap=gap;secondE=e;}}
     if(!bestW||!bestE||!bestRaw)return 0;if(secondE&&secondE!=bestE&&secondGap-bestGap<H483_CURTAIN_TIE_M){g_h483CurtainShellAmbiguous[hand]++;ext_Log(">>> S6-HANDS483 CURTAIN/SCRIPTED SHELL %s: ambiguous authored-control surfaces best %.4f second %.4f (< %.3f tie); acquisition rejected",hand==0?"L":"R",bestGap,secondGap,H483_CURTAIN_TIE_M);return 0;}
     if(g_h25AttemptBody[hand]==bestRaw)return 0;g_h25AttemptBody[hand]=bestRaw;H25PendingInteract* p=&g_h25Pending[hand];zero_bytes(p,sizeof(*p));p->newtonBody=bestRaw;p->bodyWrapper=bestW;p->entity=bestE;p->canFn=bestCan;p->onFn=bestOn;p->contact[0]=bestFocus[0];p->contact[1]=bestFocus[1];p->contact[2]=bestFocus[2];p->meshGap=bestGap;p->broadGap=bestGap;p->ownerOffset=0x2c0;p->physicsStep=g_h14PhysicsSteps;p->jointed=(u8)(bestJointed?1:0);g_h25PendingValid[hand]=1;g_h25Queued[hand]++;g_h483CurtainShellQueued[hand]++;g_h483CurtainLastGap[hand]=bestGap;ext_Log(">>> S6-HANDS486 AUTHORED CONTROL SHELL %s: icon %d exact owner %p wrapper %p jointed %d queued from bounded 3D palm shell gap %.4f m; no global interaction radius expansion",hand==0?"L":"R",bestIcon,bestE,bestW,bestJointed,bestGap);return 1;
 }
@@ -20840,13 +21102,15 @@ static i32 s26v_terminal_present(void){
     }
     return 0;
 }
+#include "terminal_sweep_hr.inc"
 static void h576bo_terminal_pointer_step(void){
+    if(h5754h_pause_active()||g_s26hdLaserHand>=0)zero_bytes(g_s26hrTerminalSamples,sizeof(g_s26hrTerminalSamples));
     if(!__atomic_load_n(&g_h576boTerminalSurfaceValid,__ATOMIC_ACQUIRE))return;g_h576boPointerFrames++;
-    if(!h5730_exact_terminal_state(0,0,0,0)){if(g_h576boPointerDown){g_h576boPointerStateRelease++;h576bo_release_pointer(1,"Terminal state no longer active");}return;}
+    if(!h5730_exact_terminal_state(0,0,0,0)){zero_bytes(g_s26hrTerminalSamples,sizeof(g_s26hrTerminalSamples));if(g_h576boPointerDown){g_h576boPointerStateRelease++;h576bo_release_pointer(1,"Terminal state no longer active");}return;}
     i32 hand=g_h576boPointerDown?g_h576boPointerHand:-1;float u=0,v=0,pd=0,rad=0;
     if(!g_h576boPointerDown){
         i32 order[2]={0,1};if(g_h576boEntryHand>=0&&g_h576boEntryHand<2){order[0]=g_h576boEntryHand;order[1]=1-g_h576boEntryHand;}
-        for(i32 j=0;j<2;++j){i32 h=order[j];float tu=0,tv=0,tp=0,tr=0;i32 q=h576bo_terminal_tip(h,&tu,&tv,&tp,&tr);if(q<=0)continue;float gap=(tp<0.0f?-tp:tp)-tr;if(gap<0.0f)gap=0.0f;if(tu>=-H576BO_EDGE_SLOP_NORM&&tu<=1.0f+H576BO_EDGE_SLOP_NORM&&tv>=-H576BO_EDGE_SLOP_NORM&&tv<=1.0f+H576BO_EDGE_SLOP_NORM&&gap<=H5755GJ_CONTROL_PRETOUCH_SKIN_M)g_h576bsTerminalNearStep[h]=g_h14PhysicsSteps;if(tu<0.0f||tu>1.0f||tv<0.0f||tv>1.0f||gap>H576BP_SURFACE_CAPTURE_M)continue;hand=h;u=tu;v=tv;pd=tp;rad=tr;break;}
+        for(i32 j=0;j<2;++j){i32 h=order[j];float tu=0,tv=0,tp=0,tr=0;i32 q=h576bo_terminal_tip(h,&tu,&tv,&tp,&tr);if(q<=0){zero_bytes(&g_s26hrTerminalSamples[h],sizeof(g_s26hrTerminalSamples[h]));continue;}if(g_s26hdLaserHand<0&&!h5754h_pause_active())if(s26hr_terminal_sample(&g_s26hrTerminalSamples[h],&tu,&tv,&tp,tr,g_frameCounter,g_h576boSurfaceTokens,g_s26TerminalImGui,h5755ea_world_units_per_meter())<0)continue;float gap=(tp<0.0f?-tp:tp)-tr;if(gap<0.0f)gap=0.0f;if(tu>=-H576BO_EDGE_SLOP_NORM&&tu<=1.0f+H576BO_EDGE_SLOP_NORM&&tv>=-H576BO_EDGE_SLOP_NORM&&tv<=1.0f+H576BO_EDGE_SLOP_NORM&&gap<=H5755GJ_CONTROL_PRETOUCH_SKIN_M)g_h576bsTerminalNearStep[h]=g_h14PhysicsSteps;if(tu<0.0f||tu>1.0f||tv<0.0f||tv>1.0f||gap>H576BP_SURFACE_CAPTURE_M)continue;hand=h;u=tu;v=tv;pd=tp;rad=tr;break;}
         if(hand<0)return;g_h576boPointerHand=hand;g_h576boPointerSide=pd>=0.0f?1.0f:-1.0f;g_h576boHaveLast=0;if(!h576bo_push_motion(u,v)){g_h576boPointerHand=-1;return;}g_h576boPointerDown=1;if(!h576bo_push_button(1)){g_h576boPointerDown=0;g_h576boPointerHand=-1;return;}g_h576boEntryHand=-1;g_h576acSpecialPulses[hand]++;h576ac_queue_haptic(hand,H576AC_HAPTIC_CONFIRM);
         ext_Log(">>> S6-HANDS5756BW TERMINAL FINGER DOWN %s: connected-screen uv %.3f/%.3f | post-authority screen skin-gap <= %.1f mm | native GUI DOWN queued; exact ImGui frame owns click/drag until lift/edge/state exit",hand==0?"L":"R",u,v,(double)(H576BP_SURFACE_CAPTURE_M*1000.0f));return;
     }
@@ -20864,8 +21128,9 @@ static void h48_try_fingertip_poke(i32 hand,const float* handM,i32 gripEdge){
     /* BP: once authored Terminal state is active, the connected-screen pointer
        owns fingertip semantics. Do not re-run icon17 OnInteract every physics
        step while the same finger remains against the terminal body. */
-    if(h5730_exact_terminal_state(0,0,0,0))return;
-    if(g_h14GripBody[hand]||(g_h30NativeMouseDown&&g_h30NativeUseHand==hand&&!g_h5755gjPokeNativeUse[hand]))return;
+    i32 terminal=h5730_exact_terminal_state(0,0,0,0);
+    if(terminal&&!__atomic_load_n(&g_s26huWorldControlAllowed,__ATOMIC_ACQUIRE))return;
+    if(g_h14GripBody[hand]||(!terminal&&g_h30NativeMouseDown&&g_h30NativeUseHand==hand&&!g_h5755gjPokeNativeUse[hand]))return;
     /* H57.55c: switch semantics follow the RAW tracked index, not the already
        collision-stopped physical hand. H55b proved the latter can lag 6+ cm and
        therefore never reaches the old ray/cache selector. This affects only the
@@ -20874,7 +21139,9 @@ static void h48_try_fingertip_poke(i32 hand,const float* handM,i32 gripEdge){
     float curl=h10_raw_finger_input(hand,1);if(curl>H48_POKE_INDEX_CURL_MAX){g_h485PokePrevTipValid[hand]=0;if(++g_h48PokeMissStreak[hand]>=H48_POKE_RESET_MISSES)h48_poke_clear(hand);return;}
     float c[4]={s26q_raw_joint(hand,1,0),s26q_raw_joint(hand,1,1),s26q_raw_joint(hand,1,2),s26q_raw_joint(hand,1,3)},pts[5][3];i32 len=0;if(!h18_finger_points_world(hand,1,c,switchM,pts,&len)||len<1)return;
     float tip[3]={pts[len][0],pts[len][1],pts[len][2]},tipDelta[3]={0,0,0};
-    if(g_h574RockerLatchBody[hand]){float bg=999.0f,cp0[3];i32 near=h14_point_to_body(g_h574RockerLatchBody[hand],tip,&bg,cp0);float sg=near?h572_index_skin_gap(hand,len,bg):999.0f;if(near&&sg<=H574_ROCKER_RELEASE_GAP_M){if(sg<=H5755GJ_CONTROL_PRETOUCH_SKIN_M)h576bu_mark_rocker_normal(hand,g_h574RockerLatchBody[hand],tip,cp0,0);g_h574RockerClearStreak[hand]=0;g_h574RockerLatchHolds[hand]++;g_h48PokeDebounced[hand]++;return;}if(++g_h574RockerClearStreak[hand]<H574_ROCKER_CLEAR_STREAK)return;g_h574RockerLatchBody[hand]=0;g_h574RockerPassBody[hand]=0;g_h574RockerClearStreak[hand]=0;g_h574RockerLatchClears[hand]++;g_h576buRockerNormalValid[hand]=0;g_h576buRockerNormalBody[hand]=0;h48_poke_clear(hand);}
+    // HR: an interior point is continuing contact, not withdrawal. This only
+    // retains an already accepted button latch; it cannot authorize a press.
+    if(g_h574RockerLatchBody[hand]){float bg=999.0f,cp0[3];i32 near=s26eq_return_point(g_h574RockerLatchBody[hand],tip,&bg,cp0);float sg=near?h572_index_skin_gap(hand,len,bg):999.0f;if(near&&sg<=H574_ROCKER_RELEASE_GAP_M){if(bg>0.00001f&&sg<=H5755GJ_CONTROL_PRETOUCH_SKIN_M)h576bu_mark_rocker_normal(hand,g_h574RockerLatchBody[hand],tip,cp0,0);g_h574RockerClearStreak[hand]=0;g_h574RockerLatchHolds[hand]++;g_h48PokeDebounced[hand]++;return;}if(++g_h574RockerClearStreak[hand]<H574_ROCKER_CLEAR_STREAK)return;g_h574RockerLatchBody[hand]=0;g_h574RockerPassBody[hand]=0;g_h574RockerClearStreak[hand]=0;g_h574RockerLatchClears[hand]++;g_h576buRockerNormalValid[hand]=0;g_h576buRockerNormalBody[hand]=0;h48_poke_clear(hand);}
     i32 havePrev=g_h485PokePrevTipValid[hand];if(havePrev){tipDelta[0]=tip[0]-g_h485PokePrevTip[hand][0];tipDelta[1]=tip[1]-g_h485PokePrevTip[hand][1];tipDelta[2]=tip[2]-g_h485PokePrevTip[hand][2];}g_h485PokePrevTip[hand][0]=tip[0];g_h485PokePrevTip[hand][1]=tip[1];g_h485PokePrevTip[hand][2]=tip[2];g_h485PokePrevTipValid[hand]=1;
     float dir[3]={pts[len][0]-pts[len-1][0],pts[len][1]-pts[len-1][1],pts[len][2]-pts[len-1][2]};if(!h10_norm3(dir))return;
     if(h5755c_try_raw_rocker_touch(hand,tip,len))return;
@@ -20892,6 +21159,7 @@ static void h48_try_fingertip_poke(i32 hand,const float* handM,i32 gripEdge){
        returns the exact wrapper+0x2e8 Newton body for icon classification. */
     i32 iconId=-1;const void* raw=0;void* can=0;void* on=0;if(!h483_surface_target_info(wrapper,entity,&iconId,&raw,&can,&on)){g_h48PokeStaticRejects[hand]++;return;}
     g_h481PokeIconCalls[hand]++;g_h481PokeLastIcon[hand]=iconId;g_h481PokeLastIconRva[hand]=0xffffffffu;
+    if(terminal && iconId!=H482_POKE_SWITCH_ICON)return; // Never re-enter or change terminal ownership.
     if(iconId==H576BO_TERMINAL_ICON){
         g_h576boTerminalTouchAttempts++;float bodyGap=999.0f,cp[3]={0,0,0};if(!raw||!h14_point_to_body(raw,tip,&bodyGap,cp)){g_h576boTerminalTouchRejected++;return;}float skinGap=h572_index_skin_gap(hand,len,bodyGap);h5755gj_mark_control_near(hand,raw,skinGap);if(skinGap>H576BO_ENTRY_SKIN_M){g_h576boTerminalTouchRejected++;return;}
         g_h48PokeBodyWrapper[hand]=wrapper;g_h48PokeEntity[hand]=entity;H25TString empty;zero_bytes(&empty,sizeof(empty));empty.capacity=15u;u64 orv=((PFN_H25_OnInteract)on)(entity,0,wrapper,cp,&empty);
@@ -20966,6 +21234,7 @@ static void h14_physics_step(const void* world,float dt){
     }
     s26gb_recall_step();
     s26y_rearm();
+    s26hr_palm_controls();
     s26x_phone_step(dt);
 
     s26hd_step(dt);
@@ -21840,6 +22109,7 @@ static void s26_install_held_filter(u8* soma){
     ext_Log(">>> S26F HELD SELF FILTER READY: exact player character + held owner parts; original HPL filter retained for all other pairs");
 }
 
+
 static void __attribute__((ms_abi)) h14_newton_update(const void* world,float timestep){
     static u32 gdReported;
     if(!gdReported && g_s26gdRateMultiplier==2u){
@@ -21848,7 +22118,8 @@ static void __attribute__((ms_abi)) h14_newton_update(const void* world,float ti
     }
     h5755eg_prof_try_init();h5755ei_phys_frame_begin();
 
-    u64 eg0=h5755eg_tick();h5729_state_boundary_observe("pre");h5749a_refresh_gui_state();h14_physics_step(world,timestep);h5755eg_phys_add_since(H5755EG_P_PRE,eg0);
+    u64 eg0=h5755eg_tick();h5729_state_boundary_observe("pre");h5749a_refresh_gui_state();s26ig_dispatch_crouch_pre(timestep);h14_physics_step(world,timestep);h5755eg_phys_add_since(H5755EG_P_PRE,eg0);
+
     i32 mapq=__atomic_load_n(&g_h576bfMapTransitionActive,__ATOMIC_ACQUIRE)?1:0;
     i32 uiq=(__atomic_load_n(&g_h5755bhPresentationState,__ATOMIC_ACQUIRE)!=H5755BH_GAMEPLAY_VR||__atomic_load_n(&g_h5755asUiIslandActive,__ATOMIC_ACQUIRE)||__atomic_load_n(&g_h5755asResumeClassifyActive,__ATOMIC_ACQUIRE)||__atomic_load_n(&g_h5755azExitPending,__ATOMIC_ACQUIRE)||__atomic_load_n(&g_h5755bbTitlePresentationLatch,__ATOMIC_ACQUIRE))?1:0;
     if(uiq||mapq)h5755gi_head_guard_clear();else {/* H57.55GJ: GI head guard hardware-retired. */ h5755gi_head_guard_clear();h538_capture_pre_solver();h540_capture_segments_pre_solver();}
@@ -21884,6 +22155,7 @@ static void __attribute__((ms_abi)) h14_newton_update(const void* world,float ti
     eg=h5755eg_tick();h567_post_solver();h5755eg_phys_add_since(H5755EG_P_POSTHELD,eg);
     h482_camera_guard_step();h35_post_solver_segments();h25_dispatch_pending();s26hl_dispatch();h576av_update_theta_handoff();h5748_post_physics_switch();s26bb_apply_world_scale();h482_camera_guard_step();
     h5755eg_phys_add_since(H5755EG_P_POST,egPost);h5755ei_phys_spike_finish(world);h5755eg_phys_finish_sample(world);
+
 }
 static void h34_flush_deferred_destroys(void* worldWrapper){
     if(!worldWrapper||worldWrapper!=g_h34PhysicsWorldWrapper)return;
@@ -21902,6 +22174,7 @@ static void __attribute__((ms_abi)) h34_world_update(void* worldWrapper,float ti
     h532_outer_update_post(worldWrapper);
     h34_flush_deferred_destroys(worldWrapper);
     h545_flush_pose_rebuilds(worldWrapper);
+
 }
 static void h14_try_physics_setup(void){
     if(g_h14PhysicsReady)return;void* nd=ext_GetModuleHandleA("Newton.dll");if(!nd)nd=ext_GetModuleHandleA("newton.dll");if(!nd)return;if(g_h14PhysicsHookAttempted)return;g_h14PhysicsHookAttempted=1;
@@ -21959,7 +22232,7 @@ static void h14_try_physics_setup(void){
     ext_Log(">>> S6-HANDS5755CE LEGACY DOOR MOTOR RETIRED: H48.1 direct hinge AddImpulse + H48.3 graph-door angle/point-impulse servo + unused H57.10 fixed-frame servo state physically deleted | graph/semantic hinge discovery retained only to feed shipped SwingDoor/RotateBase");
     ext_Log(">>> S6-HANDS5724 STATE-SEMANTIC BACK REVISION: hinge source frozen to H57.14; dedicated B/click press edges may request Back only in menu/special-state semantics; special-state exit uses recovered cLuxPlayer::ChangeState(previous); B/touch observation-only");
     ext_Log(">>> S6-HANDS5755GJ CONTROL COLLISION POLICY: icon13 controls remain fully Newton-solid; NewtonMaterialDisableContact availability %s is TELEMETRY ONLY and GI never calls it | exact true-touch root compliance owns switch stability",p_h5755ghMaterialDisableContact?"READY":"MISSING");
-    g_h14PhysicsReady=1;ext_Log(">>> SOMA VR 1.0.8-S26HQ: opt-in remote assemblies/readables, interaction pointer and settings pagination");ext_Log(">>> S6-HANDS5752A SLIDER RELEASE CLEAR QUARANTINE READY: exact released Slider body pair-filter only; tracked + physical full-hand overlap/cross proof; %u-step consecutive-clear rearm; NO generic H57.49d recovery",(u32)H5752_SLIDER_RELEASE_CLEAR_STREAK);ext_Log(">>> S6-HANDS5752C GRIP-ONLY DRAWER + RAIL GUARD READY: H57.52b foreign-hand held-object collision changes REVERTED to H57.52a | fixed half-curled raw-pose Grip probe selects Sliders independent of Trigger | ambiguous stacked Slider cluster suppresses legacy projection | rail drift >25mm or rotMetric >0.150 stops VR force; no joint teleport/reset");ext_Log(">>> S6-HANDS5752D HINGE RELEASE + MECHANISM STUTTER READY: exact released semantic/graph door body quarantine with 3-step full-hand clear proof | legacy H57.9W3/H48.3 door motor deleted; quarantine retained only as release collision hygiene | native Slider/Hinge/Curtain gesture rebuilds suppressed while mechanism owns hand and coalesced once on release | ordinary loose-grab solver unchanged");ext_Log(">>> S6-HANDS5752E GRAB HOT-PATH CLEANUP READY: production gameplay retires synchronous NEAR/LATCH wrapper introspection, deep loose-lift RTTI diagnostics, and GRIP-MISS census mesh/RTTI/joint scans | actual loose latch, exact one-shot visual mesh anchor, H567/H554 held solver, drawers and hinges unchanged");ext_Log(">>> S6-HANDS5753H GAMEPLAY CAMERA REPRIME READY: H57.53e lifecycle + H57.53f world-lock rigid H^-1*V restored | H57.53g yaw-conjugated world-frame experiment HARDWARE REJECTED | live VR engine rebuild suppresses authored pitch/roll to zero while retaining Simon authored yaw; fields restored immediately | headset quaternion owns physical pitch/roll/yaw | exact camera-centre invariant telemetry | lighting path intentionally unchanged | per-eye translation/H57.51a renderer/H57.52 interactions unchanged");/* H57.53k BEGIN */ext_Log(">>> S6-HANDS5753K FRUSTUM CONTRACT RESTORE READY: H57.53h world-lock camera FROZEN | restore P2 kCamFov=+0x28 kCamAspect=+0x2C prerequisite lost when old Euler detour was bypassed | unchanged P2 d_GetFrustum can again build headset-FOV native frustum/ViewProj/planes | NO hand scale, camera orientation, IPD, projection-substitution, physics or lighting mutation");ext_Log(">>> S6-HANDS5754H UI PRESENTATION MILESTONE: H57.54e startup/main-menu HARDWARE PASS frozen | H57.54g frozen-eye Pause architecture HARDWARE REJECTED | Pause keeps live runtime-resolution VR projection and renders only SOMA MenuHandler viewport into a dedicated spatial quad | exact LoadScreen visibility gates B");ext_Log(">>> S6-HANDS5754L PAUSE QUAD-ONLY + VIEWPORT TELEMETRY READY: H57.54i authored Pause + pointer + A/B input frozen | in-game Pause alone uses native 16:9 raster + dedicated quad-only composition at 0.85m/2.50m | H57.54j viewport mutation remains HARDWARE REJECTED | final glViewport observer is read-only | startup H57.54e panel unchanged");ext_Log(">>> S6-HANDS5754O SUBMITTED-EYE PAUSE SNAPSHOT READY: H57.54n proved GL_BACK remains the stale post-load/continue surface throughout authored Pause | copy the exact H57.51a private eye resolve that is handed to SubmitEye into the frozen 0.85m/2.50m Pause quad | NO gameplay viewport mutation");/* H57.53k END */ext_Log(">>> S6-HANDS579W3 BROKEN WINDOW PATCH: READY | exact H579 baseline + ONE tech_room_window_3 instance fix; one exact tech_room_window_3_Body_* wrapper identifies that unique destructible owner, then a small aperture is centered on the blocked physical/tracked hand midpoint; only exact current contacts from that owner or local static material-29 coarse proxies may pair-filter; no global material disable, no H580/H581 logic");ext_Log(">>> S6-HANDS579 DRAWER AXIS PORTAL API: READY | owner-backed drawer compatibility retained after H578 targetless retirement; material-194 cLuxProp bodies may pair-filter only when proven HPL Sliders, the hand is FREE, drawer has >=10cm observed H39 rail travel, root lag >=25mm, blocked travel aligns >=0.70 with authored Slider axis, and >=2 hand paths (or root+one) cross the exact body");ext_Log(">>> S6-HANDS5755CT HPL BODY POLICY FROZEN: ownerless targetless H578 portal RETIRED | physical-hand Newton overlap mirrors non-character HPL IsActive/GetCollide/PushStrength/CollideFlags eligibility | unknown wrappers fail SOLID");ext_Log(">>> S6-HANDS577 PORTAL CAVITY API: RETAINED | target-associated cLuxProp crossing proof remains available");ext_Log(">>> S6-HANDS5755CN ROCKER/CAVITY API: H574/H575 payload transport RETIRED; target-assisted cavity refinements retained");ext_Log(">>> S6-HANDS573 CAVITY/ROCKER API: RETAINED with H574 selective refinements; payload transport retired by H57.55CN");ext_Log(">>> S6-HANDS572 PRECISION CONTACT/PRIORITY API: RETAINED | compliant two-hand same-owner clusters use dual point anchors with NO per-segment angular owner; real loose hand contact wins Grip before drawer/curtain proximity; rocker touch uses fitted index SKIN surface not bone endpoint; full 24-child hand retained with slimmer anatomical 19-phalanx capsules");ext_Log(">>> S6-HANDS571 TACTILE/EXCLUSIVE/COMPLIANT API: RETAINED | compliant clusters keep internal Newton joints and full physical hand; same-hand post-latch authored exclusivity remains");ext_Log(">>> S6-HANDS5755CT NATIVE HELD SWEEP FROZEN: H570 0.80m neighborhood AABB + body-by-body CheckShapeCollision RETIRED | sampled iPhysicsWorld::CheckShapeWorldCollision uses exact HPL non-character defaults + CN non-worsening-contact tolerance");ext_Log(">>> S6-HANDS569 CONTACT DETAIL API: %s | FirstContact %p NextContact %p ContactMaterial %p ContactPositionNormal %p",(p_h567ContactFirst&&p_h567ContactNext&&p_h567ContactMaterial&&p_h567ContactPosNormal)?"READY":"MISSING-FALLBACK-4-TICK-FREEZE",p_h567ContactFirst,p_h567ContactNext,p_h567ContactMaterial,p_h567ContactPosNormal);ext_Log(">>> S6-HANDS486 UNIFIED MECHANISM ANCHORING READY: authored controls may bind dynamic/jointed raw bodies or nearby moving cLuxProp followers; rocker switches use exact-surface contact edge. H47 drawers, H48 loose rotation, H48.5 compliant clusters and H48.4 source-camera guard remain active; H48.3 graph-door angle servo is retired.");ext_Log(">>> S6-HANDS560 GRIP STABILITY API: %s | H559 door dual-ownership retained; HPL owns ONE 24-child rigid compound (5 palm slabs + 19 exact pose-matched phalanx capsules); loose acquisition remains REAL-contact-only; H57.55HD retains HA edge-only semantics and supersedes the historical held-Grip contact-wait rule so a missed edge cannot auto-grab a later object; exact whole-compound HPL contact point is preferred over six-probe re-anchoring; LOOSE props preserve authored mass/inertia (old 0.50kg loose cap retired; direct SetOmega assist is suppressed above 2kg so heavy props use torque/collision response); held fingers capture one exact per-link latch-depth baseline and may never ratchet deeper; new contacts still use +2.5mm guard capsules; bounded 0.20 closing/two-sample/five-binary search remains; unsolved root/proximal overlap freezes/recover-opens by 0.08 instead of fail-closed whole-finger OPEN; H48.6 authored RAW selector, jointed body-relative anchoring, camera guards, drawers/curtains/switches remain; graph-door angle servo retired by H57.55CD and remains absent in CE",g_h536TransformApiReady?"READY":"MISSING");
+    g_h14PhysicsReady=1;ext_Log(">>> SOMA VR 1.0.9-S26IW: interaction responsiveness, roomscale, guidance and VR onboarding");ext_Log(">>> S6-HANDS5752A SLIDER RELEASE CLEAR QUARANTINE READY: exact released Slider body pair-filter only; tracked + physical full-hand overlap/cross proof; %u-step consecutive-clear rearm; NO generic H57.49d recovery",(u32)H5752_SLIDER_RELEASE_CLEAR_STREAK);ext_Log(">>> S6-HANDS5752C GRIP-ONLY DRAWER + RAIL GUARD READY: H57.52b foreign-hand held-object collision changes REVERTED to H57.52a | fixed half-curled raw-pose Grip probe selects Sliders independent of Trigger | ambiguous stacked Slider cluster suppresses legacy projection | rail drift >25mm or rotMetric >0.150 stops VR force; no joint teleport/reset");ext_Log(">>> S6-HANDS5752D HINGE RELEASE + MECHANISM STUTTER READY: exact released semantic/graph door body quarantine with 3-step full-hand clear proof | legacy H57.9W3/H48.3 door motor deleted; quarantine retained only as release collision hygiene | native Slider/Hinge/Curtain gesture rebuilds suppressed while mechanism owns hand and coalesced once on release | ordinary loose-grab solver unchanged");ext_Log(">>> S6-HANDS5752E GRAB HOT-PATH CLEANUP READY: production gameplay retires synchronous NEAR/LATCH wrapper introspection, deep loose-lift RTTI diagnostics, and GRIP-MISS census mesh/RTTI/joint scans | actual loose latch, exact one-shot visual mesh anchor, H567/H554 held solver, drawers and hinges unchanged");ext_Log(">>> S6-HANDS5753H GAMEPLAY CAMERA REPRIME READY: H57.53e lifecycle + H57.53f world-lock rigid H^-1*V restored | H57.53g yaw-conjugated world-frame experiment HARDWARE REJECTED | live VR engine rebuild suppresses authored pitch/roll to zero while retaining Simon authored yaw; fields restored immediately | headset quaternion owns physical pitch/roll/yaw | exact camera-centre invariant telemetry | lighting path intentionally unchanged | per-eye translation/H57.51a renderer/H57.52 interactions unchanged");/* H57.53k BEGIN */ext_Log(">>> S6-HANDS5753K FRUSTUM CONTRACT RESTORE READY: H57.53h world-lock camera FROZEN | restore P2 kCamFov=+0x28 kCamAspect=+0x2C prerequisite lost when old Euler detour was bypassed | unchanged P2 d_GetFrustum can again build headset-FOV native frustum/ViewProj/planes | NO hand scale, camera orientation, IPD, projection-substitution, physics or lighting mutation");ext_Log(">>> S6-HANDS5754H UI PRESENTATION MILESTONE: H57.54e startup/main-menu HARDWARE PASS frozen | H57.54g frozen-eye Pause architecture HARDWARE REJECTED | Pause keeps live runtime-resolution VR projection and renders only SOMA MenuHandler viewport into a dedicated spatial quad | exact LoadScreen visibility gates B");ext_Log(">>> S6-HANDS5754L PAUSE QUAD-ONLY + VIEWPORT TELEMETRY READY: H57.54i authored Pause + pointer + A/B input frozen | in-game Pause alone uses native 16:9 raster + dedicated quad-only composition at 0.85m/2.50m | H57.54j viewport mutation remains HARDWARE REJECTED | final glViewport observer is read-only | startup H57.54e panel unchanged");ext_Log(">>> S6-HANDS5754O SUBMITTED-EYE PAUSE SNAPSHOT READY: H57.54n proved GL_BACK remains the stale post-load/continue surface throughout authored Pause | copy the exact H57.51a private eye resolve that is handed to SubmitEye into the frozen 0.85m/2.50m Pause quad | NO gameplay viewport mutation");/* H57.53k END */ext_Log(">>> S6-HANDS579W3 BROKEN WINDOW PATCH: READY | exact H579 baseline + ONE tech_room_window_3 instance fix; one exact tech_room_window_3_Body_* wrapper identifies that unique destructible owner, then a small aperture is centered on the blocked physical/tracked hand midpoint; only exact current contacts from that owner or local static material-29 coarse proxies may pair-filter; no global material disable, no H580/H581 logic");ext_Log(">>> S6-HANDS579 DRAWER AXIS PORTAL API: READY | owner-backed drawer compatibility retained after H578 targetless retirement; material-194 cLuxProp bodies may pair-filter only when proven HPL Sliders, the hand is FREE, drawer has >=10cm observed H39 rail travel, root lag >=25mm, blocked travel aligns >=0.70 with authored Slider axis, and >=2 hand paths (or root+one) cross the exact body");ext_Log(">>> S6-HANDS5755CT HPL BODY POLICY FROZEN: ownerless targetless H578 portal RETIRED | physical-hand Newton overlap mirrors non-character HPL IsActive/GetCollide/PushStrength/CollideFlags eligibility | unknown wrappers fail SOLID");ext_Log(">>> S6-HANDS577 PORTAL CAVITY API: RETAINED | target-associated cLuxProp crossing proof remains available");ext_Log(">>> S6-HANDS5755CN ROCKER/CAVITY API: H574/H575 payload transport RETIRED; target-assisted cavity refinements retained");ext_Log(">>> S6-HANDS573 CAVITY/ROCKER API: RETAINED with H574 selective refinements; payload transport retired by H57.55CN");ext_Log(">>> S6-HANDS572 PRECISION CONTACT/PRIORITY API: RETAINED | compliant two-hand same-owner clusters use dual point anchors with NO per-segment angular owner; real loose hand contact wins Grip before drawer/curtain proximity; rocker touch uses fitted index SKIN surface not bone endpoint; full 24-child hand retained with slimmer anatomical 19-phalanx capsules");ext_Log(">>> S6-HANDS571 TACTILE/EXCLUSIVE/COMPLIANT API: RETAINED | compliant clusters keep internal Newton joints and full physical hand; same-hand post-latch authored exclusivity remains");ext_Log(">>> S6-HANDS5755CT NATIVE HELD SWEEP FROZEN: H570 0.80m neighborhood AABB + body-by-body CheckShapeCollision RETIRED | sampled iPhysicsWorld::CheckShapeWorldCollision uses exact HPL non-character defaults + CN non-worsening-contact tolerance");ext_Log(">>> S6-HANDS569 CONTACT DETAIL API: %s | FirstContact %p NextContact %p ContactMaterial %p ContactPositionNormal %p",(p_h567ContactFirst&&p_h567ContactNext&&p_h567ContactMaterial&&p_h567ContactPosNormal)?"READY":"MISSING-FALLBACK-4-TICK-FREEZE",p_h567ContactFirst,p_h567ContactNext,p_h567ContactMaterial,p_h567ContactPosNormal);ext_Log(">>> S6-HANDS486 UNIFIED MECHANISM ANCHORING READY: authored controls may bind dynamic/jointed raw bodies or nearby moving cLuxProp followers; rocker switches use exact-surface contact edge. H47 drawers, H48 loose rotation, H48.5 compliant clusters and H48.4 source-camera guard remain active; H48.3 graph-door angle servo is retired.");ext_Log(">>> S6-HANDS560 GRIP STABILITY API: %s | H559 door dual-ownership retained; HPL owns ONE 24-child rigid compound (5 palm slabs + 19 exact pose-matched phalanx capsules); loose acquisition remains REAL-contact-only; H57.55HD retains HA edge-only semantics and supersedes the historical held-Grip contact-wait rule so a missed edge cannot auto-grab a later object; exact whole-compound HPL contact point is preferred over six-probe re-anchoring; LOOSE props preserve authored mass/inertia (old 0.50kg loose cap retired; direct SetOmega assist is suppressed above 2kg so heavy props use torque/collision response); held fingers capture one exact per-link latch-depth baseline and may never ratchet deeper; new contacts still use +2.5mm guard capsules; bounded 0.20 closing/two-sample/five-binary search remains; unsolved root/proximal overlap freezes/recover-opens by 0.08 instead of fail-closed whole-finger OPEN; H48.6 authored RAW selector, jointed body-relative anchoring, camera guards, drawers/curtains/switches remain; graph-door angle servo retired by H57.55CD and remains absent in CE",g_h536TransformApiReady?"READY":"MISSING");
     ext_Log(">>> S6-HANDS557 SOLIDITY FILTER API: READY | per-body Newton overlap rejects cCharacterBodyNewton/cLuxCameraEntity, every cLux *Area owner, and trigger collision shapes; real walls/floors/props remain collidable even on the same material ID");
     ext_Log(">>> S6-HANDS557 TRANSFORM SYNC API: %s | NewtonBodyGetTransformCallback %p | initial/rearm SetMatrix is immediately mirrored through HPL's registered transform callback; runtime tracking moves one HAND-LOCAL rigid full-hand body through contact-aware solver rows; free-hand skin uses exact APPLIED rigid gesture pose only while proxy is live; raw Touch visual fallback remains live otherwise; held grip/contact-wrap remains separate; no contact IK",g_h536TransformApiReady?"READY":"MISSING",p_h536GetTransformCallback);
     ext_Log(">>> S6-HANDS557 RAW BODY API: RETIRED | NewtonCreateBody/DestroyBody exports may exist (%p/%p) but free hands never use them",p_h533CreateBody,p_h533DestroyBody);
@@ -22103,6 +22376,7 @@ u8 __attribute__((ms_abi)) s6_h11_begin_wrapper(void* self) {
         } else if(g_h514AimFallbackActive[i]){g_h514AimFallbackActive[i]=0;g_h514AimFallbackEnds[i]++;ext_Log(">>> S6-HANDS518 AIM FALLBACK END %s: grip/pose valid again",i==0?"L":"R");}
         if(!gripValid&&!aimValid)g_h514BothPoseInvalidFrames[i]++;
 
+        g_s26iqPoseEpoch[i]++;
         g_lastActive[i]=effectiveValid?1u:0u;
         if(effectiveValid){
             if(g_h510PoseInvalidFrames[i]){g_h510PoseGraceRecovers[i]++;ext_Log(">>> S6-HANDS518 POSE GRACE RECOVERED %s after %u fully-invalid XR frame(s); source %s; servo/raw history reset",i==0?"L":"R",g_h510PoseInvalidFrames[i],gripValid?"grip":"aim-fallback");g_h511PrevRawValid[i]=0;g_h34PrevTargetValid[i]=0;g_h34FilterValid[i]=0;}

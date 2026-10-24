@@ -1,3 +1,4 @@
+#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/Inputhandler_Types.hps"
 
@@ -16,6 +17,8 @@
  
 class cScrMap : iScrMap
 {
+    [nosave] cVRTraversalGuidesHY mVRTraversalHY;
+
 	//--------------------------------------------
 
 	/////////////////////////////////////////
@@ -137,8 +140,117 @@ class cScrMap : iScrMap
 			Entity_SetPlayerInteractCallback("Jacket", "", false);
 	}
 
-	void OnEnter()
+	    // Visual-only initialization also runs after save loading, which can skip OnEnter.
+    void EnsureVRTraversalIA()
+    {
+        if(mVRTraversalHY.mvPoints.length()!=0)return;
+        mVRTraversalHY.Add("CrateLadderArea_1",cVector3f(0.0996948f,-0.4768960f,0.0280055f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0000097f,0.2588153f,0.9659268f));
+
+        mVRTraversalHY.Add("CrateLadderArea_1",cVector3f(-0.2509437f,1.9007397f,-0.2170088f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(-0.7038274f,0.7060774f,0.0779853f));
+
+        mVRTraversalHY.Add("CrateLadderArea_3",cVector3f(0.1016605f,-0.4768960f,0.0259965f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0005796f,0.2588153f,0.9659267f));
+
+        mVRTraversalHY.Add("CrateLadderArea_3",cVector3f(-0.2491226f,1.9007397f,-0.2188108f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(-0.7037812f,0.7060774f,0.0784005f));
+
+        mVRTraversalHY.Add("CrateLadderArea_4",cVector3f(0.0775743f,-0.4768960f,0.0220915f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0000097f,0.2588153f,0.9659268f));
+
+        mVRTraversalHY.Add("CrateLadderArea_4",cVector3f(-0.2730643f,1.9007397f,-0.2229228f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(-0.7038274f,0.7060774f,0.0779853f));
+
+        mVRTraversalHY.Add("CrateLadderArea",cVector3f(0.0581322f,-0.4768960f,0.0284575f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0000000f,0.2588153f,0.9659268f));
+
+        mVRTraversalHY.Add("CrateLadderArea",cVector3f(-0.2925039f,1.9007397f,-0.2165603f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(-0.7038281f,0.7060774f,0.0779782f));
+
+        mVRTraversalHY.Add("CrateLadderArea_2",cVector3f(0.1098298f,-0.7206140f,0.0386769f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0000024f,0.0119088f,0.9999291f));
+
+        mVRTraversalHY.Add("CrateLadderArea_2",cVector3f(-0.3422310f,2.2537167f,-0.2898712f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.7018274f,0.7123471f,-0.0000017f));
+
+        mVRTraversalHY.Add("CrateLadderArea_5",cVector3f(0.1349179f,-6.2289333f,0.0352127f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0368227f,0.0119065f,0.9992509f));
+
+        mVRTraversalHY.Add("CrateLadderArea_5",cVector3f(-0.3716815f,7.7378600f,-0.1928333f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.0125955f,0.9396866f,0.3418048f));
+
+        mVRTraversalHY.Add("CrateLadderArea_6",cVector3f(0.0980548f,-2.4753640f,0.0419183f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0006000f,0.0119088f,0.9999289f));
+
+        mVRTraversalHY.Add("CrateLadderArea_6",cVector3f(-0.4000537f,3.9914000f,-0.2087297f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.0002052f,0.9396866f,0.3420367f));
+
+        mVRTraversalHY.Add("CrateLadderArea_7",cVector3f(0.1151771f,-2.4662640f,0.0438953f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0005940f,0.0119088f,0.9999289f));
+
+        mVRTraversalHY.Add("CrateLadderArea_7",cVector3f(-0.3829272f,3.9875800f,-0.2023558f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.0002032f,0.9396866f,0.3420367f));
+
+        mVRTraversalHY.Add("CrateLadderArea_8",cVector3f(0.3842563f,-0.6656600f,0.0464445f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0006000f,-0.0000000f,0.9999998f));
+
+        mVRTraversalHY.Add("CrateLadderArea_8",cVector3f(-0.3857575f,2.2358500f,-0.2151383f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.0002052f,0.9396866f,0.3420367f));
+
+        mVRTraversalHY.Add("CrateLadderArea_9",cVector3f(0.1207454f,-5.4782940f,0.0264854f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0005939f,0.0119088f,0.9999289f));
+
+        mVRTraversalHY.Add("CrateLadderArea_9",cVector3f(-0.3773589f,6.9875800f,-0.2197656f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.0002031f,0.9396866f,0.3420367f));
+
+        mVRTraversalHY.Add("CrateLadderArea_10",cVector3f(0.1167546f,-2.4759840f,0.0419278f),cVector3f(0.0000000f,1.0000000f,0.0000000f),cVector3f(0.0005939f,0.0119088f,0.9999289f));
+
+        mVRTraversalHY.Add("CrateLadderArea_10",cVector3f(-0.3813497f,3.9883800f,-0.2043232f),cVector3f(0.0000000f,0.0000000f,-1.0000000f),cVector3f(0.0002031f,0.9396866f,0.3420367f));
+
+        mVRTraversalHY.Add("ClimbArea_1",cVector3f(0.288542f,-0.007977f,-0.122736f),cVector3f(0.000000f,0.000000f,-1.000000f),cVector3f(0.000000f,1.000000f,0.000000f),"hatch_4");
+
+        mVRTraversalHY.Add("ClimbArea_2",cVector3f(0.288542f,-0.066837f,-0.155937f),cVector3f(0.000000f,0.000000f,-1.000000f),cVector3f(0.000000f,1.000000f,0.000000f),"hatch_3");
+
+        mVRTraversalHY.Add("ClimbArea_3",cVector3f(0.288541f,-0.054710f,-0.155938f),cVector3f(0.000000f,0.000000f,-1.000000f),cVector3f(0.000000f,1.000000f,0.000000f),"hatch_2");
+
+        mVRTraversalHY.Add("ClimbArea_4",cVector3f(0.288541f,-0.054710f,-0.155938f),cVector3f(0.000000f,0.000000f,-1.000000f),cVector3f(0.000000f,1.000000f,0.000000f),"hatch_1");
+
+    }
+
+void OnEnter()
 	{
+        mVRTraversalHY.Dispose();EnsureVRTraversalIA();
+        // HY ladder surfaces: source triangles recorded in ladder_coverage_hy.json.
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+
+
+        
+        
+        
+        
+
 		VR_RemoveUnusedRigidPrompts();
 		VR_RemoveUnusedClimbPrompt();
 		MainMenu_SetBGPhase(eMainMenuPhase_2_4_To_3_3);
@@ -150,6 +262,7 @@ class cScrMap : iScrMap
 	// Run when leaving map
 	void OnLeave()
 	{
+        mVRTraversalHY.Dispose();
 	}
 
 	//-------------------------------------------------------
@@ -231,6 +344,7 @@ class cScrMap : iScrMap
 	
 	void Update(float afTimestep)
 	{
+        EnsureVRTraversalIA();mVRTraversalHY.Update(afTimestep);
 		UpdatePowerLevel(afTimestep);
 	}
 	
