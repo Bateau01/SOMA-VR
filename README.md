@@ -98,6 +98,43 @@ SOMA and its original scripts and assets are by Frictional Games. This is an uno
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). GPL3.0 Licensed.
 
+# FAQ:
+
+- Before reading this, ensure that you've reviewed your VR settings, as well as the button layout and body layout images shown on the GitHub page.
+
+**Q: "My VR hands are stuck and won't come back!"**
+A: Hold down your right thumbstick click for a second and it'll reset the position of your hands. This is shown on the button layout image as well as the "BUTTON LAYOUT" setting in your VR settings, under "CONTROLS".
+
+**Q: "How do I interact with the chair at the lab?" or "How do I get into this vent?"**
+A: Bring your VR hands and feel around the chair, like the armrest, or feel around the ledge of the vent for a haptics vibration/pulse in your controller, once you feel that pulse, press grip and your character will perform the action. As of v1.0.9, you can now also see guiding holograms for key-items, Omni-Tool, and hand interactions. When you have a key-item or Omni-Tool held, you can now see a hologram of where that key-item can be used. For the Omni-Tool, you can see if you can place an Omni-Tool in a slot when held. For hand holograms, you can see where you can place your hands to perform a interaction, like climbing into vents, or interacting with pilot seat chairs, ladders, etc.
+
+**Q: "My character isn't performing this [X] action!"**
+A: You're probably missing something or haven't gone through a scripted sequence.
+
+**Q: "I have limited space and I find interacting with things using my VR hands to be difficult."**
+A: You can enable remote grabbing, terminal laser pointer, as well as an interaction laser pointer - all found in your VR settings, under "GAMEPLAY".
+
+**Q: "[X] image effects are too jarring for me, how can I disable them?"**
+A: In your VR settings, under "VIDEO", you have the option to selectively disable/enable various image effects, like disabling head bobbing, chromatic aberration, screen shake, distortions, etc, according to your preference.
+
+**Q: "My shoulder holsters are too difficult to reach and feel out of place!" or "My VR camera/perspective doesn't seem to align with my view/character!"**
+A: Recenter your view by pressing the dedicated VR controller bind for it. Normally, it's "Y", but for some controllers, that bind may be different. Check the button layout image on the GitHub, or view the "BUTTON LAYOUT" VR settings option, under "CONTROLS".
+
+**Q: "My controller button layout isn't comfortable. How can I change it?"**
+A: You can change your button layout in the "BUTTON LAYOUT" VR setting under "CONTROLS".
+
+**Q: "The scale of objects look too large!" Or "The distance for subtitles/hints are too far/close!"**
+A: You can change your world scale, subtitle distance, and 2D window distance to be closer or further away in your VR settings, under "GAMEPLAY". Each of them have their own dedicated sliders.
+
+**Q: "My game stutters a lot, despite having a high-end PC!"**
+A: SOMA's HPL3 engine isn't well optimised. Physics don't utilise all of your CPU cores, and doesn't support multithreading. So, in heavy physics-demanding areas, your CPU frametime may spike, which can cause FPS drops in some areas. Some areas are also taxing on your GPU, like Site Delta. I recommend enabling "OpenGL Triple Buffering" in your Nvidia Control Panel, or the AMD equivalent. You also have access to Dynamic Foveated Rendering, found in the "EYE-TRACKING" VR setting. If nothing else, you can still use reprojection.
+
+**Q: "My game doesn't feel smooth!"**
+A: SOMA's physics run at 60Hz, so things like turning, using your VR hands, performing interactions, enemies, etc, may not be as smooth as you'd like it to be. This is why I implemented "120HZ PHYSICS," found in your VR settings, under "GAMEPLAY". This setting increases that physics rate from 60Hz to 120Hz, and includes fixes that would have normally broken the game with 120Hz Physics, so everything should feel a lot smoother. However, using this mode may cause more stutters and hitches, as physics now has to update twice as often compared to 60Hz. Also, ideally, recommend using 120Hz as your VR headset's display refresh rate, if possible.
+
+**Q: "I'd like to stream my gameplay, but my desktop view is black!"**
+A: Enable "DESKTOP MIRROR" in your VR settings, under "VIDEO". You might need to restart SOMA VR for it to take effect.
+
 ## AI Disclaimer
 
 This project was created with AI assistance. Despite that, I've already poured over 250 hours on this project. HPL3 is not an easy engine to work with, and this mod took a lot of iterating, testing, decompilation, fixing, and testing again. 
