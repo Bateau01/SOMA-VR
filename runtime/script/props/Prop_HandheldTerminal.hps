@@ -1,10 +1,10 @@
-#include "helpers/helper_audio.hps"
+﻿#include "helpers/helper_audio.hps"
 #include "interfaces/Prop_Interface.hps"
 #include "base/Player_Types.hps"
 //#include "helpers/helper_player.hps"
 
 	
-bool _HPL3VR_HandheldActive(){cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");return cScript_GetGlobalReturnBool();}
+bool _HPL3VR_HandheldActive(){cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");return cScript_GetGlobalReturnBool();}
 
 class cScrPropHandheldTerminal : iScrProp, iScrProp_Interface
 {

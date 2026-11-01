@@ -5,10 +5,14 @@ Generated source and DLL stay under build/store. Never patches a game EXE.
 from pathlib import Path
 import argparse,json,re,struct,subprocess,sys,shutil,hashlib
 R=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--zig',required=True);p.add_argument('--roomscale-test',action='store_true');args=p.parse_args()
-B=R/('build/store-roomscale-test' if args.roomscale_test else 'build/store');B.mkdir(parents=True,exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('--zig',required=True);p.add_argument('--roomscale-test',action='store_true');p.add_argument('--cpu-string-spans',action='store_true');p.add_argument('--cpu-near-types',action='store_true');p.add_argument('--cpu-optimisations',action='store_true');args=p.parse_args()
+assert not (args.cpu_optimisations and args.roomscale_test)
+B=R/('build/store-cpu65' if args.cpu_optimisations else 'build/store-roomscale-test' if args.roomscale_test else 'build/store');B.mkdir(parents=True,exist_ok=True)
+(B/'result.json').unlink(missing_ok=True)
 profile=json.loads((R/'reference/store-profile.json').read_text())
 mapping={int(k,16):int(v,16) for k,v in profile['addresses'].items()}
+cpu=json.loads((R/'reference/store-cpu-profile.json').read_text()) if args.cpu_optimisations else None
+if cpu:assert cpu['executable_sha256']==profile['sha256']
 tokens=re.compile(r'''/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|0x[0-9a-fA-F]+''',re.S)
 shutil.copytree(R/'third_party/smaa',B/'third_party/smaa',dirs_exist_ok=True)
 source=B/'source';shutil.copytree(R/'source',source,dirs_exist_ok=True)
@@ -16,15 +20,22 @@ changes=[]
 for f in source.glob('*'):
     if f.suffix not in ('.c','.inc'):continue
     s=f.read_text(encoding="utf-8")
+    local=dict(mapping)
+    if cpu:local.update({int(k,16):int(v,16) for k,v in cpu['addresses_by_file'].get(f.name,{}).items()})
+    # These include files address Newton.dll, not Soma.exe. Its exact binary is
+    # identical on all supported editions; engine RVA substitutions are invalid.
+    if f.name in ('cpu_hand_mesh.inc','cpu_hand_mesh_core.inc','cpu_leaf_filter.inc'):local={}
     def literal(m):
         token=m.group()
-        if not token.startswith('0x') or int(token,16) not in mapping:return token
-        v=int(token,16);changes.append([f.name,s.count('\n',0,m.start())+1,hex(v),hex(mapping[v])]);return hex(mapping[v])
+        if not token.startswith('0x') or int(token,16) not in local:return token
+        v=int(token,16);changes.append([f.name,s.count('\n',0,m.start())+1,hex(v),hex(local[v])]);return hex(local[v])
     s=tokens.sub(literal,s)
     def signature(m):
         vals=[int(x.strip(),0) for x in m.group()[1:-1].split(',') if x.strip()]
-        if len(vals)<8 or any(x>255 for x in vals):return m.group()
-        replacement=profile['signature_changes'].get(bytes(vals).hex())
+        if len(vals)<6 or any(x>255 for x in vals):return m.group()
+        replacements=dict(profile['signature_changes'])
+        if cpu:replacements.update(cpu['signature_changes'])
+        replacement=replacements.get(bytes(vals).hex())
         return '{'+','.join(hex(x) for x in bytes.fromhex(replacement))+'}' if replacement else m.group()
     s=re.sub(r'\{\s*(?:(?:0x[0-9a-fA-F]+|[0-9]+)\s*,\s*)*(?:0x[0-9a-fA-F]+|[0-9]+)\s*,?\s*\}',signature,s)
     f.write_text(s,encoding="utf-8")
@@ -41,7 +52,9 @@ f=source/'s26n.c';s=f.read_text(encoding="utf-8");marker='u32 __attribute__((ms_
 assert s.count(marker)==1
 s=s.replace(marker,guard+marker+'\n    if(!s26ef_store_matches())return 1;');f.write_text(s,encoding="utf-8")
 obj=B/'hpl3vr.obj';out=B/'hpl3vr-store.dll'
-subprocess.run([args.zig,'cc']+(['-DS26IE_NATIVE_TEST=1'] if args.roomscale_test else [])+['-target','x86_64-windows-gnu','-O2','-g0','-ffreestanding','-fno-asynchronous-unwind-tables','-fno-ident','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-Wno-unused-parameter','-c',str(f),'-o',str(obj)],check=True)
+options=json.loads((R/'scripts/cpu-runtime-options.json').read_text()) if args.cpu_optimisations else {'cpu_string_spans':args.cpu_string_spans,'cpu_near_types':args.cpu_near_types}
+defines=['-D'+key.upper()+'='+str(int(value)) for key,value in options.items() if key.startswith('cpu_') and key!='cpu_only_test']
+subprocess.run([args.zig,'cc']+(['-DS26IE_NATIVE_TEST=1'] if args.roomscale_test else [])+defines+['-target','x86_64-windows-gnu','-O2','-g0','-ffreestanding','-fno-asynchronous-unwind-tables','-fno-ident','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-Wno-unused-parameter','-c',str(f),'-o',str(obj)],check=True)
 base=R/'third_party/hpl3vr_S5-P2_base.dll'
 assert hashlib.sha256(base.read_bytes()).hexdigest()=='f17f2048c7625705e3867c7ca9e106c3c343053deefc716e67f210ca647f74ed'
 subprocess.run([sys.executable,'-X','utf8',str(R/'scripts/apply_payload.py'),str(base),str(obj),str(out)],check=True)
@@ -55,5 +68,5 @@ for patch in profile['base_operands']:
     at=offset(int(patch['operand_rva'],16));assert struct.unpack_from('<I',data,at)[0]==int(patch['old'],16)
     struct.pack_into('<I',data,at,int(patch['new'],16))
 struct.pack_into('<I',data,nt+24+64,0);out.write_bytes(data)
-result={'sha256':hashlib.sha256(data).hexdigest(),'executable_sha256':profile['sha256'],'literal_changes':changes,'status':'built-not-gameplay-validated'}
+result={'sha256':hashlib.sha256(data).hexdigest(),'executable_sha256':profile['sha256'],'literal_changes':changes,'status':'built-not-gameplay-validated','arguments':vars(args),'options':options,'source_hashes':{p.relative_to(R).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((R/'source').glob('*')) if p.is_file()}}
 (B/'result.json').write_text(json.dumps(result,indent=2));print('Store DLL:',out,result['sha256'])

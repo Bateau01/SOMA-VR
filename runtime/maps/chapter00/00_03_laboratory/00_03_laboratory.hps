@@ -1,4 +1,4 @@
-#include "helpers/helper_vr_guidance_hr.hps"
+﻿#include "helpers/helper_vr_guidance_hr.hps"
 #include "helpers/helper_vr_phone_q.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/InputHandler_Types.hps"
@@ -247,7 +247,7 @@ class cScrMap : iScrMap
         if(mbDavidGreetingDone && !Dialog_CharacterIsActive("David"))mbVRChairGuideReady=true;
         if(!mbVRChairGuideReady || !cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true))return;
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
         if(!cScript_GetGlobalReturnBool() || !cScript_RunGlobalFunc("VRGUIDE","","ACTIVE"))return;
         iLuxEntity@ chair=Map_GetEntity("ScanChair");
         if(chair is null || !chair.IsActive() || chair.GetInteractionDisabled() ||

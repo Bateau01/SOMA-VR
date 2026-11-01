@@ -1,4 +1,4 @@
-#include "interfaces/Prop_Interface.hps"
+﻿#include "interfaces/Prop_Interface.hps"
 #include "base/Player_Types.hps"
 
 class cScrPropPush : iScrProp, iScrProp_Interface
@@ -138,7 +138,7 @@ class cScrPropPush : iScrProp, iScrProp_Interface
         // Native Push initializes a different state; forcing Grab afterward
         // leaves its body/owner stale and CheckShouldUpdate immediately exits.
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
         bool vrActive=cScript_GetGlobalReturnBool();
         if (vrActive && apBody !is null &&
             cScript_RunGlobalFunc("VRSOCKETHELD", ""+apBody.GetUniqueID(), "H"))

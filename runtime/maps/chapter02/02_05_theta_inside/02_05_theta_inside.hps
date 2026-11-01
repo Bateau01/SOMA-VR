@@ -1,4 +1,4 @@
-#include "helpers/helper_vr_traversal_hy.hps"
+﻿#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 //#include "base/AchievementHandler_Types.hps"
 #include "base/InputHandler_Types.hps"
@@ -2107,7 +2107,7 @@ void OnEnter()
 	bool _HPL3VR_RuntimeActive_ThetaInsideAT()
 	{
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 		return cScript_GetGlobalReturnBool();
 	}
 

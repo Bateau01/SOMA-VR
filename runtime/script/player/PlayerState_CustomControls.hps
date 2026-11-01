@@ -1,4 +1,4 @@
-#include "interfaces/PlayerState_Interface.hps"
+﻿#include "interfaces/PlayerState_Interface.hps"
 #include "base/InputHandler_Types.hps"
 #include "player/Player_Types.hps"
 #include "helpers/helper_player.hps"
@@ -33,7 +33,7 @@ class cScrPlayerState_CustomControls : iScrPlayerState, iScrPlayerState_Interfac
 	{
 		if(msLookInputCallback!="LoaderArm_Look" || msActionInputCallback!="LoaderArm_Action") return;
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 		if(!cScript_GetGlobalReturnBool()) return;
 		cScript_RunGlobalFunc("VRREMOTE","","P"); mbVRRemotePublished=true;
 	}

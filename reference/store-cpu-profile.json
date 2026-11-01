@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "executable_sha256": "395cd54830c8e66e22166e71ac6fe95fd3bb5433b898737836744a6d178a0a6a",
+  "status": "verified-native-mapping-and-isolated-openxr-cpu65",
+  "addresses_by_file": {
+    "cpu9_render_trial.inc": {
+      "0x388030": "0x3802b0",
+      "0x376550": "0x36e3e0",
+      "0x387e50": "0x3800d0",
+      "0x3880a0": "0x380320",
+      "0x377470": "0x36f300",
+      "0x6e9f58": "0x6ab198",
+      "0x6e9f60": "0x6ab1a0"
+    },
+    "cpu_texture_storage_trial.inc": {
+      "0x686780": "0x655758",
+      "0x569cf0": "0x561390",
+      "0x2df7e0": "0x2d6e20"
+    },
+    "cpu_texture_release.inc": {
+      "0x64b248": "0x64286a",
+      "0x334e20": "0x32bd40"
+    },
+    "cpu_streaming.inc": {
+      "0x46b410": "0x462e60",
+      "0x45eef0": "0x4568a0",
+      "0x23d4d0": "0x236e60",
+      "0x147cc0": "0x142a10",
+      "0x15a390": "0x154c40",
+      "0x56be20": "0x563560",
+      "0x24f2c0": "0x248eb0",
+      "0x581e00": "0x579660",
+      "0x581dc0": "0x579620",
+      "0x64ae54": "0x6426d4",
+      "0x6d4ad8": "0x695e98",
+      "0x6d4a58": "0x695e18",
+      "0x6d4be8": "0x695fa8",
+      "0x6c2b58": "0x6877e8"
+    }
+  },
+  "signature_changes": {
+    "ff2582a20300": "ff25781b0100",
+    "ff2556a60300": "ff25ce1d0100"
+  }
+}

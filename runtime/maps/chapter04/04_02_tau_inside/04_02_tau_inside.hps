@@ -1,4 +1,4 @@
-#include "helpers/helper_vr_traversal_hy.hps"
+﻿#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/Inputhandler_Types.hps"
 #include "base/AchievementHandler_Types.hps"
@@ -315,7 +315,7 @@ void OnEnter()
 		// but no such callback exists. Remove only this stale generic interaction
 		// hook in VR. The separate Pickup/Use/CanBeUsed callbacks still own the story.
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 		if(cScript_GetGlobalReturnBool()) Entity_SetPlayerInteractCallback("ARK","",false);
 
 		MainMenu_SetBGPhase(eMainMenuPhase_3_3_To_End);
@@ -679,7 +679,7 @@ void OnEnter()
 			// S26N: physical ownership/stowing replaces the stock HUD auto-equip.
 			// Keep the timer alive so a save reopened in flatscreen resumes stock behavior.
 			cScript_SetGlobalReturnBool(false);
-			cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+			cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 			if (cScript_GetGlobalReturnBool())
 			{
 				Map_AddTimer("timer_checkARKEquip", 1.0f, "TimerCheckARKEquip");
@@ -3499,7 +3499,7 @@ void OnEnter()
 			OnLeave_HandheldTerminal("");
 			// S26CK: the VR handheld GUI lives on the physical source.
             cScript_SetGlobalReturnBool(false);
-            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
             if(cScript_GetGlobalReturnBool())Depth_ImGui_StopAudioFilePlayback(asEntityName,true);
             else Depth_ImGui_StopAudioFilePlayback(asEntityName+"_open",true);
 		}
@@ -5013,7 +5013,7 @@ void OnEnter()
         void VR_ArmArkPickupExitGate()
         {
             cScript_SetGlobalReturnBool(false);
-            cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+            cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
             if(!cScript_GetGlobalReturnBool()) return;
             array<tString> areas={"CargoElevatorArea_1", "CargoElevatorArea_2", "CargoElevatorArea_3", "ArkPlacementArea"};
             for(uint i=0;i<areas.length();++i)
@@ -5588,7 +5588,7 @@ void OnEnter()
             // elevator overlap scan; otherwise its own body is counted as an
             // obstruction and disabling collision lets it fall through the lift.
             cScript_SetGlobalReturnBool(false);
-            cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+            cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
             if(cScript_GetGlobalReturnBool())
             {
                 Prop_SetStaticPhysics("ARK", true);
@@ -5778,7 +5778,7 @@ void OnEnter()
 		void AlignArk()
 		{
 			cScript_SetGlobalReturnBool(false);
-			cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+			cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
             // S26BI: entering the holder volume is not an authored Tool use.
             // A physical owned ARK overlaps this volume before the placement
             // transaction can run. Let that transaction release ownership after

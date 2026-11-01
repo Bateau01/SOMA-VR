@@ -21,7 +21,7 @@
 bool _HPL3VR_RuntimeActive_Player()
 {
 	cScript_SetGlobalReturnBool(false);
-	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 	return cScript_GetGlobalReturnBool();
 }
 
@@ -254,7 +254,7 @@ class cScrPlayer : iScrPlayerBase, iScrPlayer_Interface
 		////////////////////////////
 		// Reset variables
 		{
-			meCrossHairState = eCrossHairState_Default;
+			meCrossHairState = eCrossHairState_Default;mbNIIconFocus=false;
 			cScript_SetGlobalVarInt("PlayerPhysicalAction", -1);
 		}
 		
@@ -365,7 +365,7 @@ class cScrPlayer : iScrPlayerBase, iScrPlayer_Interface
 		mfRunSpeedMulTarget = mfRunSpeedMul;
 		
 		mbShowCrosshair = gbDrawCrosshair;
-		meCrossHairState = eCrossHairState_Default;
+		meCrossHairState = eCrossHairState_Default;mbNIIconFocus=false;
 		
 		mbHidden = false;
 		mfHiddenAlpha=0;
@@ -404,6 +404,30 @@ class cScrPlayer : iScrPlayerBase, iScrPlayer_Interface
 	
 	//------------------------------------------------------------
 
+
+    [nosave] bool mbNIIconFocus=false;
+    [nosave] cVector3f mvNIIconFocus;
+    void _Global_NativeIconFocus(){mvNIIconFocus=cScript_GetGlobalArgVector3f(0);mbNIIconFocus=true;}
+    bool NI_DrawIcon(cGuiGfxElement@ icon)
+    {
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","","HPL3VR_GetRuntimeActive");
+        if(!cScript_GetGlobalReturnBool())return false;
+        if(!cScript_RunGlobalFunc("VRINPUT","","NATIVE"))return false;
+        if(!cScript_RunGlobalFunc("VRINPUT","","ICONS"))return true;
+        cGuiSet@ set=cGui_GetSetFromName("VR_NativeIcons");if(set is null)return true;
+        set.SetDrawMouse(false);
+        cCamera@ cam=cLux_GetPlayer().GetCamera();
+        cVector3f target=mbNIIconFocus ? mvNIIconFocus : cam.GetPosition()+cam.GetForward()*1.65f;
+        float distance=(target-cam.GetPosition()).Length();
+        if(distance<0.10f || distance>100.0f)return true;
+        float width=distance*0.07f;
+        cMatrixf model=cMath_MatrixInverse(cam.GetViewMatrix());
+        model.SetTranslation(target-cam.GetRight()*(width*0.5f)+cam.GetUp()*(width*0.5f));
+        set.Set3DSize(cVector3f(width,width,1));set.Set3DTransform(model);
+        set.DrawGfx(icon,cVector3f(0),cVector2f(100,100),cColor(1));
+        return true;
+    }
 
 	void OnDraw(float afFrameTime)
 	{
@@ -444,7 +468,7 @@ class cScrPlayer : iScrPlayerBase, iScrPlayer_Interface
 					// Only draw if non-default OR if we've decided we want to draw default
 					if ((meCrossHairState != eCrossHairState_Default) || gbDrawDefaultCrosshair)
 					{
-						cLux_GetGameHudSet().DrawGfx(pCross, vCrosshairPos);
+						if(!NI_DrawIcon(pCross))cLux_GetGameHudSet().DrawGfx(pCross, vCrosshairPos);
 					}
 				}
 			return;
@@ -501,7 +525,7 @@ class cScrPlayer : iScrPlayerBase, iScrPlayer_Interface
 	
 	void _Global_SetCrosshairState()
 	{
-		meCrossHairState = eCrossHairState(cScript_GetGlobalArgInt(0));
+		meCrossHairState = eCrossHairState(cScript_GetGlobalArgInt(0));mbNIIconFocus=false;
 	}
 			
 	//------------------------------------------------------------

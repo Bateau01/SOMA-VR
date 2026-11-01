@@ -19,7 +19,7 @@
 bool _HPL3VR_RuntimeActive_ToolHandler()
 {
 	cScript_SetGlobalReturnBool(false);
-	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 	return cScript_GetGlobalReturnBool();
 }
 
@@ -120,6 +120,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 	
 	void OnMapEnter(cLuxMap @apMap)
 	{
+        mbNIInventoryPrepared=false;mfNIInventoryRetry=0;mlNIInventoryAttempts=0;mbNIMotionPresentationPrepared=false;
 		if (!_HPL3VR_RuntimeActive_ToolHandler())
 		{
 			
@@ -196,6 +197,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 
 	void CreateWorldEntities(cLuxMap @apMap)
 	{
+        mbNIInventoryPrepared=false;mfNIInventoryRetry=0;mlNIInventoryAttempts=0;
 		if (!_HPL3VR_RuntimeActive_ToolHandler())
 		{
 			
@@ -675,8 +677,10 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
             if(gate is null || !gate.IsActive())return;
         }
         cLuxProp@ carrier=cast<cLuxProp>(map.GetEntityByName(VR_GetPhysicalCarrierName(tool),eLuxEntityType_Prop,""));
-        if(carrier is null || !carrier.IsActive() || carrier.GetMeshEntity() is null)return;
-        if(cMath_Vector3Dist(carrier.GetMatrix().GetTranslation(),target.GetMatrix().GetTranslation())>2.0f)return;
+        bool inventoryGuides=cLux_GetUserConfig().GetBool("SOMA_VR","InventoryGuides",false);
+        if(!inventoryGuides && (carrier is null || !carrier.IsActive() || carrier.GetMeshEntity() is null))return;
+        cVector3f guideOrigin=inventoryGuides ? cLux_GetPlayer().GetCamera().GetPosition() : carrier.GetMatrix().GetTranslation();
+        if(cMath_Vector3Dist(guideOrigin,target.GetMatrix().GetTranslation())>2.0f)return;
         if(!map.ScriptPrepare("bool "+tool.msCanBeUsedCallback+"(const tString &in, const tString &in)"))return;
         tString name=tool.msPickedEntityName; tString targetArg=targetName;
         map.SetArgString(0,name);map.SetArgString(1,targetArg);
@@ -771,7 +775,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
         cLuxMap@ map=cLux_GetCurrentMap();if(map is null)return;
         for(uint i=0;i<mvInventory.length();i++){
             cToolData@ tool=mvInventory[i];tString name=tool.msPickedEntityName;
-            if(tool.mbVRShoulderStowed || !cScript_RunGlobalFunc("VRGUIDE",name,"HELD"))continue;
+            if(!cLux_GetUserConfig().GetBool("SOMA_VR","InventoryGuides",false) && (tool.mbVRShoulderStowed || !cScript_RunGlobalFunc("VRGUIDE",name,"HELD")))continue;
             VR_DispatchItemGuides(tool,map.GetName());
         }
     }
@@ -808,7 +812,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
                 {
                     cToolData@ tool=mvInventory[i];
                     if(!VR_IsPhysicalOmni(tool) || tool.msCanBeUsedCallback=="" || tool.msUseCallback=="")continue;
-                    if(!cScript_RunGlobalFunc("VROMNIHELD",tool.msPickedEntityName,"Q"))continue;
+                    if(!cLux_GetUserConfig().GetBool("SOMA_VR","InventoryGuides",false) && !cScript_RunGlobalFunc("VROMNIHELD",tool.msPickedEntityName,"Q"))continue;
                     if(!map.ScriptPrepare("bool "+tool.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)"))break;
                     // SetArgString keeps its argument alive until ScriptExecute.
                     // Use a local string, as the existing physical-use route does.
@@ -921,7 +925,10 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		cScript_RunGlobalFunc("VROMNIPANEL",sPanel,"B");
 		iPhysicsBody@ pBody = pPanel.GetMainBody();
 		cScript_RunGlobalFunc("VROMNIPANEL",sPanel,"E");
-		if (pBody !is null) cScript_RunGlobalFunc("VROMNIPANEL",sPanel,"Q");
+		if (pBody !is null) {
+            bool climberExit=pMap.GetName()=="04_01_tau_outside" && sPanel=="LiftExitPanel";
+            cScript_RunGlobalFunc("VROMNIPANEL",sPanel,climberExit?"N":"Q");
+        }
 		msVRPhysicalOmniPanelCandidate = "";
 	}
 
@@ -2004,6 +2011,10 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 				////////////////////////////////
 				//Add to inventory
 				mvInventory.push_back(toolData);
+                // Native-input equip validates the HUD before changing ownership.
+                // Create it once before equip for a new pickup, not afterward.
+                bool nativeInput=cScript_RunGlobalFunc("VRINPUT","","NATIVE");
+                if(nativeInput)CreateHudObject(toolData);
 				
 				////////////////////////////////
 				// Init and equip
@@ -2015,7 +2026,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 				
 				////////////////////////////////
 				// Create Entity
-				CreateHudObject(toolData);
+				if(!nativeInput)CreateHudObject(toolData);
 				
 			return;
 		}
@@ -2192,6 +2203,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 				   mvInventory[mlCurrentToolIndex].m_idHudObject == tID_Invalid) 
 				{
 					cScript_SetGlobalReturnString("");
+                    return;
 				}
 				
 				cScript_SetGlobalReturnString(cLux_ID_Prop(mvInventory[mlCurrentToolIndex].m_idHudObject).GetName());
@@ -2555,14 +2567,92 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		return true;
 	}
 
+    [nosave] bool mbNIMotionPresentationPrepared=false;
+    void NI_RetireNativePresentation()
+    {
+        if(mbNIMotionPresentationPrepared || !_HPL3VR_RuntimeActive_ToolHandler())return;
+        // Let an authored use/holster finish before retiring its saved presentation.
+        if(mState==eToolState_CustomAnimation || mbRemoveToolWhenHidden)return;
+        for(uint i=0;i<mvInventory.length();i++)
+        {
+            cToolData@ tool=mvInventory[i];
+            if(!VR_IsPhysicalWorldTool(tool))continue;
+            iLuxEntity@ hud=cLux_ID_Entity(tool.m_idHudObject);
+            if(hud is null || hud.GetName()!=tool.msPickedEntityName+"_HudObject")continue;
+            if(int(i)==mlCurrentToolIndex)
+            {
+                // Motion-owned entities need not be registered as global objects.
+                // Dispatch the same callback on the current world's exact instance.
+                cLuxMap@ map=cLux_GetCurrentMap();if(map is null)return;
+                iLuxEntity@ owner=map.GetEntityByName(tool.msPickedEntityName,eLuxEntityType_LastEnum,"");
+                if(owner is null || !owner.ScriptPrepare("void _Global_OnUnequip()") || !owner.ScriptExecute())return;
+                UnequipCurrentTool(false);
+                msPreviousTool=""; // Already delivered above; Hide must not deliver twice.
+            }
+            hud.SetActive(false);
+        }
+        mbNIMotionPresentationPrepared=true;
+    }
+
+    [nosave] bool mbNIInventoryPrepared=false;
+    [nosave] float mfNIInventoryRetry=0;
+    [nosave] int mlNIInventoryAttempts=0;
+    // Restart-only presentation migration. Inventory and accepted map callbacks
+    // remain authoritative; never insert, use, pick up or grant a story item.
+    bool NI_PrepareInventory(float dt)
+    {
+        if(!cScript_RunGlobalFunc("VRINPUT","","NATIVE"))return true;
+        if(cLux_IsLoadingScreenVisible()){mbNIInventoryPrepared=false;mfNIInventoryRetry=0;mlNIInventoryAttempts=0;return false;}
+        if(mbNIInventoryPrepared)return true;
+        // Missing source entities must not freeze unrelated equipped items or
+        // cause an unbounded full-inventory scan every frame. Explicit equip
+        // can retry after this bounded hydration window.
+        mfNIInventoryRetry-=dt;
+        if(mfNIInventoryRetry>0 || mlNIInventoryAttempts>=40)return true;
+        mfNIInventoryRetry=0.25f;mlNIInventoryAttempts++;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null)return false;
+        bool complete=true;
+        for(uint i=0;i<mvInventory.length();i++)
+        {
+            cToolData@ tool=mvInventory[i];
+            bool physical=tool.mbVRShoulderEligible || tool.msVRPhysicalCarrierName!="" ||
+                tool.msHandAnimationSuffix=="omnitool" || tool.msHandAnimationSuffix=="omnitool_cortex";
+            if(!physical)continue;
+            cLuxProp@ owner=cast<cLuxProp>(map.GetEntityByName(tool.msPickedEntityName,eLuxEntityType_Prop,""));
+            if(owner is null){complete=false;continue;}
+            iLuxEntity@ hud=cLux_ID_Entity(tool.m_idHudObject);
+            if(hud is null || hud.GetName()!=tool.msPickedEntityName+"_HudObject")
+            {
+                tool.m_idHudObject=tID_Invalid;
+                CreateHudObject(tool);
+                @hud=cLux_ID_Entity(tool.m_idHudObject);
+                if(hud is null){complete=false;continue;}
+                if(int(i)==mlCurrentToolIndex && mState==eToolState_Idle)mPrevState=eToolState_Hide;
+            }
+            // A successfully inserted/consumed item has already left mvInventory.
+            // Retain source entities for native callbacks, but retire the duplicate
+            // world presentation while their existing logical inventory owns them.
+            owner.SetActive(false);
+            if(tool.msVRPhysicalCarrierName!="" && tool.msVRPhysicalCarrierName!=tool.msPickedEntityName)
+            {
+                iLuxEntity@ carrier=map.GetEntityByName(tool.msVRPhysicalCarrierName,eLuxEntityType_Prop,"");
+                if(carrier !is null)carrier.SetActive(false);
+            }
+        }
+        mbNIInventoryPrepared=complete;
+        return true;
+    }
+
 	void Update(float afTimeStep)
-	{					
+	{
         VR_UpdateItemGuides(afTimeStep);
 		if (!_HPL3VR_RuntimeActive_ToolHandler())
 		{
+                if(!NI_PrepareInventory(afTimeStep))return;
 				if(mbActive==false || mlCurrentToolIndex < 0) return;
 				
 				cToolData@ pCurrentTool = mvInventory[mlCurrentToolIndex];
+                if(cScript_RunGlobalFunc("VRINPUT","","NATIVE") && cLux_ID_Entity(pCurrentTool.m_idHudObject) is null)return;
 				
 				////////////////////////////////////////////
 				// Check if tool has been displayed long enough
@@ -2600,6 +2690,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 									if(pMap.GetReturnBool())
 									{
 										Player_SetCrossHairState(eCrossHairState(pCurrentTool.mlCustomUseIcon));
+                                    Player_SetNativeIconFocus(mPickBasics.mvFocusPosition);
 										mbCanInteract = true;
 									}
 								}
@@ -2727,6 +2818,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		if (VR_UpdateStreamMapReadiness(afTimeStep))
 		{
 			if(!VR_RepairElevatorChipCarrier()) return;
+            NI_RetireNativePresentation();
             VR_EnsurePhysicalOmniWorldEntity(afTimeStep);
 			VR_ReconcileShoulderInventory(afTimeStep);
 			VR_UpdatePhysicalOmniAuthoredInsert(afTimeStep);
@@ -3061,6 +3153,8 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		{
 			if (mvInventory[i].msPickedEntityName != asEntityName) continue;
 			
+			// Native callers must observe an unavailable HUD rejection before proceeding.
+			if(cScript_RunGlobalFunc("VRINPUT","","NATIVE")) return EquipTool(i, asLookEntities);
 			EquipTool(i, asLookEntities);
 			
 			return true;
@@ -3071,11 +3165,17 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 	
 	//------------------------------------------------------------
 	
+
 	bool EquipTool(int alIndex, const tString &in asLookEntities)
 	{
 		if (!_HPL3VR_RuntimeActive_ToolHandler())
 		{
 				if (alIndex < 0 || alIndex >= mvInventory.length()) return false;
+                if(cScript_RunGlobalFunc("VRINPUT","","NATIVE")){
+                    mbNIInventoryPrepared=false;mfNIInventoryRetry=0;mlNIInventoryAttempts=0;NI_PrepareInventory(0);
+                    if(cLux_ID_Entity(mvInventory[alIndex].m_idHudObject) is null)return false;
+                }
+
 				
 				int lIndex = alIndex; //Index might change, don't modify arg
 				
@@ -3305,6 +3405,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 					
 				cToolData@ pCurrentTool = mvInventory[alIndex];
 				//cLux_ID_Prop(pCurrentTool.m_idHudObject).SetActive(false);
+				if(pCurrentTool.m_idHudObject!=tID_Invalid && cLux_ID_Entity(pCurrentTool.m_idHudObject)!is null)
 				cLux_GetCurrentMap().DestroyEntity(cLux_ID_Entity(pCurrentTool.m_idHudObject));
 				pCurrentTool.m_idHudObject = tID_Invalid;
 				

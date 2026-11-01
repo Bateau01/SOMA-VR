@@ -1,0 +1,16 @@
+{
+  "production": true,
+  "cpu_only_test": false,
+  "cpu_string_spans": true,
+  "cpu_near_types": true,
+  "cpu_texture_storage": true,
+  "cpu_texture_latc": true,
+  "cpu_texture_min_bytes": 0,
+  "cpu_render_jobs": true,
+  "cpu_texture_release": true,
+  "cpu_gui_prewarm": true,
+  "cpu_streaming_optimisations": true,
+  "cpu_hand_mesh": true,
+  "cpu_leaf_filter": true,
+  "cpu_held_query": true
+}

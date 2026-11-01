@@ -163,6 +163,7 @@ class cScrPlayerState_Normal : iScrPlayerState, iScrPlayerState_Interface
 				Player_SetCrossHairState(eCrossHairState(lState));
 			else
 				Player_SetCrossHairState(eCrossHairState_Default);
+            Player_SetNativeIconFocus(mPickBasics.mvFocusPosition);
 		}
 	}
 	

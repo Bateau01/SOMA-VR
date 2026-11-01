@@ -1,3 +1,4 @@
+#include "helpers/helper_native_gamepad.hps"
 #include "helpers/helper_font.hps"
 
 const cColor kOptionMenu_ButtonBgColor = cColor(69.0 / 255.0, 139.0 / 255.0, 139.0 / 255.0, 1);
@@ -1415,8 +1416,8 @@ void OptionMenu_GamepadButtons(bool abShowArrows, bool abShowCancel = true, cVec
 
 	////////////
 	// Buttons
-	tString sButtonA = Platform_IsPS4() ? "startmenu_button_x" : "startmenu_button_xbox_A";
-	tString sButtonB = Platform_IsPS4() ? "startmenu_button_circle" : "startmenu_button_xbox_B";
+	tString sButtonA = NI_PlayStationIcons() ? "startmenu_button_x" : "startmenu_button_xbox_A";
+	tString sButtonB = NI_PlayStationIcons() ? "startmenu_button_circle" : "startmenu_button_xbox_B";
 
 	cImGuiGfx gfxConfirm(sButtonA);
 	cImGuiGfx gfxCancel(sButtonB);

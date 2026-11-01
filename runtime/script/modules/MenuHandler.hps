@@ -1,3 +1,4 @@
+#include "helpers/helper_native_gamepad.hps"
 #include "interfaces/UserModule_Interface.hps"
 #include "modules/ModuleInterfaces.hps"
 #include "base/InputHandler_Types.hps"
@@ -976,6 +977,11 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 	void HPL3VR_RuntimeActiveOn()  { gbHPL3VRRuntimeActive = true;  cScript_RunGlobalFunc("VRMODE", "", "1"); HPL3VR_LoadComfort(); }
 	void HPL3VR_RuntimeActiveOff() { gbHPL3VRRuntimeActive = false; cScript_RunGlobalFunc("VRMODE", "", "0"); }
 
+    [nosave] int mlVRInputMode=0;
+    [nosave] float mfNIGlyphRefresh=0;
+    [nosave] int mlVRInputTarget=0;
+    [nosave] bool mbVRInputConfirm=false;
+    [nosave] tString msVRInputFocus="NO";
     [nosave] bool mbVRComfortLoaded=false;
     [nosave] bool mbVRComfortOpen=false;
     [nosave] bool mbVRMenuHeld=false;
@@ -1097,6 +1103,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 
     void HPL3VR_LoadComfort()
     {
+        mlVRInputMode=cLux_GetUserConfig().GetInt("SOMA_VR_Comfort","InputMode",0);
+        if(mlVRInputMode<0 || mlVRInputMode>2)mlVRInputMode=0;
+        cScript_RunGlobalFunc("VRINPUT","MODE",""+mlVRInputMode);
+        cScript_RunGlobalFunc("VRINPUT","","PSREFRESH");
         { cConfigFile@ p=cLux_GetUserConfig();
             // One-time migration from the independent IU switch. Native preference is authoritative afterward.
             if(gbHPL3VRRuntimeActive && !p.GetBool("SOMA_VR_Comfort","UnifiedAA",false)) {
@@ -1407,9 +1417,9 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     {
         if(mlVRComfortCategory<0) return 5;
         if(mlVRComfortCategory==2) return 11;
-        if(mlVRComfortCategory==1) return 9;
+        if(mlVRComfortCategory==1) return cScript_RunGlobalFunc("VRINPUT","","NATIVE") ? 3 : 10;
         if(mlVRComfortCategory==7) return 8;
-        if(mlVRComfortCategory==0) return 14;
+        if(mlVRComfortCategory==0) return cScript_RunGlobalFunc("VRINPUT","","NATIVE") ? 5 : 15;
         if(mlVRComfortCategory==10)return 3;
         if(mlVRComfortCategory==8) return 2;
         if(mlVRComfortCategory==3) return 8;
@@ -1484,6 +1494,15 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
                 int result=OptionMenu_MessageBox_Proper(msVRBindMessage,"YES","NO",msVRBindFocus,msVRBindFocus);
                 if(ImGui_ActionTriggered(eImGuiAction_Cancel,true))HPL3VR_FinishBinding(false);
                 else if(result!=0)HPL3VR_FinishBinding(result==-1);
+            }
+            ImGui_SetModUseInput(false);ImGui_SetTransCategory(cat);return true;
+        }
+        if(mbVRInputConfirm)
+        {
+            int result=OptionMenu_MessageBox_Proper("CHANGE INPUT MODE?","YES","NO",msVRInputFocus,msVRInputFocus,cString_To16Char("EXIT AND RESTART SOMA MANUALLY TO APPLY. CURRENT CONTROLS STAY ACTIVE UNTIL RESTART."));
+            if(result!=0 || ImGui_ActionTriggered(eImGuiAction_Cancel,true)){
+                if(result==-1){mlVRInputMode=mlVRInputTarget;cLux_GetUserConfig().SetInt("SOMA_VR_Comfort","InputMode",mlVRInputMode);cLux_GetUserConfig().Save();}
+                mbVRInputConfirm=false;msVRSettingsSelected="INPUT MODE";msFocusNextFrame="INPUT MODE";
             }
             ImGui_SetModUseInput(false);ImGui_SetTransCategory(cat);return true;
         }
@@ -1593,10 +1612,20 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             if(next>=0)
             {
                 mlVRComfortCategory=next;mvVRSettingsPages[next]=0;
-                msVRSettingsSelected=next==0 ? "MOVEMENT DIRECTION" : (next==1 ? "TURNING" : (next==4 ? "REACTIVE ENVIRONMENT" : (next==5 ? "SPATIAL AUDIO" : "HIDE DISTORTION")));
+                msVRSettingsSelected=next==0 ? (cScript_RunGlobalFunc("VRINPUT","","NATIVE") ? "WORLD SCALE" : "MOVEMENT DIRECTION") : (next==1 ? "INPUT MODE" : (next==4 ? "REACTIVE ENVIRONMENT" : (next==5 ? "SPATIAL AUDIO" : "HIDE DISTORTION")));
                 msFocusNextFrame=msVRSettingsSelected;
                 ImGui_SetTransCategory(cat); return true;
             }
+        }
+        else if(mlVRComfortCategory==0 && cScript_RunGlobalFunc("VRINPUT","","NATIVE"))
+        {
+            int scale=HPL3VR_Slider("WORLD SCALE",0,mlVRWorldScale,30,""+(50+5*mlVRWorldScale)+"%");
+            int panel=HPL3VR_Slider("2D SCREEN DISTANCE",1,mlVRPanelDistance,65,cString_ToString(0.75f+0.05f*mlVRPanelDistance,2)+" m");
+            int subtitle=HPL3VR_Slider("SUBTITLE DISTANCE",2,mlVRSubtitleDistance,65,cString_ToString(0.75f+0.05f*mlVRSubtitleDistance,2)+" m");
+            changed=scale!=mlVRWorldScale || panel!=mlVRPanelDistance || subtitle!=mlVRSubtitleDistance;
+            mlVRWorldScale=scale;mlVRPanelDistance=panel;mlVRSubtitleDistance=subtitle;
+            if(HPL3VR_Option("CENTER CAMERA",3))cScript_RunGlobalFunc("VRCOMFORT","R","C");
+            HPL3VR_StartupHelpOption(4);
         }
         else if(mlVRComfortCategory==0)
         {
@@ -1625,11 +1654,14 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             bool interaction=HPL3VR_Toggle("INTERACTION LASER POINTER",11,mbVRInteractionLaser);
             changed=changed || interaction!=mbVRInteractionLaser;mbVRInteractionLaser=interaction;
             bool guides=cLux_GetUserConfig().GetBool("SOMA_VR","InteractionGuides",true);
-            bool nextGuides=HPL3VR_Toggle("INTERACTION GUIDES",12,guides);
-            if(nextGuides!=guides){cLux_GetUserConfig().SetBool("SOMA_VR","InteractionGuides",nextGuides);cLux_GetUserConfig().Save();}
+            int guideMode=guides ? (cLux_GetUserConfig().GetBool("SOMA_VR","InventoryGuides",false)?2:1) : 0;
+            array<tString> guideModes={"OFF","HELD ITEMS","INVENTORY"};
+            int nextGuideMode=HPL3VR_Multi("INTERACTION GUIDES",12,guideModes,guideMode);
+            if(nextGuideMode!=guideMode){cLux_GetUserConfig().SetBool("SOMA_VR","InteractionGuides",nextGuideMode!=0);cLux_GetUserConfig().SetBool("SOMA_VR","InventoryGuides",nextGuideMode==2);cLux_GetUserConfig().Save();}
             bool roomscale=cLux_GetUserConfig().GetBool("SOMA_VR","Roomscale",true);
             bool nextRoomscale=HPL3VR_Toggle("ROOMSCALE MOVEMENT",13,roomscale);
             if(nextRoomscale!=roomscale){cLux_GetUserConfig().SetBool("SOMA_VR","Roomscale",nextRoomscale);cLux_GetUserConfig().Save();}
+            HPL3VR_StartupHelpOption(14);
 
 
 
@@ -1647,30 +1679,37 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         }
         else if(mlVRComfortCategory==1)
         {
+            array<tString> inputModes={"VR CONTROLLERS","KEYBOARD / MOUSE","GAMEPAD"};
+            int inputMode=HPL3VR_Multi("INPUT MODE",0,inputModes,mlVRInputMode);
+            if(inputMode!=mlVRInputMode){mlVRInputTarget=inputMode;mbVRInputConfirm=true;msVRInputFocus="NO";msFocusNextFrame="NO";}
+            if(cScript_RunGlobalFunc("VRINPUT","","NATIVE")){
+                HPL3VR_ResetLabel("Use SOMA's normal CONTROLS menu for bindings",1);
+                HPL3VR_ResetLabel("and mouse / gamepad sensitivity.",2);
+            }else{
             array<tString> modes={"SMOOTH","SNAP 30","SNAP 45","OFF"};
             OptionMenu_UpdateExtraButtonWidth_MultiSelection(modes,"");
             ImGui_SetTransCategory("");
-            int next=HPL3VR_Multi("TURNING",0,modes,mlVRTurnMode);
+            int next=HPL3VR_Multi("TURNING",1,modes,mlVRTurnMode);
             ImGui_SetTransCategory("");
             
             changed=next!=mlVRTurnMode; mlVRTurnMode=next;
             array<tString> moveHands={"LEFT","RIGHT"};
-            int moveHand=HPL3VR_Multi("MOVEMENT HAND",1,moveHands,mlVRMoveHand);
+            int moveHand=HPL3VR_Multi("MOVEMENT HAND",2,moveHands,mlVRMoveHand);
             ImGui_SetTransCategory("");
             changed=changed || moveHand!=mlVRMoveHand;mlVRMoveHand=moveHand;
             array<tString> grabControls={"GRIP","TRIGGER"};
-            int leftGrab=HPL3VR_Multi("LEFT GRAB",2,grabControls,mlVRGrabControls&1);
+            int leftGrab=HPL3VR_Multi("LEFT GRAB",3,grabControls,mlVRGrabControls&1);
             ImGui_SetTransCategory("");
-            int rightGrab=HPL3VR_Multi("RIGHT GRAB",3,grabControls,(mlVRGrabControls>>1)&1);
+            int rightGrab=HPL3VR_Multi("RIGHT GRAB",4,grabControls,(mlVRGrabControls>>1)&1);
             ImGui_SetTransCategory("");
             int grabMask=leftGrab+(rightGrab*2);changed=changed || grabMask!=mlVRGrabControls;mlVRGrabControls=grabMask;
-            bool omni=HPL3VR_Toggle("OMNIDIRECTIONAL SPRINTING",4,mbVROmnidirectionalSprint);
+            bool omni=HPL3VR_Toggle("OMNIDIRECTIONAL SPRINTING",5,mbVROmnidirectionalSprint);
             changed=changed || omni!=mbVROmnidirectionalSprint;mbVROmnidirectionalSprint=omni;
-            bool sprint=HPL3VR_Toggle("DOUBLE-TAP SPRINT",5,mbVRDoubleTapSprint);
+            bool sprint=HPL3VR_Toggle("DOUBLE-TAP SPRINT",6,mbVRDoubleTapSprint);
             changed=changed || sprint!=mbVRDoubleTapSprint;mbVRDoubleTapSprint=sprint;
-            bool fingers=HPL3VR_Toggle("FINGER TRACKING",6,mbVRFingerTracking);
+            bool fingers=HPL3VR_Toggle("FINGER TRACKING",8,mbVRFingerTracking);
             changed=changed || fingers!=mbVRFingerTracking;mbVRFingerTracking=fingers;
-            if(HPL3VR_Option("RESET FINGER TRACKING",8))
+            if(HPL3VR_Option("RESET FINGER TRACKING",9))
             {
                 cScript_RunGlobalFunc("VRCOMFORT","FTRESET","CANCEL");
                 mlVRComfortCategory=6;msVRSettingsSelected="START RESET";msFocusNextFrame=msVRSettingsSelected;
@@ -1681,6 +1720,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
                 HPL3VR_CancelBinding();HPL3VR_ReadBindings();cScript_RunGlobalFunc("VRBIND","","PROFILE");
                 mlVRComfortCategory=3;msVRSettingsSelected=HPL3VR_BindingLabel(0);msFocusNextFrame=msVRSettingsSelected;
                 ImGui_SetTransCategory(cat);return true;
+            }
             }
         }
         else if(mlVRComfortCategory==3)
@@ -1860,8 +1900,9 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(role==4)text=mlVRCrouchMode==2 ? "Lower your body to crouch. Moving while crouched is quieter." : "Use your crouch binding to crouch. "+text;
         cScript_SetGlobalReturnString(text);
     }
-	void HPL3VR_GetOmnidirectionalSprint() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive && mbVROmnidirectionalSprint); }
+	void HPL3VR_GetOmnidirectionalSprint() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive && !cScript_RunGlobalFunc("VRINPUT","","NATIVE") && mbVROmnidirectionalSprint); }
 	void HPL3VR_GetRuntimeActive() { cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive); }
+    void HPL3VR_GetMotionInputActive(){cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive && !cScript_RunGlobalFunc("VRINPUT","","NATIVE"));}
 
     void HPL3VR_GetBobMask()
     {
@@ -2350,8 +2391,10 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 		ImGui_PreloadImage("startmenu_options_button_off", eImGuiGfx_Image);
 		ImGui_PreloadImage("startmenu_options_arrow", eImGuiGfx_Image);
 		
-		ImGui_PreloadImage(Platform_IsPS4() ? "startmenu_button_x" : "startmenu_button_xbox_A", eImGuiGfx_Image); 
-		ImGui_PreloadImage(Platform_IsPS4() ? "startmenu_button_circle" : "startmenu_button_xbox_B", eImGuiGfx_Image);
+		ImGui_PreloadImage("startmenu_button_x", eImGuiGfx_Image);
+        ImGui_PreloadImage("startmenu_button_xbox_A", eImGuiGfx_Image); 
+		ImGui_PreloadImage("startmenu_button_circle", eImGuiGfx_Image);
+        ImGui_PreloadImage("startmenu_button_xbox_B", eImGuiGfx_Image);
 		ImGui_PreloadImage("startmenu_button_direction2", eImGuiGfx_Image);
 		
 		Sound_PreloadGroup("special_fx/frontend", true);
@@ -2386,8 +2429,11 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 	//------------------------------------------------------------
 	
 	void Update(float afTimeStep)
-	{
-	}
+    {
+        if(!cScript_RunGlobalFunc("VRINPUT","","NATIVE"))return;
+        mfNIGlyphRefresh-=afTimeStep;
+        if(mfNIGlyphRefresh<=0){mfNIGlyphRefresh=1.0f;cScript_RunGlobalFunc("VRINPUT","","PSREFRESH");NI_ApplyGamepadIcons();}
+    }
 	
 	void PostUpdate(float afTimeStep)
 	{
@@ -4337,7 +4383,12 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         if(selected){cImGuiGfx bg;ImGui_DrawGfx(bg,OptionMenu_GetTopLeftOffset(pos,0.7f),OptionMenu_GetScaledSize(cVector2f(360,42)),kOptionMenu_ButtonBgColor);}
         return ImGui_DoButtonExt(text,text,data,OptionMenu_GetTopLeftOffset(pos,1),OptionMenu_GetScaledSize(cVector2f(360,42)));
     }
-    bool HPL3VR_WelcomePending(){return gbHPL3VRRuntimeActive && mbMainMenuActive && !mbPremenuActive && !mbVRGuideDismissed;}
+    void HPL3VR_StartupHelpOption(int row){
+        bool old=cLux_GetUserConfig().GetBool("SOMA_VR","StartupHelp",true);
+        bool value=HPL3VR_Toggle("STARTUP HELP",row,old);
+        if(value!=old){cLux_GetUserConfig().SetBool("SOMA_VR","StartupHelp",value);cLux_GetUserConfig().Save();}
+    }
+    bool HPL3VR_WelcomePending(){return cLux_GetUserConfig().GetBool("SOMA_VR","StartupHelp",true) && gbHPL3VRRuntimeActive && mbMainMenuActive && !mbPremenuActive && !mbVRGuideDismissed;}
     void HPL3VR_StorageLabel(const tString &in text,const cVector2f &in pos,float fontSize,bool accent=false)
     {
         cImGuiLabelData label;
@@ -4376,7 +4427,9 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
     }
     bool HPL3VR_DrawWelcome()
     {
-        if(!gbHPL3VRRuntimeActive || !mbMainMenuActive || mbPremenuActive || mfMainAlpha<0.99f || mbVRGuideDismissed) return false;
+        if(!HPL3VR_WelcomePending() || mfMainAlpha<0.99f) return false;
+        bool nativeInput=cScript_RunGlobalFunc("VRINPUT","","NATIVE");
+        int lastPage=nativeInput ? 1 : 2;
         tString cat=ImGui_GetTransCategory();ImGui_SetTransCategory("");
         cVector2f pos(120,95),size(1040,525);
         cImGuiGfx shade;
@@ -4385,7 +4438,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         heading.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Large_Bold));
         heading.mFont.mvSize=OptionMenu_GetScaledSize(cVector2f(32,32));heading.mFont.mColor=cColor(1,1);
         heading.mFontAlign=eFontAlign_Center;
-        ImGui_DoLabelExt(mlVRWelcomePage==0 ? "WELCOME TO SOMA VR" : (mlVRWelcomePage==1 ? "YOUR CONTROLLER BUTTONS" : "STORAGE & GESTURES"),heading,OptionMenu_GetTopLeftOffset(pos+cVector2f(30,20),1),OptionMenu_GetScaledSize(cVector2f(980,40)));
+        ImGui_DoLabelExt(mlVRWelcomePage==0 ? "WELCOME TO SOMA VR" : (mlVRWelcomePage==1 ? (nativeInput ? "NATIVE INPUT IN VR" : "YOUR CONTROLLER BUTTONS") : "STORAGE & GESTURES"),heading,OptionMenu_GetTopLeftOffset(pos+cVector2f(30,20),1),OptionMenu_GetScaledSize(cVector2f(980,40)));
         ImGui_DrawFrame(mGfxFrame,OptionMenu_GetTopLeftOffset(pos,0.6f),OptionMenu_GetScaledSize(size));
         array<tString> lines={
             "If this is your first time playing SOMA VR, I strongly suggest that you",
@@ -4397,7 +4450,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             "EYE TRACKING: Gaze features and dynamic foveated rendering.",
             "AUDIO: Spatial sound settings."
         };
-        if(mlVRWelcomePage==1)
+        if(mlVRWelcomePage==1 && !nativeInput)
         {
             uint now=cSystem_GetApplicationTime();
             if(mlVRWelcomeProfileQuery==0 || now-mlVRWelcomeProfileQuery>=500){
@@ -4408,6 +4461,22 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             for(int r=0;r<7;r++)lines.insertLast(HPL3VR_BindingLabel(r));
             lines.insertLast("GRIP: Grab / interact. Change bindings in CONTROLS > BUTTON BINDINGS.");
         }
+        if(nativeInput && mlVRWelcomePage==0){
+            lines[3]="GAMEPLAY: World Scale, subtitle distance and 2D screen distance.";
+            lines[4]="Motion-controller interactions and shoulder holsters are inactive.";
+            lines[5]="CONTROLS: Input mode. Native bindings are in the normal controls menu.";
+        }
+        if(nativeInput && mlVRWelcomePage==1){
+            array<tString> nativeLines={"Use SOMA's normal keyboard/mouse or gamepad controls.",
+                "Your headset continues to control the VR view.",
+                "Interact, grab, drag and use items with the native controls.",
+                "Use the normal CONTROLS menu to view or change native bindings.",
+                "Gamepad prompts automatically follow the detected controller type.",
+                "Physical VR hands, touch interactions and holsters are inactive.",
+                "Change INPUT MODE in VR SETTINGS > CONTROLS to return to VR controllers.",
+                "Changing input mode requires exiting and restarting SOMA."};
+            lines=nativeLines;
+        }
         if(mlVRWelcomePage==2){lines.resize(0);HPL3VR_DrawStoragePage(pos);}
         cImGuiLabelData label;
         label.mFont.SetFile(Helper_Font_GetFontName(eLuxFontType_Sansation_Medium));
@@ -4416,18 +4485,18 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
             cLux_GetCurrentImGui().DoLabel(cString_To16Char(lines[i]),label,
                 OptionMenu_GetTopLeftOffset(pos+cVector2f(35,85+36*i),1));
         tString left=mlVRWelcomePage==0 ? "VR SETTINGS" : "BACK";
-        tString right=mlVRWelcomePage<2 ? "NEXT PAGE" : "CONTINUE";
+        tString right=mlVRWelcomePage<lastPage ? "NEXT PAGE" : "CONTINUE";
         bool leftClick=HPL3VR_WelcomeButton(left,pos+cVector2f(40,430));
         msVRGuideFocus=OptionMenu_UpdateFocus(left,msVRGuideFocus);
         bool rightClick=HPL3VR_WelcomeButton(right,pos+cVector2f(610,430));
         msVRGuideFocus=OptionMenu_UpdateFocus(right,msVRGuideFocus);
         bool cancel=ImGui_ActionTriggered(eImGuiAction_Cancel,true);
         bool settings=leftClick && mlVRWelcomePage==0;
-        bool done=rightClick && mlVRWelcomePage==2;
+        bool done=rightClick && mlVRWelcomePage==lastPage;
         if(mlVRWelcomePage>0 && (leftClick || cancel))
         {mlVRWelcomePage--;msVRGuideFocus="NEXT PAGE";}
-        else if(mlVRWelcomePage<2 && rightClick)
-        {mlVRWelcomePage++;msVRGuideFocus=mlVRWelcomePage==2 ? "CONTINUE" : "NEXT PAGE";}
+        else if(mlVRWelcomePage<lastPage && rightClick)
+        {mlVRWelcomePage++;msVRGuideFocus=mlVRWelcomePage==lastPage ? "CONTINUE" : "NEXT PAGE";}
         if(settings || done || (cancel && mlVRWelcomePage==0 && left=="VR SETTINGS"))
         {
             mbVRGuideDismissed=true;
@@ -4446,7 +4515,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         label.mFont.mColor=cColor(0.85f,0.9f,0.9f,mfMainAlpha);
         label.mFontAlign=eFontAlign_Center;
         tString cat=ImGui_GetTransCategory();ImGui_SetTransCategory("");
-        ImGui_DoLabelExt("SOMA VR v1.0.9 - S26IW",label,
+        ImGui_DoLabelExt("SOMA VR v1.1.0 - S26JA",label,
             OptionMenu_GetBotRightOffset(cVector2f(-340,58),1),OptionMenu_GetScaledSize(cVector2f(320,22)));
         ImGui_DoLabelExt("CREATED BY: Bateau1",label,
             OptionMenu_GetBotRightOffset(cVector2f(-340,34),1),OptionMenu_GetScaledSize(cVector2f(320,22)));
@@ -6227,8 +6296,8 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 		
 		/////////////////
 		// Draw preset
-		tString sDefault = Platform_IsPS4() ? "PS4 Controller" : "X360 Controller";
-		tString sProfile = mpKeyConfig.GetString("GamepadMapping", "Profile", sDefault);
+		tString sDefault = NI_GamepadProfile();
+		tString sProfile = cScript_RunGlobalFunc("VRINPUT","","NATIVE") ? sDefault : mpKeyConfig.GetString("GamepadMapping", "Profile", sDefault);
 		tString sPreset = mpKeyConfig.GetString("GamepadMapping", "Preset", "Right");
 			
 		/////////////
@@ -6267,7 +6336,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
 			int lId = 0;
 			array<tString> vProfilePresets;
 			
-			if(Platform_IsPS4())
+			if(NI_PlayStationIcons())
 			{
 				vProfilePresets.push_back("PS4 Controller"); vProfilePresets.push_back("Right");
 				vProfilePresets.push_back("PS4 Controller"); vProfilePresets.push_back("Left");

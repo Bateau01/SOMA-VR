@@ -1,9 +1,4 @@
 {
-  "version": "1.0.9-S26IW",
-  "status": "candidate; headset comparison pending",
-  "change": "Unified anti-aliasing selection and VIDEO ordering; no gameplay changes",
-  "tests": "docs/FOLLOWUP_IV.md",
-  "open": [
-    "Human comfort/quality comparison and other GPU vendors remain unverified"
-  ]
+  "version": "1.1.0-S26JA",
+  "status": "Experimental native-input candidate; see separate TESTING.md for validation limits"
 }

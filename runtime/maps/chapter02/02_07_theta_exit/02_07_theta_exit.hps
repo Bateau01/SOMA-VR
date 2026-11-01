@@ -1,4 +1,4 @@
-#include "helpers/helper_vr_traversal_hy.hps"
+﻿#include "helpers/helper_vr_traversal_hy.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/Inputhandler_Types.hps"
 
@@ -118,7 +118,7 @@ class cScrMap : iScrMap
 	void VR_RemoveUnusedClimbPrompt()
 	{
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 		if (!cScript_GetGlobalReturnBool()) return;
 		cLuxMap@ pMap = cLux_GetCurrentMap();
 		if (pMap is null || pMap.ScriptMethodExists("void OnInteractCrateLadder_2(const tString &in)")) return;
@@ -132,7 +132,7 @@ class cScrMap : iScrMap
 	void VR_RemoveUnusedRigidPrompts()
 	{
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 		if(!cScript_GetGlobalReturnBool()) return;
 		cLuxMap@ pMap = cLux_GetCurrentMap();
 		if(pMap is null) return;

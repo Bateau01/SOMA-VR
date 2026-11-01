@@ -1,4 +1,4 @@
-#include "Prop_Button.hps"
+﻿#include "Prop_Button.hps"
 #include "helpers/helper_props.hps"
 #include "helpers/helper_player.hps"
 #include "helpers/helper_map.hps"
@@ -21,7 +21,7 @@ class cScrPropOmniPanel : cScrPropButton
 		
 		mBaseObj.SetVarBool("IsOmniPanel", true);
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 		if (cScript_GetGlobalReturnBool()) mBaseObj.SetAutoSleep(false);
 	}
 	

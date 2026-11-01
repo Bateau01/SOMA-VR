@@ -1,4 +1,4 @@
-#include "helpers/helper_vr_guidance_hr.hps"
+﻿#include "helpers/helper_vr_guidance_hr.hps"
 // Campaign armrest regions forward to Area_ScanChair; never start a scan directly.
 bool VRSeatHU_Ready()
 {
@@ -14,7 +14,7 @@ class cVRSeatGuideHU
     {
         mfPoll-=dt;if(mfPoll>0)return;mfPoll=.125f;
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
         bool enabled=cScript_GetGlobalReturnBool() && VRSeatHU_Ready() &&
             cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Normal;
         for(int h=0;h<2;h++){

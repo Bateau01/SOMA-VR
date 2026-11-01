@@ -1,4 +1,4 @@
-#include "interfaces/Area_Interface.hps"
+﻿#include "interfaces/Area_Interface.hps"
 
 
 class cScrAreaSticky : iScrArea, iScrArea_Interface
@@ -118,7 +118,7 @@ class cScrAreaSticky : iScrArea, iScrArea_Interface
 	bool _HPL3VR_SocketRuntimeActive()
 	{
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 		return cScript_GetGlobalReturnBool();
 	}
 

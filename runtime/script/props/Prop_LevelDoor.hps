@@ -1,11 +1,11 @@
-#include "interfaces/Prop_Interface.hps"
+﻿#include "interfaces/Prop_Interface.hps"
 #include "player/Player_Types.hps"
 #include "helper_audio.hps"
 
 bool _HPL3VR_RuntimeActive_LevelDoor()
 {
     cScript_SetGlobalReturnBool(false);
-    cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+    cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
     return cScript_GetGlobalReturnBool();
 }
 

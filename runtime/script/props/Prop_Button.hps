@@ -1,4 +1,4 @@
-#include "interfaces/Prop_Interface.hps"
+﻿#include "interfaces/Prop_Interface.hps"
 
 #include "player/player_types.hps"
 
@@ -26,7 +26,7 @@ class cScrPropButton : iScrProp, iScrProp_Interface
         if(!mbVRRockerY) return;
         mfVRRockerRefresh-=dt;if(mfVRRockerRefresh>0) return;mfVRRockerRefresh=0.5f;
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
         if(!cScript_GetGlobalReturnBool()) { VRRockerY_Remove(); return; }
         if(!cScript_RunGlobalFunc("VRROCKERY","","C")) return;
         iPhysicsBody@ main=mBaseObj.GetMainBody();

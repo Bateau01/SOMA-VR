@@ -1,4 +1,4 @@
-#include "interfaces/Prop_Interface.hps"
+﻿#include "interfaces/Prop_Interface.hps"
 #include "base/Player_Types.hps"
 
 // H5756N_DUALMODE_SCRIPT_GATE: fail closed to stock; MenuHandler owns the [nosave] session bit.
@@ -6,7 +6,7 @@
 bool _HPL3VR_RuntimeActive_PropTerminal()
 {
 	cScript_SetGlobalReturnBool(false);
-	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 	return cScript_GetGlobalReturnBool();
 }
 

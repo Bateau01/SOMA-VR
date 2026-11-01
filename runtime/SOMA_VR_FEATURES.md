@@ -57,6 +57,7 @@ These systems preserve authored story callbacks where implemented. Their presenc
 
 S26CM adds an executable compatibility report and opt-in launch for engine-equivalent executables; it is not a verified GOG/Epic native port. See the compatibility guide. The root hpl3vr_vr_settings.ini is included with clean defaults.
 
+HIDE HEAD AND HAND BOBBING remains under VR SETTINGS > VIDEO, below HIDE SCREEN SHAKE. S26CK physical handheld datapads/camera and the earlier Tracer Fluid/independent-hand changes remain included.
 
 
 ## 1.05-S26ER additions and test status
@@ -91,9 +92,9 @@ Expanded hints cover phone retrieval, native ladder/seat/opening interactions, a
 
 Additional VR hints explain tracer fluid, connector removal, key-item retrieval, the head flashlight gesture, two-handed carrying, pushbuttons and Theta lock stages. Ladders, seats and climb openings each have their own remembered prompt.
 
-Waist tracking now supplies the shoulder/body heading when a valid OpenXR WAIST tracker is available. Heading continues following during shoulder reaches. This does not animate a tracked full-body skeleton. Physical waist-tracker testing is pending.
+Waist tracking: a valid OpenXR WAIST tracker supplies the shared torso heading for body-relative movement and shoulder slots, regardless of the selected movement mode. Waist-directed movement continues to use the live tracker heading. Heading continues following during shoulder reaches. This is heading integration, not full-body skeletal animation or pelvis-position tracking. Physical waist-tracker validation is pending.
 
-Desktop mirror: VR SETTINGS > VIDEO > DESKTOP MIRROR displays the left-eye gameplay image in the SOMA window. Enabled by default; saved per profile. Preserves the eye image aspect ratio with black bars as needed. Flat menus retain their existing presentation. Reuses the completed eye image rather than rendering another camera. Two GPU copies add some cost; full-game performance has not yet been measured.
+DESKTOP MIRROR under VR SETTINGS > VIDEO (default ON) displays the completed left-eye image with preserved proportions. A window-sized intermediate allows the final desktop copy to remain 1:1 with MSAA. Menus and other flat presentation modes retain their existing path. Real-GPU copy tests passed; live VR confirmation is pending.
 
 Shoulder holsters have wider lateral admission and a continuous ready buzz, while successful stow/retrieve keeps a single confirmation pulse. VR running boosts every movement direction; native scripted movement restrictions remain in effect.
 
@@ -137,11 +138,8 @@ Removed the recall explanation and status text from GAMEPLAY. The RECALL OMNI-TO
 
 ## 1.07-S26GH experimental simulation rate
 
-120HZ PHYSICS includes rate-corrected movement, damping, interaction timing, low-step traversal and scripted physics advancement. Default remains 60 Hz; restart required. S26GL adds verified Epic/GOG executable support. See SOMA_VR_120HZ.txt for activation and test scope.
+120FPS MODE includes rate-corrected movement, damping, interaction timing, low-step traversal and scripted physics advancement. Default remains 60 Hz; restart required. Verified Steam executable only. See EXPERIMENTAL_120HZ.txt for activation and test scope.
 
-Increasing physics from native 60 Hz to 120 Hz increases CPU frame time and may cause stuttering or lower FPS. This does not set the headset refresh rate or guarantee 120 rendered FPS.
+## 1.1.0-S26IY options
 
-
-## 1.0.9 candidate
-
-Adds collision-tested roomscale movement, default-on INTERACTION GUIDES, first-run VR settings guidance, and a main-menu version label. Improves direct tap sampling, registered palm buttons and remote readable handoff. Guides respect native permission and item order. Existing bindings and optional remote settings are preserved. Native/mock tests are not headset validation.
+GAMEPLAY now offers INTERACTION GUIDES: OFF, HELD ITEMS or INVENTORY. INVENTORY includes nearby destinations for owned stowed items, subject to native permissions and scripted item order. Existing guide settings retain their previous behavior. STARTUP HELP controls the VR launch introduction and defaults to ON. The Climber bottom exit swipe panel accepts a small near-surface tolerance while retaining its story and busy restrictions.

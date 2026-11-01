@@ -26,6 +26,7 @@ static void s26bv_register_terminal(void* gui){
     u32 i=g_s26bvGuiCount++;g_s26bvGui[i]=gui;g_s26bvSet[i]=*(const void**)((u8*)gui+0x18);
 }
 static i32 s26bv_cursor_owned(const void* self,i32 legacy){
+    if(ni_native_input())return 0;
     if(!g_s26anCursorReady||g_h576mScriptRuntimePublished!=1||!p2_xr_on()||!p2_xr_running()||g_h576bfMapTransitionActive)return 0;
     for(u32 i=0;i<g_s26bvGuiCount;i++)if(self==(legacy?g_s26bvSet[i]:g_s26bvGui[i]))return 1;
     return 0;

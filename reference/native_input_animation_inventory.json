@@ -1,0 +1,1054 @@
+{
+  "items": [
+    {
+      "entity": "entities/vr/PanelChip_Physical.ent",
+      "hud": "PanelChip_HUD",
+      "suffix": "elevator_chip",
+      "families": {
+        "human": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "diving": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "deepsea": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/urban/special/00_04_tracer_fluid/tracer_fluid.ent",
+      "hud": "tracer_fluid_hud.ent",
+      "suffix": "tracer_fluid",
+      "families": {
+        "human": [
+          "tool_tracer_fluid_draw",
+          "tool_tracer_fluid_idle",
+          "tool_tracer_fluid_holster",
+          "tool_tracer_fluid_drink"
+        ],
+        "diving": [
+          "tool_tracer_fluid_draw",
+          "tool_tracer_fluid_idle",
+          "tool_tracer_fluid_holster",
+          "tool_tracer_fluid_drink"
+        ],
+        "deepsea": [
+          "tool_tracer_fluid_draw",
+          "tool_tracer_fluid_idle",
+          "tool_tracer_fluid_holster",
+          "tool_tracer_fluid_drink"
+        ],
+        "deepsea_mutilated": [
+          "tool_tracer_fluid_draw",
+          "tool_tracer_fluid_idle",
+          "tool_tracer_fluid_holster",
+          "tool_tracer_fluid_drink"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/tech/ark/ark_tool.ent",
+      "hud": "ark_tool_hud.ent",
+      "suffix": "ark",
+      "families": {
+        "human": [
+          "tool_ark_draw",
+          "tool_ark_idle",
+          "tool_ark_holster"
+        ],
+        "diving": [
+          "tool_ark_draw",
+          "tool_ark_idle",
+          "tool_ark_holster"
+        ],
+        "deepsea": [
+          "tool_ark_draw",
+          "tool_ark_idle",
+          "tool_ark_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_ark_draw",
+          "tool_ark_idle",
+          "tool_ark_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/tech/ark_old/ark_old_tool.ent",
+      "hud": "ark_old_tool_hud.ent",
+      "suffix": "ark",
+      "families": {
+        "human": [
+          "tool_ark_draw",
+          "tool_ark_idle",
+          "tool_ark_holster"
+        ],
+        "diving": [
+          "tool_ark_draw",
+          "tool_ark_idle",
+          "tool_ark_holster"
+        ],
+        "deepsea": [
+          "tool_ark_draw",
+          "tool_ark_idle",
+          "tool_ark_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_ark_draw",
+          "tool_ark_idle",
+          "tool_ark_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/tech/powerpack/powerpack.ent",
+      "hud": "powerpack_hud.ent",
+      "suffix": "powerpack",
+      "families": {
+        "human": [
+          "tool_powerpack_draw",
+          "tool_powerpack_idle",
+          "tool_powerpack_holster"
+        ],
+        "diving": [
+          "tool_powerpack_draw",
+          "tool_powerpack_idle",
+          "tool_powerpack_holster"
+        ],
+        "deepsea": [
+          "tool_powerpack_draw",
+          "tool_powerpack_idle",
+          "tool_powerpack_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_powerpack_draw",
+          "tool_powerpack_idle",
+          "tool_powerpack_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/special/02_06_elevator_chip/02_06_elevator_chip_tool.ent",
+      "hud": "02_06_elevator_chip_tool_hud.ent",
+      "suffix": "elevator_chip",
+      "families": {
+        "human": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "diving": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "deepsea": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/special/03_02_worker_medium_maintenance/03_02_worker_medium_maintenance_brain02.ent",
+      "hud": "03_02_worker_medium_maintenance_brain02_hud",
+      "suffix": "worker_medium_maintenance_brain_02",
+      "families": {
+        "human": [
+          "tool_worker_medium_maintenance_brain_02_draw",
+          "tool_worker_medium_maintenance_brain_02_idle",
+          "tool_worker_medium_maintenance_brain_02_holster"
+        ],
+        "diving": [
+          "tool_worker_medium_maintenance_brain_02_draw",
+          "tool_worker_medium_maintenance_brain_02_idle",
+          "tool_worker_medium_maintenance_brain_02_holster"
+        ],
+        "deepsea": [
+          "tool_worker_medium_maintenance_brain_02_draw",
+          "tool_worker_medium_maintenance_brain_02_idle",
+          "tool_worker_medium_maintenance_brain_02_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_worker_medium_maintenance_brain_02_draw",
+          "tool_worker_medium_maintenance_brain_02_idle",
+          "tool_worker_medium_maintenance_brain_02_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/02_06_PanelChip/PanelChip.ent",
+      "hud": "PanelChip_HUD",
+      "suffix": "elevator_chip",
+      "families": {
+        "human": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "diving": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "deepsea": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_elevator_chip_draw",
+          "tool_elevator_chip_idle",
+          "tool_elevator_chip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/chip_environment_storage/chip_environment_storage.ent",
+      "hud": "chip_environment_storage_hud.ent",
+      "suffix": "chip_env_storage",
+      "families": {
+        "human": [
+          "tool_chip_env_storage_draw",
+          "tool_chip_env_storage_idle",
+          "tool_chip_env_storage_holster"
+        ],
+        "diving": [
+          "tool_chip_env_storage_draw",
+          "tool_chip_env_storage_idle",
+          "tool_chip_env_storage_holster"
+        ],
+        "deepsea": [
+          "tool_chip_env_storage_draw",
+          "tool_chip_env_storage_idle",
+          "tool_chip_env_storage_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_chip_env_storage_draw",
+          "tool_chip_env_storage_idle",
+          "tool_chip_env_storage_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/omnitool/brainchip.ent",
+      "hud": "brainchip_hud.ent",
+      "suffix": "brainchip",
+      "families": {
+        "human": [
+          "tool_brainchip_draw",
+          "tool_brainchip_idle",
+          "tool_brainchip_holster"
+        ],
+        "diving": [
+          "tool_brainchip_draw",
+          "tool_brainchip_idle",
+          "tool_brainchip_holster"
+        ],
+        "deepsea": [
+          "tool_brainchip_draw",
+          "tool_brainchip_idle",
+          "tool_brainchip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_brainchip_draw",
+          "tool_brainchip_idle",
+          "tool_brainchip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/omnitool/omnitool.ent",
+      "hud": "omnitool_hud.ent",
+      "suffix": "omnitool",
+      "families": {
+        "human": [
+          "tool_omnitool_draw",
+          "tool_omnitool_idle",
+          "tool_omnitool_holster",
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel",
+          "tool_omnitool_use_panel"
+        ],
+        "diving": [
+          "tool_omnitool_draw",
+          "tool_omnitool_idle",
+          "tool_omnitool_holster",
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel",
+          "tool_omnitool_use_panel"
+        ],
+        "deepsea": [
+          "tool_omnitool_draw",
+          "tool_omnitool_idle",
+          "tool_omnitool_holster",
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel",
+          "tool_omnitool_use_panel"
+        ],
+        "deepsea_mutilated": [
+          "tool_omnitool_draw",
+          "tool_omnitool_idle",
+          "tool_omnitool_holster",
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel",
+          "tool_omnitool_use_panel"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/omnitool/omnitool_with_cortexchip.ent",
+      "hud": "omnitool_with_cortexchip_hud.ent",
+      "suffix": "omnitool_cortex",
+      "families": {
+        "human": [
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel"
+        ],
+        "diving": [
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel"
+        ],
+        "deepsea": [
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel"
+        ],
+        "deepsea_mutilated": [
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/omnitool/omnitool_with_securitychip.ent",
+      "hud": "omnitool_with_securitychip_hud.ent",
+      "suffix": "omnitool",
+      "families": {
+        "human": [
+          "tool_omnitool_draw",
+          "tool_omnitool_idle",
+          "tool_omnitool_holster",
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel",
+          "tool_omnitool_use_panel"
+        ],
+        "diving": [
+          "tool_omnitool_draw",
+          "tool_omnitool_idle",
+          "tool_omnitool_holster",
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel",
+          "tool_omnitool_use_panel"
+        ],
+        "deepsea": [
+          "tool_omnitool_draw",
+          "tool_omnitool_idle",
+          "tool_omnitool_holster",
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel",
+          "tool_omnitool_use_panel"
+        ],
+        "deepsea_mutilated": [
+          "tool_omnitool_draw",
+          "tool_omnitool_idle",
+          "tool_omnitool_holster",
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel",
+          "tool_omnitool_use_panel"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/omnitool/omnitool_with_securitychip_cortexchip.ent",
+      "hud": "omnitool_with_securitychip_cortexchip_hud.ent",
+      "suffix": "omnitool_cortex",
+      "families": {
+        "human": [
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel"
+        ],
+        "diving": [
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel"
+        ],
+        "deepsea": [
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel"
+        ],
+        "deepsea_mutilated": [
+          "tool_omnitool_cortex_draw",
+          "tool_omnitool_cortex_idle",
+          "tool_omnitool_cortex_holster",
+          "tool_omnitool_cortex_use_panel"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/omnitool/securitychip.ent",
+      "hud": "securitychip_hud.ent",
+      "suffix": "securitychip",
+      "families": {
+        "human": [
+          "tool_securitychip_draw",
+          "tool_securitychip_idle",
+          "tool_securitychip_holster"
+        ],
+        "diving": [
+          "tool_securitychip_draw",
+          "tool_securitychip_idle",
+          "tool_securitychip_holster"
+        ],
+        "deepsea": [
+          "tool_securitychip_draw",
+          "tool_securitychip_idle",
+          "tool_securitychip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_securitychip_draw",
+          "tool_securitychip_idle",
+          "tool_securitychip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/reactor_shutdown_key/reactor_shutdown_key.ent",
+      "hud": "reactor_shutdown_key_hud.ent",
+      "suffix": "reactor_shutdown_key",
+      "families": {
+        "human": [
+          "tool_reactor_shutdown_key_draw",
+          "tool_reactor_shutdown_key_idle",
+          "tool_reactor_shutdown_key_holster"
+        ],
+        "diving": [
+          "tool_reactor_shutdown_key_draw",
+          "tool_reactor_shutdown_key_idle",
+          "tool_reactor_shutdown_key_holster"
+        ],
+        "deepsea": [
+          "tool_reactor_shutdown_key_draw",
+          "tool_reactor_shutdown_key_idle",
+          "tool_reactor_shutdown_key_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_reactor_shutdown_key_draw",
+          "tool_reactor_shutdown_key_idle",
+          "tool_reactor_shutdown_key_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/structure_gel_cabinet_chip/structure_gel_cabinet_chip.ent",
+      "hud": "structure_gel_cabinet_chip_hud.ent",
+      "suffix": "structure_gel_cabinet_chip",
+      "families": {
+        "human": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "diving": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "deepsea": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/structure_gel_cabinet_chip/structure_gel_cabinet_chip_wau_clean.ent",
+      "hud": "structure_gel_cabinet_chip_hud.ent",
+      "suffix": "structure_gel_cabinet_chip",
+      "families": {
+        "human": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "diving": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "deepsea": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/structure_gel_cabinet_chip/structure_gel_cabinet_chip_wau_covered.ent",
+      "hud": "structure_gel_cabinet_chip_wau_covered_hud.ent",
+      "suffix": "structure_gel_cabinet_chip",
+      "families": {
+        "human": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "diving": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "deepsea": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/station/gameplay/structure_gel_sample/structure_gel_sample.ent",
+      "hud": "structure_gel_sample_hud.ent",
+      "suffix": "structure_gel",
+      "families": {
+        "human": [
+          "tool_structure_gel_draw",
+          "tool_structure_gel_idle",
+          "tool_structure_gel_holster",
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "diving": [
+          "tool_structure_gel_draw",
+          "tool_structure_gel_idle",
+          "tool_structure_gel_holster",
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "deepsea": [
+          "tool_structure_gel_draw",
+          "tool_structure_gel_idle",
+          "tool_structure_gel_holster",
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_structure_gel_draw",
+          "tool_structure_gel_idle",
+          "tool_structure_gel_holster",
+          "tool_structure_gel_cabinet_chip_draw",
+          "tool_structure_gel_cabinet_chip_idle",
+          "tool_structure_gel_cabinet_chip_holster"
+        ]
+      }
+    },
+    {
+      "entity": "entities/soma_vr/s26c/tracer_cap.ent",
+      "hud": "tracer_fluid_hud.ent",
+      "suffix": "tracer_fluid",
+      "families": {
+        "human": [
+          "tool_tracer_fluid_draw",
+          "tool_tracer_fluid_idle",
+          "tool_tracer_fluid_holster",
+          "tool_tracer_fluid_drink"
+        ],
+        "diving": [
+          "tool_tracer_fluid_draw",
+          "tool_tracer_fluid_idle",
+          "tool_tracer_fluid_holster",
+          "tool_tracer_fluid_drink"
+        ],
+        "deepsea": [
+          "tool_tracer_fluid_draw",
+          "tool_tracer_fluid_idle",
+          "tool_tracer_fluid_holster",
+          "tool_tracer_fluid_drink"
+        ],
+        "deepsea_mutilated": [
+          "tool_tracer_fluid_draw",
+          "tool_tracer_fluid_idle",
+          "tool_tracer_fluid_holster",
+          "tool_tracer_fluid_drink"
+        ]
+      }
+    },
+    {
+      "entity": "entities/oceanbottom/tools/stunrod/stunrod.ent",
+      "hud": "stunrod_hud.ent",
+      "suffix": "stunrod",
+      "families": {
+        "human": [
+          "tool_stunrod_draw",
+          "tool_stunrod_idle",
+          "tool_stunrod_holster",
+          "tool_stunrod_prod"
+        ],
+        "diving": [
+          "tool_stunrod_draw",
+          "tool_stunrod_idle",
+          "tool_stunrod_holster",
+          "tool_stunrod_prod"
+        ],
+        "deepsea": [
+          "tool_stunrod_draw",
+          "tool_stunrod_idle",
+          "tool_stunrod_holster",
+          "tool_stunrod_prod"
+        ],
+        "deepsea_mutilated": [
+          "tool_stunrod_draw",
+          "tool_stunrod_idle",
+          "tool_stunrod_holster",
+          "tool_stunrod_prod"
+        ]
+      }
+    },
+    {
+      "entity": "entities/oceanbottom/tech/chip_robot/chip_robot_tool.ent",
+      "hud": "chip_robot_hud.ent",
+      "suffix": "securitychip",
+      "families": {
+        "human": [
+          "tool_securitychip_draw",
+          "tool_securitychip_idle",
+          "tool_securitychip_holster"
+        ],
+        "diving": [
+          "tool_securitychip_draw",
+          "tool_securitychip_idle",
+          "tool_securitychip_holster"
+        ],
+        "deepsea": [
+          "tool_securitychip_draw",
+          "tool_securitychip_idle",
+          "tool_securitychip_holster"
+        ],
+        "deepsea_mutilated": [
+          "tool_securitychip_draw",
+          "tool_securitychip_idle",
+          "tool_securitychip_holster"
+        ]
+      }
+    }
+  ],
+  "models": {
+    "human": [
+      "climb_idle_left",
+      "climb_idle_right",
+      "climb_ladder_left",
+      "climb_ladder_right",
+      "climb_attach",
+      "climb_left_detach_bottom",
+      "climb_left_detach_top",
+      "climb_right_detach_bottom",
+      "climb_right_detach_top",
+      "climb_ladder_left_linear",
+      "climb_ladder_right_linear",
+      "tool_generic_draw",
+      "tool_generic_holster",
+      "tool_generic_idle",
+      "crawl_enter",
+      "crawl_exit",
+      "crawl_idle_left",
+      "crawl_idle_right",
+      "crawl_move_left",
+      "crawl_move_right",
+      "climb_ledge",
+      "tool_omnitool_draw",
+      "tool_omnitool_idle",
+      "tool_omnitool_holster",
+      "tool_omnitool_cortex_draw",
+      "tool_omnitool_cortex_idle",
+      "tool_omnitool_cortex_holster",
+      "tool_tracer_fluid_draw",
+      "tool_tracer_fluid_idle",
+      "tool_tracer_fluid_holster",
+      "tool_tracer_fluid_drink",
+      "tool_securitychip_draw",
+      "tool_securitychip_idle",
+      "tool_securitychip_holster",
+      "tool_brainchip_draw",
+      "tool_brainchip_idle",
+      "tool_brainchip_holster",
+      "tool_stunrod_draw",
+      "tool_stunrod_idle",
+      "tool_stunrod_holster",
+      "tool_stunrod_prod",
+      "tool_chip_env_storage_draw",
+      "tool_chip_env_storage_idle",
+      "tool_chip_env_storage_holster",
+      "tool_structure_gel_draw",
+      "tool_structure_gel_idle",
+      "tool_structure_gel_holster",
+      "tool_elevator_chip_draw",
+      "tool_elevator_chip_idle",
+      "tool_elevator_chip_holster",
+      "tool_powerpack_draw",
+      "tool_powerpack_idle",
+      "tool_powerpack_holster",
+      "tool_worker_medium_maintenance_brain_02_draw",
+      "tool_worker_medium_maintenance_brain_02_idle",
+      "tool_worker_medium_maintenance_brain_02_holster",
+      "tool_reactor_shutdown_key_draw",
+      "tool_reactor_shutdown_key_idle",
+      "tool_reactor_shutdown_key_holster",
+      "tool_structure_gel_cabinet_chip_draw",
+      "tool_structure_gel_cabinet_chip_idle",
+      "tool_structure_gel_cabinet_chip_holster",
+      "tool_ark_draw",
+      "tool_ark_idle",
+      "tool_ark_holster",
+      "tool_omnitool_cortex_use_panel",
+      "tool_omnitool_use_panel",
+      "event_look_at_hands_1_3",
+      "event_look_at_hands_2_1",
+      "event_climb_of_dome_1_3",
+      "event_climb_of_dome_start_1_3",
+      "wau_flower_touch_1",
+      "wau_flower_touch_2",
+      "wau_flower_touch_3",
+      "wau_flower_touch_4",
+      "tool_cellphone_draw",
+      "tool_cellphone_idle",
+      "tool_cellphone_holster",
+      "tool_datapad_draw",
+      "tool_datapad_idle",
+      "tool_datapad_holster",
+      "tool_camera_portable_draw",
+      "tool_camera_portable_idle",
+      "tool_camera_portable_holster",
+      "dream_sequence_ashley",
+      "event_look_at_hands_5_2"
+    ],
+    "diving": [
+      "climb_idle_left",
+      "climb_idle_right",
+      "climb_ladder_left",
+      "climb_ladder_right",
+      "climb_attach",
+      "climb_left_detach_bottom",
+      "climb_left_detach_top",
+      "climb_right_detach_bottom",
+      "climb_right_detach_top",
+      "climb_ladder_left_linear",
+      "climb_ladder_right_linear",
+      "tool_generic_draw",
+      "tool_generic_holster",
+      "tool_generic_idle",
+      "crawl_enter",
+      "crawl_exit",
+      "crawl_idle_left",
+      "crawl_idle_right",
+      "crawl_move_left",
+      "crawl_move_right",
+      "climb_ledge",
+      "tool_omnitool_draw",
+      "tool_omnitool_idle",
+      "tool_omnitool_holster",
+      "tool_omnitool_cortex_draw",
+      "tool_omnitool_cortex_idle",
+      "tool_omnitool_cortex_holster",
+      "tool_tracer_fluid_draw",
+      "tool_tracer_fluid_idle",
+      "tool_tracer_fluid_holster",
+      "tool_tracer_fluid_drink",
+      "tool_securitychip_draw",
+      "tool_securitychip_idle",
+      "tool_securitychip_holster",
+      "tool_brainchip_draw",
+      "tool_brainchip_idle",
+      "tool_brainchip_holster",
+      "tool_stunrod_draw",
+      "tool_stunrod_idle",
+      "tool_stunrod_holster",
+      "tool_stunrod_prod",
+      "tool_chip_env_storage_draw",
+      "tool_chip_env_storage_idle",
+      "tool_chip_env_storage_holster",
+      "tool_structure_gel_draw",
+      "tool_structure_gel_idle",
+      "tool_structure_gel_holster",
+      "tool_elevator_chip_draw",
+      "tool_elevator_chip_idle",
+      "tool_elevator_chip_holster",
+      "tool_powerpack_draw",
+      "tool_powerpack_idle",
+      "tool_powerpack_holster",
+      "tool_worker_medium_maintenance_brain_02_draw",
+      "tool_worker_medium_maintenance_brain_02_idle",
+      "tool_worker_medium_maintenance_brain_02_holster",
+      "tool_reactor_shutdown_key_draw",
+      "tool_reactor_shutdown_key_idle",
+      "tool_reactor_shutdown_key_holster",
+      "tool_structure_gel_cabinet_chip_draw",
+      "tool_structure_gel_cabinet_chip_idle",
+      "tool_structure_gel_cabinet_chip_holster",
+      "tool_ark_draw",
+      "tool_ark_idle",
+      "tool_ark_holster",
+      "tool_omnitool_cortex_use_panel",
+      "tool_omnitool_use_panel",
+      "event_look_at_hands_1_3",
+      "event_look_at_hands_2_1",
+      "event_climb_of_dome_1_3",
+      "event_climb_of_dome_start_1_3",
+      "event_climb_of_e_vessel_2_3",
+      "wau_flower_touch_1",
+      "wau_flower_touch_2",
+      "wau_flower_touch_3",
+      "wau_flower_touch_4",
+      "tool_cellphone_draw",
+      "tool_cellphone_idle",
+      "tool_cellphone_holster",
+      "tool_datapad_draw",
+      "tool_datapad_idle",
+      "tool_datapad_holster",
+      "tool_camera_portable_draw",
+      "tool_camera_portable_idle",
+      "tool_camera_portable_holster",
+      "chair_01_01_scan",
+      "chair_00_03_scan",
+      "event_escape_coral_infection",
+      "event_look_in_mirror_long_arms",
+      "event_look_in_mirror_short_arms",
+      "event_look_at_hands_2_1_intense"
+    ],
+    "deepsea": [
+      "climb_idle_left",
+      "climb_idle_right",
+      "climb_ladder_left",
+      "climb_ladder_right",
+      "climb_attach",
+      "climb_left_detach_bottom",
+      "climb_left_detach_top",
+      "climb_right_detach_bottom",
+      "climb_right_detach_top",
+      "climb_ladder_left_linear",
+      "climb_ladder_right_linear",
+      "tool_generic_draw",
+      "tool_generic_holster",
+      "tool_generic_idle",
+      "crawl_enter",
+      "crawl_exit",
+      "crawl_idle_left",
+      "crawl_idle_right",
+      "crawl_move_left",
+      "crawl_move_right",
+      "climb_ledge",
+      "tool_omnitool_draw",
+      "tool_omnitool_idle",
+      "tool_omnitool_holster",
+      "tool_omnitool_cortex_draw",
+      "tool_omnitool_cortex_idle",
+      "tool_omnitool_cortex_holster",
+      "tool_tracer_fluid_draw",
+      "tool_tracer_fluid_idle",
+      "tool_tracer_fluid_holster",
+      "tool_tracer_fluid_drink",
+      "tool_securitychip_draw",
+      "tool_securitychip_idle",
+      "tool_securitychip_holster",
+      "tool_brainchip_draw",
+      "tool_brainchip_idle",
+      "tool_brainchip_holster",
+      "tool_stunrod_draw",
+      "tool_stunrod_idle",
+      "tool_stunrod_holster",
+      "tool_stunrod_prod",
+      "tool_chip_env_storage_draw",
+      "tool_chip_env_storage_idle",
+      "tool_chip_env_storage_holster",
+      "tool_structure_gel_draw",
+      "tool_structure_gel_idle",
+      "tool_structure_gel_holster",
+      "tool_elevator_chip_draw",
+      "tool_elevator_chip_idle",
+      "tool_elevator_chip_holster",
+      "tool_powerpack_draw",
+      "tool_powerpack_idle",
+      "tool_powerpack_holster",
+      "tool_worker_medium_maintenance_brain_02_draw",
+      "tool_worker_medium_maintenance_brain_02_idle",
+      "tool_worker_medium_maintenance_brain_02_holster",
+      "tool_reactor_shutdown_key_draw",
+      "tool_reactor_shutdown_key_idle",
+      "tool_reactor_shutdown_key_holster",
+      "tool_structure_gel_cabinet_chip_draw",
+      "tool_structure_gel_cabinet_chip_idle",
+      "tool_structure_gel_cabinet_chip_holster",
+      "tool_ark_draw",
+      "tool_ark_idle",
+      "tool_ark_holster",
+      "tool_omnitool_cortex_use_panel",
+      "tool_omnitool_use_panel",
+      "event_look_at_hands_3_2",
+      "player_wau_mouth_put_in",
+      "wau_flower_touch_1",
+      "wau_flower_touch_2",
+      "wau_flower_touch_3",
+      "wau_flower_touch_4",
+      "tool_cellphone_draw",
+      "tool_cellphone_idle",
+      "tool_cellphone_holster",
+      "tool_datapad_draw",
+      "tool_datapad_idle",
+      "tool_datapad_holster",
+      "tool_camera_portable_draw",
+      "tool_camera_portable_idle",
+      "tool_camera_portable_holster",
+      "chair_03_03_enter",
+      "chair_03_03_idle",
+      "chair_03_03_leave",
+      "event_talk_to_cath_5_1"
+    ],
+    "deepsea_mutilated": [
+      "climb_idle_left",
+      "climb_idle_right",
+      "climb_ladder_left",
+      "climb_ladder_right",
+      "climb_attach",
+      "climb_left_detach_bottom",
+      "climb_left_detach_top",
+      "climb_right_detach_bottom",
+      "climb_right_detach_top",
+      "climb_ladder_left_linear",
+      "climb_ladder_right_linear",
+      "tool_generic_draw",
+      "tool_generic_holster",
+      "tool_generic_idle",
+      "crawl_enter",
+      "crawl_exit",
+      "crawl_idle_left",
+      "crawl_idle_right",
+      "crawl_move_left",
+      "crawl_move_right",
+      "climb_ledge",
+      "tool_omnitool_draw",
+      "tool_omnitool_idle",
+      "tool_omnitool_holster",
+      "tool_omnitool_cortex_draw",
+      "tool_omnitool_cortex_idle",
+      "tool_omnitool_cortex_holster",
+      "tool_tracer_fluid_draw",
+      "tool_tracer_fluid_idle",
+      "tool_tracer_fluid_holster",
+      "tool_tracer_fluid_drink",
+      "tool_securitychip_draw",
+      "tool_securitychip_idle",
+      "tool_securitychip_holster",
+      "tool_brainchip_draw",
+      "tool_brainchip_idle",
+      "tool_brainchip_holster",
+      "tool_stunrod_draw",
+      "tool_stunrod_idle",
+      "tool_stunrod_holster",
+      "tool_stunrod_prod",
+      "tool_chip_env_storage_draw",
+      "tool_chip_env_storage_idle",
+      "tool_chip_env_storage_holster",
+      "tool_structure_gel_draw",
+      "tool_structure_gel_idle",
+      "tool_structure_gel_holster",
+      "tool_elevator_chip_draw",
+      "tool_elevator_chip_idle",
+      "tool_elevator_chip_holster",
+      "tool_powerpack_draw",
+      "tool_powerpack_idle",
+      "tool_powerpack_holster",
+      "tool_worker_medium_maintenance_brain_02_draw",
+      "tool_worker_medium_maintenance_brain_02_idle",
+      "tool_worker_medium_maintenance_brain_02_holster",
+      "tool_reactor_shutdown_key_draw",
+      "tool_reactor_shutdown_key_idle",
+      "tool_reactor_shutdown_key_holster",
+      "tool_structure_gel_cabinet_chip_draw",
+      "tool_structure_gel_cabinet_chip_idle",
+      "tool_structure_gel_cabinet_chip_holster",
+      "tool_ark_draw",
+      "tool_ark_idle",
+      "tool_ark_holster",
+      "tool_omnitool_cortex_use_panel",
+      "tool_omnitool_use_panel",
+      "event_look_at_hands_3_2",
+      "player_wau_mouth_bitten_n_pull_out",
+      "event_examine_mutilated_hand_start",
+      "event_examine_mutilated_hand",
+      "event_examine_mutilated_hand_end",
+      "wau_flower_touch_1",
+      "wau_flower_touch_2",
+      "wau_flower_touch_3",
+      "wau_flower_touch_4",
+      "tool_cellphone_draw",
+      "tool_cellphone_idle",
+      "tool_cellphone_holster",
+      "tool_datapad_draw",
+      "tool_datapad_idle",
+      "tool_datapad_holster",
+      "event_look_at_mutilated_hand",
+      "event_talk_to_cath_5_1"
+    ]
+  }
+}

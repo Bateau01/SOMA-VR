@@ -1,4 +1,4 @@
-#include "helpers/helper_vr_traversal_hy.hps"
+﻿#include "helpers/helper_vr_traversal_hy.hps"
 #include "helpers/helper_vr_seat_hu.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/Inputhandler_Types.hps"
@@ -579,7 +579,7 @@ class cScrMap : iScrMap
     void VRLaunchHands(int state)
     {
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
         if(!cScript_GetGlobalReturnBool()) { mlVRLaunchHandsPublished=-2; return; }
         if(mlVRLaunchHandsPublished==state) return;
         cScript_SetGlobalArgInt(0,state);
@@ -1811,7 +1811,7 @@ class cScrMap : iScrMap
 		bool PowerpackPlugged_OnPickUp(const tString &in asTool)
 		{
             cScript_SetGlobalReturnBool(false);
-            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
             bool vr=cScript_GetGlobalReturnBool();
             if(vr)
             {

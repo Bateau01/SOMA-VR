@@ -1,4 +1,4 @@
-
+﻿
 //-------------------------------------------------
 
 #include "modules/ModuleInterfaces.hps"
@@ -1380,7 +1380,7 @@ void Map_HPL3VR_EndPushForTransfer()
 {
     if(cLux_GetPlayer().GetCurrentStateId()!=ePlayerState_Push) return;
     cScript_SetGlobalReturnBool(false);
-    cScript_RunGlobalFunc("MenuHandler", "", "HPL3VR_GetRuntimeActive");
+    cScript_RunGlobalFunc("MenuHandler", "", "HPL3VR_GetMotionInputActive");
     if(cScript_GetGlobalReturnBool()) cLux_GetPlayer().ChangeState(ePlayerState_Normal);
 }
 

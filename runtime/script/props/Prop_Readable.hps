@@ -1,4 +1,4 @@
-#include "interfaces/Prop_Interface.hps"
+﻿#include "interfaces/Prop_Interface.hps"
 #include "base/Player_Types.hps"
 #include "helpers/helper_modules.hps"
 #include "base/HeroStatsHandler_Types.hps"
@@ -8,7 +8,7 @@
 bool _HPL3VR_ReadableActive()
 {
 	cScript_SetGlobalReturnBool(false);
-	cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+	cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 	return cScript_GetGlobalReturnBool();
 }
 

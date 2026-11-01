@@ -1,4 +1,4 @@
-#include "player/PlayerState_Interact.hps"
+﻿#include "player/PlayerState_Interact.hps"
 #include "helpers/helper_player.hps"
 #include "helpers/helper_effects.hps"
 #include "helpers/helper_map.hps"
@@ -11,7 +11,7 @@
 bool _HPL3VR_RuntimeActive_TerminalState()
 {
 	cScript_SetGlobalReturnBool(false);
-	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 	return cScript_GetGlobalReturnBool();
 }
 

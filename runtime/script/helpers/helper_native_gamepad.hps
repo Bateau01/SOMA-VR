@@ -1,0 +1,17 @@
+// Presentation only. Never changes input bindings or platform identity.
+bool NI_PlayStationIcons()
+{
+    if(!cScript_RunGlobalFunc("VRINPUT","","NATIVE")) return Platform_IsPS4();
+    int style=cLux_GetUserConfig().GetInt("SOMA_VR_Comfort","GamepadIcons",0);
+    if(style==1)return false;
+    if(style==2)return true;
+    return cScript_RunGlobalFunc("VRINPUT","","PSICONS");
+}
+tString NI_GamepadProfile(){return NI_PlayStationIcons()?"PS4 Controller":"X360 Controller";}
+void NI_ApplyGamepadIcons()
+{
+    if(!cScript_RunGlobalFunc("VRINPUT","","NATIVE"))return;
+    tString preset=cLux_GetKeyConfig().GetString("GamepadMapping","Preset","Right");
+    if(preset!="Left")preset="Right";
+    cLux_GetInputHandler().SetGamepadMapping(NI_GamepadProfile(),preset);
+}

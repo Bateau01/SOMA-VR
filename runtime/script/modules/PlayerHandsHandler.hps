@@ -1,4 +1,4 @@
-#include "interfaces/UserModule_Interface.hps"
+﻿#include "interfaces/UserModule_Interface.hps"
 #include "modules/ModuleInterfaces.hps"
 #include "base/InputHandler_Types.hps"
 #include "player/Player_Types.hps"
@@ -70,6 +70,7 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 	
 	void OnMapEnter(cLuxMap @apMap)
 	{
+        mbNISavedProxiesRetired=false;
 		mlHandNum=0;
 		mlVRScenePublished=-1;
 		HPL3VR_PublishSceneHands();
@@ -92,6 +93,7 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 
 	void CreateWorldEntities(cLuxMap @apMap)
 	{
+        mbNISavedProxiesRetired=false;
 	}
 	void DestroyWorldEntities(cLuxMap @apMap)
 	{
@@ -154,6 +156,25 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 
     [nosave] array<cMeshEntity@> mvVRNativeHands(2);
     [nosave] int mlVRNativeFamily = -1;
+    [nosave] bool mbNISavedProxiesRetired=false;
+    void NI_RetireSavedProxies()
+    {
+        if(!cScript_RunGlobalFunc("VRINPUT","","NATIVE"))return;
+        if(cLux_IsLoadingScreenVisible()){mbNISavedProxiesRetired=false;return;}
+        if(mbNISavedProxiesRetired)return;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null)return;
+        // Motion-mode saves may serialize these two mod-owned bodies. No live
+        // tracked hands exist in this restart-only mode. Keep world ownership,
+        // but remove their collision, simulation and future save participation.
+        for(int h=0;h<2;h++){
+            iPhysicsBody@ body=map.GetPhysicsWorld().GetBody(h==0?"vrhand_L":"vrhand_R");
+            if(body is null)continue;
+            body.SetCollide(false);body.SetCollideCharacter(false);
+            body.SetActive(false);body.SetScriptableIsSaved(false);
+        }
+        mbNISavedProxiesRetired=true;
+    }
+
 
     void HPL3VR_DestroyNativeHands(cLuxMap@ apMap)
     {
@@ -169,7 +190,7 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 
     void HPL3VR_UpdateNativeHands()
     {
-        if (!_HPL3VR_RuntimeActive_PlayerHands())
+        if (!(_HPL3VR_RuntimeActive_PlayerHands() && !cScript_RunGlobalFunc("VRINPUT","","NATIVE")))
         {
             for (int h=0; h<2; ++h)
                 if (mvVRNativeHands[h] !is null) mvVRNativeHands[h].SetVisible(false);
@@ -233,6 +254,7 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 
 	void PostUpdate(float afTimeStep)
 	{
+        NI_RetireSavedProxies();
 		HPL3VR_PublishSceneHands();
         HPL3VR_UpdateNativeHands();
 		/////////////////////////
@@ -247,6 +269,16 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 			/////////////////////////
 			// Setup Properties
 			float fScale = mbUseFullScaleModel ? 1.0f : 0.25f;
+            // Native inventory HUD hands were quarter-sized for a flat camera.
+            // Scale their camera-relative offset together with the mesh for stereo.
+            // Custom/world-positioned animations retain their authored placement.
+            if(!mbUseFullScaleModel && !mbUseCustomPosition && !mbUseCustomRotation &&
+                !mbCameraAttachActive && mfCameraAttachT<=0 && cScript_RunGlobalFunc("VRINPUT","","NATIVE")){
+                cAnimationState@ anim=GetCurrentAnimationState();
+                if(anim !is null){tString name=anim.GetName();
+                    if(cString_Sub(name,0,5)=="tool_" || cString_Sub(name,0,11)=="customtool_") fScale=1.0f;
+                }
+            }
 			cVector3f vCamRot(pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll()*0.5);
 			
 			/////////////////////////
@@ -589,7 +621,7 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 
 	bool HPL3VR_ReplaceAuthoredHands()
 	{
-		if (!_HPL3VR_RuntimeActive_PlayerHands()) return false;
+		if (!(_HPL3VR_RuntimeActive_PlayerHands() && !cScript_RunGlobalFunc("VRINPUT","","NATIVE"))) return false;
 		if (cScript_GetGlobalVarBool("UsingWauFlower") || mlVRSceneOverride==0) return true;
 		cAnimationState@ pAnim = GetCurrentAnimationState();
 		if (pAnim is null) return false;
@@ -783,6 +815,20 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 	
 	void PlayAnimation(const tString &in asAnim, bool abLoop, bool abFullScaleModel, float afFadeTime, const tString &in asAttachedProp, bool abDisableWhenOver, float afSpeed, float afRelTimePos)
 	{
+		// Camera-relative inspection animations use a quarter-size model in the
+		// flat presentation. In stereo that also quarters their viewing distance.
+		// Keep authored world/socket placement and all other animations unchanged.
+		bool bVRInspectModel =
+			(msHandModel=="character/player/hands/hands_human.ent" && asAnim=="event_look_at_hands_5_2") ||
+			(msHandModel=="character/player/hands/hands_diving.ent" &&
+				(asAnim=="event_look_at_hands_2_1" || asAnim=="event_look_at_hands_2_1_intense")) ||
+			(msHandModel=="character/player/hands/hands_deepsea.ent" && asAnim=="event_look_at_hands_3_2") ||
+			(msHandModel=="character/player/hands/hands_deepsea_mutilated.ent" &&
+				(asAnim=="event_examine_mutilated_hand_end" || asAnim=="event_look_at_mutilated_hand"));
+		if(bVRInspectModel && mlVRSceneOverride!=0 && !cScript_GetGlobalVarBool("UsingWauFlower") &&
+			!mbUseCustomPosition && !mbUseCustomRotation &&
+			!mbCameraAttachActive && mfCameraAttachT<=0 && _HPL3VR_RuntimeActive_PlayerHands())
+			abFullScaleModel=true;
 		CreateHandModelIfNeeded(cLux_GetCurrentMap());
 		
 		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);
@@ -1093,7 +1139,7 @@ class cScrPlayerHandsHandler : iScrUserModule, iScrUserModule_Interface, iScrPla
 	{
 		CreateHandModelIfNeeded(cLux_GetCurrentMap());
 		
-		if (_HPL3VR_RuntimeActive_PlayerHands() && cScript_GetGlobalVarBool("UsingWauFlower")) abX=false;
+		if (_HPL3VR_RuntimeActive_PlayerHands() && !cScript_RunGlobalFunc("VRINPUT","","NATIVE") && cScript_GetGlobalVarBool("UsingWauFlower")) abX=false;
 		mbEntityVisible = abX;
 		
 		iLuxEntity @pEntity = cLux_ID_Entity(m_idHands);

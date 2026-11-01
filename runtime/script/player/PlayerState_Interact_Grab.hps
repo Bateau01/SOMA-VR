@@ -18,8 +18,19 @@
 bool _HPL3VR_RuntimeActive_Grab()
 {
 	cScript_SetGlobalReturnBool(false);
-	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 	return cScript_GetGlobalReturnBool();
+}
+
+// The native view matrix contains the centre-headset orientation. Use the same
+// frame for acquisition and held targets, without changing native force control.
+cMatrixf HPL3VR_GrabCameraRotation(cCamera@ cam)
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    if(cScript_GetGlobalReturnBool() && cScript_RunGlobalFunc("VRINPUT","","GAMEPAD_AIM"))
+        return cMath_MatrixInverse(cam.GetViewMatrix()).GetRotation();
+    return cMath_MatrixRotateXYZ(cVector3f(cam.GetPitch(),cam.GetYaw(),cam.GetRoll()));
 }
 
 const float gfMaxForce = 1000;
@@ -215,8 +226,7 @@ class cScrPlayerState_Interact_Grab : iScrPlayerState_Interact, iScrPlayerState_
 					// Set the rotation as the current of the body
 					else
 					{
-						cVector3f vCamRotation( pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll());
-						cMatrixf mtxCamRot = cMath_MatrixRotateXYZ(vCamRotation);
+						cMatrixf mtxCamRot = HPL3VR_GrabCameraRotation(pCam);
 						cMatrixf mtxInvCamRot = cMath_MatrixInverse(mtxCamRot);
 			
 						m_mtxBodyRotation = cMath_MatrixMul(mtxInvCamRot, pBody.GetLocalMatrix().GetRotation());
@@ -418,8 +428,7 @@ class cScrPlayerState_Interact_Grab : iScrPlayerState_Interact, iScrPlayerState_
 			// Set the rotation as the current of the body
 			else
 			{
-				cVector3f vCamRotation( pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll());
-				cMatrixf mtxCamRot = cMath_MatrixRotateXYZ(vCamRotation);
+				cMatrixf mtxCamRot = HPL3VR_GrabCameraRotation(pCam);
 				cMatrixf mtxInvCamRot = cMath_MatrixInverse(mtxCamRot);
 
 				m_mtxBodyRotation = cMath_MatrixMul(mtxInvCamRot, pBody.GetLocalMatrix().GetRotation());
@@ -807,8 +816,7 @@ class cScrPlayerState_Interact_Grab : iScrPlayerState_Interact, iScrPlayerState_
 				{
 					////////////////////////
 					// Camera rotation
-					cVector3f vCamRotation( pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll());
-					cMatrixf mtxCamTransform = cMath_MatrixRotateXYZ(vCamRotation);
+					cMatrixf mtxCamTransform = HPL3VR_GrabCameraRotation(pCam);
 					mtxCamTransform.SetTranslation(pCam.GetPosition());
 			
 					///////////////////////
@@ -1120,8 +1128,7 @@ class cScrPlayerState_Interact_Grab : iScrPlayerState_Interact, iScrPlayerState_
 					////////////////////////////////////////////////////////
 					// Set the body position as right in front of the camera
 					cCamera @pCam = mBaseObj.mpPlayer.GetCamera();
-					cVector3f vCamRotation(pCam.GetPitch(), pCam.GetYaw(), pCam.GetRoll());
-					cMatrixf mtxCamTransform = cMath_MatrixRotateXYZ(vCamRotation);
+					cMatrixf mtxCamTransform = HPL3VR_GrabCameraRotation(pCam);
 					mtxCamTransform.SetTranslation(pCam.GetPosition());
 					
 					/////////////////////////////

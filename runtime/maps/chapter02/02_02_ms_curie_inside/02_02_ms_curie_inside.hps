@@ -1,4 +1,4 @@
-#include "helpers/helper_vr_traversal_hy.hps"
+﻿#include "helpers/helper_vr_traversal_hy.hps"
 #include "base/InputHandler_Types.hps"
 #include "interfaces/Map_Interface.hps"
 #include "helpers/helper_game.hps"
@@ -463,7 +463,7 @@ class cScrMap : iScrMap
 	void VR_RemoveUnusedRigidPrompts()
 	{
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 		if(!cScript_GetGlobalReturnBool()) return;
 		cLuxMap@ pMap = cLux_GetCurrentMap();
 		if(pMap is null) return;

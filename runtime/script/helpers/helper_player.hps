@@ -1774,3 +1774,13 @@ void Player_StopDatamining()
 	cScript_RunGlobalFunc("DatamineHandler", "cScrDatamineHandler", "_Global_StopDatamining");
 }
 //-------------------------------------------------
+// Presentation only; caller already performed native target/permission selection.
+void Player_SetNativeIconFocus(const cVector3f &in pos)
+{
+    cScript_SetGlobalReturnBool(false);
+    cScript_RunGlobalFunc("MenuHandler","","HPL3VR_GetRuntimeActive");
+    if(!cScript_GetGlobalReturnBool())return;
+    if(!cScript_RunGlobalFunc("VRINPUT","","NATIVE"))return;
+    cScript_SetGlobalArgVector3f(0,pos);
+    cScript_RunGlobalFunc("LuxPlayer","","_Global_NativeIconFocus");
+}

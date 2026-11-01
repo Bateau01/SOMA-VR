@@ -1,4 +1,4 @@
-#include "interfaces/MoveState_Interface.hps"
+﻿#include "interfaces/MoveState_Interface.hps"
 #include "base/InputHandler_Types.hps"
 #include "player/Player_Types.hps"
 
@@ -118,7 +118,7 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 	{
 		// Republish saved ownership even when the selected mode is now button-only.
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 		if(cScript_GetGlobalReturnBool())
 			cScript_RunGlobalFunc("VRCOMFORT","C",mbVRPhysicalCrouch ? "D" : "U");
 		mbFootstepSoundsDisabled = false; //To make sure this does not get stuck!
@@ -1039,7 +1039,7 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 	{
 		if(!mbVRPhysicalCrouch) return;
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 		if(cScript_GetGlobalReturnBool()) return;
 		mbVRPhysicalCrouch=false; mbVRManualCrouch=false;
 		if(mbCrouching)
@@ -1049,7 +1049,7 @@ class cScrMoveState_Normal : iScrMoveState, iScrMoveState_Interface
 	bool HPL3VR_CrouchAllowed()
 	{
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 		if(!cScript_GetGlobalReturnBool()) return false;
 		int state=mBaseObj.mpPlayer.GetCurrentStateId();
 		return state==ePlayerState_Normal || state==ePlayerState_Grab;

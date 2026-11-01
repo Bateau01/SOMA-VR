@@ -1,4 +1,4 @@
-#include "interfaces/Prop_Interface.hps"
+﻿#include "interfaces/Prop_Interface.hps"
 #include "base/Player_Types.hps"
 
 enum eMovingButtonTimer
@@ -15,7 +15,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
     {
         if(cString_GetFileName(mBaseObj.GetFileName()) != "02_07_power_pump_button.ent") return false;
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
         return cScript_GetGlobalReturnBool();
     }
     [nosave] bool mbVRRockerChecked=false;
@@ -33,7 +33,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
         if(!mbVRRockerY) return;
         mfVRRockerRefresh-=dt;if(mfVRRockerRefresh>0) return;mfVRRockerRefresh=0.5f;
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
         if(!cScript_GetGlobalReturnBool()) { VRRockerY_Remove(); return; }
         if(!cScript_RunGlobalFunc("VRROCKERY","","C")) return;
         iPhysicsBody@ main=mBaseObj.GetMainBody();
@@ -321,7 +321,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
     {
         if(mBaseObj.GetName()!="LaunchButton" || mBaseObj.GetMap().GetName()!="05_01_phi_inside")return true;
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
         if(!cScript_GetGlobalReturnBool())return true;
         cLuxMap@ map=mBaseObj.GetMap();
         if(!map.ScriptPrepare("bool VR_CanPressLaunchButton()") || !map.ScriptExecute())return false;
@@ -392,7 +392,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 				//Set up the new state!
 				// S26N: publish the actual authored moving body, not the static hit body.
 				cScript_SetGlobalReturnBool(false);
-				cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+				cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 				if(cScript_GetGlobalReturnBool() && mpMoveBody !is null)
 				{
 					cScript_RunGlobalFunc("VRMECH",mBaseObj.GetName(),"B");

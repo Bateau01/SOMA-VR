@@ -1,4 +1,4 @@
-#include "interfaces/Prop_Interface.hps"
+﻿#include "interfaces/Prop_Interface.hps"
 #include "base/Player_Types.hps"
 #include "helpers/helper_props.hps"
 #include "helpers/helper_modules.hps"
@@ -197,7 +197,7 @@ class cScrPropGrab : iScrProp, iScrProp_Interface
         else if(name=="SimulationSlot_Left_Chip") {tool="EnvironmentChip";slot="SimulationSlot_Left";}
         else return "";
         cScript_SetGlobalReturnBool(false);
-        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
         if(!cScript_GetGlobalReturnBool()) return "";
         cLuxMap@ map=cLux_GetCurrentMap();
         if(map is null || map.GetEntityByName(tool,eLuxEntityType_LastEnum,"") is null) return "";
@@ -214,7 +214,7 @@ class cScrPropGrab : iScrProp, iScrProp_Interface
         if(vrName=="security_chip_unformatted" || vrName=="brandon_corpse_1")
         {
             cScript_SetGlobalReturnBool(false);
-            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+            cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
             if(cScript_GetGlobalReturnBool())
             {
                 if(vrName=="security_chip_unformatted" && mBaseObj.GetInteractionDisabled()) return false;

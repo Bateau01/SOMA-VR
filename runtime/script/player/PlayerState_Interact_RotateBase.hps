@@ -1,4 +1,4 @@
-// H5756BR_VR_WHEEL_DIRECT_TAG
+﻿// H5756BR_VR_WHEEL_DIRECT_TAG
 // H5756AZ_VR_WHEEL_ANALOG_TAG
 // H5756BD_VR_LEVER_SIGNED_TAG
 #include "player/PlayerState_Interact.hps" 
@@ -10,7 +10,7 @@
 bool _HPL3VR_RuntimeActive_RotateBase()
 {
 	cScript_SetGlobalReturnBool(false);
-	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetRuntimeActive");
+	cScript_RunGlobalFunc("MenuHandler", "cScrMenuHandler", "HPL3VR_GetMotionInputActive");
 	return cScript_GetGlobalReturnBool();
 }
 

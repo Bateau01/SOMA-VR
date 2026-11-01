@@ -1,4 +1,4 @@
-#include "helpers/helper_vr_seat_hu.hps"
+﻿#include "helpers/helper_vr_seat_hu.hps"
 #include "interfaces/Map_Interface.hps"
 #include "base/AchievementHandler_Types.hps"
 #include "base/RichPresenceHandler_Types.hps"
@@ -1022,7 +1022,7 @@ class cScrMap : iScrMap
 		// but no such callback exists. Remove only this stale generic interaction
 		// hook in VR. The separate Pickup/Use/CanBeUsed callbacks still own the story.
 		cScript_SetGlobalReturnBool(false);
-		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+		cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
 		if(cScript_GetGlobalReturnBool()) Entity_SetPlayerInteractCallback("PowerCube_Inserted","",false);
 
 		MainMenu_SetBGPhase(eMainMenuPhase_2_4_To_3_3);

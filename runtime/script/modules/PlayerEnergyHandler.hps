@@ -1,4 +1,4 @@
-#include "interfaces/UserModule_Interface.hps"
+﻿#include "interfaces/UserModule_Interface.hps"
 #include "modules/ModuleInterfaces.hps"
 #include "helpers/helper_effects.hps"
 #include "helpers/helper_audio.hps"
@@ -22,7 +22,7 @@ const tString gsHealthRestoreNoTentacle = "Player/UI/flower_interact";
 bool _HPL3VR_HealingActive()
 {
     cScript_SetGlobalReturnBool(false);
-    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
     return cScript_GetGlobalReturnBool();
 }
 

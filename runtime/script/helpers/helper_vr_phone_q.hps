@@ -1,11 +1,11 @@
-#include "helpers/helper_vr_guidance_hr.hps"
+﻿#include "helpers/helper_vr_guidance_hr.hps"
 // Temporary story phone; separate retrieval and screen confirmation. No inventory entry.
 #include "helpers/helper_player.hps"
 #include "helper_imgui_cellphone.hps"
 bool VRPhoneQ_Active()
 {
     cScript_SetGlobalReturnBool(false);
-    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetRuntimeActive");
+    cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
     return cScript_GetGlobalReturnBool();
 }
 class cVRPhoneQ
