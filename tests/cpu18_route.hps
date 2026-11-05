@@ -1,0 +1,31 @@
+ uint cpu18Start=0,cpu18Log=0;int cpu18Region=-1,cpu18Leg=-1;bool cpu18Complete=false;
+ void Update(float dt){
+  if(cpu18Start==0)cpu18Start=cSystem_GetApplicationTime();
+  uint elapsed=cSystem_GetApplicationTime()-cpu18Start;
+  if(elapsed<65000 || cpu18Complete)return;
+  if(cLux_GetPlayer().GetCurrentStateId()!=ePlayerState_Normal)return;
+  int region=int((elapsed-65000)/40000);
+  if(region>2){cpu18Complete=true;LogNewLine("CPU18_ROUTE_COMPLETE "+elapsed);return;}
+  iCharacterBody@ body=cLux_GetPlayer().GetCharacterBody();
+  cVector3f anchor;
+  if(region==0)anchor=cVector3f(10.25f,132,18);
+  else if(region==1)anchor=cVector3f(21.2501f,130.376f,49.167f);
+  else anchor=cVector3f(4.25f,131.25f,68.75f);
+  uint local=(elapsed-65000)%40000;
+  if(region!=cpu18Region){cpu18Region=region;body.SetFeetPosition(anchor,false);LogNewLine("CPU18_SETUP_RELOCATION region "+region+" ms "+elapsed+" pos "+anchor);return;}
+  if(local<5000)return;
+  cVector3f p=body.GetFeetPosition(),target=anchor;
+  int leg=int((local-5000)/8000);
+  if(leg==0)target.x+=1.5f;
+  else if(leg==1)target.z+=1.5f;
+  else if(leg==2)target.x-=1.5f;
+  else target.z-=1.5f;
+  cVector3f delta=target-p;delta.y=0;float length=cMath_Sqrt(delta.x*delta.x+delta.z*delta.z);
+  if(elapsed-cpu18Log>=1000){cpu18Log=elapsed;LogNewLine("CPU18_ROUTE_POS ms "+elapsed+" region "+region+" leg "+leg+" pos "+p+" remaining "+length);}
+  float yaw=3.14159265f+0.65f*cMath_Sin(float(elapsed)*0.001f);
+  body.SetYaw(yaw);cLux_GetPlayer().GetCamera().SetYaw(yaw);
+  if(length<0.2f)return;
+  delta*=1.0f/length;
+  body.Move(eCharDir_Forward,cMath_Vector3Dot(delta,body.GetForward())*0.65f);
+  body.Move(eCharDir_Right,cMath_Vector3Dot(delta,body.GetRight())*0.65f);
+ }

@@ -118,7 +118,7 @@ assert section.index('s26gb_recall_cancel_unavailable()')<section.index('g_h5755
 assert 'h5748n_copy_tstring((void*)className,name,sizeof(name))' in n
 menu=(R/'runtime/script/modules/MenuHandler.hps').read_text()
 assert 'mvVRButtonMap={0,1,2,3,4,5,14}' in menu
-assert 'HPL3VR_Option("RECALL OMNI-TOOL",8)' in menu and 'if(mlVRComfortCategory==0) return 12;' in menu
+assert 'HPL3VR_Option("RECALL OMNI-TOOL",8)' in menu and 'if(mlVRComfortCategory==0) return 14;' in menu
 assert 'UNBIND RECALL' not in menu and 'HPL3VR_Option("CLEAR BINDING",2)' in menu
 assert 'i==6 ? 14 : i' in menu and '(v<14 && seen[v])' in menu
 results['integration']='PASS queue placement, long entity names, non-overlapping menu rows, legacy default/unassigned validation'

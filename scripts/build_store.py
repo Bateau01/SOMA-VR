@@ -6,6 +6,7 @@ from pathlib import Path
 import argparse,json,re,struct,subprocess,sys,shutil,hashlib
 R=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('--zig',required=True);p.add_argument('--roomscale-test',action='store_true');p.add_argument('--cpu-string-spans',action='store_true');p.add_argument('--cpu-near-types',action='store_true');p.add_argument('--cpu-optimisations',action='store_true');args=p.parse_args()
+subprocess.run([sys.executable,str(R/'scripts/build_logging_ji.py'),'--zig',args.zig],check=True)
 assert not (args.cpu_optimisations and args.roomscale_test)
 B=R/('build/store-cpu65' if args.cpu_optimisations else 'build/store-roomscale-test' if args.roomscale_test else 'build/store');B.mkdir(parents=True,exist_ok=True)
 (B/'result.json').unlink(missing_ok=True)

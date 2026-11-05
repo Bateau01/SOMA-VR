@@ -12,18 +12,27 @@ static i32 s26hr_terminal_sample(S26HRTerminalSample* sample,float* u,float* v,f
     }
     sample->u=*u;sample->v=*v;sample->p=*p;sample->r=r;
     sample->frame=frame;sample->generation=generation;sample->gui=gui;sample->valid=1;
+    /* Test the earliest bounded crossing before accepting the final sample.
+       A fast angled stroke can start/end beyond an edge but cross a widget. */
     float depth=*p<0?-*p:*p;
-    if(*u>=0&&*u<=1&&*v>=0&&*v<=1&&depth<=r+H576BP_SURFACE_CAPTURE_M)return 1;
-    if(!previous.valid||previous.gui!=gui||previous.generation!=generation||
-       (u32)(frame-previous.frame)>2u||previous.u<0||previous.u>1||previous.v<0||previous.v>1||
-       *u<0||*u>1||*v<0||*v>1)return 0;
-    float dp=*p-previous.p,du=*u-previous.u,dv=*v-previous.v,dr=r-previous.r;
-    if(dp*dp>(.15f*metric)*(.15f*metric)||du*du+dv*dv>.1225f||dr*dr>.0001f)return 0;
-    float side=previous.p>=0?1.0f:-1.0f;
-    float start=previous.p*side,end=*p*side,slab=r+H576BP_SURFACE_CAPTURE_M;
-    if(start<=slab||end>=slab||start-end<.00001f)return 0;
-    float t=(start-slab)/(start-end);
-    *u=previous.u+du*t;*v=previous.v+dv*t;
-    // Choose a point just inside the existing slab to avoid roundoff at equality.
-    *p=side*(slab-.00001f);sample->sweepSide=side;return 2;
+    if(previous.valid&&previous.gui==gui&&previous.generation==generation&&
+       (u32)(frame-previous.frame)==1u){
+        float dp=*p-previous.p,du=*u-previous.u,dv=*v-previous.v,dr=r-previous.r;
+        const H576BOTerminalSurface* S=&g_h576boTerminalSurface;
+        float uu=h10_dot(S->uSpan,S->uSpan),vv=h10_dot(S->vSpan,S->vSpan),uv=h10_dot(S->uSpan,S->vSpan);
+        /* Bound physical travel, not a percentage of differently-sized screens.
+           Affine screen coordinates make this relative to a moving handheld. */
+        float travel2=dp*dp+du*du*uu+dv*dv*vv+2*du*dv*uv;
+        float side=previous.p>=0?1.0f:-1.0f;
+        float start=previous.p*side,end=*p*side,slab=r+H576BP_SURFACE_CAPTURE_M;
+        if(h9_good(travel2,100)&&travel2>=0&&travel2<=(.15f*metric)*(.15f*metric)&&
+           dr*dr<=.0001f&&start>slab&&end<=slab&&start-end>.00001f){
+            float t=(start-slab)/(start-end),hitU=previous.u+du*t,hitV=previous.v+dv*t;
+            if(hitU>=0&&hitU<=1&&hitV>=0&&hitV<=1){
+                *u=hitU;*v=hitV;*p=side*(slab-.00001f);
+                sample->sweepSide=side;return 2;
+            }
+        }
+    }
+    return *u>=0&&*u<=1&&*v>=0&&*v<=1&&depth<=r+H576BP_SURFACE_CAPTURE_M?1:0;
 }

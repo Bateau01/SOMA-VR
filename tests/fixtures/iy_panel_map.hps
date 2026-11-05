@@ -1,0 +1,21 @@
+    void IYCheck(bool ok,const tString &in label){LogNewLine((ok?"HV_PASS|":"HV_FAIL|")+label);}
+    bool IYCommit(){cScript_SetGlobalReturnBool(false);cScript_RunGlobalFunc("PlayerToolHandler","","_Global_IYPanel");return cScript_GetGlobalReturnBool();}
+    void HVProbe(const tString &in timer){
+        Entity_SetActive("Elevator",true);Entity_SetActive("LiftExitPanel",true);Entity_SetActive("CathTool",true);
+        Entity_SetActive("LiftExitPanelToolArea",false);Button_SetDisabled("LiftExitPanel",false);Button_SetLocked("LiftExitPanel",false);
+        IYCheck(!IYCommit(),"arrival gate rejects early swipe");
+        Entity_SetActive("LiftExitPanelToolArea",true);Button_SetDisabled("LiftExitPanel",true);
+        IYCheck(!IYCommit(),"disabled panel rejects swipe");
+        Button_SetDisabled("LiftExitPanel",false);Entity_SetVarBool("LiftExitPanel","InUse",true);
+        IYCheck(!IYCommit(),"busy panel rejects swipe");
+        Entity_SetVarBool("LiftExitPanel","InUse",false);
+        IYCheck(IYCommit(),"eligible native panel transaction");
+        IYCheck(Entity_GetVarBool("LiftExitPanel","InUse"),"native panel busy flag begins");
+        IYCheck(!IYCommit(),"duplicate swipe rejected");
+        Map_AddTimer("IYFinish",3,"IYFinish");
+    }
+    void IYFinish(const tString &in timer){
+        IYCheck(!Entity_IsActive("LiftExitPanelToolArea"),"native completion closes use gate");
+        IYCheck(!IYCommit(),"completed panel rejects repeat");
+        LogNewLine("HV_DONE");cEngine_Exit();
+    }

@@ -10,6 +10,34 @@ enum eMovingButtonTimer
 
 class cScrPropMovingButton : iScrProp, iScrProp_Interface
 {
+    [nosave] bool mbVRHandContactChecked=false,mbVRHandContactAsset=false,mbVRHandContactRegistered=false;
+    [nosave] bool mbVRHandContactMotion=false;
+    [nosave] float mfVRHandContactRefresh=0;
+    void VRHandContact_Remove()
+    {
+        if(!mbVRHandContactRegistered)return;
+        mbVRHandContactRegistered=false;
+        if(mpMoveBody !is null)cScript_RunGlobalFunc("VRHANDCONTACT",""+mpMoveBody.GetUniqueID(),"U");
+    }
+    void VRHandContact_Update(float dt)
+    {
+        if(!mbVRHandContactChecked){
+            mbVRHandContactChecked=true;
+            tString file=cString_GetFileName(mBaseObj.GetFileName());
+            mbVRHandContactAsset=(file=="substation_powerpanel_flipbutton.ent" || file=="03_03_elevator_fuse_box_rod.ent");
+        }
+        if(!mbVRHandContactAsset || mpMoveBody is null)return;
+        mfVRHandContactRefresh-=dt;if(mfVRHandContactRefresh>0)return;mfVRHandContactRefresh=.5f;
+        cScript_SetGlobalReturnBool(false);
+        cScript_RunGlobalFunc("MenuHandler","cScrMenuHandler","HPL3VR_GetMotionInputActive");
+        mbVRHandContactMotion=cScript_GetGlobalReturnBool();
+        if(!mbVRHandContactMotion){VRHandContact_Remove();return;}
+        if(!cScript_RunGlobalFunc("VRROCKERY","","C"))return;
+        iPhysicsBody@ main=mBaseObj.GetMainBody();
+        bool captured=cScript_RunGlobalFunc("VRROCKERY","","D");
+        if(main is null || !captured)return;
+        mbVRHandContactRegistered=cScript_RunGlobalFunc("VRHANDCONTACT",""+mpMoveBody.GetUniqueID(),"S");
+    }
     // S26FB: only the authored pump handle is a VR interaction target.
     bool VRPowerPump()
     {
@@ -181,6 +209,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 	
 	void OnUpdate(float afTimeStep)
 	{
+        VRHandContact_Update(afTimeStep);
         VRRockerY_Update(afTimeStep);
 		if(mBaseObj.IsInteractedWith()) return;
 			
@@ -232,6 +261,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 	
 	void BeforeEntityDestruction()
 	{
+        VRHandContact_Remove();
         VRRockerY_Remove();
 	}
 		
@@ -245,6 +275,8 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 	
 	bool OnUpdateAutoSleep()
 	{
+        VRHandContact_Update(.5f);
+        if(mbVRHandContactAsset && mbVRHandContactMotion && !mbVRHandContactRegistered)return false;
 		if(mbSwitchedOn && mfReturnToOffTime>0) return false;
 		
 		if(mbSwitchedOn && mfStateAmount<1) return false;
@@ -331,6 +363,7 @@ class cScrPropMovingButton : iScrProp, iScrProp_Interface
 	{
         if(!VR_PhiLaunchAllowed())return false;
         if(VRPowerPump() && (apBody is null || apBody !is mpMoveBody)) return false;
+        VRHandContact_Update(0.5f);
         VRRockerY_Update(0.5f); // Sleeping props must register before their first interaction.
 		if(mBaseObj.Timer_Exists(eMovingButtonTimer_InteractWait)) return false;
 		if(mbDisabled) return false;

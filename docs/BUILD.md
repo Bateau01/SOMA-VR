@@ -1,3 +1,7 @@
+# Native-input experimental build
+
+Build Steam with `scripts/build_cpu_experimental.py --zig <zig.exe>` and Epic/GOG with `scripts/build_store.py --zig <zig.exe> --cpu-optimisations`. Stage with `scripts/package_native_input.py`, compile `installer-iy/source/Build.ps1`, validate with `tests/test_package_native_input.py`, and export using `scripts/export_native_input.py`. Never package `build/smaa-test`; it contains private test instrumentation.
+
 # Building the current native DLL
 
 The verified build requires Windows, Python 3 (tested with 3.12), and Zig 0.13.0. Use the Zig executable directly; the build does not install anything into SOMA.
@@ -5,22 +9,22 @@ The verified build requires Windows, Python 3 (tested with 3.12), and Zig 0.13.0
 From the repository root:
 
 ```powershell
-python -X utf8 scripts/build.py --zig "C:\Tools\zig\zig.exe" --test
+python -X utf8 scripts/build_smaa_test_iu.py --production --cpu-gui-prewarm --cpu-texture-release --cpu-render-jobs --cpu-string-spans --cpu-near-types --cpu-texture-storage --cpu-texture-latc --cpu-texture-min-bytes 65536 --zig "C:\Tools\zig\zig.exe" --test
 ```
 
-Output: `build/hpl3vr.dll` (1.0.8-S26HQ). SHA256:
+Output: `build/native-runtime/hpl3vr.dll` (1.0.9-S26CPU16-Experimental). SHA256:
 
-`ed8b837e47f2fb46ac604e3c3ef536bf18ec0580b49006eed916abaa3388ad31`
+`e0f73656dfc767ba7975f761aba49230fddf4f820f5a72eea808242540b32f46`
 
 Build the separately guarded Epic/GOG DLL with:
 
 ```powershell
-python -X utf8 scripts/build_store.py --zig "C:\Tools\zig\zig.exe"
+python -X utf8 scripts/build_store.py --cpu-string-spans --cpu-near-types --zig "C:\Tools\zig\zig.exe"
 ```
 
 Output: `build/store/hpl3vr-store.dll`. SHA256:
 
-`2d7c94d8a1107f33086423c2e02ccb9560eccdfd1b802ccae3d20584d58d0eee`
+`5056373d84b674ee02a54577b86f9fcf8b453710fc6ff045ed108cfec56eddbe`
 
 The store build generates a mapped source copy using `reference/store-profile.json`, verifies signatures, and patches the frozen-base operands for that exact engine layout. Do not mix the DLLs manually; the normal launcher selects them by executable identity.
 

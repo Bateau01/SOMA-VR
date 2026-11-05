@@ -8,6 +8,7 @@ typedef void (__attribute__((ms_abi)) *S26ANEnd)(void*);
 typedef void (__attribute__((ms_abi)) *S26ANMouse)(void*,void*,const float*,const float*);
 typedef u64 (__attribute__((ms_abi)) *S26ANLegacyMouse)(void*);
 static S26ANEnd o_s26anEnd;
+static S26ANEnd o_s26jbGuiDestroy;
 static S26ANMouse o_s26anMouse;
 static S26ANLegacyMouse o_s26anLegacyMouse;
 static const void* g_s26anTerminalSet;
@@ -17,6 +18,21 @@ static i32 g_s26anCursorTried,g_s26anCursorReady;
 static const void* g_s26bvGui[128];
 static const void* g_s26bvSet[128];
 static u32 g_s26bvGuiCount;
+// Retire by identity BEFORE the native destructor frees anything. No stale
+// receiver or backing-set dereference; a reused address starts unregistered.
+static void s26jb_forget_terminal(const void* gui){
+    for(u32 i=0;i<g_s26bvGuiCount;){
+        if(g_s26bvGui[i]!=gui){++i;continue;}
+        --g_s26bvGuiCount;
+        g_s26bvGui[i]=g_s26bvGui[g_s26bvGuiCount];
+        g_s26bvSet[i]=g_s26bvSet[g_s26bvGuiCount];
+        g_s26bvGui[g_s26bvGuiCount]=0;g_s26bvSet[g_s26bvGuiCount]=0;
+    }
+}
+static void __attribute__((ms_abi)) s26jb_gui_destroy(void* self){
+    s26jb_forget_terminal(self);
+    if(o_s26jbGuiDestroy)o_s26jbGuiDestroy(self);
+}
 static void s26bv_register_terminal(void* gui){
     if(!gui || !h20_mem_readable((u8*)gui+0x18,8))return;
     // A live GUI may replace its backing set after reopening/rebuilding.
@@ -24,6 +40,14 @@ static void s26bv_register_terminal(void* gui){
     for(u32 i=0;i<g_s26bvGuiCount;i++)if(g_s26bvGui[i]==gui){g_s26bvSet[i]=*(const void**)((u8*)gui+0x18);return;}
     if(g_s26bvGuiCount>=128u)return;
     u32 i=g_s26bvGuiCount++;g_s26bvGui[i]=gui;g_s26bvSet[i]=*(const void**)((u8*)gui+0x18);
+}
+// Called with the live Begin receiver after native Begin. Only refresh an
+// existing registration; ordinary menu GUIs must never become terminals.
+static void s26jb_refresh_terminal_set(void* self){
+    if(!g_s26anCursorReady||g_h576bfMapTransitionActive)return;
+    for(u32 i=0;i<g_s26bvGuiCount;i++)if(g_s26bvGui[i]==self){
+        s26bv_register_terminal(self);return;
+    }
 }
 static i32 s26bv_cursor_owned(const void* self,i32 legacy){
     if(ni_native_input())return 0;
@@ -51,15 +75,17 @@ static u64 __attribute__((ms_abi)) s26an_legacy_mouse(void* self){
 static void s26an_cursor_install(void){
     if(g_s26anCursorTried)return;g_s26anCursorTried=1;
     u8* base=(u8*)ext_GetModuleHandleA(0);if(!base)return;
-    const u32 offsets[3]={0x30e3b0,0x30e620,0x217000};
-    const u8 sig[3][12]={
+    const u32 offsets[4]={0x30e3b0,0x30e620,0x217000,0x309d20};
+    const u8 sig[4][12]={
         {0x48,0x8b,0xc4,0x41,0x54,0x48,0x81,0xec,0xd0,0,0,0},
         {0x48,0x8b,0xc4,0x41,0x54,0x41,0x55,0x41,0x56,0x48,0x81,0xec},
-        {0x4c,0x8b,0xdc,0x41,0x55,0x48,0x81,0xec,0x30,0x01,0,0}};
-    for(i32 j=0;j<3;++j){if(!h20_mem_readable(base+offsets[j],12))return;for(i32 i=0;i<12;++i)if(base[offsets[j]+i]!=sig[j][i])return;}
+        {0x4c,0x8b,0xdc,0x41,0x55,0x48,0x81,0xec,0x30,0x01,0,0},
+        {0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x6c,0x24,0x18,0x56,0x57}};
+    for(i32 j=0;j<4;++j){if(!h20_mem_readable(base+offsets[j],12))return;for(i32 i=0;i<12;++i)if(base[offsets[j]+i]!=sig[j][i])return;}
     /* Verify the public cImGui::GetSet getter used at a live Begin callback. */
     const u8 getter[5]={0x48,0x8b,0x41,0x18,0xc3};
     for(i32 i=0;i<5;++i)if(base[0x3b1330+i]!=getter[i])return;
+    if(ext_MH_CreateHook(base+offsets[3],(void*)s26jb_gui_destroy,(void**)&o_s26jbGuiDestroy)||ext_MH_EnableHook(base+offsets[3]))return;
     if(ext_MH_CreateHook(base+offsets[0],(void*)s26an_gui_end,(void**)&o_s26anEnd)||ext_MH_EnableHook(base+offsets[0]))return;
     if(ext_MH_CreateHook(base+offsets[1],(void*)s26an_gui_mouse,(void**)&o_s26anMouse)||ext_MH_EnableHook(base+offsets[1]))return;
     if(ext_MH_CreateHook(base+offsets[2],(void*)s26an_legacy_mouse,(void**)&o_s26anLegacyMouse)||ext_MH_EnableHook(base+offsets[2]))return;

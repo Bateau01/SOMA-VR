@@ -146,12 +146,36 @@ class cScrMap : iScrMap
 {
     // S26IO: permission for unrelated physical world controls only.
     // Native exit callbacks, GUI ownership, B/distance exit and pickups are unchanged.
+    bool VR_CanUseHeldItemsFromTerminal(const tString &in asEntityName)
+    {
+        // These walk-up terminals retain native item permission and callbacks.
+        // In the lab a running Brandon simulation remains exclusive.
+        return VR_CanUseWorldControlsFromTerminal(asEntityName);
+    }
     bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)
     {
         return asEntityName=="SecurityOfficeTerminal";
     }
 
- void Update(float dt){EnsureVRTraversalIA();mVRTraversalHY.Update(dt);}
+ void Update(float dt){EnsureVRTraversalIA();mVRTraversalHY.Update(dt);VR_UpdateEnvRetrievalJB(dt);}
+
+ [nosave] float mfVREnvRetrievalPollJB=0;
+ void VR_UpdateEnvRetrievalJB(float dt)
+ {
+     mfVREnvRetrievalPollJB-=dt;if(mfVREnvRetrievalPollJB>0)return;
+     mfVREnvRetrievalPollJB=.25f;
+     // Area 335544625 is a non-solid retrieval trigger, recessed behind the
+     // clamps. Present its accessible face in front of them in motion VR.
+     // Preserve the native active flag, dimensions, callback and rotation.
+     iLuxEntity@ area=Map_GetEntity("Area_RetrieveBrokenChip");if(area is null)return;
+     bool vr=_HPL3VR_RuntimeActive_ThetaTunnelsAT();
+     cMatrixf pose=area.GetMatrix();cVector3f at=pose.GetTranslation();
+     float z=vr?-98.1352f:-98.2252f;
+     if(cMath_Abs(at.x-2.20666f)>.01f || cMath_Abs(at.y-4.85354f)>.01f)return;
+     // Absolute authored depth prevents repeated offsets after save/load or
+     // switching input modes. No physical prop or hand collider is relocated.
+     if(cMath_Abs(at.z-z)>.0001f){at.z=z;pose.SetTranslation(at);area.SetMatrix(pose);}
+ }
 
  [nosave] cVRTraversalGuidesHY mVRTraversalHY;
 

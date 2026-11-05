@@ -11,6 +11,9 @@ code=r'''
 using i32=int;using u32=unsigned;using u8=unsigned char;
 #define H576BP_SURFACE_CAPTURE_M .012f
 #define H576BO_FRONT_RELEASE_SKIN_M .024f
+struct H576BOTerminalSurface{float uSpan[3],vSpan[3];};
+H576BOTerminalSurface g_h576boTerminalSurface={{1,0,0},{0,1,0}};
+float h10_dot(const float*a,const float*b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
 struct S26HRTerminalSample{float u,v,p,r;u32 frame,generation;const void*gui;u8 valid;float sweepSide;};
 int h9_good(float v,float lim){return std::isfinite(v)&&fabsf(v)<lim;}
 int checks;

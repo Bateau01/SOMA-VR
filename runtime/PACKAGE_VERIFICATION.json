@@ -1,4 +1,4 @@
 {
-  "version": "1.1.0-S26JA",
-  "status": "Experimental native-input candidate; see separate TESTING.md for validation limits"
+  "version": "1.1.1-S26JI",
+  "status": "Interaction testing candidate; see TESTING.md for passed checks and unresolved reports"
 }

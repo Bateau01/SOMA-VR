@@ -2,8 +2,8 @@
 from pathlib import Path
 import json,subprocess,struct,ctypes,argparse
 R=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--zig',required=True);p.add_argument('--steam',required=True);p.add_argument('--store',required=True);a=p.parse_args()
-B=R/'build/store';s=(B/'source/s26n.c').read_text();start=s.index('static i32 s26ef_store_matches');end=s.index('\nu32 __attribute__((ms_abi)) s6_h5748n_load_thread_wrapper',start)
+p=argparse.ArgumentParser();p.add_argument('--zig',required=True);p.add_argument('--steam',required=True);p.add_argument('--store',required=True);p.add_argument('--build',default='build/store');a=p.parse_args()
+B=R/a.build;s=(B/'source/s26n.c').read_text();start=s.index('static i32 s26ef_store_matches');end=s.index('\nu32 __attribute__((ms_abi)) s6_h5748n_load_thread_wrapper',start)
 c='typedef unsigned char u8;typedef unsigned int u32;typedef int i32;static void* image;static void* ext_GetModuleHandleA(int x){return image;}\n'+s[start:end]+'\n__declspec(dllexport) int check(void* p){image=p;return s26ef_store_matches();}\n'
 f=B/'guard_test.c';f.write_text(c);dll=B/'guard_test.dll'
 subprocess.run([a.zig,'cc','-shared','-O2',str(f),'-o',str(dll)],check=True)

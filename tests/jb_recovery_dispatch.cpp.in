@@ -1,0 +1,47 @@
+#include <initializer_list>
+
+#include <cmath>
+#include <cstring>
+#include <cstdio>
+#include <cstdlib>
+using i32=int;using u32=unsigned;using u8=unsigned char;
+#define zero_bytes(p,n) memset(p,0,n)
+#define C(x) do{checks++;if(!(x)){printf("FAIL %d\n",__LINE__);exit(1);}}while(0)
+static int checks,moves,queries,blocked,mode,paused,tracked=1,normal=1;
+static float roots[2][16],g_h526Target[2][16],g_h513SafeHand[2][16],g_h511RootSafeHand[2][16];
+static const void* g_h34HandNewton[2]={(void*)1,(void*)2};static const void*g_h14NewtonWorld=(void*)3;
+static int g_lastSyncResult,g_s26CutsceneHandsHidden,g_h576bfMapTransitionActive,g_h526TargetValid[2]={1,1},g_h532ArmState[2]={2,2},g_h532Dormant[2],g_h526CollisionDisabled[2],g_h25PendingValid[2],g_h25AttemptBody[2],g_h5755haEdgeNativeActive[2],g_h484CurtainAnchorValid[2],g_h576avThetaPendingHand=-1,g_s26xPhonePending,g_s26hdLaserHand=-1,g_h30NativeMouseDown,g_h30NativeUseHand=-1,g_h550ReleaseIgnoreTicks[2],g_s26bbWorldScalePercent,g_h5710ManualRebasePending,g_h545Pending[2],g_h548GestureWarmupRootLock[2],g_h14GripBody[2],g_h528PrevTargetValid[2],g_h34PrevTargetValid[2],g_h34FilterValid[2],g_h511PrevRawValid[2],g_h513SafeValid[2];
+struct Pull{void*body;};static Pull g_s26hdPull[2];static u32 g_h14PhysicsSteps,g_h5755deContactVisualActive[2];
+static int ni_native_input(){return mode;}static int h5748_is_stump(int){return 0;}static int h5754h_pause_active(){return paused;}static int visual_pose_valid(int){return tracked;}
+static int h5755ha_exact_normal_state_now(){return normal;}static int h5755gw_exact_grab_state_now(){return 0;}
+static int h9_good(float x,float b){return std::isfinite(x)&&fabsf(x)<b;}static float h10_len3(float a,float b,float c){return sqrtf(a*a+b*b+c*c);}static float h5755ea_world_units_per_meter(){return 1;}
+static void h10_copy_f(float*d,const float*s,int n){memcpy(d,s,n*4);}
+static int h536_sync_managed_transform(int h,const float*m,const char*){memcpy(roots[h],m,64);moves++;return 1;}
+static void matrix(const void*b,float*m){if((size_t)b<3)memcpy(m,roots[(size_t)b-1],64);else{memset(m,0,64);m[0]=m[5]=m[10]=m[15]=1;m[12]=.4f;}}static auto p_h14GetMatrix=matrix;
+static const void* collision(const void*){return (void*)4;}static auto p_h14GetCollision=collision;
+static void* ud(const void*){return nullptr;}static auto p_h14GetUserData=ud;
+static void velocity(const void*,const float*){}static auto p_h14SetVelocity=velocity,p_h14SetOmega=velocity;
+static int h530_self_body_kind(const void*){return 0;}static int h540_nonphysical_area_body(const void*){return 0;}
+static int h20_mem_readable(void*,u32){return 0;}static void h5748n_copy_tstring(void*,char*,size_t){}
+static void ext_Log(const char*,...){}static void*ext_GetModuleHandleA(const char*){return nullptr;}static void*ext_GetProcAddress(void*,const char*){return nullptr;}
+static void h14_rigid_inverse(const float*,float*){}static void h14_transform_point(const float*,const float*,float*){}
+static void aabb(const void*,const float*,const float*,void(__attribute__((ms_abi))*cb)(const void*,void*),void*u){queries++;if(blocked)cb((void*)5,u);}static auto p_h14WorldAABB=aabb;
+@IMPLEMENTATION@
+static int __attribute__((ms_abi)) cast(const void*,const float*,const float*,const void*,float*f,void*,JBRecoveryFilter,JBRecoveryHit*,int,int){*f=1.2f;return 0;}
+static void __attribute__((ms_abi)) bounds(const void*,const float*m,float*lo,float*hi){for(int a=0;a<3;a++){lo[a]=m[12+a]-.1f;hi[a]=m[12+a]+.1f;}}
+static int __attribute__((ms_abi)) faces(const void*,const float*,const float*,const float**,int*,int*,int*,int,int*){return -1;}
+int main(){
+ for(int hz: {60,120})for(int hand=0;hand<2;hand++)for(int scenario=0;scenario<14;scenario++){
+  memset(jbRecoveryWatch,0,sizeof(jbRecoveryWatch));memset(jbRecoverySampleStep,0,sizeof(jbRecoverySampleStep));memset(roots,0,sizeof(roots));memset(g_h526Target,0,sizeof(g_h526Target));
+  for(int h=0;h<2;h++)for(int k=0;k<16;k++)roots[h][k]=g_h526Target[h][k]=(k%5==0?1.f:0.f);
+  moves=queries=0;blocked=scenario==1;g_h14GripBody[hand]=scenario==2;paused=scenario==3;tracked=scenario!=4;mode=scenario==5;normal=scenario!=6;
+  g_h25PendingValid[hand]=scenario==7;g_h484CurtainAnchorValid[hand]=scenario==8;g_h576bfMapTransitionActive=scenario==9;g_s26hdPull[hand].body=scenario==10?(void*)8:nullptr;g_h5710ManualRebasePending=scenario==11;g_h545Pending[hand]=scenario==12;g_h548GestureWarmupRootLock[hand]=scenario==13;
+  jbRecoveryCast=cast;jbRecoveryBounds=bounds;jbRecoveryFaces=faces;
+  for(int step=1;step<=hz*2;step++){
+   g_h14PhysicsSteps=step;g_h526Target[hand][12]=.35f+.08f*step/hz;jb_recovery_tick(1.f/hz);
+  }
+  C(moves==(scenario==0?1:0));C(g_h14GripBody[hand]==(scenario==2));if(scenario>=2)C(queries==0);
+  g_h14GripBody[hand]=g_h25PendingValid[hand]=g_h484CurtainAnchorValid[hand]=g_h545Pending[hand]=g_h548GestureWarmupRootLock[hand]=0;g_s26hdPull[hand].body=nullptr;
+ }
+ printf("PASS %d recovery dispatch guards; mocks, not native geometry proof\n",checks);
+}

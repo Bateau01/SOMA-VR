@@ -41,7 +41,7 @@ int main(){
   // Both endpoints outside the GUI cannot activate a button.
   p={};armed=0;s26hr_phone_sample(-.07f,.065f,z,r,&armed,&p,1);
   CHECK(!s26hr_phone_sample(-.07f,-.01f,z,r,&armed,&p,2));
-  for(int hz:{60,120})for(float speed:{.5f,1.f,3.f}){
+  for(int hz:{60,120})for(float speed:{.5f,1.f,3.f,6.f}){
    p={};armed=0;int hits=0;
    for(u32 step=1;step<=30;step++){
     float y=.065f-speed*(step-1)/hz;

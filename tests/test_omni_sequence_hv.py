@@ -13,14 +13,19 @@ try:
  for p in (R/'runtime/entities/soma_vr/guidance').rglob('*'):
   if p.is_file():put(G/'entities/soma_vr/guidance'/p.relative_to(R/'runtime/entities/soma_vr/guidance'),p.read_bytes())
  menu=(G/'script/modules/MenuHandler.hps').read_text(encoding='utf-8-sig');menu=menu.replace('void GuiMainMenuSelection()','bool mbHRTestStarted=false;\n void GuiMainMenuSelection()',1);needle='void GuiMainMenuSelection()\n\t{';assert needle in menu
+ menu=menu.replace('cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive && !cScript_RunGlobalFunc("VRINPUT","","NATIVE"));','cScript_SetGlobalReturnBool(true);')
  menu=menu.replace('cScript_SetGlobalReturnBool(gbHPL3VRRuntimeActive);','cScript_SetGlobalReturnBool(true);')
+ if os.environ.get('IY_GUIDES'):
+  menu=menu.replace('    bool HPL3VR_WelcomePending()', (R/'tests/fixtures/iy_menu.hps').read_text()+'\n    bool HPL3VR_WelcomePending()',1)
  menu=menu.replace(needle,needle+'\n if(!mbHRTestStarted){mbHRTestStarted=true;ClickNewGame();}',1).replace('mpConfig.GetBool("Main", "ShowPreMenu", true)','false');put(G/'script/modules/MenuHandler.hps',menu)
  defaults=(G/'config/default_user_settings.cfg').read_text()+'\n<Screen Width="1280" Height="720" FullScreen="false" Vsync="false" RefreshRate="60" />\n<Engine LimitFPS="false" SleepWhenOutOfFocus="false" />\n<Main ShowMenu="false" FirstGameStart="false" SaveConfig="false" />\n';put(G/'config/hr_story_user.cfg',defaults)
  docs=Path(subprocess.run(['powershell','-NoProfile','-Command',"[Environment]::GetFolderPath('MyDocuments')"],capture_output=True,text=True).stdout.strip())
  for mapname in sys.argv[2:] or ['01_01_upsilon_awake']:
   matches=list((R/'runtime/maps').rglob(mapname+'.hps'));p=matches[0] if matches else next((G/'maps').rglob(mapname+'.hps'));rel=p.relative_to(R/'runtime') if matches else p.relative_to(G);source=p.read_text(encoding='utf-8-sig')
-  custom=R/'tests/fixtures/omni_hv_map.hps'
-  probe=custom.read_text()
+  custom=R/('tests/fixtures/omni_iy_map.hps' if os.environ.get('IY_GUIDES') else 'tests/fixtures/omni_hv_map.hps')
+  probe=custom.read_text().replace('// Native acquisition', 'cScript_RunGlobalFunc("MenuHandler","","_Global_IYMenu");\n        // Native acquisition')
+  if os.environ.get('IY_STAGE'):probe='void HVProbe(const tString &in timer){cScript_RunGlobalFunc("PlayerToolHandler","","_Global_IYStages");LogNewLine("HV_DONE");cEngine_Exit();}'
+  if os.environ.get('IY_PANEL'):probe=(R/'tests/fixtures/iy_panel_map.hps').read_text()
   if os.environ.get('HV_AUDIT'):
    routes=[x for x in json.loads((R/'docs/omni-guide-routes-hv.json').read_text()) if x['map']==mapname]
    calls=[]
@@ -41,10 +46,12 @@ try:
   block=handler[a:b].replace('cScript_RunGlobalFunc("VRGUIDE","","ACTIVE")','true').replace('cScript_RunGlobalFunc("VROMNIHELD",tool.msPickedEntityName,"Q")','mbHVHeld')
   block=block.replace('if(slot !is null && slot.IsActive()', 'LogNewLine("HV_SLOT|name="+slotName+"|map="+map.GetName()+"|found="+(slot !is null));if(slot !is null)LogNewLine("HV_SLOT_STATE|active="+slot.IsActive()+"|tag="+slot.GetVarBool("IsOmniSlot"));if(slot !is null && slot.IsActive()').replace('bool allowed=false;', 'bool allowed=false;LogNewLine("HV_NAME|"+slotName+"|runtime="+_HPL3VR_RuntimeActive_ToolHandler());').replace('if(target!="") for', 'LogNewLine("HV_TARGET|"+slotName+"->"+target);if(target!="") for').replace('cScript_SetGlobalReturnBool(allowed);','LogNewLine("HV_ALLOWED|"+allowed);cScript_SetGlobalReturnBool(allowed);')
   handler=handler[:a]+block+handler[b:]
+  if os.environ.get('IY_PANEL'):handler=handler.replace('    void _Global_VRCanGuideOmniSlot()', (R/'tests/fixtures/iy_panel_handler.hps').read_text()+'\n    void _Global_VRCanGuideOmniSlot()',1)
+  if os.environ.get('IY_STAGE'):handler=handler.replace('    void _Global_VRCanGuideOmniSlot()', (R/'tests/fixtures/iy_stages.hps').read_text()+'\n    void _Global_VRCanGuideOmniSlot()',1)
   handler=handler.replace('    void _Global_VRCanGuideOmniSlot()', (R/'tests/fixtures/omni_hv_handler.hps').read_text()+(R/'tests/fixtures/omni_hv_audit.hps').read_text()+'\n    void _Global_VRCanGuideOmniSlot()',1)
   handler=handler.replace('cScript_RunGlobalFunc("VROMNIHELD",pPhysicalOmni.msPickedEntityName,"Q")','mbHVHeld')
   put(G/'script/modules/PlayerToolHandler.hps',handler)
-  slot=(R/'runtime/script/custom_depth/prop_omnitool_slot.hps').read_text().replace('cScript_RunGlobalFunc("VRGUIDE","","ACTIVE")','true')
+  slot=(R/'runtime/script/custom_depth/prop_omnitool_slot.hps').read_text(encoding='utf-8-sig').replace('cScript_RunGlobalFunc("VRGUIDE","","ACTIVE")','true')
   slot=slot.replace('    void VR_UpdateGuide(float dt)', (R/'tests/fixtures/omni_hv_slot.hps').read_text()+'\n    void VR_UpdateGuide(float dt)',1)
   a=slot.index('    void VR_UpdateGuide(float dt)');b=slot.index('    // Read-only bridge',a)
   block=slot[a:b]
@@ -56,7 +63,7 @@ try:
   proc=subprocess.Popen([str(G/'Soma.exe'),'-user','HRStory','-cfg','config/hr_story_init.cfg'],cwd=G,startupinfo=si)
   try:rc=proc.wait(timeout=90)
   except subprocess.TimeoutExpired:proc.terminate();rc=proc.wait(timeout=10)
-  log=(docs/'My Games/Soma/SOMA_VR_HR_Story/hpl.log').read_text(errors='replace');out=R/'docs/v109-evidence';(out/(('baseline_' if os.environ.get('HV_BASELINE') else ('store_' if os.environ.get('HV_NATIVE_EXE') else ''))+('audit_' if os.environ.get('HV_AUDIT') else 'omni_')+mapname+'_hv.log')).write_text(log)
+  log=(docs/'My Games/Soma/SOMA_VR_HR_Story/hpl.log').read_text(errors='replace');out=R/('audit/iy-native' if os.environ.get('IY_GUIDES') else 'docs/v109-evidence');out.mkdir(parents=True,exist_ok=True);(out/(('baseline_' if os.environ.get('HV_BASELINE') else ('store_' if os.environ.get('HV_NATIVE_EXE') else ''))+('audit_' if os.environ.get('HV_AUDIT') else 'omni_')+mapname+'_hv.log')).write_text(log)
   ok='HV_DONE' in log and 'HV_FAIL' not in log and ' : ERR ' not in log and 'FATAL ERROR' not in log
   lines=[x for x in log.splitlines() if ('HV_' in x and 'HV_REJECT' not in x) or ' : ERR ' in x or 'FATAL ERROR' in x]
   result={'map':mapname,'passed':ok,'exit':rc,'scope':__doc__,'lines':lines};results.append(result);print(json.dumps(result),flush=True)

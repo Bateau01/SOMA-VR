@@ -6,6 +6,7 @@ p=argparse.ArgumentParser();p.add_argument('--zig',required=True);p.add_argument
 for name in ('cpu-gui-prewarm','cpu-texture-release','cpu-render-jobs','cpu-work-profile','cpu-string-spans','cpu-near-types','cpu-texture-storage','cpu-texture-latc','cpu-string-oracle','cpu-streaming-optimisations','cpu-hand-mesh','cpu-leaf-filter','cpu-held-query'):p.add_argument('--'+name,action='store_true')
 p.add_argument('--cpu-texture-min-bytes',type=int,choices=(0,65536,2097152),default=2097152)
 args=p.parse_args()
+subprocess.run([sys.executable,str(R/'scripts/build_logging_ji.py'),'--zig',args.zig],check=True)
 if args.production and args.icon_capture:p.error('icon capture is private-only')
 if args.cpu_leaf_filter and not args.cpu_hand_mesh:p.error('leaf filter requires verified native job ownership')
 if args.production and (args.cpu_work_profile or args.cpu_string_oracle):p.error('observation is isolated-only')

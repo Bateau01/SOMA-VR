@@ -219,6 +219,23 @@ class cScrPlayerState_Interact_Terminal : iScrPlayerState_Interact, iScrPlayerSt
         }
         mBaseObj.mpPlayer.ChangeState(mlPreviousState);
     }
+    bool VR_HeldItemUseAllowed()
+    {
+        if(cLux_GetPlayer().GetCurrentStateId()!=ePlayerState_Terminal || mlPreviousState!=ePlayerState_Normal)return false;
+        cLuxMap@ map=cLux_GetCurrentMap();cLuxProp@ terminal=cLux_ID_Prop(mPropID);
+        if(map is null || terminal is null)return false;
+        // Resolve current script ownership on demand, including restored states.
+        if(msLeaveCallback=="" || !map.ScriptMethodExists("void "+msLeaveCallback+"(const tString &in asEntityName)"))return true;
+        tString signature="bool VR_CanUseHeldItemsFromTerminal(const tString &in asEntityName)";
+        if(!map.ScriptMethodExists(signature) || !map.ScriptPrepare(signature))return false;
+        tString name=terminal.GetName();map.SetArgString(0,name);
+        return map.ScriptExecute() && map.GetReturnBool();
+    }
+    void _Global_VRQueryHeldItemUse()
+    {
+        // No terminal exit, GUI mutation, item callback or persistent admission.
+        cScript_RunGlobalFunc("VRKEYTERM","",VR_HeldItemUseAllowed() ? "Y" : "N");
+    }
     bool VR_WorldControlsAllowed()
     {
         if(mlPreviousState!=ePlayerState_Normal)return false;

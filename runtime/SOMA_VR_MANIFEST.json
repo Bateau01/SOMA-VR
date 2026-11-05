@@ -1,9 +1,13 @@
 {
-  "version": "1.1.0-S26JA",
+  "version": "1.1.1-S26JI",
   "files": {
     "Check-SOMA-VR-Compatibility.cmd": {
       "sha256": "1c9186797da4dd711fd91b1f487fb2647ddbf05f172a284b727be2d13983833b",
       "bytes": 115
+    },
+    "Collect-SOMA-VR-Logs.cmd": {
+      "sha256": "b65b5a5dc3697f2ec1a87abcbd1a5366a2fabf6bed70b824191c2f268a2a6dae",
+      "bytes": 109
     },
     "core/shaders/hpsl/deferred_base_vtx.hpsl": {
       "sha256": "804b00786cef856fad78666d2973a94f0adc3d6396daaa14fdb898a29e51d18d",
@@ -374,12 +378,12 @@
       "bytes": 22369776
     },
     "hpl3vr-store.dll": {
-      "sha256": "a537c765aa7c43c91b2aece0e511040e756d972f6a703aad4beeb7831080f841",
-      "bytes": 2708480
+      "sha256": "28f0c6f255b537857c64e7e5f81b9f401144c30adcdefb64f67c7f686ab63d97",
+      "bytes": 2733056
     },
     "hpl3vr.dll": {
-      "sha256": "15ac38ac701610ae6e64ba544203d276047cf0417e1346b6862d13267190c07c",
-      "bytes": 2696192
+      "sha256": "f209580ea5e038f67a8bd9eeda0f75df17827a81cb7c719ff288b920c66a23cc",
+      "bytes": 2720256
     },
     "hpl3vr_inject.exe": {
       "sha256": "fe229ea4a43630c87bef51d41a0b274c260882ccd7b3e5b529b7951041e5f11f",
@@ -398,8 +402,8 @@
       "bytes": 120
     },
     "Launch-SOMA-VR.ps1": {
-      "sha256": "ab961b0f17d06dff6aa689a781b902c17c68133a910178d6be99fec56ddd14d6",
-      "bytes": 11363
+      "sha256": "3c452c01b778abb8535110a6df5afa83d927d75b142fb318d7830c093854ccdb",
+      "bytes": 12782
     },
     "licenses/MinHook-LICENSE.txt": {
       "sha256": "573cb7e07f3c69bef5d9a02f76f17241ae5b0c0a3dd66758ee6535ee1dbbab55",
@@ -462,12 +466,12 @@
       "bytes": 69180
     },
     "maps/chapter02/02_05_theta_inside/02_05_theta_inside.hps": {
-      "sha256": "22bd9f8bc62d069606034d1cdde237251484e4fff789a28cad3b7fffc26dd127",
-      "bytes": 293729
+      "sha256": "2dc6670bfcc53bdc308bbb0c147e2b68150982b14d23e4bdc4fd23e06bfec172",
+      "bytes": 294034
     },
     "maps/chapter02/02_06_theta_tunnels/02_06_theta_tunnels.hps": {
-      "sha256": "c0ae785c6c2f55f8651544a1b14888be5d2a2db92f360d0fca96547ec3382f7b",
-      "bytes": 244236
+      "sha256": "25d8b52105425cabe2b8dbf3ca4c220bfc280ce17f5c9d35c7cd46eea1ae6317",
+      "bytes": 245580
     },
     "maps/chapter02/02_07_theta_exit/02_07_theta_exit.hps": {
       "sha256": "6b7e7309ee95a242da9c38233396da416cfa5a1df8f9bb4762ef20bd7a380be2",
@@ -530,8 +534,8 @@
       "bytes": 422552
     },
     "PACKAGE_VERIFICATION.json": {
-      "sha256": "789860f97f048c762d669026508f739e987ee8b2a4a4db3ae09b1a256148072e",
-      "bytes": 131
+      "sha256": "5bfe585b3b1d6e3101ab9a31cbad8431e09f8df31fb7ae57824b28673639cb01",
+      "bytes": 135
     },
     "script/agents/Agent_SwimBot.hps": {
       "sha256": "0a49a25c7d5f6d44be98972175b12511e0aae963c34b0f68b20d6a4326065999",
@@ -670,8 +674,8 @@
       "bytes": 33361
     },
     "script/modules/GameOverHandler.hps": {
-      "sha256": "364bf2e62363211c0bb87cc1815e4ef537f02bfaca92cd0eab18c39cdd05fdb8",
-      "bytes": 15282
+      "sha256": "f4aca390df598d88114e210a6ac22520f2fb7be4bbec65d5e1c98f3bc3da72eb",
+      "bytes": 16451
     },
     "script/modules/HighlightEffectHandler.hps": {
       "sha256": "abdcf51af204e5aa97aa859c0c7650302c74d8836dc91aa41f821e1d166d3cae",
@@ -682,7 +686,7 @@
       "bytes": 32003
     },
     "script/modules/MenuHandler.hps": {
-      "sha256": "035f3d2afbb1a6366d297b3fc120edfbc708da81e23762ed8475d7e3739479ca",
+      "sha256": "57d2071afbcdc0488fd5481172d2c6e42f612fd4f8df9a657a624d62d51c0e79",
       "bytes": 329613
     },
     "script/modules/PlayerEnergyHandler.hps": {
@@ -694,8 +698,8 @@
       "bytes": 44452
     },
     "script/modules/PlayerToolHandler.hps": {
-      "sha256": "2cd338edd0656867e159a9855cfacb6d95957155aefd70f8954ecc5257a6cca7",
-      "bytes": 151350
+      "sha256": "0c36e8cc45e9a2cd325cc9bce0632af771f9062dd100ebd5e8d74edf95103d0d",
+      "bytes": 154964
     },
     "script/player/MoveState_Normal.hps": {
       "sha256": "4f6c170da74cfae9a3e918ad0cdf2af9b02545ad4b04cf40d2e652d8443ac255",
@@ -750,8 +754,8 @@
       "bytes": 14293
     },
     "script/player/PlayerState_Interact_Terminal.hps": {
-      "sha256": "954b310eb027b70409ce2668f814038bf281dc38824b3b40dddc0ebf471916e0",
-      "bytes": 19881
+      "sha256": "249abae0ccda817287c3fee1cb3c1e0e276dce6d1255e924881cf11fba2ec9d7",
+      "bytes": 20952
     },
     "script/player/PlayerState_InteractiveCameraAnimation.hps": {
       "sha256": "8f2693f589988aeb96d83136037a6861be37be1ccc1fd1e41db914b7f55f2230",
@@ -781,9 +785,13 @@
       "sha256": "b3591d46a5944ac6dcb8c7e1f56592bb7b3b51d53a3af48c9dec667486b69a0f",
       "bytes": 7007
     },
+    "script/props/Prop_Lever.hps": {
+      "sha256": "7f217b931cf1b02300a55e5411e76b5501a80e67c73fd72d1970e2e9a3f68c06",
+      "bytes": 18763
+    },
     "script/props/Prop_MovingButton.hps": {
-      "sha256": "80d1c5c5c5c9356b843489eee05666d8820c6468bdb25c9ee0ccd4b6c9ccdef4",
-      "bytes": 23515
+      "sha256": "9293945ef2056d29e04d9f24e07de476598cb1078825179bd71c3802eb654a4f",
+      "bytes": 25317
     },
     "script/props/Prop_PhysicsSlideDoor.hps": {
       "sha256": "12d9a445122799aca0fff322752677684e0ddbd9707058b37a6f236dcbfd8f65",
@@ -837,6 +845,10 @@
       "sha256": "20486ad384d68764ef79ca3c6be8b684c8b85cefcf171fc4cf10a7955492c7bd",
       "bytes": 4608
     },
+    "SOMA-VR-Logging.dll": {
+      "sha256": "726b2896fb3c86219b8400469c393ebd38cd57797302bf9832c318fe102460a9",
+      "bytes": 148480
+    },
     "SOMA-VR-Settings.ps1": {
       "sha256": "1e8bc2d744fc41a62b384043984f241f23d681da4330f3de66f08e5357d588f2",
       "bytes": 7252
@@ -845,8 +857,12 @@
       "sha256": "6fa382a3edd0e4625cbdb63065682fa0b10933c8d59d0331a24f16aab72c98f5",
       "bytes": 5798
     },
+    "SOMA-VR-Support.ps1": {
+      "sha256": "6ff2f4910b470050ddaa4632c19fc963a4f2b006d08c29d510404e5962fbb0ae",
+      "bytes": 11705
+    },
     "SOMA-VR-Update-Version.json": {
-      "sha256": "4bb208b4f6948b9d9a9bf0804f62834e4df7ea4cd2e739fa9c564367407c1df6",
+      "sha256": "90994c0a8dd576cb78d15ee7ede81c7c56cf9210970e62443d0ab72bec88ae55",
       "bytes": 56
     },
     "SOMA-VR-Update.ps1": {
@@ -872,6 +888,10 @@
     "SOMA_VR_LICENSE.txt": {
       "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
       "bytes": 35823
+    },
+    "SOMA_VR_LOGGING.md": {
+      "sha256": "2855a68f7d37db93322f66e4de234d387ded65dc76b622b987baed52729988f2",
+      "bytes": 1160
     },
     "SOMA_VR_THIRD_PARTY_NOTICES.md": {
       "sha256": "e6fddc61e5249f56ed392f6547711b682cbd79cdd37e48132c1aedbf7e4d554b",

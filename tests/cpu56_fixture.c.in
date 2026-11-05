@@ -1,0 +1,215 @@
+
+#include <windows.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#define C(x) do{if(!(x)){printf("FAIL line %d\n",__LINE__);exit(1);}}while(0)
+static void*(*getUD)(const void*);static void(*setTorque)(const void*,const float*);
+static void(*force)(const void*,const float*);static unsigned forces,contacts;static unsigned debugCalls,debugReference[240];static void debugCallback(void){__atomic_fetch_add(&debugCalls,1,__ATOMIC_RELAXED);}
+static void gravity(const void*b,float dt,int thread){float f[4]={0,-9.8f,0,0};unsigned long long id=getUD?(unsigned long long)getUD(b):0;if(id){if(id<=16){float t[4]={0,.25f,0,0};setTorque(b,t);}else f[0]=.3f;}force(b,f);__atomic_fetch_add(&forces,1,__ATOMIC_RELAXED);}
+static unsigned rejects;static int overlap(const void*m,const void*a,const void*b,int thread){unsigned long long x=(unsigned long long)getUD(a),y=(unsigned long long)getUD(b);if((x&&x<=4)||(y&&y<=4)){__atomic_fetch_add(&rejects,1,__ATOMIC_RELAXED);return 0;}return 1;}
+static void contact(const void*j,float dt,int thread){__atomic_fetch_add(&contacts,1,__ATOMIC_RELAXED);}
+#define C37_MIN_PAIRS 2
+
+static unsigned requested,nativeStep;static unsigned long long timingFreq;static unsigned long long batches;
+static unsigned long long tick(void){LARGE_INTEGER q;QueryPerformanceCounter(&q);return q.QuadPart;}
+#define C37_NOW() tick()
+#define C37_MODE(j) (requested==16?c38_select((j)->world,(unsigned)(j)->limit,++nativeStep,1,timingFreq):requested)
+#define C37_MAIN() 1
+#define C37_REPORT(c) do {if((c)->n)batches++;unsigned long long largest=0;unsigned long long cost=(c)->joined-(c)->start;if((c)->n){cost=0;for(unsigned k=0;k<(c)->n;k++){unsigned long long part=(c)->end[k]-(c)->begin[k];cost+=part;if(part>largest)largest=part;}}c38_observe(cost,largest,(c)->n);} while(0)
+/* CPU40 private scheduling: only serial measurements authorize parallel work.
+   Every job/step is still executed. World identities are compared, not queried. */
+static const void*c38World;static unsigned c38Step,c38Pairs,c38Enabled,c38Cooldown,c40ParallelAge;static unsigned long long c38Cost;
+static unsigned c38_select(const void*w,unsigned pairs,unsigned step,unsigned enabled,unsigned long long ticksPerSecond){
+ c38Enabled=enabled;
+ if(c38World!=w||step<=c38Step){c38World=w;c38Cost=0;c38Pairs=0;c38Cooldown=0;c40ParallelAge=0;}
+ c38Step=step;
+ if(c38Pairs&&((unsigned long long)pairs>2ull*c38Pairs||(unsigned long long)c38Pairs>2ull*pairs)){c38Cost=0;c38Cooldown=0;c40ParallelAge=0;}
+ unsigned n=0,blocked=c38Cooldown;if(c38Cooldown)c38Cooldown--;
+ if(enabled&&!blocked&&pairs>=2&&c38Pairs&&c40ParallelAge<16){
+  if(c38Cost>=(ticksPerSecond*35u)/100000u)n=8;
+  else if(c38Cost>=ticksPerSecond/10000u)n=4;
+ }
+ c38Pairs=pairs;return n;
+}
+static void c38_observe(unsigned long long cost,unsigned long long largest,unsigned jobs){
+ if(jobs>1){c40ParallelAge++;if(largest>cost-cost/4u)c38Cooldown=32;}
+ else {c38Cost=cost;c40ParallelAge=0;}
+}
+
+static DWORD c41Main;static unsigned c41Observe,c41Seq;static unsigned long long c41Records,c41Dropped;static unsigned c41Types;
+#define C41_NOW() tick()
+#define C41_MAIN() (GetCurrentThreadId()==c41Main)
+/* Observation only. Entered only inside the original main-thread SSE job. */
+typedef struct {unsigned long long a,b;const void*body0,*body1;unsigned type0,type1,contacts;const void*pair,*raw10,*raw18;} C41Pair;
+static C41Pair c41Pairs[2048];static unsigned c41Count,c41Overflow,c41Active;
+static void(*c41Kernel)(void*,void*,float,int);
+
+#define C43_MAIN() (GetCurrentThreadId()==c41Main)
+#define C43_NOW() tick()
+#define C43_TARGET(a,b) 1
+#define C43_MIN_TICKS 0u
+#define C43_SHADOW 0
+static unsigned long long totalHits,totalEligible;
+/* Private same-job expensive tree/compound zero-result reuse.
+   No references survive c43_begin/end. No contact or solver pair is removed. */
+typedef struct {unsigned epoch;unsigned char in[48],out[48],a[0x208],b[0x208],material[0xa0];} C43Entry;
+static C43Entry c43Table[16];static unsigned c43Epoch,c43Active,c43Hits,c43Eligible,c43Miss,c43Mismatch;
+static unsigned long long c43Saved;
+static void(*c43Kernel)(void*,void*,float,int);
+static void c43_copy(void*d,const void*s,unsigned n){unsigned char*a=d;const unsigned char*b=s;for(unsigned i=0;i<n;i++)a[i]=b[i];}
+static int c43_equal(const void*a,const void*b,unsigned n){const unsigned char*x=a,*y=b;for(unsigned i=0;i<n;i++)if(x[i]!=y[i])return 0;return 1;}
+static void c43_begin(unsigned enabled){if(++c43Epoch==0){for(unsigned i=0;i<16;i++)c43Table[i].epoch=0;c43Epoch=1;}c43Active=enabled;c43Hits=c43Eligible=c43Miss=c43Mismatch=0;c43Saved=0;}
+static void c43_pair(void*w,void*p,float dt,int thread){
+ if(thread||!C43_MAIN()||!c43Active){c43Kernel(w,p,dt,thread);return;}
+ unsigned char*in=p;const void*a=*(void**)in,*b=*(void**)(in+8),*m=*(void**)(in+24);
+ if(*(void**)(in+16)||!C43_TARGET(a,b)){c43Kernel(w,p,dt,thread);return;}
+ const unsigned char*sa=*(void**)((const unsigned char*)a+0x200),*sb=*(void**)((const unsigned char*)b+0x200);
+ unsigned ta=*(const unsigned*)(sa+0x68),tb=*(const unsigned*)(sb+0x68);
+ if(!((ta==5&&tb==9)||(ta==9&&tb==5))){c43Kernel(w,p,dt,thread);return;}
+ const unsigned char*tree=ta==9?sa:sb;
+ if(*(const void**)(tree+0x98)){c43Kernel(w,p,dt,thread);return;}
+ c43Eligible++;unsigned hash=(unsigned)(((unsigned long long)a>>4)^((unsigned long long)b>>7))&15;C43Entry*slot=0;
+ for(unsigned i=0;i<4;i++){
+  C43Entry*q=c43Table+((hash+i)&15);if(q->epoch!=c43Epoch){slot=q;break;}
+  if(!c43_equal(q->in,in,32)||!c43_equal(q->in+40,in+40,8))continue;
+  if(!c43_equal(q->a,a,0x208)||!c43_equal(q->b,b,0x208)||!c43_equal(q->material,m,0xa0))continue;
+  c43Hits++;
+  if(C43_SHADOW){unsigned long long t=C43_NOW();c43Kernel(w,p,dt,thread);c43Saved+=C43_NOW()-t;if(!c43_equal(q->out,in,32)||!c43_equal(q->out+40,in+40,8))c43Mismatch++;}
+  else {c43_copy(in,q->out,32);c43_copy(in+40,q->out+40,8);}
+  return;
+ }
+ unsigned char saved[48];c43_copy(saved,p,48);unsigned long long t=C43_NOW();c43Kernel(w,p,dt,thread);unsigned long long cost=C43_NOW()-t;c43Miss++;
+ if(slot&&cost>=C43_MIN_TICKS&&*(unsigned*)(in+40)==0&&*(void**)(in+32)==*(void**)(saved+32)){
+  slot->epoch=c43Epoch;c43_copy(slot->in,saved,48);c43_copy(slot->out,in,48);c43_copy(slot->a,a,0x208);c43_copy(slot->b,b,0x208);c43_copy(slot->material,m,0xa0);
+ }
+}
+
+typedef unsigned char u8;typedef unsigned u32;typedef unsigned long long u64;
+static int h9_good(float x,float lim){return isfinite(x)&&fabsf(x)<=lim;}
+#define cpu14_event(k,d,a,b,id) ((void)0)
+/* Private continuous-envelope shadow. Every original geometry call still executes. */
+static int(*c55Geom)(void*,void*,void*,int);
+static int(*c55Faces)(const void*,const float*,const float*,const float**,int*,int*,int*,int,int*);
+static void(*c55Motion)(const void*,float,float*,float*);
+static void(*c55Mass)(const void*,float*,float*,float*,float*);
+static void(*c55Velocity)(const void*,float*),(*c55Omega)(const void*,float*),(*c55Com)(const void*,float*);
+static void*c55Caller;
+static u32 c55Calls,c55Empty,c55Bad,c55Rejected[10];static u64 c55FilterTicks,c55EmptyTicks,c55NativeTicks;
+typedef struct {u32 epoch;const void*shape;float lo[3],hi[3],radius;} C55Bounds;
+static C55Bounds c55Bounds[2];
+static float c55_abs(float a){return a<0?-a:a;}
+static int c55_orthogonal(const float*m){for(int a=0;a<3;a++)for(int b=0;b<3;b++){float v=0;for(int k=0;k<3;k++)v+=m[a*4+k]*m[b*4+k];if(!h9_good(v,2.f)||c55_abs(v-(a==b?1.f:0.f))>.0001f)return 0;}return 1;}
+static int c55_identity(const float*m){for(int i=0;i<16;i++)if(!h9_good(m[i],2.f)||c55_abs(m[i]-(i%5==0?1.f:0.f))>.00001f)return 0;return 1;}
+static int c55_reject(u32 why){c55Rejected[why]++;return -1;}
+static int c55_empty(void*shape,void*pair,void*proxy,int simd){
+ u8*p=pair,*v=proxy;const void*hb=*(void**)p,*tb=*(void**)(p+8);int hand=0;
+ if(simd!=1||*(u32*)(p+40)||*(u32*)(v+0xb0))return c55_reject(0);
+ const u8*hs=*(const u8**)((const u8*)hb+0x200),*ts=*(const u8**)((const u8*)tb+0x200);
+ if(shape!=hs||*(u32*)(hs+0x68)!=5||*(u32*)(ts+0x68)!=9||*(void**)(ts+0x98))return c55_reject(1);
+ void*wrapper=(void*)hs;
+ if(!c55_identity((const float*)(hs+0x10))||!c55_identity((const float*)(ts+0x10)))return c55_reject(3);
+ const float*hm=(const float*)((const u8*)hb+0x40),*tm=(const float*)((const u8*)tb+0x40);
+ if(!c55_orthogonal(hm)||!c55_orthogonal(tm))return c55_reject(4);
+ float mass,ix,iy,iz;c55Mass(tb,&mass,&ix,&iy,&iz);float tv[4],tw[4];c55Velocity(tb,tv);c55Omega(tb,tw);
+ if(mass!=0||tv[0]!=0||tv[1]!=0||tv[2]!=0||tw[0]!=0||tw[1]!=0||tw[2]!=0)return c55_reject(5);
+ float dt=*(float*)(v+0xa0),margin=*(float*)(v+0xa4);if(!h9_good(dt,1.f)||dt<=0||!h9_good(margin,1.f)||margin<0)return c55_reject(6);
+ C55Bounds*q=c55Bounds+hand;
+ q->lo[0]=q->lo[1]=q->lo[2]=-.5f;q->hi[0]=.6f;q->hi[1]=q->hi[2]=.5f;q->radius=1.6f;
+ __attribute__((aligned(16))) float vel[4]={0},omega[4]={0},com[4]={0};
+ if(*(u32*)(v+0xa8))c55Motion(hb,dt,vel,omega);c55Com(hb,com);
+ float angle=0,radius=q->radius;for(int a=0;a<3;a++){if(!h9_good(vel[a],1000.f)||!h9_good(omega[a],1000.f)||!h9_good(com[a],1.f))return c55_reject(8);angle+=c55_abs(omega[a])*dt;radius+=c55_abs(com[a]);}if(angle>2.f)angle=2.f;float pad=radius*angle+margin+.02f;
+ float lo[3]={1e20f,1e20f,1e20f},hi[3]={-1e20f,-1e20f,-1e20f};
+ for(int c=0;c<8;c++){float wp[3];for(int a=0;a<3;a++){wp[a]=hm[12+a]-tm[12+a];for(int k=0;k<3;k++)wp[a]+=hm[k*4+a]*((c&(1<<k))?q->hi[k]:q->lo[k]);}for(int a=0;a<3;a++){float x=wp[0]*tm[a*4]+wp[1]*tm[a*4+1]+wp[2]*tm[a*4+2];if(!h9_good(x,100000.f))return c55_reject(8);if(x<lo[a])lo[a]=x;if(x>hi[a])hi[a]=x;}}
+ for(int a=0;a<3;a++){float d=(vel[0]*tm[a*4]+vel[1]*tm[a*4+1]+vel[2]*tm[a*4+2])*dt;lo[a]+=(d<0?d:0)-pad;hi[a]+=(d>0?d:0)+pad;}
+ const float*vertices=0;int count=0,stride=0,indices[96],attrs[96];int n=c55Faces(ts,lo,hi,&vertices,&count,&stride,indices,96,attrs);return n==0?1:n>0?0:c55_reject(9);
+}
+static int c55_geom(void*a,void*b,void*c,int d){
+ if(!C43_MAIN())return c55Geom(a,b,c,d);if(!c43Active||__builtin_return_address(0)!=c55Caller){u64 t=tick();int result=c55Geom(a,b,c,d);u64 e=tick();if(e-t>10000000ull/20000u)cpu14_event(116,d,t,e,(u64)__builtin_return_address(0)-(u64)GetModuleHandleA("Newton.dll"));return result;}
+ u64 t=tick();int empty=c55_empty(a,b,c,d);u64 m=tick();int result=c55Geom(a,b,c,d);u64 e=tick();c55FilterTicks+=m-t;c55NativeTicks+=e-m;c55Calls++;if(empty==1){c55Empty++;c55EmptyTicks+=e-m;if(result)c55Bad++;}return result;
+}
+static void c55_begin(void){c55Calls=c55Empty=c55Bad=0;c55FilterTicks=c55EmptyTicks=c55NativeTicks=0;for(int i=0;i<10;i++)c55Rejected[i]=0;for(int i=0;i<2;i++)c55Bounds[i].epoch=0;}
+static void c55_report(u64 t){cpu14_event(113,c55Bad,t,tick(),((u64)c55Calls<<32)|c55Empty);cpu14_event(114,0,1,1+c55FilterTicks,c55NativeTicks);cpu14_event(114,1,1,1+c55EmptyTicks,0);for(int i=0;i<10;i++)if(c55Rejected[i])cpu14_event(115,i,t,t,c55Rejected[i]);}
+typedef long long i64;typedef int i32;
+#define ext_GetModuleHandleA GetModuleHandleA
+#define ext_GetProcAddress(m,n) GetProcAddress((HMODULE)(m),(n))
+#define ext_Log(...) ((void)0)
+static int ext_MH_CreateHook(void*,void*,void**);
+static int ext_MH_EnableHook(void*);
+/* CPU56_RELEASE_CORE */static void c41_hook(HMODULE m){unsigned char*p=(unsigned char*)m+0x39a00;const unsigned char sig[]={0x4c,0x8b,0xdc,0x49,0x89,0x5b,0x08,0x49,0x89,0x6b,0x10,0x49,0x89,0x73,0x18};C(!memcmp(p,sig,15));unsigned char*t=VirtualAlloc(0,64,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);C(t);memcpy(t,p,15);unsigned char jump[14]={0xff,0x25,0,0,0,0};void*back=p+15;memcpy(jump+6,&back,8);memcpy(t+15,jump,14);c43Kernel=(void*)t;void*target=(void*)c43_pair;memcpy(jump+6,&target,8);DWORD old;C(VirtualProtect(p,15,PAGE_EXECUTE_READWRITE,&old));memcpy(p,jump,14);p[14]=0x90;FlushInstructionCache(GetCurrentProcess(),p,15);C(VirtualProtect(p,15,old,&old));}
+/* Private synchronous native-job scheduling. No native descriptor mutation. */
+#ifndef C37_MIN_PAIRS
+#define C37_MIN_PAIRS 32
+#endif
+typedef unsigned long long C37Tick;
+typedef struct C37Context C37Context;
+typedef struct {void**vt;int index,pad,stride,limit,mode;float dt;void*world;C37Context*ctx;} C37Job;
+struct C37Context {unsigned mx,n,requested,count;C37Tick start,queued,joined,begin[8],end[8];};
+static void(*c37Execute)(void*);static void(*c37Queue)(void*,void*);static void(*c37Join)(void*);
+static unsigned c37_getmx(void){unsigned x;__asm__ volatile("stmxcsr %0":"=m"(x));return x;}
+static void c37_setmx(unsigned x){__asm__ volatile("ldmxcsr %0"::"m"(x));}
+static void c37_worker(void*p){C37Job*j=p;C37Context*c=j->ctx;unsigned old=c37_getmx();c37_setmx(c->mx);c->begin[j->index]=C37_NOW();c37Execute(j);c->end[j->index]=C37_NOW();c37_setmx(old);}
+static void c37_job(void*p){
+ C37Job*j=p;if(!C37_MAIN()||j->mode!=1||j->stride!=1||j->index!=0){c37Execute(p);return;}
+ C37Context c={0};c.count=(unsigned)j->limit;c.requested=C37_MODE(j);c.mx=c37_getmx();c.start=C37_NOW();
+ int threads=*(int*)((unsigned char*)j->world+0x2250);
+ if(c.requested&&j->limit>=C37_MIN_PAIRS&&threads>=2&&threads<=8){c.n=c.requested;if(c.n>(unsigned)threads)c.n=threads;if(c.n>c.count)c.n=c.count;}
+ if(!c.n){c37Execute(p);c.queued=c.start;c.joined=C37_NOW();C37_REPORT(&c);return;}
+ C37Job jobs[8];void*vt[1]={(void*)c37_worker};
+ for(unsigned i=0;i<c.n;i++){C37Job*q=jobs+i;q->vt=vt;q->index=(int)i;q->pad=0;q->stride=(int)c.n;q->limit=((j->limit+(int)c.n-1-(int)i)/(int)c.n)*(int)c.n;q->mode=1;q->dt=j->dt;q->world=j->world;q->ctx=&c;}
+ for(unsigned i=0;i<c.n;i++)c37Queue((unsigned char*)j->world+0x2250,jobs+i);
+ c.queued=C37_NOW();c37Join((unsigned char*)j->world+0x2250);c.joined=C37_NOW();C37_REPORT(&c);
+}
+
+static void entry(void*j){unsigned char old[40];memcpy(old,j,40);unsigned mx=c37_getmx();c41Count=c41Overflow=0;c43_begin(c41Observe);c37_job(j);totalHits+=c43Hits;totalEligible+=c43Eligible;c43Active=0;c41Records+=c41Count;c41Dropped+=c41Overflow;for(unsigned z=0;z<c41Count;z++){C41Pair*q=c41Pairs+z;C(q->b>=q->a&&q->body0&&q->body1&&q->type0<32&&q->type1<32);c41Types|=1u<<q->type0;c41Types|=1u<<q->type1;}if(memcmp(old,j,40)!=0){puts("DESCRIPTOR CHANGED");exit(1);}if((c37_getmx()&~63u)!=(mx&~63u)){puts("MXCSR CONTROL CHANGED");exit(1);}if(c37_getmx()!=mx){static unsigned reports;if(reports++<16)printf("MXCSR STATUS requested=%u old=%x new=%x\n",requested,mx,c37_getmx());}}
+
+static float reference[240][96][16];static unsigned rc[240],rf[240],rr[240];
+
+static void c55_test_install(HMODULE m){
+ c55Faces=(void*)GetProcAddress(m,"NewtonTreeCollisionGetVertexListIndexListInAABB");c55Mass=(void*)GetProcAddress(m,"NewtonBodyGetMassMatrix");c55Velocity=(void*)GetProcAddress(m,"NewtonBodyGetVelocity");c55Omega=(void*)GetProcAddress(m,"NewtonBodyGetOmega");c55Com=(void*)GetProcAddress(m,"NewtonBodyGetCentreOfMass");C(c55Faces&&c55Mass&&c55Velocity&&c55Omega&&c55Com);c55Motion=(void*)((char*)m+0x5e860);c55Caller=(char*)m+0x38fae;
+ unsigned char*p=(unsigned char*)m+0x7e840,sig[]={0x44,0x89,0x4c,0x24,0x20,0x48,0x89,0x4c,0x24,0x08,0x55,0x53,0x56,0x57,0x41,0x54};C(!memcmp(p,sig,16));unsigned char*t=VirtualAlloc(0,128,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);C(t);memcpy(t,p,16);unsigned char j[14]={0xff,0x25,0,0,0,0};void*back=p+16;memcpy(j+6,&back,8);memcpy(t+16,j,14);c55Geom=(void*)t;void*target=c55_geom;memcpy(j+6,&target,8);DWORD old;C(VirtualProtect(p,16,PAGE_EXECUTE_READWRITE,&old));memcpy(p,j,14);p[14]=p[15]=0x90;FlushInstructionCache(GetCurrentProcess(),p,16);C(VirtualProtect(p,16,old,&old));}
+
+static void c56_hook_one(HMODULE m,unsigned rva,unsigned n,void*target,void**out){unsigned char*p=(unsigned char*)m+rva;unsigned char*t=VirtualAlloc(0,128,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);C(t);memcpy(t,p,n);unsigned char j[14]={0xff,0x25,0,0,0,0};void*back=p+n;memcpy(j+6,&back,8);memcpy(t+n,j,14);*out=t;memcpy(j+6,&target,8);DWORD old;C(VirtualProtect(p,n,PAGE_EXECUTE_READWRITE,&old));memcpy(p,j,14);memset(p+14,0x90,n-14);FlushInstructionCache(GetCurrentProcess(),p,n);C(VirtualProtect(p,n,old,&old));}
+static int ext_MH_CreateHook(void*p,void*target,void**out){HMODULE m=GetModuleHandleA("Newton.dll");C((u8*)p==(u8*)m+0x7e340);c56_hook_one(m,0x7e340,16,target,out);return 0;}
+static int ext_MH_EnableHook(void*p){return 0;}
+static void c56_test_install(HMODULE m){c56_install((u8*)m);C(c56Ready);}
+
+int main(int argc,char**argv){C(argc==2);c41Main=GetCurrentThreadId();HMODULE m=LoadLibraryA(argv[1]);C(m);c41_hook(m);c56_test_install(m);
+void*(*create)(void*,void*)=(void*)GetProcAddress(m,"NewtonCreate");void(*destroy)(void*)=(void*)GetProcAddress(m,"NewtonDestroy");
+void*(*sphere)(void*,float,float,float,int,const float*)=(void*)GetProcAddress(m,"NewtonCreateSphere");void*(*body)(void*,void*,const float*)=(void*)GetProcAddress(m,"NewtonCreateBody");
+void*(*box)(void*,float,float,float,int,const float*)=(void*)GetProcAddress(m,"NewtonCreateBox");
+void(*mass)(void*,float,float,float,float)=(void*)GetProcAddress(m,"NewtonBodySetMassMatrix");void(*matrix)(void*,float*)=(void*)GetProcAddress(m,"NewtonBodyGetMatrix");void(*update)(void*,float)=(void*)GetProcAddress(m,"NewtonUpdate");
+void(*fc)(void*,void*)=(void*)GetProcAddress(m,"NewtonBodySetForceAndTorqueCallback");void(*mc)(void*,int,int,void*,void*,void*)=(void*)GetProcAddress(m,"NewtonMaterialSetCollisionCallback");
+void(*threads)(void*,int)=(void*)GetProcAddress(m,"NewtonSetThreadsCount");void(*platform)(void*,int)=(void*)GetProcAddress(m,"NewtonSetPlatformArchitecture");
+getUD=(void*)GetProcAddress(m,"NewtonBodyGetUserData");setTorque=(void*)GetProcAddress(m,"NewtonBodySetTorque");C(getUD&&setTorque);force=(void*)GetProcAddress(m,"NewtonBodySetForce");C(create&&destroy&&sphere&&body&&box&&mass&&matrix&&update&&fc&&mc&&threads&&platform&&force);
+c37Execute=(void*)((char*)m+0x1bf50);c37Queue=(void*)((char*)m+0x8aa0);c37Join=(void*)((char*)m+0x8e40);
+LARGE_INTEGER freq;QueryPerformanceFrequency(&freq);timingFreq=(unsigned long long)freq.QuadPart;int failures=0;
+for(int scene=0;scene<7;scene++)for(int rate=60;rate<=120;rate+=60){double timings[2]={0};unsigned long long before=batches;double maxdelta=0;unsigned countdiff=0;
+for(int mode=0;mode<2;mode++){requested=0;c41Observe=mode;c41Seq=0;nativeStep=0;double one=0;unsigned long long rb=batches;
+void*w=create(0,0);C(w);threads(w,8);platform(w,1);C(*(int*)((char*)w+0x2138)==1);
+float mat[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};void*(*tree)(void*,int)=(void*)GetProcAddress(m,"NewtonCreateTreeCollision");void(*begin)(void*)=(void*)GetProcAddress(m,"NewtonTreeCollisionBeginBuild");void(*face)(void*,int,const float*,int,int)=(void*)GetProcAddress(m,"NewtonTreeCollisionAddFace");void(*end)(void*,int)=(void*)GetProcAddress(m,"NewtonTreeCollisionEndBuild");C(tree&&begin&&face&&end);void*floor=tree(w,0);begin(floor);float triangles[18]={-20,.5f,-20,20,.5f,20,20,.5f,-20,-20,.5f,-20,-20,.5f,20,20,.5f,20};face(floor,3,triangles,12,0);face(floor,3,triangles+9,12,0);end(floor,1);void(*setDebug)(void*,void*)=(void*)GetProcAddress(m,"NewtonStaticCollisionSetDebugCallback");C(setDebug);debugCalls=0;body(w,floor,mat);
+void(*setUD)(void*,void*)=(void*)GetProcAddress(m,"NewtonBodySetUserData");void*(*makeHinge)(void*,const float*,const float*,void*,void*)=(void*)GetProcAddress(m,"NewtonConstraintCreateHinge");void*(*makeSlider)(void*,const float*,const float*,void*,void*)=(void*)GetProcAddress(m,"NewtonConstraintCreateSlider");C(setUD&&makeHinge&&makeSlider);int n=scene==1?64:scene==3?16:96;void*bs[96];void*c=sphere(w,.5f,.5f,.5f,0,0);
+if(scene>=2){void*(*hull)(void*,int,const float*,int,float,int,const float*)=(void*)GetProcAddress(m,"NewtonCreateConvexHull");C(hull);float cloud[128*3];for(int v=0;v<128;v++){double y=1.-2.*(v+.5)/128.;double radius=sqrt(1.-y*y);cloud[v*3]=.5f*(float)(cos(v*2.3999632297)*radius);cloud[v*3+1]=.5f*(float)y;cloud[v*3+2]=.5f*(float)(sin(v*2.3999632297)*radius);}c=hull(w,128,cloud,12,.0001f,0,0);C(c);}
+void*(*compound)(void*,int,void**,int)=(void*)GetProcAddress(m,"NewtonCreateCompoundCollision");C(compound);float offset[16]={1,0,0,0,0,1,0,0,0,0,1,0,.4f,.1f,0,1};void*children[2]={c,sphere(w,.2f,.2f,.2f,0,offset)};if(scene>=5){
+ void*(*capsule)(void*,float,float,int,const float*)=(void*)GetProcAddress(m,"NewtonCreateCapsule");C(capsule);
+ void*parts[24];for(int z=0;z<24;z++){float off[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+ float angle=z*.31f;off[0]=cosf(angle);off[2]=sinf(angle);off[8]=-sinf(angle);off[10]=cosf(angle);
+ off[12]=((z%5)-2)*.08f;off[13]=(z/5)*.07f;off[14]=((z%3)-1)*.04f;
+ parts[z]=(z<5)?box(w,.09f,.025f,.12f,0,off):capsule(w,.018f,.09f,0,off);C(parts[z]);}
+ c=compound(w,24,parts,0);
+ }else c=compound(w,2,children,0);C(c);C(*(unsigned*)((char*)c+0x68)==5);
+void(*ccd)(void*,int)=(void*)GetProcAddress(m,"NewtonBodySetContinuousCollisionMode");void(*setVel)(void*,const float*)=(void*)GetProcAddress(m,"NewtonBodySetVelocity");void(*setOmega)(void*,const float*)=(void*)GetProcAddress(m,"NewtonBodySetOmega");C(ccd&&setVel&&setOmega);void(*autosleep)(void*,int)=(void*)GetProcAddress(m,"NewtonBodySetAutoSleep");C(autosleep);
+for(int i=0;i<n;i++){mat[12]=scene==1?(i%4)*.96f:(i%12)*1.5f;mat[14]=scene==1?((i/4)%4)*.96f:(i/12)*1.5f;mat[13]=scene==1?1.1f+(i/16)*.96f:1.1f;if(scene>=5){mat[12]=(i%8)*.39f;mat[14]=(i/8)*.32f;mat[13]=.8f+(i%3)*.16f;}if(scene==4&&i<32)mat[13]=.98f;bs[i]=body(w,c,mat);mass(bs[i],1,.1f,.1f,.1f);ccd(bs[i],1);if(scene==3||scene==6){float v[4]={((i%3)-1)*3.f,0,((i%5)-2)*2.f,0},o[4]={1,2,3,0};setVel(bs[i],v);setOmega(bs[i],o);}fc(bs[i],gravity);if(scene>=2)autosleep(bs[i],0);if(scene==4&&i<32){float pivot[3]={mat[12],mat[13],mat[14]},axis[3]={i<16?0.f:1.f,i<16?1.f:0.f,0};C((i<16?makeHinge:makeSlider)(w,pivot,axis,bs[i],0));setUD(bs[i],(void*)(unsigned long long)(i+1));}}
+mc(w,0,0,0,overlap,contact);contacts=forces=rejects=0;
+void**job=(void**)((char*)w+0xa0+0x13c0);void*old=*job;C(*(void**)old==(void*)c37Execute);void*vt[1]={(void*)entry};*job=vt;
+for(int i=0;i<240;i++){LARGE_INTEGER a,z;QueryPerformanceCounter(&a);update(w,1.f/rate);QueryPerformanceCounter(&z);if(i>=60)one+=1000.0*(z.QuadPart-a.QuadPart)/freq.QuadPart;
+for(int j=0;j<n;j++){float out[16];matrix(bs[j],out);for(int k=0;k<16;k++){C(isfinite(out[k]));if(mode){double delta=fabs(out[k]-reference[i][j][k]);if(delta>maxdelta)maxdelta=delta;}else reference[i][j][k]=out[k];}}
+if(!mode){rc[i]=contacts;rf[i]=forces;rr[i]=rejects;debugReference[i]=debugCalls;}else countdiff+=(rc[i]!=contacts||rf[i]!=forces||rr[i]!=rejects||debugReference[i]!=debugCalls);
+}
+if(scene==4)C(rejects>0);*job=old;destroy(w);printf("MODE scene=%d hz=%d jobs=%u ms=%.6f batches=%llu max_delta=%.9g mismatch=%u\n",scene,rate,requested,one/180,batches-rb,maxdelta,countdiff);if(mode==0)timings[0]=one;else timings[1]=one;
+}
+unsigned long long runs=batches-before;printf("CASE scene=%d hz=%d max_matrix_delta=%.9g callback_count_mismatch_steps=%u parallel_steps=%llu reference_ms=%.6f candidate_ms=%.6f\n",scene,rate,maxdelta,countdiff,runs,timings[0]/180,timings[1]/180);if(maxdelta>0.0001||countdiff)failures++;
+}
+printf("REUSE hits=%llu misses=%llu\n",totalHits,totalEligible);printf("PAIR_RECORDS %llu overflow %llu types %x\n",c41Records,c41Dropped,c41Types);C(c56Ready);printf("RESULT failures=%d; native standalone only\n",failures);return failures?1:0;
+}

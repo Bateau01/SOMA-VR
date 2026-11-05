@@ -1,0 +1,33 @@
+from pathlib import Path
+import subprocess,hashlib,json,sys
+r=Path(__file__).resolve().parents[1];b=r/'build/movement';b.mkdir(parents=True,exist_ok=True)
+s=(r/'source/s26n.c').read_text();s=s.replace('typedef long long i64;','typedef long long i64;\nstatic void cpu6_pose(i64);static void cpu6_controls(void);',1)
+s=s.replace('static void cpu6_pose(i64);','static unsigned int cpu13Phase=99,cpu13Steps[11],cpu13NativeCalls[11];static double cpu13Dt[11];static unsigned long long cpu13Totals[11][32];static double cpu6Scene,cpu6XR,cpu6Newton,cpu6Texture;static void cpu6_pose(i64);')
+s=s.replace('o_h14NewtonUpdate(world,timestep);h5755eg_phys_add_since','if(cpu13Phase<11){cpu13NativeCalls[cpu13Phase]++;cpu13Dt[cpu13Phase]+=timestep;}u64 cpu6NT0=0,cpu6NT1=0;if(cpuCounter)cpuCounter(&cpu6NT0);o_h14NewtonUpdate(world,timestep);if(cpuCounter){cpuCounter(&cpu6NT1);cpu6Newton+=1000.0*(cpu6NT1-cpu6NT0)/cpuFreq;}h5755eg_phys_add_since',1)
+s=s.replace('    h5753c_auto_hand_visibility_step();','    cpu6_pose(displayTime);\n    h5753c_auto_hand_visibility_step();',1)
+s=s.replace('    h5710_update_controller_buttons(displayTime);','    cpu6_controls();\n    h5710_update_controller_buttons(displayTime);',1)
+s=s.replace('static u8 h5755cy_check_held_world(', (r/'tests/cpu13_held_query.inc').read_text()+'\nstatic u8 h5755cy_check_held_world(',1)
+q='u8 hit=p_h509CheckShapeWorldCollision(g_h34PhysicsWorldWrapper,push,heldShape,hplM,heldWrapper,0,0,&c,1,0,0xffffffffu,0);'
+assert s.count(q)==1
+s=s.replace(q,'cpu13_pair_install();cpu13OwnShape=(hand>=0&&hand<2&&g_h34HandNewton[hand])?h522_body_shape_relaxed(g_h34HandNewton[hand],hand):0;cpu13QueryScope=1;u64 cpu13Q0=0,cpu13Q1=0;if(cpuCounter)cpuCounter(&cpu13Q0);'+q+'cpu13QueryScope=0;cpu13OwnShape=0;'+'if(cpuCounter&&cpu13Phase<11){cpuCounter(&cpu13Q1);cpu13Totals[cpu13Phase][16]+=cpu13Q1-cpu13Q0;cpu13Totals[cpu13Phase][17]++;if(hit)cpu13Totals[cpu13Phase][18]++;}')
+s=s.replace('static u8 h5755cy_check_held_world(', 'static u8 cpu13_check_held_original(',1)
+s=s.replace('static i32 h569_swept_world_clear(i32 hand,const void* body,const float* from,const float* to){',(r/'tests/cpu13_query_oracle.inc').read_text()+'\nstatic i32 h569_swept_world_clear(i32 hand,const void* body,const float* from,const float* to){',1)
+s=s.replace('static void* cpu13OwnShape;', 'static u32 cpu13PairMode;static void* cpu13OwnShape;',1)
+s=s.replace('u32 slot=(b==cpu13OwnShape', 'if(cpu13PairMode&&b==cpu13OwnShape&&cpu13OwnShape){((H508CollideData*)cd)->count=0;cpu13Totals[cpu13Phase][27]++;return 0;}u32 slot=(b==cpu13OwnShape',1)
+s=s.replace('cpu13QueryScope=0;cpu13OwnShape=0;', 'if(cpu13PairMode&&hit){cpu13Totals[cpu13Phase][26]++;cpu13PairMode=0;zero_bytes(&c,sizeof(c));c.vtbl=&vt;c.heldNewton=heldNewton;hit=p_h509CheckShapeWorldCollision(g_h34PhysicsWorldWrapper,push,heldShape,hplM,heldWrapper,0,0,&c,1,0,0xffffffffu,0);cpu13PairMode=1;}cpu13QueryScope=0;cpu13OwnShape=0;',1)
+s+='\n'+(r/'tests/cpu6_movement_replay.inc').read_text(encoding='utf-8-sig')
+s=s.replace('for(u32 slot=0;slot<17;', 'ext_Log(\">>> CPU13_ORACLE phase %u queries %llu mismatches %llu skips %llu fallbacks %llu baseline_ms %.6f candidate_ms %.6f\",ph,cpu13Totals[ph][28],cpu13Totals[ph][25],cpu13Totals[ph][27],cpu13Totals[ph][26],1000.0*cpu13Totals[ph][23]/cpuFreq,1000.0*cpu13Totals[ph][24]/cpuFreq);for(u32 slot=0;slot<17;')
+prof=(r/'source/cpu_work_profile.inc').read_text()
+prof=prof.replace('cpuRenderRows<10&&','')
+prof=prof.replace('||cpuRows>=12','||cpu13Phase>10')
+prof=prof.replace('for(u32 i=0;i<H5755EG_P_COUNT;i++)cpuTotal[i]+=cpuBucket[i];', 'if(cpu13Phase<11){cpu13Steps[cpu13Phase]++;for(u32 i=0;i<H5755EG_P_COUNT&&i<32;i++)cpu13Totals[cpu13Phase][i]+=cpuBucket[i];}for(u32 i=0;i<H5755EG_P_COUNT;i++)cpuTotal[i]+=cpuBucket[i];')
+prof=prof.replace('if(cpuRenderWarm++<120)', 'if(cpuRenderRows>=10)return;\n if(cpuRenderWarm++<120)')
+prof=prof.replace('u64 t=cpu_observe_tick();if(!t0||t<t0)return;', 'u64 t=cpu_observe_tick();if(!t0||t<t0)return;cpu6Scene+=1000.0*sceneTicks/cpuFreq;cpu6XR+=1000.0*xrTicks/cpuFreq;',1)
+prof=prof.replace('cpu_detail_end(0,t,empty);','cpu_detail_end(0,t,empty);if(t){u64 q=0;cpuCounter(&q);cpu6Texture+=1000.0*(q-t)/cpuFreq;}',1)
+(b/'cpu_work_profile.inc').write_text(prof)
+(b/'test.c').write_text(s)
+zig=str(r.parent/'SOMA_VR_SCALE_INVESTIGATION/tools/ziglang/zig.exe')
+subprocess.run([zig,'cc','-target','x86_64-windows-gnu','-DCPU_WORK_PROFILE=1','-DCPU_RENDER_JOBS=1','-DCPU_TEXTURE_MIN_BYTES=65536','-DCPU_STRING_SPANS=1','-DCPU_NEAR_TYPES=1','-DCPU_TEXTURE_STORAGE=1','-DCPU_TEXTURE_LATC=1','-DS26IU_TEST=1','-I',str(r/'source'),'-O2','-g0','-ffreestanding','-fno-asynchronous-unwind-tables','-fno-ident','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-Wno-unused-parameter','-c',str(b/'test.c'),'-o',str(b/'test.obj')],check=True)
+subprocess.run([sys.executable,str(r/'scripts/apply_payload.py'),str(r/'third_party/hpl3vr_S5-P2_base.dll'),str(b/'test.obj'),str(b/'hpl3vr.dll')],check=True)
+files=list((r/'source').glob('*'))+[r/'tests/cpu13_held_query.inc',r/'tests/cpu13_query_oracle.inc',r/'tests/cpu6_movement_replay.inc',r/'tests/smaa_observer_iu.inc',b/'test.c',b/'cpu_work_profile.inc']
+(b/'build-receipt.json').write_text(json.dumps({'arguments':{'production':False},'dll_sha256':hashlib.sha256((b/'hpl3vr.dll').read_bytes()).hexdigest(),'source_hashes':{p.relative_to(r).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files if p.is_file()},'scope':'isolated synthetic controller replay; production source unmodified'},indent=2))

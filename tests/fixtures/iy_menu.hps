@@ -1,0 +1,15 @@
+    void _Global_IYMenu(){
+        bool runtime=gbHPL3VRRuntimeActive,main=mbMainMenuActive,pre=mbPremenuActive,dismissed=mbVRGuideDismissed;
+        bool setting=cLux_GetUserConfig().GetBool("SOMA_VR","StartupHelp",true);
+        gbHPL3VRRuntimeActive=true;mbMainMenuActive=true;mbPremenuActive=false;mbVRGuideDismissed=false;
+        cLux_GetUserConfig().SetBool("SOMA_VR","StartupHelp",true);
+        LogNewLine((HPL3VR_WelcomePending()?"HV_PASS|":"HV_FAIL|")+"startup help enabled");
+        cLux_GetUserConfig().SetBool("SOMA_VR","StartupHelp",false);
+        LogNewLine((!HPL3VR_WelcomePending()?"HV_PASS|":"HV_FAIL|")+"startup help disabled");
+        cLux_GetUserConfig().SetBool("SOMA_VR","StartupHelp",true);mbVRGuideDismissed=true;
+        LogNewLine((!HPL3VR_WelcomePending()?"HV_PASS|":"HV_FAIL|")+"help dismissal retained for session");
+        mbVRGuideDismissed=false;gbHPL3VRRuntimeActive=false;
+        LogNewLine((!HPL3VR_WelcomePending()?"HV_PASS|":"HV_FAIL|")+"help absent outside VR");
+        cLux_GetUserConfig().SetBool("SOMA_VR","StartupHelp",setting);
+        gbHPL3VRRuntimeActive=runtime;mbMainMenuActive=main;mbPremenuActive=pre;mbVRGuideDismissed=dismissed;
+    }

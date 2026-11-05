@@ -1,4 +1,4 @@
-#include "interfaces/UserModule_Interface.hps"
+﻿#include "interfaces/UserModule_Interface.hps"
 #include "modules/ModuleInterfaces.hps"
 
 #include "base/Inputhandler_Types.hps"
@@ -19,6 +19,9 @@ bool gbGameOverLoadingSaveGame=false;
 tString gsGameOverDeathCallback="";
 tString gsGameOverDeathSource="";
 int glGameOverCheckpointCount=0;
+// Like the existing death callback globals: logical names survive checkpoint load.
+array<tString> gsVRDeathHeldKeys;
+tString gsVRDeathHeldMap="";
 
 class cScrGameOverHandler : iScrUserModule, iScrUserModule_Interface, iScrGameOverHandler_Interface
 {
@@ -251,6 +254,16 @@ class cScrGameOverHandler : iScrUserModule, iScrUserModule_Interface, iScrGameOv
 	void Start(const tString& in asDeathSource)
 	{
         mbVRDeathPresentation=HPL3VR_DeathRuntime();
+        gsVRDeathHeldKeys.resize(0);
+        gsVRDeathHeldMap="";
+        if(cLux_GetCurrentMap() !is null)gsVRDeathHeldMap=cLux_GetCurrentMap().GetName();
+        if(mbVRDeathPresentation){
+            for(int i=0;i<2;i++){
+                cScript_SetGlobalArgInt(0,i);cScript_SetGlobalReturnString("");
+                cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRDeathHeldKeyName");
+                tString name=cScript_GetGlobalReturnString();if(name!="")gsVRDeathHeldKeys.push_back(name);
+            }
+        }
         if(mbVRDeathPresentation) cScript_RunGlobalFunc("VRDEATH","","B");
 		mbActive = true;
 		
@@ -464,6 +477,13 @@ class cScrGameOverHandler : iScrUserModule, iScrUserModule_Interface, iScrGameOv
 				pMap.ScriptExecute();
 			}
 		}
+        // Native checkpoint/map death callbacks above finish first. Resolve only
+        // owned names in this new world, then consume the snapshot once.
+        for(uint i=0;pMap.GetName()==gsVRDeathHeldMap && i<gsVRDeathHeldKeys.length();++i){
+            cScript_SetGlobalArgString(0,gsVRDeathHeldKeys[i]);
+            cScript_RunGlobalFunc("PlayerToolHandler","","_Global_VRRecoverDeathHeldKey");
+        }
+        gsVRDeathHeldKeys.resize(0);gsVRDeathHeldMap="";
         cScript_RunGlobalFunc("VRDEATH","","E");
         mbVRDeathPresentation=false;
 	}

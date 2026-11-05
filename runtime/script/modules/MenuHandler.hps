@@ -4515,7 +4515,7 @@ class cScrMenuHandler : iScrUserModule, iScrUserModule_Interface, iScrMenuHandle
         label.mFont.mColor=cColor(0.85f,0.9f,0.9f,mfMainAlpha);
         label.mFontAlign=eFontAlign_Center;
         tString cat=ImGui_GetTransCategory();ImGui_SetTransCategory("");
-        ImGui_DoLabelExt("SOMA VR v1.1.0 - S26JA",label,
+        ImGui_DoLabelExt("SOMA VR v1.1.1 - S26JI",label,
             OptionMenu_GetBotRightOffset(cVector2f(-340,58),1),OptionMenu_GetScaledSize(cVector2f(320,22)));
         ImGui_DoLabelExt("CREATED BY: Bateau1",label,
             OptionMenu_GetBotRightOffset(cVector2f(-340,34),1),OptionMenu_GetScaledSize(cVector2f(320,22)));

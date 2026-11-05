@@ -123,6 +123,12 @@ enum eStatusTerminalState
  
 class cScrMap : iScrMap
 {
+    bool VR_CanUseHeldItemsFromTerminal(const tString &in asEntityName)
+    {
+        // These walk-up terminals retain native item permission and callbacks.
+        // In the lab a running Brandon simulation remains exclusive.
+        return VR_CanUseWorldControlsFromTerminal(asEntityName);
+    }
     bool VR_CanUseWorldControlsFromTerminal(const tString &in asEntityName)
     {
         // Walk-up UI bookkeeping, not chair ownership. No callback is invoked

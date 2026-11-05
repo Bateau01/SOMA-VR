@@ -1,0 +1,647 @@
+#include "interfaces/Prop_Interface.hps"
+#include "base/Player_Types.hps"
+#include "helpers/helper_effects.hps"
+#include "utilities/Utility_JointFix.hps"
+
+
+class cScrPropLever: iScrProp, iScrProp_Interface
+{
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// INIT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void Init()
+	{
+		mlCurrentState  = 0; //-1 = min, 1=max, 0= middle
+		mlStuckState = 0;//-1 = min, 1=max, 0= not stuck
+		mbInteractionDisablesStuck = false;
+
+		mfStuckSoundTimer =0;
+
+		mRotatePid.SetErrorNum(10);
+		mRotatePid.p = 10.0f;
+		mRotatePid.i = 0.0f;
+		mRotatePid.d = 1.0f;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// LOADING
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	int ToStuckState(const tString&in asType)
+	{
+		if(asType == "None")	return 0;
+		if(asType == "Min")		return -1;
+		if(asType == "Max")		return 1;
+		return 0;
+	}
+	
+	int ToAutoMoveGoal(const tString&in asType)
+	{
+		if(asType == "Middle")	return 0;
+		if(asType == "Max")		return 1;
+		if(asType == "Min")		return -1;
+
+		return 0;
+	}
+	
+	int ToMoveDirection(const tString&in asType)
+	{
+		if(asType == "Vertical")	return 0;
+		if(asType == "Horizontal")	return 1;
+		
+		return 0;
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetupAfterLoad(cWorld @apWorld, cResourceVarsObject@ apVars, cResourceVarsObject@ apInstanceVars)
+	{
+		//////////////////////////////////////
+		// Type vars
+		mfMoveMaxSpeed  = apVars.GetVarFloat("MoveMaxSpeed", 5);
+		mfMoveSlowDownFactor = apVars.GetVarFloat("MoveSlowDownFactor", 3);
+		mfMoveSpeedFactor = apVars.GetVarFloat("MoveSpeedFactor", 1);
+		mbCanInteractWithStaticBody = apVars.GetVarBool("CanInteractWithStaticBody", false);
+		
+		mfAutoMoveSpeedFactor = apVars.GetVarFloat("AutoMoveSpeedFactor", 2.0f);
+		mfAutoMoveMaxSpeed = apVars.GetVarFloat("AutoMoveMaxSpeed", 8.0f);
+			
+		mfMinLimitRange  = cMath_ToRad(apVars.GetVarFloat("MinLimitRange", 5));
+		mfMaxLimitRange = cMath_ToRad(apVars.GetVarFloat("MaxLimitRange", 5));
+		
+		msMinLimitSound = apVars.GetVarString("MinLimitSound", "");
+		msMaxLimitSound = apVars.GetVarString("MaxLimitSound", "");
+		msStuckSound = apVars.GetVarString("StuckSound", "");
+		msMinInteractSound = apVars.GetVarString("MinInteractSound","");
+		msMaxInteractSound = apVars.GetVarString("MaxInteractSound","");
+		mbSkipMiddleState = apVars.GetVarBool("SkipMiddleState", false);
+		
+		mInteractIcon = PlayerTypes_StringToCrossHairState(apVars.GetVarString("InteractIcon", "PullLever"));
+		
+		//////////////////////////////////////
+		// Setup
+		iPhysicsJoint @pJoint = mBaseObj.GetJoint(0);
+		if(pJoint is null || pJoint.GetType() != ePhysicsJointType_Hinge)
+		{
+			Error("Lever '"+mBaseObj.GetName()+"' does not have a hinge joint!\n");
+			return;
+		}
+		
+		@mpHingeJoint = cPhysics_ToJointHinge(pJoint);
+		@mpLeverBody = mpHingeJoint.GetChildBody();
+
+		mpLeverBody.SetGravity(false); //Make sure gravity is off!
+		
+		///////////////////////
+		//Set update properties
+		mpHingeJoint.SetStickyMinLimit(true);
+		mpHingeJoint.SetStickyMaxLimit(true);
+		
+		///////////////////////
+		// Setup joint sounds
+		tString sMoveSound = apVars.GetVarString("MoveSound", "");
+		if (sMoveSound != "")
+		{
+			mpHingeJoint.SetMoveSound(sMoveSound);
+			mpHingeJoint.SetMoveSpeedType(ePhysicsJointSpeed_Angular);
+		}
+		float fMinMoveSoundSpeed = apVars.GetVarFloat("MinMoveSoundSpeed", -1);
+		if (fMinMoveSoundSpeed >= 0)
+		{
+			mpHingeJoint.SetMinMoveSpeed(fMinMoveSoundSpeed);
+		}
+
+		///////////////////////
+		//Set up data
+		mfDefaultMinAngle = mpHingeJoint.GetMinAngle();
+		mfDefaultMaxAngle = mpHingeJoint.GetMaxAngle();
+		
+		//////////////////////////////////////
+		// Instance vars
+		
+		//Important that this is here so limits are set up properly!
+		int lStuckState = ToStuckState(apInstanceVars.GetVarString("StuckState", "None"));
+		SetStuckState(lStuckState, false);
+
+		mbInteractionDisablesStuck = apInstanceVars.GetVarBool("InteractionDisablesStuck", false);
+		
+		mfMiddleAngleAmount = apInstanceVars.GetVarFloat("MiddleAngleAmount", 0);
+		mbAutoMoveToAngle = apInstanceVars.GetVarBool("AutoMoveToAngle", true);
+		mlAutoMoveGoal = ToAutoMoveGoal(apInstanceVars.GetVarString("AutoMoveGoal", "Middle"));
+		
+		mbMinLimitStuck = apInstanceVars.GetVarBool("MinLimitStuck", false);
+		mbMaxLimitStuck = apInstanceVars.GetVarBool("MaxLimitStuck", false);
+		
+		mlMoveDirection = ToMoveDirection(apInstanceVars.GetVarString("MoveDirection", "Vertical"));
+
+		// Allow c++ bug fix to reset the joint to its inital position if it disappears
+		bool bJointResetFix = apInstanceVars.GetVarBool("JointResetFix", false);
+		mpHingeJoint.SetAllowPositionReset(bJointResetFix);
+
+		//Need to Calculate middle angle!
+		CalculateMiddleAngle();
+		
+		mJointFix.Init( mpLeverBody);
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// GENERAL
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnUpdate(float afTimeStep)
+	{
+		if (mpHingeJoint is null)
+			return;
+			
+		float fAngle = mpHingeJoint.GetAngle();
+
+		UpdateCheckStuckSound(afTimeStep);
+		UpdateCheckLimit(fAngle, afTimeStep);
+		UpdateAutoMove(fAngle, afTimeStep);
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnPostUpdate(float afTimeStep)
+	{
+		// Hack for trying to cure Newton instability
+		mJointFix.Update(mBaseObj,mpLeverBody);	
+	}
+	//------------------------------------------------------------
+	
+	void ResetProperties()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void BeforeEntityDestruction()
+	{
+	}
+		
+	//------------------------------------------------------------
+	
+	void OnStartMove()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void OnSetActive(bool abX)
+	{
+	
+	}
+	
+	//------------------------------------------------------------
+	
+	void GiveDamage(float afAmount, int alStrength, const tString&in asType, const tString&in asSource)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnHealthChange()
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	void OnConnectionStateChange(iLuxEntity@ apEntity,int alState)
+	{
+	}
+	
+	//------------------------------------------------------------
+	
+	/*bool OnUpdateAutoSleep()
+	{
+		return true;
+	}*/
+	
+	//------------------------------------------------------------
+	
+	//NOTE: This is only useable if SetScriptCollisionCallbackActive is true
+	void OnPhysicsCollision(iPhysicsBody @apBody, iPhysicsBody @apCollideBody, cPhysicsContactData&in apContactData)
+	{
+	
+	}
+		
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// INTERACT
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	bool CanInteract(int alType, iPhysicsBody@ apBody)
+	{
+		// Native selection normally checks this before the script. VR also calls
+		// CanInteract directly, so preserve that gate at the shared script boundary.
+		if(!mBaseObj.IsActive() || mBaseObj.GetInteractionDisabled() || apBody is null) return false;
+		if(mBaseObj.GetParentType() == eParentType_StickyStuck) return false;
+
+		bool bUsingInteractAuxArea = cScript_GetGlobalVarBool("UsingInteractAuxArea");
+
+		if(!bUsingInteractAuxArea && mbCanInteractWithStaticBody==false && apBody.GetMass()==0) return false;
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+		
+	bool OnInteract(int alType, iPhysicsBody@ apBody, const cVector3f &in avFocusPos, const tString&in asData)
+	{
+		// Revalidate after deferred VR selection; do not unlock a disabled lever.
+		if(!mBaseObj.IsActive() || mBaseObj.GetInteractionDisabled() || apBody is null) return false;
+		//Make sure correct body is used! (in case static body was interacted with)
+		@apBody = mpLeverBody;
+		
+		//Disable
+		if(mlStuckState !=0 && mbInteractionDisablesStuck)
+		{
+			SetStuckState(0, true);
+		}
+		
+		if(mlStuckState!=0)
+		{
+			Effect_Rumble_Start(0.3, 0.5);
+		}
+	
+	    if (mBaseObj.Timer_TimeHasPassed(5,0.5f))
+		{
+			if(mlCurrentState == 1)
+			{
+				mBaseObj.PlaySound("LeverInteract", msMaxInteractSound, true, true);
+			}
+			else if (mlCurrentState == -1)
+			{
+				mBaseObj.PlaySound("LeverInteract", msMinInteractSound, true, true);
+			}
+		}
+		
+		///////////////////////////////
+		//Set up the wheel state
+		cScript_SetGlobalArgID(0, mBaseObj.GetID()); //Object ID
+		cScript_SetGlobalArgInt(1, apBody.GetUniqueID()); //Body Id
+		cScript_SetGlobalArgVector3f(2, avFocusPos);//The grab postion
+		
+		cScript_SetGlobalArgFloat(3, mfMoveMaxSpeed);
+		cScript_SetGlobalArgFloat(4, mfMoveSpeedFactor);
+		cScript_SetGlobalArgFloat(5, mfMoveSlowDownFactor);
+		cScript_SetGlobalArgFloat(6, mlMoveDirection);
+		
+		cScript_RunGlobalFunc("State_Interact_Lever", "", "SetupLever");
+		
+		///////////////////////////////
+		//Set the lever state
+		cLux_GetPlayer().ChangeState(ePlayerState_Lever);
+		
+		///////////////////////////////
+		//Reset the pid for any automove later on
+		mRotatePid.Reset();
+		
+		return true;
+	}
+	
+	//------------------------------------------------------------
+	
+	int GetInteractIconId(int alType, iPhysicsBody@ apBody)
+	{
+		return mInteractIcon;
+	}
+	
+	//------------------------------------------------------------
+	
+	
+	/////////////////////////////////////////
+	// LEVER SPECIFIC ACTIONS
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetCustomInteractIcon()
+	{
+		mInteractIcon = eCrossHairState(cScript_GetGlobalArgInt(0));
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetStuckState()
+	{
+		SetStuckState(cScript_GetGlobalArgInt(0), cScript_GetGlobalArgBool(1));
+	}
+	
+	//------------------------------------------------------------
+	
+	void SetStuckState(int alState, bool abEffects, bool abChangeConnectionState = true)
+	{
+		if(mlStuckState == alState) return;
+
+		mlStuckState = alState;
+
+		mfStuckSoundTimer =0; //Reset the stuck timer!
+		
+		mBaseObj.WakeUp();
+
+		//Max
+		if(mlStuckState == 1)
+		{
+			ChangeState(1, abEffects, abChangeConnectionState);
+
+			mpHingeJoint.SetMinAngle(mfDefaultMaxAngle - mfMaxLimitRange);
+			mpHingeJoint.SetMaxAngle(mfDefaultMaxAngle);
+		}
+		//Min
+		else if(mlStuckState == -1)
+		{
+			ChangeState(-1, abEffects, abChangeConnectionState);
+
+			mpHingeJoint.SetMinAngle(mfDefaultMinAngle);
+			mpHingeJoint.SetMaxAngle(mfDefaultMinAngle + mfMinLimitRange);
+		}
+		//None
+		else
+		{
+			mpHingeJoint.SetMinAngle(mfDefaultMinAngle);
+			mpHingeJoint.SetMaxAngle(mfDefaultMaxAngle);
+		}
+	}
+	
+	//-----------------------------------------------------------------------
+
+	void ChangeState(int alState, bool abEffects, bool abChangeConnectionState = true)
+	{
+		if(mlCurrentState == alState) return;
+
+		mlCurrentState = alState;
+
+		tString sSound = "";
+		
+		/////////////////
+		//Max
+		if(mlCurrentState == 1)
+		{
+			sSound = msMaxLimitSound;
+			if (abChangeConnectionState) mBaseObj.ChangeConnectionState(1);
+		}
+		/////////////////
+		//Min
+		else if(mlCurrentState == -1)
+		{
+			sSound = msMinLimitSound;
+			if (abChangeConnectionState) mBaseObj.ChangeConnectionState(-1);
+		}
+		/////////////////
+		//Middle
+		else if(mlCurrentState == 0)
+		{
+			if (abChangeConnectionState) mBaseObj.ChangeConnectionState(0);
+		}
+
+		///////////////////////
+		//Play sound
+		if(abEffects  && sSound != "")
+		{
+			cSoundEntity @pSound = mBaseObj.GetMap().GetWorld().CreateSoundEntity("LeverSound", sSound, true);
+			if(pSound !is null) pSound.SetPosition(mpHingeJoint.GetPivotPoint());
+		}
+
+		/////////////////
+		//Connection
+		//InteractConnectionLimit(mlCurrentState);
+	}
+
+	//------------------------------------------------------------
+	
+	void _Global_GetState()
+	{
+		cScript_SetGlobalReturnInt(mlCurrentState);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetInteractionDisablesStuck()
+	{
+		mbInteractionDisablesStuck = cScript_GetGlobalArgBool(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetAutoMoveTarget()
+	{
+		mlAutoMoveGoal = cScript_GetGlobalArgInt(0);
+	}
+	
+	//------------------------------------------------------------
+	
+	void _Global_SetAutoMoveEnabled()
+	{
+		mbAutoMoveToAngle = cScript_GetGlobalArgBool(0);
+		if (mbAutoMoveToAngle)
+		{
+			mBaseObj.WakeUp();
+		}
+	}
+	
+	/////////////////////////////////////////
+	// LEVER SPECIFIC UPDATES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	void UpdateCheckStuckSound(float afTimeStep)
+	{
+		if(mlStuckState == 0 || mBaseObj.IsInteractedWith()==false) return;
+
+		if(mfStuckSoundTimer >0)
+		{
+			mfStuckSoundTimer-=afTimeStep; 
+			return;
+		}
+		
+		float fSpeedSqr = mpHingeJoint.GetChildBody().GetAngularVelocity().SqrLength();
+		if(fSpeedSqr > 0.01f)
+		{
+			mBaseObj.PlaySound("LeverStuck", msStuckSound, true, true);
+			mfStuckSoundTimer = 1.5f;
+		}
+	}
+
+	//-----------------------------------------------------------------------
+
+	void UpdateCheckLimit(float afAngle, float afTimeStep)
+	{
+		if(mlStuckState !=0) return;
+
+		/// Interacting with this?
+		bool allowSticking = !(mbInteractionDisablesStuck&&mBaseObj.IsInteractedWith());
+		
+		///////////////////////
+		//Max
+		if(afAngle > (mfDefaultMaxAngle - mfMaxLimitRange))
+		{
+			ChangeState(1, true);
+			if(mbMaxLimitStuck&&allowSticking) SetStuckState(1, false);
+		}
+		///////////////////////
+		//Min
+		else if(afAngle < (mfDefaultMinAngle + mfMinLimitRange))
+		{
+			ChangeState(-1, true);
+			if(mbMinLimitStuck&&allowSticking) SetStuckState(-1, false);
+		}
+		///////////////////////
+		//Middle
+		else if(afAngle < (mfDefaultMaxAngle - mfMaxLimitRange)-cMath_ToRad(5) ||
+				afAngle > (mfDefaultMinAngle + mfMinLimitRange)+cMath_ToRad(5))
+		{
+			ChangeState(0, true);
+		}
+	}
+
+	//-----------------------------------------------------------------------
+
+	void UpdateAutoMove(float afAngle, float afTimeStep)
+	{
+		if(mBaseObj.IsInteractedWith() || mbAutoMoveToAngle==false || mlStuckState!=0) return;
+		
+		///////////////////////////
+		// Get the wanted speed
+		float fGoalAngle = 0;
+		if(mlAutoMoveGoal == 0) fGoalAngle = mfMiddleAngle;
+		else if(mlAutoMoveGoal == -1)	fGoalAngle = mfDefaultMinAngle + mfMinLimitRange/2.0f;
+		else if(mlAutoMoveGoal == 1)	fGoalAngle = mfDefaultMaxAngle - mfMaxLimitRange/2.0f;
+		
+		float fWantedSpeed = mfAutoMoveSpeedFactor * (afAngle - fGoalAngle);
+		
+		if(fWantedSpeed > mfAutoMoveMaxSpeed)	fWantedSpeed = mfAutoMoveMaxSpeed;
+		if(fWantedSpeed < -mfAutoMoveMaxSpeed)	fWantedSpeed = -mfAutoMoveMaxSpeed;
+		
+		///////////////////////////
+		// Calculate the torque
+		cVector3f vRotateDir = mpHingeJoint.GetPinDir();
+		cVector3f vBodyVel = mpLeverBody.GetAngularVelocity();
+		cVector3f vHingeVel = vRotateDir * cMath_Vector3Dot(vRotateDir, vBodyVel);
+		cVector3f vWantedVel = vRotateDir * fWantedSpeed;
+
+		//This is a bit wierd? (think need to have as removing might screw things up!)
+		mpLeverBody.SetAngularVelocity(vWantedVel);
+
+		
+		cVector3f vTorque = mRotatePid.Output(vWantedVel - vHingeVel, afTimeStep);
+		vTorque = cMath_MatrixMul(mpLeverBody.GetInertiaMatrix(), vTorque);
+
+		mpLeverBody.AddTorque(vTorque);
+	}
+
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// HELPERS
+	/////////////////////////////////////////
+	
+	
+	//-----------------------------------------------------------------------
+
+	void CalculateMiddleAngle()
+	{
+		float fAngleT = (mfMiddleAngleAmount+1)/2; //be between 0 and 1
+		mfMiddleAngle = mfDefaultMinAngle + (mfDefaultMaxAngle - mfDefaultMinAngle)*fAngleT;
+	}
+	
+	//------------------------------------------------------------
+		
+	/////////////////////////////////////////
+	// DEBUG
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+		
+	float DrawDebugOutput(cGuiSet @apSet,iFontData @apFont,float afStartY)
+	{
+		return afStartY; 
+		
+		//apSet.DrawFont(tWString("Wheel:"+mBaseObj.GetName()+" Dir:"+mfSpinDirection), apFont, cVector3f(5,afStartY,0), cVector2f(14), cColor(1,1) );
+		//afStartY += 14;
+		//return afStartY;
+	}
+	
+	//------------------------------------------------------------
+	
+	/////////////////////////////////////////
+	// PROPERTIES
+	/////////////////////////////////////////
+	
+	//------------------------------------------------------------
+	
+	[nosave] cPidControllerVec3 mRotatePid;
+
+	[nosave] iPhysicsJointHinge @mpHingeJoint;
+	[nosave] iPhysicsBody @mpLeverBody;
+	
+	[nosave] float mfDefaultMinAngle;
+	[nosave] float mfDefaultMaxAngle;
+	
+	//------------------------------------------------------------
+	
+	[nosave] float mfMoveMaxSpeed;
+    [nosave] float mfMoveSlowDownFactor;
+    [nosave] float mfMoveSpeedFactor;
+    [nosave] bool mbCanInteractWithStaticBody;
+    [nosave] float mfMinLimitRange;
+    [nosave] float mfMaxLimitRange;
+	[nosave] tString msMinLimitSound;
+	[nosave] tString msMaxLimitSound;
+	[nosave] tString msStuckSound;
+	[nosave] tString msMinInteractSound;
+	[nosave] tString msMaxInteractSound;
+	[nosave] bool mbSkipMiddleState; //Not used atm..
+	
+	//------------------------------------------------------------
+	
+	eCrossHairState mInteractIcon;
+		
+	bool mbInteractionDisablesStuck;
+	
+	int mlMoveDirection;
+	
+	float mfMiddleAngle;
+	float mfMiddleAngleAmount;
+	
+	bool mbMinLimitStuck;
+	bool mbMaxLimitStuck;
+	
+	bool mbAutoMoveToAngle;
+	int mlAutoMoveGoal;
+	float mfAutoMoveSpeedFactor;
+	float mfAutoMoveMaxSpeed;
+	
+	int mlCurrentState;
+	int mlStuckState;
+	
+	float mfStuckSoundTimer;
+	cUtility_JointFix mJointFix;
+	
+	//------------------------------------------------------------
+		
+}	

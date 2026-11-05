@@ -1,4 +1,4 @@
-#include "custom_depth/vr_omni_authored_callbacks.hps"
+﻿#include "custom_depth/vr_omni_authored_callbacks.hps"
 #include "helpers/helper_vr_guidance_hr.hps"
 #include "interfaces/UserModule_Interface.hps"
 #include "modules/ModuleInterfaces.hps"
@@ -1514,6 +1514,31 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		return true;
 	}
 
+    bool VR_PhysicalTargetContact(const tString &in carrier,const tString &in target)
+    {
+        if(Entity_GetCollide(carrier,target))return true;
+        cLuxMap@ map=cLux_GetCurrentMap();
+        // The elevator slot is recessed behind its retaining clamps. Extend
+        // only its front approach, retaining its original width and height.
+        // This is a query transform: neither the carrier nor collider moves.
+        if(map is null || map.GetName()!="02_06_theta_tunnels" || target!="Area_Broken_Panel")return false;
+        iLuxEntity@ item=map.GetEntityByName(carrier,eLuxEntityType_LastEnum,"");
+        iLuxEntity@ area=map.GetEntityByName(target,eLuxEntityType_LastEnum,"");
+        if(item is null || area is null || !item.IsActive())return false;
+        iPhysicsBody@ body=item.GetMainBody();iPhysicsBody@ slot=area.GetMainBody();
+        if(body is null || slot is null)return false;
+        cVector3f at=body.GetWorldPosition(),center=slot.GetWorldPosition();
+        // Native map +Z is the accessible face; reject the rear and remote
+        // approaches before the bounded shape queries.
+        if(at.z<center.z || at.z-center.z>.18f || cMath_Vector3Dist(at,center)>.25f)return false;
+        cMatrixf pose=body.GetWorldMatrix();
+        for(int step=1;step<=3;step++){
+            pose.SetTranslation(at+cVector3f(0,0,-.03f*step));
+            if(area.CheckShapeCollision(body.GetShape(),pose,map))return true;
+        }
+        return false;
+    }
+
     bool VR_ReturnedCarrierHasClearedSocket(const tString &in asCarrier)
     {
         // Entity-owned state survives the zero-delay pickup and a save/load.
@@ -1521,7 +1546,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
         tString sArea=Entity_GetVarString(asCarrier,"VRReturnArea");
         if (sArea=="" && sSlot!="") sArea=sSlot+"_Interact";
         if (sArea=="") return true;
-        if (Entity_GetCollide(asCarrier,sArea)) return false;
+        if (VR_PhysicalTargetContact(asCarrier,sArea)) return false;
         Entity_SetVarString(asCarrier,"VRReturnSlot","");
         Entity_SetVarString(asCarrier,"VRReturnArea","");
         return true;
@@ -1539,7 +1564,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		iLuxEntity@ pCarrier = pMap.GetEntityByName(sCarrier, eLuxEntityType_LastEnum, "");
 		if (pCarrier is null || !Entity_IsActive(sCarrier)) return false;
         if (!VR_ReturnedCarrierHasClearedSocket(sCarrier)) return false;
-		if (!Entity_GetCollide(sCarrier, asTarget)) return false;
+		if (!VR_PhysicalTargetContact(sCarrier, asTarget)) return false;
 
 		msVRShoulderUseTool = apTool.msPickedEntityName;
 		msVRShoulderUseTarget = asTarget;
@@ -1672,7 +1697,7 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
 		iLuxEntity@ pCarrier = pMap.GetEntityByName(sCarrier, eLuxEntityType_LastEnum, "");
 		if (pTarget is null || pCarrier is null || !Entity_IsActive(sTarget) || !Entity_IsActive(sCarrier) || pTarget.GetInteractionDisabled()) return false;
 		if (!VR_ReturnedCarrierHasClearedSocket(sCarrier)) return false;
-		if (!Entity_GetCollide(sCarrier, sTarget)) return false;
+		if (!VR_PhysicalTargetContact(sCarrier, sTarget)) return false;
 
 		if (!pMap.ScriptPrepare("bool "+pTool.msCanBeUsedCallback+"(const tString &in asToolName, const tString &in asFocusEntity)")) return false;
 		pMap.SetArgString(0, sName);
@@ -1772,6 +1797,45 @@ class cScrPlayerToolHandler : iScrUserModule, iScrUserModule_Interface, iScrPlay
         mlBVChipRepair=3;
         LogNewLine("S26BV: rebuilt elevator chip at terminal display scale; native ownership retained.");
         return true;
+    }
+
+    // Event-only death snapshot; never infer holding from gravity or visibility.
+    void _Global_VRDeathHeldKeyName()
+    {
+        int wanted=cScript_GetGlobalArgInt(0),found=0;
+        cScript_SetGlobalReturnString("");
+        if(!_HPL3VR_RuntimeActive_ToolHandler() || wanted<0 || wanted>1)return;
+        for(uint i=0;i<mvInventory.length();++i){
+            cToolData@ t=mvInventory[i];
+            if(!VR_IsShoulderKeyItem(t)||t.mbVRShoulderStowed)continue;
+            if(!cScript_RunGlobalFunc("VRKEYHELD",t.msPickedEntityName,"Q"))continue;
+            if(found++==wanted){cScript_SetGlobalReturnString(t.msPickedEntityName);return;}
+        }
+    }
+    void _Global_VRRecoverDeathHeldKey()
+    {
+        tString name=cScript_GetGlobalArgString(0);
+        cScript_SetGlobalReturnBool(false);
+        if(!_HPL3VR_RuntimeActive_ToolHandler()||name=="")return;
+        cLuxMap@ map=cLux_GetCurrentMap();if(map is null)return;
+        // Only restored inventory is authority. Never re-add an item from the
+        // death snapshot to an earlier checkpoint which did not own it.
+        for(uint i=0;i<mvInventory.length();++i){
+            cToolData@ t=mvInventory[i];
+            if(t.msPickedEntityName!=name||!VR_IsShoulderKeyItem(t))continue;
+            if(t.mbVRShoulderStowed){cScript_SetGlobalReturnBool(true);return;}
+            tString carrier=VR_GetPhysicalCarrierName(t);
+            iLuxEntity@ e=map.GetEntityByName(carrier,eLuxEntityType_LastEnum,"");
+            if(e is null)return;
+            // Owned saved carrier only. No pickup/use callbacks, no recreated body,
+            // no changes to neighboring loose items or authored item order.
+            t.msVRPhysicalCarrierName=carrier;t.mbVRShoulderStowed=true;
+            t.mlVRShoulderOrder=++mlVRShoulderNextOrder;
+            e.SetVarString("VRReturnSlot","");e.SetVarString("VRReturnArea","");
+            e.SetActive(false);
+            cScript_RunGlobalFunc("VROMNIINV",name,"A");
+            cScript_SetGlobalReturnBool(true);return;
+        }
     }
 
 	void VR_ReconcileShoulderInventory(float afTimeStep)

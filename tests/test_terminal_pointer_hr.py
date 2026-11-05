@@ -21,6 +21,9 @@ using i32=int;using u32=unsigned;using u8=unsigned char;
 #define H576BO_FRONT_RELEASE_SKIN_M .024f
 #define H576BO_BACK_PENETRATION_M .06f
 #define H576AC_HAPTIC_CONFIRM 1
+struct H576BOTerminalSurface{float uSpan[3],vSpan[3];};
+H576BOTerminalSurface g_h576boTerminalSurface={{1,0,0},{0,1,0}};
+float h10_dot(const float*a,const float*b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
 struct S26HRTerminalSample{float u,v,p,r;u32 frame,generation;const void*gui;u8 valid;float sweepSide;};
 S26HRTerminalSample g_s26hrTerminalSamples[2];
 unsigned g_h576bsTerminalNearStep[2],g_h576acSpecialPulses[2];
@@ -51,7 +54,7 @@ void h576bo_release_pointer(int keep,const char*){
 '''
 code+=(R/'source/terminal_sweep_hr.inc').read_text()+step
 code+=r'''
-void frame(){++g_frameCounter;h576bo_terminal_pointer_step();}
+void frame(){++g_h14PhysicsSteps;h576bo_terminal_pointer_step();}
 void reset(){h576bo_release_pointer(0,"");downs=ups=0;active=true;accept=true;g_h576boTerminalSurfaceValid=1;g_s26hdLaserHand=-1;g_h576boEntryHand=-1;}
 int main(){
  for(int hand=0;hand<2;hand++){

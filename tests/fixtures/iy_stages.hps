@@ -1,0 +1,24 @@
+    void _Global_IYStages(){
+        // Supplied inventory/stage snapshots: real native CanUse + guide meshes.
+        // This does not replace a complete chase/dialogue playthrough.
+        cLuxMap@ map=cLux_GetCurrentMap();
+        cLux_GetUserConfig().SetBool("SOMA_VR","InventoryGuides",true);
+        iLuxEntity@ target=map.GetEntityByName("DiveSuitArea",eLuxEntityType_LastEnum,"");
+        target.SetActive(true);target.SetInteractionDisabled(false);
+        cLux_GetPlayer().GetCamera().SetPosition(target.GetPosition()+cVector3f(0,0,1));
+        array<tString> stages={"ToolArea_ComputerBrain","ToolArea_PowerSource","ToolArea_StructureGel"};
+        array<tString> names={"BrokenRobotBrain","PowerCube_Inserted","StructureGelTool"};
+        array<tString> callbacks={"BrokenRobotBrain","PowerCubeToolInserted","StructureGelTool"};
+        for(int phase=-1;phase<3;phase++){
+            for(int g=0;g<3;g++)map.GetEntityByName(stages[g],eLuxEntityType_LastEnum,"").SetActive(g==phase);
+            for(int i=0;i<3;i++){
+                cToolData tool;tool.msPickedEntityName=names[i];tool.msCanBeUsedCallback=callbacks[i]+"_CanBeUsed";tool.msUseCallback=callbacks[i]+"_OnUse";
+                VR_HideItemGuides();mlVRItemGuideUsed=0;VR_DispatchItemGuides(tool,map.GetName());
+                bool correct=mlVRItemGuideUsed==(i==phase?1:0);
+                LogNewLine((correct?"HV_PASS|":"HV_FAIL|")+"stage="+phase+" item="+names[i]+" guides="+mlVRItemGuideUsed);
+            }
+        }
+        target.SetInteractionDisabled(true);cToolData gel;gel.msPickedEntityName="StructureGelTool";gel.msCanBeUsedCallback="StructureGelTool_CanBeUsed";gel.msUseCallback="StructureGelTool_OnUse";
+        VR_HideItemGuides();mlVRItemGuideUsed=0;VR_DispatchItemGuides(gel,map.GetName());LogNewLine((mlVRItemGuideUsed==0?"HV_PASS|":"HV_FAIL|")+"disabled suit rejects guide");
+        VR_HideItemGuides();
+    }

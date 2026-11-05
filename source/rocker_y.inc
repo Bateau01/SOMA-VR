@@ -1,6 +1,6 @@
 /* S26Y EXPERIMENT: only script-identified rocker assets; no general icon13 override. */
 static i32 s26y_gate(void){return g_h576mScriptRuntimePublished==1&&p2_xr_on()&&p2_xr_running()&&!g_h576bfMapTransitionActive&&g_h5753cAuthorityEnabled;}
-static void s26y_reset(void){s26dd_forget_button_contacts();zero_bytes(g_s26yRocker,sizeof(g_s26yRocker));g_s26yCount=0;g_s26yCapture=0;g_s26yMainWrapper=0;g_s26yMainRaw=0;g_s26yOwner=0;}
+static void s26y_reset(void){s26jb_solid_reset();s26dd_forget_button_contacts();zero_bytes(g_s26yRocker,sizeof(g_s26yRocker));g_s26yCount=0;g_s26yCapture=0;g_s26yMainWrapper=0;g_s26yMainRaw=0;g_s26yOwner=0;}
 static i32 s26y_id(const H5730TString* text,u32* id){
     char value[16];if(!h5748n_copy_tstring((void*)text,value,sizeof(value))||!value[0])return 0;
     u32 n=0;for(u32 i=0;value[i];++i){u32 d=(u32)(value[i]-'0');if(d>9u||n>214748364u||(n==214748364u&&d>7u))return 0;n=n*10u+d;}*id=n;return 1;
@@ -41,11 +41,17 @@ static i32 s26hr_control_palm(i32 h,float* center,float* direction){
 }
 static void s26y_rearm(void){
     if(!g_s26yCount||!s26y_gate()||h5754h_pause_active()||g_lastSyncResult!=0)return;
-    float tip[2][3];i32 len[2],valid[2]={0,0},sampled=0;
+    float tips[2][5][5][3];i32 lens[2][5],valid[2][5]={{0}},sampled=0;
     for(i32 i=0;i<g_s26yCount;++i){S26YRocker* r=&g_s26yRocker[i];if(!r->used||!r->blocked||!r->raw)continue;
-        if(!sampled){for(i32 h=0;h<2;++h)valid[h]=s26y_tip(h,tip[h],&len[h]);sampled=1;}
+        if(!sampled){for(i32 h=0;h<2;h++){
+            float pos[3],m[16];if(!visual_pose_valid(h)||!h14_hand_pose_raw(h,pos,m))continue;
+            for(i32 f=0;f<5;f++)valid[h][f]=s26jb_raw_finger(h,f,m,tips[h][f],&lens[h][f]);
+        }sampled=1;}
         if(!r->wrapper||!h20_mem_readable(r->wrapper,0x2f0u)||*(const void**)((u8*)r->wrapper+0x2e8)!=r->raw||*(u32*)((u8*)r->wrapper+0x3c)!=r->id)continue;
-        i32 clear=1;for(i32 h=0;h<2;++h){float gap=0,cp[3];if(!valid[h]||!h14_point_to_body(r->raw,tip[h],&gap,cp)||h572_index_skin_gap(h,len[h],gap)<=.03f){clear=0;break;}}
+        i32 clear=1;for(i32 h=0;h<2&&clear;h++)for(i32 f=0;f<5;f++){
+            float gap=0,cp[3];if(!valid[h][f]||!s26eq_return_point(r->raw,tips[h][f][lens[h][f]],&gap,cp)||
+                gap-s26jb_finger_skin_radius(h,f,lens[h][f])<=.03f*h5755ea_world_units_per_meter()){clear=0;break;}
+        }
         if(clear)for(i32 h=0;h<2;h++){
             float palm[3],dir[3],gap,cp[3];
             if(!s26hr_control_palm(h,palm,dir)||!s26eq_return_point(r->raw,palm,&gap,cp)||gap<=.055f*h5755ea_world_units_per_meter()){clear=0;break;}
@@ -62,6 +68,9 @@ static i32 s26hr_control_blocked(void* owner){
     return 0;
 }
 /* Called only for the first exact entity hit by the existing fingertip ray. */
+// Return 2 is a geometric miss on this registered body, still handled for
+// endpoint callers. Swept multi-finger selection may try another fingertip.
+// Native permission/lock/rearm rejection remains return 1 and ends selection.
 static i32 s26hr_control_contact(i32 hand,void* wrapper,void* owner,const float* tip,const float* dir,i32 len,float palmRadius){
     if(h5730_exact_terminal_state(0,0,0,0)&&!__atomic_load_n(&g_s26huWorldControlAllowed,__ATOMIC_ACQUIRE))return 1;
     if(!wrapper||!h20_mem_readable(wrapper,0x2f0u))return 0;
@@ -70,10 +79,10 @@ static i32 s26hr_control_contact(i32 hand,void* wrapper,void* owner,const float*
     for(i32 k=0;k<g_s26yCount;k++)if(g_s26yRocker[k].used&&g_s26yRocker[k].blocked&&
         (g_s26yRocker[k].handMask&(1<<hand)))return 1;
     if(!r->active||s26hr_control_blocked(r->owner)||owner!=r->owner||h5754h_pause_active()||g_lastSyncResult!=0||!p_h14GetMatrix)return 1;
-    float gap=999,cp[3],m[16];if(!h14_point_to_body(body,tip,&gap,cp))return 1;
-    float normal[3]={tip[0]-cp[0],tip[1]-cp[1],tip[2]-cp[2]};if(!h10_norm3(normal))return 1;
-    p_h14GetMatrix(body,m);i32 axis=r->frontAxis*4;float front[3]={m[axis],m[axis+1],m[axis+2]};if(!h10_norm3(front))return 1;
-    float skin=palmRadius>0?gap-palmRadius:h572_index_skin_gap(hand,len,gap);if(!s26y_near_gate(skin/h5755ea_world_units_per_meter(),h10_dot(normal,front),h10_dot(dir,normal)))return 1;s26fc_hint_near(21);
+    float gap=999,cp[3],m[16];if(!h14_point_to_body(body,tip,&gap,cp))return 2;
+    float normal[3]={tip[0]-cp[0],tip[1]-cp[1],tip[2]-cp[2]};if(!h10_norm3(normal))return 2;
+    p_h14GetMatrix(body,m);i32 axis=r->frontAxis*4;float front[3]={m[axis],m[axis+1],m[axis+2]};if(!h10_norm3(front))return 2;
+    float skin=palmRadius>0?gap-palmRadius:h572_index_skin_gap(hand,len,gap);if(len>0&&skin<0)skin=0;if(!s26y_near_gate(skin/h5755ea_world_units_per_meter(),h10_dot(normal,front),h10_dot(dir,normal)))return 2;s26fc_hint_near(21);
     // Capture is the authored GetMainBody wrapper, even when the ray hits the moving paddle.
     if(!r->mainWrapper||!h20_mem_readable(r->mainWrapper,0x2f0u)||*(const void**)((u8*)r->mainWrapper+0x2e8)!=r->mainRaw||*(void**)((u8*)r->mainWrapper+0x2c0)!=owner)return 1;
     i32 icon=-1;const void* raw=0;void* can=0;void* on=0;

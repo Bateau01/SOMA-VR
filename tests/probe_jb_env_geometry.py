@@ -1,0 +1,84 @@
+"""Native Theta Tunnels geometry census; optional native-callback insertion setup. No physical grip/handoff or full progression validation."""
+from pathlib import Path
+import subprocess,re,time,json,hashlib,uuid,sys
+R=Path(__file__).resolve().parents[1]
+W=R.parent;G=W/'SOMA_VR_S26AY_SHUTTLE/validation/Game'
+D=Path.home()/'Documents/My Games/Soma'
+assert subprocess.run(['powershell','-NoProfile','-Command','@(Get-Process Soma,Soma_NoSteam -ErrorAction SilentlyContinue).Count'],capture_output=True,text=True).stdout.strip()=='0'
+saved={};proc=None;nonce=uuid.uuid4().hex
+out=R/'audit/jb-env-geometry';out.mkdir(exist_ok=True)
+def put(p,b):
+ if p not in saved:saved[p]=p.read_bytes() if p.exists() else None
+ p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b if isinstance(b,bytes) else b.encode())
+try:
+ for p in (R/'runtime').rglob('*.hps'):put(G/p.relative_to(R/'runtime'),p.read_bytes())
+ mp=Path('maps/chapter02/02_06_theta_tunnels/02_06_theta_tunnels.hps')
+ s=(R/'runtime'/mp).read_text(encoding='utf-8-sig')
+ if '--vr-reach' in sys.argv:
+  # Exercise real area geometry with a test-only mode decision. This is not
+  # an OpenXR/physical grip test and does not change native active permissions.
+  s=s.replace('bool vr=_HPL3VR_RuntimeActive_ThetaTunnelsAT();','bool vr=true;')
+
+ fixture='\n [nosave] float mfJBClock=0;\n void JBProbe(float dt){mfJBClock+=dt;if(mfJBClock<3 || mfJBClock>3+dt)return;\n LogNewLine("JB_ENV_STATE|top="+mbTopClampOpen+"|bottom="+mbBottomClampOpen+"|installed="+mbPanelChipReplaced+"|unformatted="+mbUnformattedChipInPanel);\n array<tString> names={"Area_Broken_Panel","Area_RetrieveBrokenChip","Replaced_Chip","RetentionMechanism_1","RetentionMechanism_2","chip_unformatted"};\n for(uint i=0;i<names.length();i++){\n iLuxEntity@ e=Map_GetEntity(names[i]);if(e is null){LogNewLine("JB_ENV_MISSING|"+names[i]);continue;}\n iPhysicsBody@ body=e.GetMainBody();\n LogNewLine("JB_ENV_ENTITY|"+names[i]+"|active="+e.IsActive()+"|disabled="+e.GetInteractionDisabled()+"|body="+(body !is null));\n if(body !is null){cVector3f lo=body.GetBoundingVolume().GetMin(),hi=body.GetBoundingVolume().GetMax();\n LogNewLine("JB_ENV_BOUNDS|"+names[i]+"|min="+lo.x+","+lo.y+","+lo.z+"|max="+hi.x+","+hi.y+","+hi.z+"|can="+e.CanInteract(0,body));}\n }\n // Read-only closest-entity rays spanning the visible chip and adjacent clamps.\n for(int side=-1;side<=1;side+=2)for(int y=-4;y<=4;y++)for(int z=-3;z<=3;z++){\n cVector3f origin(2.20666f+z*.025f,4.86056f+y*.025f,-98.2252f+side*.15f);\n cLuxClosestEntityData hit;bool ok=cLux_GetClosestEntity(origin,cVector3f(0,0,-side),.30f,0,false,hit);\n if(ok&&hit.mpEntity !is null)LogNewLine("JB_ENV_RAY|side="+side+"|y="+y+"|z="+z+"|target="+hit.mpEntity.GetName()+"|distance="+hit.mfDistance+"|can="+hit.mpEntity.CanInteract(0,hit.mpBody));\n }\n LogNewLine("IL_DONE|NONCE");cEngine_Exit();}\n'.replace("NONCE",nonce)
+ if '--inserted' in sys.argv:
+  fixture=fixture.replace('[nosave] float mfJBClock=0;', '[nosave] float mfJBClock=0;[nosave] bool mbJBPrepared=false;')
+  fixture=fixture.replace('if(mfJBClock<3 || mfJBClock>3+dt)return;', 'if(!mbJBPrepared && mfJBClock>=2){mbJBPrepared=true;bool permitted=mbTopClampOpen&&mbBottomClampOpen&&Entity_IsActive(msBrokenPanelArea)&&chip_unformatted_CanBeUsed("chip_unformatted",msBrokenPanelArea);LogNewLine("JB_ENV_SETUP|nativePermission="+permitted);if(permitted)LogNewLine("JB_ENV_SETUP|nativeUse="+chip_unformatted_OnUse("chip_unformatted",msBrokenPanelArea));}if(mfJBClock<4 || mfJBClock>4+dt)return;')
+ if '--lifecycle' in sys.argv:
+  assert '--inserted' in sys.argv
+  checks=r"""
+ for(int k=1;k<=2;k++){
+  iLuxEntity@ latch=Map_GetEntity("RetentionMechanism_"+k);iPhysicsBody@ b=latch.GetMainBody();
+  int state=cLux_GetPlayer().GetCurrentStateId();bool can=latch.CanInteract(0,b);
+  bool accepted=latch.OnInteract(0,b,b.GetLocalMatrix().GetTranslation(),"");
+  LogNewLine("JB_ENV_DISABLED|index="+k+"|can="+can+"|accepted="+accepted+"|unchanged="+(state==cLux_GetPlayer().GetCurrentStateId()));
+ }
+ iLuxEntity@ area=Map_GetEntity("Area_RetrieveBrokenChip");iPhysicsBody@ ab=area.GetMainBody();
+ bool available=area.IsActive()&&!area.GetInteractionDisabled()&&area.CanInteract(0,ab);
+ bool removed=available&&area.OnInteract(0,ab,ab.GetLocalMatrix().GetTranslation(),"");
+ LogNewLine("JB_ENV_REMOVED|available="+available+"|accepted="+removed+"|installed="+mbPanelChipReplaced+"|unformatted="+mbUnformattedChipInPanel+"|area="+area.IsActive());
+ Player_ChangeStateToNormal();
+ for(int k=1;k<=2;k++){
+  iLuxEntity@ latch=Map_GetEntity("RetentionMechanism_"+k);iPhysicsBody@ b=latch.GetMainBody();
+  bool can=latch.CanInteract(0,b);bool entered=can&&latch.OnInteract(0,b,b.GetLocalMatrix().GetTranslation(),"");
+  LogNewLine("JB_ENV_REENABLED|index="+k+"|disabled="+latch.GetInteractionDisabled()+"|can="+can+"|entered="+entered+"|lever="+(cLux_GetPlayer().GetCurrentStateId()==ePlayerState_Lever));
+  Player_ChangeStateToNormal();
+ }
+ """
+  fixture=fixture.replace('LogNewLine("IL_DONE|',checks+'LogNewLine("IL_DONE|',1)
+ i=s.index("{",s.index("class cScrMap"));s=s[:i+1]+fixture+s[i+1:]
+ m=re.search(r"void Update\(float (\w+)\)\s*\{",s);assert m
+ s=s[:m.end()]+"JBProbe("+m[1]+");"+s[m.end():];put(G/mp,s)
+ menu=(G/'script/modules/MenuHandler.hps').read_text(encoding='utf-8-sig');menu=menu.replace('void GuiMainMenuSelection()','bool mbILStarted=false;\nvoid GuiMainMenuSelection()',1)
+ save=D/'Main/Default/AutoSave_02-06-theta-tunnels_2026_10_13_19_59_0_0.sav';assert save.exists()
+ menu=menu.replace('void GuiMainMenuSelection()\n\t{','void GuiMainMenuSelection()\n\t{\nif(!mbILStarted){mbILStarted=true;StartSavedGameLoad(tWString("'+save.name+'"));}',1).replace('if(sKeyPress.length()!=0)','if(true)').replace('mpConfig.GetBool("Main", "ShowPreMenu", true)','false');put(G/'script/modules/MenuHandler.hps',menu)
+ put(D/'SOMA_VR_IL/IL'/save.name,save.read_bytes())
+ cfg=(G/'config/main_init.cfg').read_text(encoding='utf-8-sig').replace('MainSaveFolder = "Main"','MainSaveFolder = "SOMA_VR_IL"').replace('config/default_user_settings.cfg','config/il_user.cfg');put(G/'config/il_init.cfg',cfg)
+ settings=(G/'config/default_user_settings.cfg').read_text(encoding='utf-8-sig')+'\n<Screen Width="1280" Height="720" FullScreen="false" Vsync="false" RefreshRate="60" />\n<Engine LimitFPS="true" SleepWhenOutOfFocus="false" />\n<Main ShowMenu="true" ShowPreMenu="false" FirstGameStart="false" SaveConfig="false" />\n';put(G/'config/il_user.cfg',settings)
+ si=subprocess.STARTUPINFO();si.dwFlags=1;si.wShowWindow=0
+ proc=subprocess.Popen([str(G/'Soma.exe'),'-user','IL','-cfg','config/il_init.cfg'],cwd=G,startupinfo=si,creationflags=subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+ try:rc=proc.wait(timeout=60)
+ except subprocess.TimeoutExpired:proc.terminate();rc=proc.wait(timeout=10)
+ log=(D/'SOMA_VR_IL/hpl.log').read_text(errors='replace');(out/(nonce+'.log')).write_text(log)
+ result={'nonce':nonce,'scope':__doc__,'inserted_fixture':'--inserted' in sys.argv,'save_sha256':hashlib.sha256(save.read_bytes()).hexdigest(),'exe_sha256':hashlib.sha256((G/'Soma.exe').read_bytes()).hexdigest(),'exit':rc,'lines':[x for x in log.splitlines() if 'JB_ENV' in x or 'IL_DONE' in x or ' : ERR ' in x or 'Exception' in x],'completed':'IL_DONE|'+nonce in log}
+ (out/(nonce+'.json')).write_text(json.dumps(result,indent=2));print(json.dumps(result))
+finally:
+ if proc is not None and proc.poll() is None:proc.terminate();proc.wait(timeout=10)
+ for p,b in reversed(list(saved.items())):
+  if b is None:p.unlink(missing_ok=True)
+  else:p.write_bytes(b)
+
+
+
+
+assert result["completed"] and result["exit"]==0,result
+assert not any(" : ERR " in x or "Exception" in x or "JB_ENV_MISSING" in x for x in result['lines']),result
+
+if '--lifecycle' in sys.argv:
+ for k in (1,2):
+  assert f'JB_ENV_DISABLED|index={k}|can=false|accepted=false|unchanged=true' in log
+  assert f'JB_ENV_REENABLED|index={k}|disabled=false|can=true|entered=true|lever=true' in log
+ assert 'JB_ENV_REMOVED|available=true|accepted=true|installed=false|unformatted=false|area=false' in log
+
+if '--vr-reach' in sys.argv:
+ assert '--inserted' in sys.argv
+ assert 'target=Area_RetrieveBrokenChip' in log,'Front ray cannot reach the enabled retrieval trigger'

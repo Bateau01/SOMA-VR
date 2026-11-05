@@ -9,16 +9,32 @@ code=r'''
 #include <stdio.h>
 #include <string.h>
 typedef unsigned char u8;typedef unsigned u32;typedef int i32;
+typedef void (__attribute__((ms_abi))*S26ANEnd)(void*);
+static S26ANEnd o_s26jbGuiDestroy;
 int g_s26anCursorReady=1,g_h576mScriptRuntimePublished=1,g_h576bfMapTransitionActive=0,on=1,running=1;
 int h20_mem_readable(void*p,unsigned n){return p!=0;}
+int nativeInput=0;int ni_native_input(){return nativeInput;}
 int p2_xr_on(){return on;}int p2_xr_running(){return running;}
 '''+s[start:end]+r'''
 int main(){
  unsigned char gui[0x30]={0};int oldSet,newSet,menu;
  *(void**)(gui+0x18)=&oldSet;s26bv_register_terminal(gui);
  if(!s26bv_cursor_owned(gui,0)||!s26bv_cursor_owned(&oldSet,1)||s26bv_cursor_owned(&menu,1))return 1;
- *(void**)(gui+0x18)=&newSet;s26bv_register_terminal(gui);
+ *(void**)(gui+0x18)=&newSet;s26jb_refresh_terminal_set(gui);
  if(!s26bv_cursor_owned(&newSet,1)||s26bv_cursor_owned(&oldSet,1)||g_s26bvGuiCount!=1){puts("FAIL: stale backing-set registration");return 2;}
+ unsigned char unrelated[0x30]={0};*(void**)(unrelated+0x18)=&menu;
+ s26jb_refresh_terminal_set(unrelated);
+ if(g_s26bvGuiCount!=1||s26bv_cursor_owned(unrelated,0)||s26bv_cursor_owned(&menu,1))return 8;
+ nativeInput=1;if(s26bv_cursor_owned(gui,0)||s26bv_cursor_owned(&newSet,1))return 7;nativeInput=0;
+ // Same address may become an ordinary menu after the terminal is destroyed.
+ s26jb_gui_destroy(gui);
+ *(void**)(gui+0x18)=&menu;s26jb_refresh_terminal_set(gui);
+ if(g_s26bvGuiCount||s26bv_cursor_owned(gui,0)||s26bv_cursor_owned(&newSet,1)||s26bv_cursor_owned(&menu,1))return 9;
+ s26bv_register_terminal(gui);s26bv_register_terminal(unrelated);
+ s26jb_forget_terminal(gui);
+ if(g_s26bvGuiCount!=1||!s26bv_cursor_owned(unrelated,0)||s26bv_cursor_owned(gui,0))return 10;
+ s26jb_forget_terminal(gui);if(g_s26bvGuiCount!=1)return 11;
+ s26bv_register_terminal(gui);
  on=0;if(s26bv_cursor_owned(gui,0))return 3;on=1;
  running=0;if(s26bv_cursor_owned(gui,0))return 4;running=1;
  g_h576bfMapTransitionActive=1;if(s26bv_cursor_owned(gui,0))return 5;g_h576bfMapTransitionActive=0;

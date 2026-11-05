@@ -5,7 +5,12 @@ head=r'''
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-typedef int i32;typedef unsigned char u8;
+typedef int i32;typedef unsigned char u8;typedef unsigned u32;
+#define H5755HJ_STATIC_CONTACT_MAX 8
+static u32 g_h14PhysicsSteps=10,g_h5755hjStaticContactStep[2],g_h5755hjStaticContactCount[2];
+static const void*g_h5755hjStaticContactBody[2][8];
+static int g_h5755hjStaticContactPointValid[2][8];
+static float g_h5755hjStaticContactPoint[2][8][3];
 typedef struct {int drEnabled,hand;float drHandM[16],drP[6][3],rad[6];const void* drBody;void* drOwner;float drGap,drSecondGap,drContact[3];} H14Scan;
 static int can=1,icon=6,jointed=0,outside=0,validmesh=1,calls=0,ownerKind=1;static float meshgap=.006f,pointgap=.006f;static const void* raw=(void*)1;static void* g_h14NewtonWorld=(void*)10;
 static int h25_owner_kind(void*o,char*r,int n){return ownerKind;}
@@ -25,12 +30,32 @@ main=r'''
 int main(void){unsigned char wrapper[0x300]={0};*(void**)(wrapper+0x2c0)=(void*)4;wrapper[0xe4]=1;
 for(int hand=0;hand<2;hand++)for(int fault=0;fault<13;fault++){
  H14Scan s={0};s.drEnabled=1;s.hand=hand;s.drGap=s.drSecondGap=999;for(int i=0;i<6;i++)s.rad[i]=.011f;
- ownerKind=1;can=validmesh=1;icon=6;raw=(void*)1;jointed=outside=calls=0;meshgap=pointgap=.006f;wrapper[0xe4]=1;wrapper[0x2e0]=0;float mass=0;
+ ownerKind=1;can=validmesh=1;icon=6;raw=(void*)1;jointed=outside=calls=0;meshgap=pointgap=.006f;wrapper[0xe4]=1;wrapper[0x2e0]=0;*(void**)(wrapper+0x2c0)=(void*)4;float mass=0;
  switch(fault){case 1:outside=1;break;case 2:s.drEnabled=0;break;case 3:mass=1;break;case 4:wrapper[0xe4]=0;break;case 5:wrapper[0x2e0]=1;break;case 6:jointed=1;break;case 7:can=0;break;case 8:icon=13;break;case 9:raw=(void*)5;break;case 10:meshgap=.04f;break;case 11:outside=1;pointgap=.08f;break;case 12:ownerKind=2;break;}
- s26dr_scan_small_lever(&s,(void*)1,wrapper,(void*)8,mass);C((s26dr_small_lever_choice(&s)==1)==(fault<2));C(calls<=6);
- if(fault<2){C(s.drBody==(void*)1);C(s.drOwner==(void*)4);raw=(void*)2;meshgap=.007f;s26dr_scan_small_lever(&s,(void*)2,wrapper,(void*)8,0);C(s26dr_small_lever_choice(&s)==-1);}
+ s26dr_scan_small_lever(&s,(void*)1,wrapper,(void*)8,mass);C((s26dr_small_lever_choice(&s)==1)==(fault<2||fault==5));C(calls<=6);
+ if(fault<2||fault==5){C(s.drBody==(void*)1);C(s.drOwner==(void*)4);
+ // Two native bodies of ONE control must not compete with each other.
+ raw=(void*)2;meshgap=.007f;s26dr_scan_small_lever(&s,(void*)2,wrapper,(void*)8,0);C(s26dr_small_lever_choice(&s)==1);C(s.drBody==(void*)1);
+ meshgap=.005f;s26dr_scan_small_lever(&s,(void*)2,wrapper,(void*)8,0);C(s26dr_small_lever_choice(&s)==1);C(s.drBody==(void*)2);
+ // A genuinely different adjacent control still creates ambiguity.
+ *(void**)(wrapper+0x2c0)=(void*)5;raw=(void*)3;meshgap=.006f;s26dr_scan_small_lever(&s,(void*)3,wrapper,(void*)8,0);C(s26dr_small_lever_choice(&s)==-1);
+ // A closer body of the selected owner does not erase the other control.
+ *(void**)(wrapper+0x2c0)=(void*)4;raw=(void*)4;meshgap=.004f;s26dr_scan_small_lever(&s,(void*)4,wrapper,(void*)8,0);C(s26dr_small_lever_choice(&s)==-1);
 }
-C(s26dr_small_lever_choice(0)==0);printf("PASS %d non-colliding switch interior/exterior, eligibility, separation, ambiguity and bounded-query checks\n",checks);return 0;}
+}
+for(int hand=0;hand<2;hand++)for(int fault=0;fault<5;fault++){
+ H14Scan s={0};s.drEnabled=1;s.hand=hand;s.drGap=s.drSecondGap=999;
+ ownerKind=1;can=validmesh=1;icon=6;raw=(void*)1;jointed=0;outside=1;pointgap=.2f;meshgap=.006f;
+ wrapper[0xe4]=1;*(void**)(wrapper+0x2c0)=(void*)4;
+ g_h5755hjStaticContactStep[hand]=fault==1?8:9;g_h5755hjStaticContactCount[hand]=1;
+ g_h5755hjStaticContactBody[hand][0]=fault==2?(void*)2:(void*)1;
+ g_h5755hjStaticContactPointValid[hand][0]=fault!=3;
+ if(fault==4)meshgap=.02f;
+ s26dr_scan_small_lever(&s,(void*)1,wrapper,(void*)8,0);
+ C((s26dr_small_lever_choice(&s)==1)==(fault==0));
+ g_h5755hjStaticContactCount[hand]=0;
+}
+C(s26dr_small_lever_choice(0)==0);printf("PASS %d solid/non-colliding switch interior/exterior, eligibility, separation, ambiguity and bounded-query checks\n",checks);return 0;}
 '''
 B=R/'build';p=B/'small_lever_test.c';p.write_text(head+fn+main);e=p.with_suffix('.exe');subprocess.run([sys.argv[1],'cc','-O2',str(p),'-o',str(e)],check=True);subprocess.run([str(e)],check=True)
 assert 's26dr_small_lever_choice(&ready)==1' in s and 's26dr_small_lever_choice(&authScan)' in s

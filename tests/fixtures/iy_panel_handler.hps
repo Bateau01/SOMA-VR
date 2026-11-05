@@ -1,0 +1,7 @@
+    void _Global_IYPanel(){
+        // Supplied acquired/held state; real target resolver + native transaction.
+        mvInventory.resize(0);cToolData tool;tool.msPickedEntityName="CathTool";tool.msHandAnimationSuffix="omnitool_cortex";tool.msCanBeUsedCallback="CanUseCathTool";tool.msUseCallback="OnUseCathTool";mvInventory.push_back(tool);
+        mbVRStreamMapReady=true;mbHVHeld=true;mfVRPhysicalOmniPanelCooldown=0;msVRPhysicalOmniPanelCandidate="LiftExitPanel";
+        bool accepted=VR_TryPhysicalOmniCommitPanel();
+        cScript_SetGlobalReturnBool(accepted);
+    }

@@ -139,3 +139,7 @@ Removed the recall explanation and status text from GAMEPLAY. The RECALL OMNI-TO
 ## 1.07-S26GH experimental simulation rate
 
 120FPS MODE includes rate-corrected movement, damping, interaction timing, low-step traversal and scripted physics advancement. Default remains 60 Hz; restart required. Verified Steam executable only. See EXPERIMENTAL_120HZ.txt for activation and test scope.
+
+## 1.1.0-S26IY options
+
+GAMEPLAY now offers INTERACTION GUIDES: OFF, HELD ITEMS or INVENTORY. INVENTORY includes nearby destinations for owned stowed items, subject to native permissions and scripted item order. Existing guide settings retain their previous behavior. STARTUP HELP controls the VR launch introduction and defaults to ON. The Climber bottom exit swipe panel accepts a small near-surface tolerance while retaining its story and busy restrictions.

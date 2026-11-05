@@ -153,6 +153,11 @@ $calibration = Join-Path $gameDir 'hpl3vr_hand_calibration.ini'
 if (!(Test-Path -LiteralPath $calibration)) {
     Copy-Item -LiteralPath (Join-Path $gameDir 'defaults\hpl3vr_hand_calibration.ini') -Destination $calibration
 }
+$supportSession=$null
+try {
+    . (Join-Path $gameDir 'SOMA-VR-Support.ps1')
+    $supportSession=Start-SomaSupportSession $gameDir $GameArguments $report
+} catch {Write-Warning ('Support logging setup skipped: '+$_.Exception.Message)}
 $si = New-Object SomaVrLaunch+STARTUPINFO
 $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
 $pi = New-Object SomaVrLaunch+PROCESS_INFORMATION
@@ -183,6 +188,20 @@ try {
     if ([SomaVrLaunch]::ResumeThread($pi.thread) -eq [uint32]::MaxValue) { throw 'Could not resume SOMA after loading VR.' }
     $resumed = $true
     Write-Output ('SOMA_VR_PID=' + $pi.pid)
+    if($supportSession){
+        try {
+            $watchExe=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $watchInfo=New-Object SomaVrLaunch+STARTUPINFO
+            $watchInfo.cb=[Runtime.InteropServices.Marshal]::SizeOf($watchInfo)
+            $watchProcess=New-Object SomaVrLaunch+PROCESS_INFORMATION
+            $watchCommand=New-Object Text.StringBuilder
+            [void]$watchCommand.Append('"'+$watchExe+'" -NoProfile -ExecutionPolicy Bypass -File "'+(Join-Path $gameDir 'SOMA-VR-Support.ps1')+'" -Watch -GameDirectory "'+$gameDir+'" -GameProcessId '+$pi.pid+' -SessionId '+$supportSession.SessionId)
+            if([SomaVrLaunch]::CreateProcessW($watchExe,$watchCommand,[IntPtr]::Zero,[IntPtr]::Zero,$false,0x08000000,[IntPtr]::Zero,$gameDir,[ref]$watchInfo,[ref]$watchProcess)){
+                [void][SomaVrLaunch]::CloseHandle($watchProcess.thread);[void][SomaVrLaunch]::CloseHandle($watchProcess.process)
+            } else {Write-Warning 'Automatic native-log collection could not start; use Collect-SOMA-VR-Logs.cmd.'}
+        } catch {Write-Warning ('Native-log watcher skipped: '+$_.Exception.Message)}
+    }
+
 } finally {
     if (!$resumed) { [void][SomaVrLaunch]::TerminateProcess($pi.process,1) }
     [void][SomaVrLaunch]::CloseHandle($pi.thread)
